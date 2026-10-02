@@ -49,7 +49,7 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 เปิด git repo ที่จะทำ อยู่บน branch ที่จะเก็บคิว เช่น `main` และไม่มีไฟล์ค้างนอกโฟลเดอร์ `card-loop/` แล้วทำตามเลขนี้ Codex พิมพ์ `$` แทน `/` รอบแรกเว้น `<TEK_SKILLS>` กับ `<REPO_SKILLS>` ว่าง
 
 1. พิมพ์ `/tek-setup-board` จะได้ `card-loop/board.md` เปิดไฟล์นั้นแล้วเติมตาราง ถ้าไม่มีชุดเทส ให้ใส่ `ไม่มีชุดเทส` ใน `<TEST_CMD>` และใส่ `<STACK_LOCK>` หนึ่งบรรทัด เช่น `Markdown อย่างเดียว` ช่องสองช่องนี้ว่าง คิวจะไม่เริ่ม
-2. พิมพ์ `/tek-add-card 12` ตอบว่าอยู่หัวข้องานหลัก จะได้ `card-loop/backlog/12.md` แทนที่ทั้งไฟล์ด้วย card ด้านล่าง แล้วเปลี่ยนคำว่า `my-app` เป็นชื่อ repo ของคุณทั้งสองจุดก่อนบันทึก
+2. พิมพ์ `/tek-add-card 12` แล้วตอบคำถามไปเรื่อย ๆ จน card เป็นงานที่ต้องการ เอเจนต์แสดงร่างทั้งใบ รับร่างนั้นแล้วเอเจนต์จึงสร้าง `card-loop/backlog/12.md` พร้อมบรรทัดบน board รอบแรกตอบได้เลยว่าอยากให้หัว board เป็นชื่อ repo จริง ร่างที่รับแล้วหน้าตาแบบนี้ เปลี่ยน `my-app` เป็นชื่อ repo ของคุณ
 
 ```markdown
 # 12 — ใส่ชื่อ repo ที่หัว board
@@ -87,7 +87,7 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 flowchart TD
   subgraph person ["คน"]
     fill["เติมตารางเทสบน board<br/>แถว skill เว้นว่างในรอบแรก"]
-    card["เขียน card ให้จบ<br/>ทำ ไม่ทำ ตรวจผ่านเมื่อ"]
+    card["ตอบคำถามจนรับร่าง<br/>ทำ ไม่ทำ ตรวจผ่านเมื่อ"]
     edit["แก้ card จนเจตนาปิด<br/>แล้วพิมพ์ /tek-do-card"]
     look["เทียบหัวตรวจผ่านเมื่อ<br/>ตารางการตัดสินใจ และ diff"]
     done["รับ<br/>บรรทัดเป็น merge"]
