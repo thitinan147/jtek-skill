@@ -46,30 +46,45 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 
 ## ใช้ยังไง
 
-เปิด repo ที่จะทำ แล้วเดินตามภาพนี้ Codex ใช้ `$` แทน `/` `/tek-scan-skills` กับ `/tek-read-board` เรียกได้ทุกจังหวะ ไม่ได้อยู่ในเส้นหลัก
+เปิด repo ที่จะทำ งานเดินแบบนี้ สถานะที่เชื่อมีแค่คำบนบรรทัดของ board Codex ใช้ `$` แทน `/` ในตารางด้านล่าง
 
 ```mermaid
 flowchart TD
-  setup["/tek-setup-board<br/>คุณเติมตารางบน board"]
-  card["/tek-add-card<br/>คุณเขียน card"]
-  run["/tek-do-card"]
-  ask["เอเจนต์เขียน ถาม:<br/>คุณแก้ card"]
-  look["/tek-open-review<br/>คุณเทียบหลักฐาน"]
-  ok["/tek-mark-merge"]
-  back["/tek-send-back"]
-  no["/tek-mark-close"]
+  subgraph person ["คน"]
+    card["เขียน card<br/>ทำ ไม่ทำ ตรวจผ่านเมื่อ"]
+    edit["แก้ card"]
+    look["เทียบหลักฐาน<br/>กับหัวตรวจผ่านเมื่อ"]
+    done["รับ<br/>บรรทัดเป็น merge"]
+    back["ส่งกลับ<br/>บรรทัดเป็น ส่งกลับ"]
+    drop["ปิดข้อ<br/>บรรทัดเป็น ปิด"]
+  end
 
-  setup --> card --> run
-  run -->|เจตนาไม่ปิด| ask
-  ask --> run
-  run -->|หลักฐานผ่าน ตั้ง รอรีวิว:| look
-  look --> ok
+  subgraph agent ["เอเจนต์"]
+    line["อ่านบรรทัดบน board"]
+    ask["เขียน ถาม แล้วหยุด"]
+    work["ลงมือบน branch<br/>เก็บเทสและหลักฐาน"]
+    wait["ตั้งบรรทัดเป็น รอรีวิว<br/>แล้วหยุด"]
+  end
+
+  card --> line
+  line -->|เจตนาไม่ปิด| ask
+  ask --> edit --> line
+  line -->|เจตนาปิด| work
+  work -->|ไปต่อไม่ได้| ask
+  work -->|หลักฐานผ่าน| wait
+  wait --> look
+  look --> done
   look --> back
-  look --> no
-  back --> run
+  look --> drop
+  back --> work
+
+  classDef human fill:#e7f6ec,stroke:#1b7f3b,color:#123
+  classDef bot fill:#e7f0fb,stroke:#1d4e89,color:#123
+  class card,edit,look,done,back,drop human
+  class line,ask,work,wait bot
 ```
 
-ข้อ 12 เป็นตัวอย่างในตารางด้านล่าง
+ข้อ 12 เป็นตัวอย่างของคำสั่งที่พิมพ์ในแต่ละขั้น
 
 | ขั้น | พิมพ์ | เกิดอะไร |
 |---|---|---|
