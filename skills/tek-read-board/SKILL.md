@@ -4,14 +4,17 @@ description: Read card-loop/board.md and report the next card and lines marked �
 license: MIT
 metadata:
   author: Thitinan
-  version: "10"
+  version: "12"
   short-description: Read the card-loop board
 ---
 
 # tek-read-board
 
-อ่านกติกาหัว `/tek-read-board` ใน skill `tek-skill` ไฟล์ `references/loop.md`
+อ่าน `card-loop/board.md` แล้วรายงานตามลำดับหยิบในกติกา skill `tek-skill`
 
-อ่าน `card-loop/board.md` แล้วรายงานข้อถัดไปตามขั้นหยิบ ข้อที่เป็น `รอรีวิว:` `ส่งกลับ:` และ `ถาม:`
+- ข้อ `- [ ]` ถัดไปที่ไม่มี `ถาม:` `รอรีวิว:` หรือ `ส่งกลับ:`
+- ทุกข้อที่เป็น `รอรีวิว:` `ส่งกลับ:` หรือ `ถาม:`
 
-เสร็จเมื่อรายงานนั้นถูกส่ง และไม่มีไฟล์ถูกแก้
+ห้ามแก้ไฟล์ ห้ามลงมือ
+
+เสร็จเมื่อรายงานนั้นถูกส่ง
