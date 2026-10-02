@@ -81,37 +81,41 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 ```mermaid
 flowchart TD
   subgraph person ["คน"]
-    card["เขียน card<br/>ทำ ไม่ทำ ตรวจผ่านเมื่อ"]
-    edit["แก้ card<br/>แล้วพิมพ์ /tek-do-card"]
-    look["เทียบหลักฐาน<br/>กับหัวตรวจผ่านเมื่อ"]
+    fill["เติมตารางเทสบน board<br/>แถว skill เว้นว่างในรอบแรก"]
+    card["เขียน card ให้จบ<br/>ทำ ไม่ทำ ตรวจผ่านเมื่อ"]
+    edit["แก้ card จนเจตนาปิด<br/>แล้วพิมพ์ /tek-do-card"]
+    look["เทียบหัวตรวจผ่านเมื่อ<br/>ตารางการตัดสินใจ และ diff"]
     done["รับ<br/>บรรทัดเป็น merge"]
     back["ส่งกลับ<br/>บรรทัดเป็น ส่งกลับ"]
-    drop["ปิดข้อ<br/>บรรทัดเป็น ปิด"]
+    drop["ปิดข้อพร้อมเหตุ<br/>บรรทัดเป็น ปิด"]
   end
 
   subgraph agent ["เอเจนต์"]
-    line["อ่านบรรทัดบน board"]
-    ask["เขียน ถาม แล้วหยุด"]
-    work["ลงมือบน branch<br/>เก็บเทสและหลักฐาน"]
-    wait["ตั้งบรรทัดเป็น รอรีวิว<br/>แล้วหยุด"]
+    line["อ่านบรรทัดบน board<br/>ทำได้ทีละข้อ"]
+    ask["เขียน ถาม ที่ card และบรรทัด<br/>แล้วหยุด ไม่ลงมือ"]
+    work["ลงมือบน branch<br/>เทสแดงแล้วเขียว<br/>จดการตัดสินใจ"]
+    stuck["ไปต่อไม่ได้ หรือครบ 3 รอบ<br/>เขียน ถาม แล้วหยุด"]
+    wait["หลักฐานผ่าน<br/>ตั้ง รอรีวิว แล้วหยุด<br/>ไม่หยิบข้อถัดไป"]
+    again["ทำข้อเดิมต่อ<br/>ไม่เปิดของให้ review ใหม่"]
   end
 
-  card --> line
-  line -->|เจตนาไม่ปิด| ask
+  fill --> card --> line
+  line -->|เจตนาไม่ปิด หรือมีสองทาง| ask
   ask --> edit --> line
   line -->|เจตนาปิด| work
-  work -->|ไปต่อไม่ได้| ask
+  work -->|ย้อนกลับไม่ได้ หรือยังไม่ผ่าน| stuck
+  stuck --> edit
   work -->|หลักฐานผ่าน| wait
   wait --> look
   look --> done
   look --> back
   look --> drop
-  back --> work
+  back --> again --> work
 
   classDef human fill:#e7f6ec,stroke:#1b7f3b,color:#123
   classDef bot fill:#e7f0fb,stroke:#1d4e89,color:#123
-  class card,edit,look,done,back,drop human
-  class line,ask,work,wait bot
+  class fill,card,edit,look,done,back,drop human
+  class line,ask,work,stuck,wait,again bot
 ```
 
 เรียกเมื่อต้องการ ไม่ใช่รอบแรก
