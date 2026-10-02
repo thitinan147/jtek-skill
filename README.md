@@ -1,52 +1,84 @@
 # tek-skill
 
-Skill สำหรับเดินลูป backlog ของ repo หนึ่งตัว คนเขียน card แล้วเปลี่ยนคำบนบรรทัด เอเจนต์ทำข้อที่บรรทัดอนุญาต
+ลูป backlog ของ repo ที่เปิดอยู่ คุณเขียน card แล้วเปลี่ยนคำบนบรรทัด เอเจนต์ทำเฉพาะข้อที่บรรทัดอนุญาต และไม่ไปทำ repo อื่น
 
-กติกาอยู่ที่ [`skills/tek-skill/references/loop.md`](skills/tek-skill/references/loop.md) ตามสเปก [Agent Skills](https://agentskills.io/specification) ใช้กับ Codex, Claude Code, Cursor, Grok Build และ Antigravity
+ติดตั้งครั้งเดียวบนเครื่อง เลือกเจ้าที่คุณใช้
 
-## ติดตั้งทั้งเครื่อง
+## ติดตั้ง
 
-รันครั้งเดียวบนเครื่องนี้ แต่ละคนในทีมติดตั้งเอง `<path-to-repo-workflow>` คือโฟลเดอร์ที่มี `skills/tek-skill/SKILL.md`
-
-```bash
-npx skills add <path-to-repo-workflow> -g \
-  -a codex -a claude-code -a cursor -a antigravity -a antigravity-cli -a grok \
-  -y
-```
-
-เมื่อ repo นี้อยู่บน GitHub:
+### Codex
 
 ```bash
-npx skills add thitinan147/tek-skill -g \
-  -a codex -a claude-code -a cursor -a antigravity -a antigravity-cli -a grok \
-  -y
+npx skills add thitinan147/tek-skill -g -a codex -y
 ```
 
-คำสั่งนี้วางชุด skill ทั้งแปดคำสั่งพร้อมกติกา `tek-skill` ไว้ที่เครื่อง ไม่ได้ commit ไฟล์ skill เข้า repo ที่ใช้ลูป
+ในแชตพิมพ์ `$` แทน `/` เช่น `$tek-setup-board`
 
-## คำสั่ง
+### Claude Code
 
-พิมพ์แค่ชื่อคำสั่ง ใน Codex ใช้ `$` แทน `/`
+```bash
+npx skills add thitinan147/tek-skill -g -a claude-code -y
+```
 
-| คำสั่ง | ทำอะไร |
-|---|---|
-| `/tek-setup-board` | สร้าง `card-loop/board.md` แล้วหยุดให้เติมตาราง |
-| `/tek-add-card` | สร้าง card แล้วใส่บรรทัดบน board |
-| `/tek-read-board` | อ่านคิว ไม่ลงมือ |
-| `/tek-do-card` | ทำ card ที่บรรทัดอนุญาต |
-| `/tek-open-review` | เปิดของที่ `รอรีวิว:` เทียบหัวตรวจผ่านเมื่อ |
-| `/tek-send-back` | เปลี่ยน `รอรีวิว:` เป็น `ส่งกลับ:` |
-| `/tek-mark-merge` | ติ๊ก `merge:` คนเรียกเอง |
-| `/tek-mark-close` | ติ๊ก `ปิด:` คนเรียกเอง |
+### Cursor
 
-มีรหัสข้อหรือเหตุอยู่แล้ว ต่อท้ายได้ที่ `/tek-add-card 123` กับ `/tek-mark-close ไม่ทำแล้ว`
+```bash
+npx skills add thitinan147/tek-skill -g -a cursor -y
+```
 
-## ใน repo ที่ใช้ลูป
+### Grok Build
 
-commit แค่ `card-loop/`
+```bash
+npx skills add thitinan147/tek-skill -g -a grok -y
+```
 
-- `card-loop/board.md` คือคำบนบรรทัด และตารางคำสั่งเทส
-- `card-loop/backlog/<id>.md` คือ card
-- `card-loop/plan/<id>.md` คือโน้ตของเอเจนต์
+### Antigravity
 
-ลูปอยู่ที่ repo ที่เปิดอยู่ เอเจนต์ไม่ไปเปิด repo อื่น
+```bash
+npx skills add thitinan147/tek-skill -g -a antigravity -y
+```
+
+### Antigravity CLI
+
+```bash
+npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
+```
+
+## ใช้ยังไง
+
+เปิด repo ที่จะทำ แล้วพิมพ์ในแชตตามลำดับนี้ ข้อ 12 เป็นตัวอย่าง
+
+```text
+/tek-setup-board
+/tek-add-card 12
+/tek-do-card
+/tek-open-review
+/tek-send-back
+/tek-do-card
+/tek-open-review
+/tek-mark-merge
+```
+
+`/tek-setup-board` สร้าง `card-loop/board.md` เติมตารางคำสั่งเทสในไฟล์นั้นก่อนไปต่อ
+
+`/tek-add-card 12` สร้าง card ที่ `card-loop/backlog/12.md` คุณเขียนว่าทำอะไร ไม่ทำอะไร และตรวจผ่านเมื่อไร แล้วใส่บรรทัดบน board
+
+`/tek-do-card` ให้เอเจนต์ทำข้อที่บรรทัดอนุญาต พอหลักฐานผ่านจะตั้งบรรทัดเป็น `รอรีวิว:` แล้วหยุด
+
+`/tek-open-review` เปิดของชิ้นนั้นมาเทียบกับหัวตรวจผ่านเมื่อ
+
+จากนั้นคุณเลือกอย่างใดอย่างหนึ่ง
+
+- `/tek-mark-merge` รับข้อนี้
+- `/tek-send-back` ส่งกลับไปทำให้ใหม่ แล้วเรียก `/tek-do-card` อีกครั้ง
+- `/tek-mark-close ไม่ทำแล้ว` ปิดข้อนี้พร้อมเหตุ
+
+ดูว่าคิวค้างอะไร เรียก `/tek-read-board` ได้ทุกจังหวะ
+
+## ไฟล์ที่อยู่ใน repo คุณ
+
+commit โฟลเดอร์ `card-loop/`
+
+- `board.md` คิวและคำสั่งเทส คำบนบรรทัดคือสถานะ
+- `backlog/12.md` ข้อตกลงที่คุณเขียน
+- `plan/12.md` โน้ตที่เอเจนต์จดระหว่างทำ
