@@ -4,7 +4,7 @@ description: Scan the open repo, installed skills, and skills.sh. Recommend gene
 license: MIT
 metadata:
   author: Thitinan
-  version: "12"
+  version: "14"
   short-description: Recommend two skill groups for this repo
 ---
 

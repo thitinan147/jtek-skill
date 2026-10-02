@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo. The loop stays in the open repo.
 metadata:
   author: Thitinan
-  version: "12"
+  version: "14"
   short-description: Rulebook for the tek card loop
 ---
 
@@ -21,7 +21,7 @@ metadata:
 | `/tek-add-card` | สร้าง card แล้วใส่บรรทัด |
 | `/tek-read-board` | อ่านคิว |
 | `/tek-scan-skills` | รายงาน skill สองกลุ่ม แล้วหยุด |
-| `/tek-do-card` | ทำ card ที่บรรทัดอนุญาต |
+| `/tek-do-card` | ทำทุก card ที่บรรทัดอนุญาต ข้ามใบที่ `รอรีวิว:` |
 | `/tek-open-review` | เปิดของที่ `รอรีวิว:` |
 | `/tek-send-back` | คนเปลี่ยนเป็น `ส่งกลับ:` |
 | `/tek-mark-merge` | คนติ๊ก `merge:` |

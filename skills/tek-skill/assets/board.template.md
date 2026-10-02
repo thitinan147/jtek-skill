@@ -1,6 +1,8 @@
 # Board — `<REPO_NAME>`
 
-กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 12 · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 14 · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+
+สาขาคิว:
 
 เติมตารางนี้ก่อนเรียก `/tek-do-card` ค่านี้เป็นของ repo ที่เปิดอยู่
 
