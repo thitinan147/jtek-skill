@@ -1,0 +1,5 @@
+interface:
+  display_name: "tek-mark-merge"
+  short_description: "Tick merge on the reviewed card"
+policy:
+  allow_implicit_invocation: false

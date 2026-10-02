@@ -1,0 +1,5 @@
+interface:
+  display_name: "tek-send-back"
+  short_description: "Mark the reviewed card ส่งกลับ"
+policy:
+  allow_implicit_invocation: false

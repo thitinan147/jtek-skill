@@ -1,0 +1,4 @@
+interface:
+  display_name: "tek-skill"
+  short_description: "Rulebook for the tek card loop"
+  default_prompt: "Read the tek card-loop rulebook. Do not pick a card. Tell me which tek- command to run."
