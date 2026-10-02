@@ -1,6 +1,6 @@
 # Board — `<REPO_NAME>`
 
-กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 10 · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 11 · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
 
 เติมตารางนี้ก่อนเรียก `/tek-do-card` ค่านี้เป็นของ repo ที่เปิดอยู่
 
@@ -13,6 +13,9 @@
 | `<LINT_CMD>` | |
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
+| `<REPO_SKILLS>` | |
+
+`<REPO_SKILLS>` คือชื่อ skill ของ repo นี้ที่ `/tek-do-card` เปิดตอน review โค้ด เว้นว่างคือไม่เปิดใบอื่น เติมหลัง `/tek-scan-skills` ใบที่ทำให้ tek-skill เก่งขึ้นไม่ใส่แถวนี้
 
 **ตอนนี้หยิบ:** อ่านคำบนบรรทัด ไม่ดูปุ่ม review ของโฮสต์
 

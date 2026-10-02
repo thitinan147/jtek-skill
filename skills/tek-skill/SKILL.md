@@ -1,11 +1,11 @@
 ---
 name: tek-skill
-description: Rulebook for the tek card loop in card-loop/. Read it when carrying out tek-setup-board, tek-add-card, tek-read-board, tek-do-card, tek-open-review, tek-send-back, tek-mark-merge, or tek-mark-close. Do not pick or implement a card from this skill alone.
+description: Rulebook for the tek card loop in card-loop/. Read it when carrying out tek-setup-board, tek-add-card, tek-read-board, tek-scan-skills, tek-do-card, tek-open-review, tek-send-back, tek-mark-merge, or tek-mark-close. Do not pick or implement a card from this skill alone.
 license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo. The loop stays in the open repo.
 metadata:
   author: Thitinan
-  version: "10"
+  version: "11"
   short-description: Rulebook for the tek card loop
 ---
 
@@ -13,17 +13,18 @@ metadata:
 
 กติกาทั้งก้อนอยู่ที่ [references/loop.md](references/loop.md) จุดที่เปิด skill อื่นอยู่ที่ [references/skills.md](references/skills.md) แม่แบบอยู่ที่ `assets/` ข้างไฟล์นี้
 
-คนเรียกแปดคำสั่งนี้ ไม่ได้เรียก `/tek-skill` เพื่อลงมือ
+คนเรียกคำสั่งเหล่านี้ ไม่ได้เรียก `/tek-skill` เพื่อลงมือ
 
 | คำสั่ง | งาน |
 |---|---|
 | `/tek-setup-board` | สร้าง `card-loop/board.md` แล้วหยุด |
 | `/tek-add-card` | สร้าง card แล้วใส่บรรทัด |
 | `/tek-read-board` | อ่านคิว |
+| `/tek-scan-skills` | รายงาน skill สองกลุ่ม แล้วหยุด |
 | `/tek-do-card` | ทำ card ที่บรรทัดอนุญาต |
 | `/tek-open-review` | เปิดของที่ `รอรีวิว:` |
 | `/tek-send-back` | คนเปลี่ยนเป็น `ส่งกลับ:` |
 | `/tek-mark-merge` | คนติ๊ก `merge:` |
 | `/tek-mark-close` | คนติ๊ก `ปิด:` |
 
-ถ้าคนเรียก skill นี้ตรง ๆ ให้บอกแปดคำสั่งแล้วหยุด ห้ามหยิบ card
+ถ้าคนเรียก skill นี้ตรง ๆ ให้บอกคำสั่งแล้วหยุด ห้ามหยิบ card

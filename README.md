@@ -51,6 +51,7 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 | ขั้น | พิมพ์ | เกิดอะไร |
 |---|---|---|
 | เริ่ม repo นี้ | `/tek-setup-board` | ได้ `card-loop/board.md` คุณเติมตารางคำสั่งเทส |
+| ดู skill ของ repo | `/tek-scan-skills` | ดูสแตกใน repo นี้ skill ที่ติดตั้งไว้ และแนะนำใบจาก skills.sh สองกลุ่ม ไม่ติดตั้งให้ คุณติดตั้งเองแล้วเขียนชื่อของ repo ลงแถว `<REPO_SKILLS>` |
 | เพิ่มข้อ | `/tek-add-card 12` | ได้ `card-loop/backlog/12.md` คุณเขียนทำ ไม่ทำ และตรวจผ่านเมื่อ |
 | ให้ทำให้ | `/tek-do-card` | เอเจนต์ทำข้อที่บรรทัดอนุญาต แล้วตั้ง `รอรีวิว:` หรือเขียน `ถาม:` |
 | ดูของที่เปิดไว้ | `/tek-open-review` | เทียบของชิ้นนั้นกับหัวตรวจผ่านเมื่อ |
@@ -63,6 +64,6 @@ npx skills add thitinan147/tek-skill -g -a antigravity-cli -y
 
 commit โฟลเดอร์ `card-loop/`
 
-- `board.md` คิวและคำสั่งเทส คำบนบรรทัดคือสถานะ
+- `board.md` คิว คำสั่งเทส และชื่อ skill ของ repo นี้ในแถว `<REPO_SKILLS>` คำบนบรรทัดคือสถานะ
 - `backlog/12.md` ข้อตกลงที่คุณเขียน
 - `plan/12.md` โน้ตที่เอเจนต์จดระหว่างทำ
