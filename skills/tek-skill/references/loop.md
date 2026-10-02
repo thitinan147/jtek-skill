@@ -1,4 +1,4 @@
-# ลูป card — เวอร์ชัน 15
+# ลูป card — เวอร์ชัน 16
 
 กติกานี้เป็นของ skill `tek-skill` ไม่ได้ copy เข้า repo ที่เปิดอยู่
 
@@ -10,7 +10,7 @@
 
 | คำสั่ง | ทำอะไร |
 |---|---|
-| `/tek-setup-board` | สร้าง `card-loop/board.md` แล้วหยุดให้คนเติมตาราง |
+| `/tek-setup-board` | สร้าง `card-loop/board.md` เติมตารางจาก repo และชื่อ skill จาก scan |
 | `/tek-add-card` | ถามจนคนรับร่าง แล้วสร้าง card กับบรรทัดบน board |
 | `/tek-read-board` | อ่านคิว ไม่ลงมือ |
 | `/tek-scan-skills` | รายงาน skill สองกลุ่ม ไม่ติดตั้งและไม่เปิด |
