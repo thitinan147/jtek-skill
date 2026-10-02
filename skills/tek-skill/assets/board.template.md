@@ -1,6 +1,6 @@
 # Board — `<REPO_NAME>`
 
-กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 17 · brief อยู่ที่ `brief.md` · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+กติกาอยู่ใน skill `tek-skill` เวอร์ชัน 18 · brief อยู่ที่ `brief.md` · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
 
 สาขาคิว:
 

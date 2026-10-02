@@ -1,10 +1,10 @@
 ---
 name: tek-do-card
-description: Work every card the board allows, one branch and one merge request each. Skip lines marked รอรีวิว or an open ถาม, and continue ส่งกลับ on the same branch before opening a second request. Use when the user runs /tek-do-card or asks to do the next cards.
+description: Work every card the board allows, one branch and one merge request each. Skip lines marked รอรีวิว or an open ถาม, skip a card whose files overlap those lines, and continue ส่งกลับ on the same branch after merging in the queue branch. Use when the user runs /tek-do-card or asks to do the next cards.
 license: MIT
 metadata:
   author: Thitinan
-  version: "14"
+  version: "18"
   short-description: Do the card the board line allows
 ---
 
@@ -51,8 +51,8 @@ push branch `card-<id>` เพื่อเปิด merge request ทำได�
    - ผ่านที่หนึ่ง ใบแรกที่บรรทัดเป็น `ส่งกลับ:`
    - ผ่านที่สอง ใบแรกที่บรรทัดเป็น `ถาม:` และหัว **ถาม** ใน card ว่าง
    - ผ่านที่สาม ใบแรกที่บรรทัดไม่มี `ถาม:` `รอรีวิว:` หรือ `ส่งกลับ:` และมีไฟล์ `card-loop/backlog/<id>.md`
-5. ทุกผ่านให้ข้าม `รอรีวิว:` ข้าม `ถาม:` ที่หัว **ถาม** ยังมีข้อความ และข้ามบรรทัดที่ไม่มีไฟล์ card บรรทัดหัวของข้อย่อยคือบรรทัด `**<เลขหลัก>**` ที่มีบรรทัด `**<เลขหลัก>.<เลขย่อย>**` อยู่ถัดลงไป บรรทัดนั้นไม่ถูกหยิบ หัวส่วนเช่น `## งานหลัก` ไม่ใช่บรรทัดนั้น เมื่อข้อย่อยครบให้เขียนว่าครบที่บรรทัดหัวแล้ว commit เฉพาะ board บนสาขาคิว
-6. ไม่มีใบจากข้อ 4 ให้หยุดทั้งคิวตรงนี้ ใบที่ค้าง `รอรีวิว:` ไม่ใช่เหตุหยุด
+5. ทุกผ่านให้ข้าม `รอรีวิว:` ข้าม `ถาม:` ที่หัว **ถาม** ยังมีข้อความ และข้ามบรรทัดที่ไม่มีไฟล์ card ข้ามใบที่หัว **ไฟล์ที่แตะได้** ใช้ path เดียวกับใบอื่นที่บรรทัดยังเป็น `รอรีวิว:` หรือ `ส่งกลับ:` บรรทัดหัวของข้อย่อยคือบรรทัด `**<เลขหลัก>**` ที่มีบรรทัด `**<เลขหลัก>.<เลขย่อย>**` อยู่ถัดลงไป บรรทัดนั้นไม่ถูกหยิบ หัวส่วนเช่น `## งานหลัก` ไม่ใช่บรรทัดนั้น เมื่อข้อย่อยครบให้เขียนว่าครบที่บรรทัดหัวแล้ว commit เฉพาะ board บนสาขาคิว
+6. ไม่มีใบจากข้อ 4 ให้หยุดทั้งคิวตรงนี้ ใบที่ค้าง `รอรีวิว:` ไม่ใช่เหตุหยุด ใบที่ข้ามเพราะไฟล์ซ้อนให้บอกว่ารอใบนั้นรวมเข้าสาขาคิวก่อน
 7. มีใบแล้วตรวจหัว **เจตนาต้องปิดก่อนลงมือ**
    - บรรทัดเป็น `ถาม:` และเจตนาปิดแล้ว ให้ลบ `ถาม:` ออกจากบรรทัด commit เฉพาะ `card-loop/board.md` บนสาขาคิว แล้วไปหัว **ลงมือ**
    - บรรทัดไม่มี `ถาม:` และเจตนาปิดแล้ว ให้ไปหัว **ลงมือ**
@@ -81,9 +81,9 @@ push branch `card-<id>` เพื่อเปิด merge request ทำได�
 
 บรรทัดเป็น `ส่งกลับ:` แต่ไม่มี branch `card-<id>` ให้ทำตามหัว **เขียน ถาม**
 
-มี branch `card-<id>` อยู่แล้วให้ checkout branch นั้น แล้วทำต่อ ใช้ merge request ใบเดิม หัว **ไฟล์ที่แตะได้** ว่าง ให้เติมจากหัว **ทำ** ของ card ก่อนแก้ไฟล์งาน
+มี branch `card-<id>` อยู่แล้วให้ checkout branch นั้น แล้ว merge สาขาคิวเข้า branch นี้ ใช้ merge request ใบเดิม branch ใหม่ให้สร้างจากสาขาคิวเท่านั้น ห้ามสร้างจาก branch `card-<id>` อื่น ชนให้แก้บน branch นี้ให้ตรงหัว **ทำ** แล้วรันเทสชุดที่เกี่ยวข้องใหม่ แก้โดยไม่เลือกแทนคนไม่ได้ ให้ทำตามหัว **เขียน ถาม** หัว **ไฟล์ที่แตะได้** ใน plan ว่าง ให้เติมจาก card ก่อนแก้ไฟล์งาน
 
-ยังไม่มี branch ให้สร้าง `card-<id>` จากสาขาคิว แล้ว checkout สร้าง `card-loop/plan/<id>.md` จาก `assets/plan.template.md` ของ skill `tek-skill` ใส่ช่อง Branch เป็น `card-<id>` เติมหัว **ไฟล์ที่แตะได้** จากหัว **ทำ** ของ card แล้ว commit เฉพาะไฟล์ plan บน branch นี้
+ยังไม่มี branch ให้สร้าง `card-<id>` จากสาขาคิว แล้ว checkout สร้าง `card-loop/plan/<id>.md` จาก `assets/plan.template.md` ของ skill `tek-skill` ใส่ช่อง Branch เป็น `card-<id>` คัดลอกหัว **ไฟล์ที่แตะได้** จาก card แล้ว commit เฉพาะไฟล์ plan บน branch นี้
 
 บรรทัดเป็น `ส่งกลับ:` และ `สถานะรอบ` ยังไม่ใช่ `ส่งกลับ` ให้ตั้ง `รอบหลักฐาน` เป็น 1 และ `สถานะรอบ` เป็น `ส่งกลับ` แล้ว commit เฉพาะไฟล์ plan บน `card-<id>` `สถานะรอบ` เป็น `ส่งกลับ` อยู่แล้วให้คงรอบเดิม
 

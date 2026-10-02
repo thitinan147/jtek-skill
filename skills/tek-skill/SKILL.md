@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo. The loop stays in the open repo.
 metadata:
   author: Thitinan
-  version: "17"
+  version: "18"
   short-description: Rulebook for the tek card loop
 ---
 
