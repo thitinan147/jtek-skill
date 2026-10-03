@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo. The loop stays in the open repo.
 metadata:
   author: Thitinan
-  version: "19"
+  version: "20"
   short-description: Rulebook for the jt-card-gate loop
 ---
 

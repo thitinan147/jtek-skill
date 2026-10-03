@@ -4,7 +4,7 @@ description: Create card-loop/board.md, fill the command table from this repo, a
 license: MIT
 metadata:
   author: Thitinan
-  version: "16"
+  version: "20"
   short-description: Create the board and fill it
 ---
 
@@ -21,6 +21,7 @@ metadata:
 
 | ช่อง | ใส่ค่าแรกที่พบ |
 |---|---|
+| `<SETUP_CMD>` | คำสั่งเตรียมสภาพแวดล้อมหรือติดตั้ง dependency: `pnpm install --frozen-lockfile` เมื่อมี `pnpm-lock.yaml`, `yarn install --frozen-lockfile` เมื่อมี `yarn.lock`, `bun install --frozen-lockfile` เมื่อมี `bun.lock` หรือ `bun.lockb`, `npm ci` เมื่อมี `package-lock.json`, `npm install` เมื่อมี `package.json`, `cargo build` เมื่อมี `Cargo.toml`, `go mod download` เมื่อมี `go.mod`, `uv sync --frozen` หรือ `poetry install` ตามเครื่องมือ python นอกนั้นเว้นช่องว่าง |
 | `<TEST_CMD>` | `scripts.test` ใน `package.json` เป็น `<ตัวจัดการ> test` ไม่มีให้ใช้ `cargo test` เมื่อมี `Cargo.toml` ไม่มีให้ใช้ `go test ./...` เมื่อมี `go.mod` ไม่มีให้ใช้ `pytest` เมื่อ `pyproject.toml` มี pytest ไม่มีทั้งสี่อย่างให้ใส่ `ไม่มีชุดเทส` |
 | `<TYPECHECK_CMD>` | `scripts.typecheck` เป็น `<ตัวจัดการ> run typecheck` ไม่มีแต่มี `tsconfig.json` ให้ใส่ `<ตัวจัดการ> exec tsc --noEmit` ไม่มีแต่มี `go.mod` ให้ใส่ `go vet ./...` นอกนั้นเว้นช่องว่าง |
 | `<LINT_CMD>` | `scripts.lint` เป็น `<ตัวจัดการ> run lint` นอกนั้นเว้นช่องว่าง |
