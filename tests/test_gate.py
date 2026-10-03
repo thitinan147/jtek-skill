@@ -28,6 +28,7 @@ def board_text(
     stack: str = "py · none · test · ban",
     browser: str = "",
     pair: str | None = None,
+    setup: str = "",
 ) -> str:
     pair_line = "" if pair is None else f"คู่: {pair}\n\n"
     return (
@@ -36,6 +37,7 @@ def board_text(
         f"{pair_line}"
         "| ค่า | ใน repo นี้ |\n"
         "|---|---|\n"
+        f"| `<SETUP_CMD>` | {setup} |\n"
         f"| `<TEST_CMD>` | {test} |\n"
         "| `<TYPECHECK_CMD>` | |\n"
         "| `<LINT_CMD>` | |\n"
@@ -60,6 +62,7 @@ def card_body(
     screen: bool = False,
     start: str = "",
     port: str = "",
+    wait: str = "",
     click: str = "",
     title: str = "title",
 ) -> str:
@@ -67,7 +70,8 @@ def card_body(
     question_line = "ถาม:" if not question else f"ถาม: {question}"
     screen_block = ""
     if screen:
-        screen_block = f"เห็นจอ: ใช่\nเริ่ม: {start}\nพอร์ต: {port}\nคลิก: {click}\n\n"
+        wait_line = f"รอ: {wait}\n" if wait else ""
+        screen_block = f"เห็นจอ: ใช่\nเริ่ม: {start}\nพอร์ต: {port}\n{wait_line}คลิก: {click}\n\n"
     return (
         f"# 12 — {title}\n\n"
         f"ชนิด: {kind}\n\n"
@@ -293,7 +297,20 @@ class ReachReviewGitTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def _set_card_check(self, code: str) -> None:
+    def _record_review(self, card_id: str = "12") -> None:
+        git(self.repo, "checkout", f"card-{card_id}")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        plan_dir = self.repo / "card-loop" / "plan"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plan_dir / f"{card_id}.md"
+        plan_path.write_text(
+            f"# Plan {card_id}\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: record review")
+        git(self.repo, "checkout", "main")
+
+    def _set_card_check(self, code: str, record_review: bool = True) -> None:
         git(self.repo, "checkout", "card-12")
         (self.repo / "check.py").write_text(
             f"import sys\nsys.exit({code})\n# card\n",
@@ -301,6 +318,8 @@ class ReachReviewGitTests(unittest.TestCase):
         )
         commit_all(self.repo, "test: set the card command")
         git(self.repo, "checkout", "main")
+        if record_review:
+            self._record_review("12")
 
     def test_red_command_on_the_card_branch_does_not_reach_review(self) -> None:
         self._set_card_check("1")
@@ -443,6 +462,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self._advance_card()
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         self._commit_on_card("chore: touch the script")
+        self._record_review("12")
         opened = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         opened_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
@@ -512,6 +532,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self._advance_card()
         (self.repo / "app.py").write_text("BUTTON = True\n", encoding="utf-8")
         self._commit_on_card(f"{kind}: move the button")
+        self._record_review("12")
 
     def test_screen_work_without_a_browser_cannot_reach_review(self) -> None:
         self._screen("style", "", "python3 -c 'import sys; sys.exit(1)'", "9", "python3 -c 'print(1)'")
@@ -561,7 +582,7 @@ class ReachReviewGitTests(unittest.TestCase):
             "playwright",
             f"python3 -m http.server {port}",
             str(port),
-            "python3 -c 'print(\"nope\")'",
+            "python3 -c 'import sys; sys.exit(1)'",
         )
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
@@ -599,6 +620,95 @@ class ReachReviewGitTests(unittest.TestCase):
         while time.monotonic() < deadline and port_open(port):
             time.sleep(0.05)
         self.assertFalse(port_open(port))
+
+    def test_setup_failure_refuses_reach_review(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", setup="python3 -c 'import sys; sys.exit(1)'"),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add setup cmd")
+        self._set_card_check("0")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: setup-failed", result.stdout)
+
+    def test_setup_command_creates_prerequisite_in_worktree(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text(
+                "- [ ] **12** fresh (feat)",
+                test="python3 -c 'import os, sys; sys.exit(0 if os.path.exists(\"dep.txt\") else 1)'",
+                setup="python3 -c 'open(\"dep.txt\", \"w\").write(\"ok\")'",
+            ),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add setup cmd")
+        self._record_review("12")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+
+    def test_node_modules_bin_in_path_in_worktree(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        bin_dir = self.repo / "node_modules" / ".bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        tool = bin_dir / "my-checker"
+        tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(0o755)
+        commit_all(self.repo, "chore: add bin tool")
+        git(self.repo, "checkout", "main")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test="my-checker"),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add test cmd")
+        self._record_review("12")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+
+    def test_no_review_section_refuses_reach_review(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# new code\n", encoding="utf-8")
+        commit_all(self.repo, "feat: implement feature")
+        git(self.repo, "checkout", "main")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("detail: no-review", result.stdout)
+
+    def test_stale_review_section_refuses_reach_review(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# first\n", encoding="utf-8")
+        commit_all(self.repo, "feat: first change")
+        git(self.repo, "checkout", "main")
+        self._record_review("12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# second\n", encoding="utf-8")
+        commit_all(self.repo, "feat: second change")
+        git(self.repo, "checkout", "main")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("detail: stale-review", result.stdout)
+
+    def test_multi_port_screen_check(self) -> None:
+        port1 = free_port()
+        port2 = free_port()
+        self._screen(
+            "perf",
+            "playwright",
+            f"python3 -m http.server {port1} & python3 -m http.server {port2}",
+            f"{port1}, {port2}",
+            f"python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:{port1}\"); urllib.request.urlopen(\"http://127.0.0.1:{port2}\")'",
+        )
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and (port_open(port1) or port_open(port2)):
+            time.sleep(0.05)
+        self.assertFalse(port_open(port1))
+        self.assertFalse(port_open(port2))
 
 
 CODE_KINDS = (
@@ -772,6 +882,14 @@ class PairedRepoGateTests(unittest.TestCase):
         git(self.repo, "checkout", "card-12")
         (self.repo / "check.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
         commit_all(self.repo, "test: the primary is red")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        plan_dir = self.repo / "card-loop" / "plan"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "12.md").write_text(
+            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: record review")
         git(self.repo, "checkout", "main")
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = self._reach()
@@ -790,6 +908,39 @@ class PairedRepoGateTests(unittest.TestCase):
         self.assertIn("refused: pair-not-passed", result.stdout)
         self.assertEqual(after, before)
         self.assertEqual(gate.COMMAND_FOR["setup-board"], "/jt-new-board")
+
+
+class V20FeatureTests(unittest.TestCase):
+    def test_path_overlaps_containment(self) -> None:
+        self.assertTrue(gate._path_overlaps("src/app", "src/app/utils.py"))
+        self.assertTrue(gate._path_overlaps("src/app/utils.py", "src/app"))
+        self.assertTrue(gate._path_overlaps("src/app", "src/app"))
+        self.assertFalse(gate._path_overlaps("src/app", "src/apple"))
+        self.assertTrue(gate._overlaps(("src/app",), ("src/app/sub.py",)))
+        self.assertFalse(gate._overlaps(("src/app",), ("src/other.py",)))
+
+    def test_parent_card_completed_token_is_closed(self) -> None:
+        text = board_text("- [x] **1** parent (feat) ครบ:\n- [x] **1.1** child (feat) merge:")
+        parsed = gate.parse_board(text)
+        self.assertEqual(len(parsed.cards), 2)
+        self.assertEqual(parsed.cards[0].status, "ครบ:")
+        self.assertTrue(parsed.cards[0].checked)
+        with self.assertRaises(gate.GateError) as caught:
+            gate.apply_waiting_review(text, "1", 0)
+        self.assertEqual(caught.exception.reason, "card-closed")
+
+    def test_status_token_parsed_after_kind_suffix(self) -> None:
+        text = board_text(
+            "- [ ] **1** item (feat) ครบ:\n"
+            "- [ ] **2** item (fix) ส่งกลับ:\n"
+            "- [ ] **3** item (chore) ถาม:\n"
+            "- [ ] **4** item (feat) รอรีวิว: local"
+        )
+        parsed = gate.parse_board(text)
+        self.assertEqual(parsed.cards[0].status, "ครบ:")
+        self.assertEqual(parsed.cards[1].status, "ส่งกลับ:")
+        self.assertEqual(parsed.cards[2].status, "ถาม:")
+        self.assertEqual(parsed.cards[3].status, "รอรีวิว:")
 
 
 class GateSourceTests(unittest.TestCase):

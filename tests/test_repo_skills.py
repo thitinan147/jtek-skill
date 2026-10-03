@@ -59,7 +59,7 @@ class RepoSkillRuleTests(unittest.TestCase):
         self.assertNotIn("TEK_SKILLS", workflow)
         self.assertNotIn("reach-review", loop)
         self.assertIn("/jt-next-step", loop)
-        self.assertIn("เวอร์ชัน 19", loop)
+        self.assertIn("เวอร์ชัน 20", loop)
         self.assertNotIn("playwright", loop.lower())
         self.assertNotIn("เริ่ม:", loop)
         self.assertNotIn("พอร์ต:", loop)
@@ -94,12 +94,12 @@ OLD_NAMES = [
     "/jt-scan-skills",
     "/jt-mark-merge",
     "/jt-mark-close",
-    "jtek-skill",
 ]
 
 OLD_SCREEN = (
     "หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว "
-    "และถ้าเป็น `fix` ที่ผู้ใช้เห็นจอ ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก "
+    "และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` "
+    "ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก "
     "งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่ใช่รอบนี้ ให้ทำตามหัว **เขียน ถาม**"
 )
 
@@ -121,7 +121,7 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertEqual(re.findall(r"^\| `(/jt-[^`]+)`", loop, re.M), COMMANDS)
         self.assertEqual(readme.count("\n## "), 4)
         self.assertIn("ชุด skill หลายสิบตัว", readme)
-        self.assertIn("npx skills add thitinan147/tek-skill -g", readme)
+        self.assertIn("npx skills add thitinan147/jtek-skill -g", readme)
         self.assertIn("name: jt-card-gate", rule)
         for text in (readme, loop, rule, find, merge, drop, move, work):
             for old in OLD_NAMES:
@@ -132,7 +132,8 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertIn("ห้ามรันคำสั่งติดตั้ง", find)
         self.assertIn("ไม่รัน git merge", merge)
         self.assertIn("เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด", merge)
-        self.assertIn("จาก `ปิด` เป็น `ไม่เอา`", drop)
+        self.assertIn("เปลี่ยน `- [ ]` บนบรรทัดนั้นเป็น `- [x]`", drop)
+        self.assertIn("ไม่เอา:", drop)
         self.assertIn("ไม่ลบบรรทัดอื่น", drop)
         self.assertIn("ไม่เปลี่ยนสถานะบนบรรทัดนั้น", move)
         self.assertIn("ไม่แตะโค้ด", move)
