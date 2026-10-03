@@ -17,7 +17,7 @@ metadata:
 
 | คำสั่ง | งาน |
 |---|---|
-| `/jt-new-board` | สร้าง board แล้วเติมตารางกับชื่อ skill |
+| `/jt-new-board` | สร้าง board แล้วเติมตารางกับชื่อ skill และถาม repo คู่ครั้งเดียว |
 | `/jt-ask-brief` | ถามว่าอยากทำอะไร แล้วเขียน `card-loop/brief.md` |
 | `/jt-new-card` | ถามจนคนรับร่าง ครั้งเดียวได้หลายใบ |
 | `/jt-read-board` | อ่านคิว |

@@ -4,11 +4,14 @@
 The gate cannot merge. A failing test command cannot write รอรีวิว.
 A code commit whose diff cannot be reviewed cannot write รอรีวิว.
 Screen work that cannot be clicked cannot write รอรีวิว.
+A card whose heading names the paired repo cannot write รอรีวิว until both
+sides have passed. The board line ไม่มี keeps the single-repo path.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -812,6 +815,87 @@ def surface_refusal(root: Path, card_id: str, card_text: str, browser: str) -> s
         return _click_surface(work, card_text)
 
 
+def pair_name(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("คู่:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def _heading_has_pair(heading: str, pair: str) -> bool:
+    if not pair or pair == "ไม่มี":
+        return False
+    cut = heading
+    for token in STATUS_TOKENS:
+        index = cut.find(token)
+        if index != -1:
+            cut = cut[:index]
+    return re.search(rf"· {re.escape(pair)}(?=\s|\(|$)", cut) is not None
+
+
+def card_names_pair(board_text: str, card_id: str, card_text: str = "") -> bool:
+    pair = pair_name(board_text)
+    line = ""
+    found = re.findall(
+        rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*.*$",
+        board_text,
+        re.M,
+    )
+    if len(found) == 1:
+        line = found[0]
+    title = next((row for row in card_text.splitlines() if row.startswith("# ")), "")
+    return _heading_has_pair(line, pair) or _heading_has_pair(title, pair)
+
+
+def locate_pair(primary: Path, name: str) -> Path | None:
+    if not name or name == "ไม่มี" or any(mark in name for mark in ("/", "\\", "\x00")):
+        return None
+    if name.strip() in {".", ".."}:
+        return None
+    parent = primary.resolve().parent
+    other = (parent / name).resolve()
+    if other.parent != parent or other == primary.resolve() or not other.is_dir():
+        return None
+    if not _is_git(other):
+        return None
+    return other
+
+
+def repo_test_cmd(root: Path) -> str:
+    package = root / "package.json"
+    if package.is_file():
+        try:
+            data = json.loads(package.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return ""
+        scripts = data.get("scripts")
+        if isinstance(scripts, dict):
+            script = scripts.get("test")
+            if isinstance(script, str) and script.strip():
+                return script.strip()
+    if (root / "Cargo.toml").is_file():
+        return "cargo test"
+    if (root / "go.mod").is_file():
+        return "go test ./..."
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file() and "pytest" in pyproject.read_text(encoding="utf-8"):
+        return "pytest"
+    return NO_SUITE
+
+
+def pair_passed(primary: Path, name: str, card_id: str) -> bool:
+    other = locate_pair(primary, name)
+    if other is None:
+        return False
+    command = repo_test_cmd(other)
+    if command == "":
+        return False
+    try:
+        return execute_test_cmd(other, card_id, command) == 0
+    except GateError:
+        return False
+
+
 def _read_card(root: Path, card_id: str) -> str:
     path = root / "card-loop" / "backlog" / f"{card_id}.md"
     if path.is_file():
@@ -840,20 +924,25 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                 return _refuse("review-diff")
             review_state = "open"
     try:
+        card_text = _read_card(root, card_id)
         reason = surface_refusal(
             root,
             card_id,
-            _read_card(root, card_id),
+            card_text,
             parse_field(text, "BROWSER_TOOL"),
         )
         if reason:
             return _refuse(reason, "ถาม")
         code = execute_test_cmd(root, card_id, test_cmd)
+        if code != 0:
+            return _refuse("test-failed")
+        if card_names_pair(text, card_id, card_text) and not pair_passed(
+            root, pair_name(text), card_id
+        ):
+            return _refuse("pair-not-passed")
         if write:
             updated = apply_waiting_review(text, card_id, code, link)
             board_path.write_text(updated, encoding="utf-8")
-        elif code != 0:
-            return _refuse("test-failed")
     except GateError as err:
         return _refuse(err.reason)
     print(f"repo-review: {review_state}")

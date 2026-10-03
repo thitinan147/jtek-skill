@@ -150,5 +150,56 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertEqual(dirs, sorted([name[1:] for name in COMMANDS] + ["jt-card-gate"]))
 
 
+class PairedRepoRuleTests(unittest.TestCase):
+    def test_pair_rules_live_in_the_skills_and_the_gate(self) -> None:
+        new_board = (REPO / "skills" / "jt-new-board" / "SKILL.md").read_text(encoding="utf-8")
+        new_card = (REPO / "skills" / "jt-new-card" / "SKILL.md").read_text(encoding="utf-8")
+        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
+            encoding="utf-8"
+        )
+        merge = (REPO / "skills" / "jt-merge" / "SKILL.md").read_text(encoding="utf-8")
+        gate = (REPO / "skills" / "jt-next-step" / "gate.py").read_text(encoding="utf-8")
+        template = (REPO / "skills" / "jt-card-gate" / "assets" / "board.template.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        self.assertIn("ถามครั้งเดียว", new_board)
+        self.assertIn("`ไม่มี`", new_board)
+        self.assertIn("ห้ามใส่ชื่อ repo เอง", new_board)
+        self.assertIn("ห้ามถามซ้ำ", new_board)
+        self.assertIn("card-loop/paired.md", new_board)
+        self.assertIn("อย่าถามว่า repo คู่อยู่ที่ไหน", new_card)
+        self.assertIn("เป็นใบเดียว", new_card)
+        self.assertIn("ไม่ใส่ชื่อนั้น", new_card)
+        self.assertIn("อย่าสร้างเพราะ board มีชื่อ", new_card)
+        self.assertIn("ห้ามตั้งสถานะใน repo คู่", work)
+        self.assertIn("ห้ามสร้าง `card-loop/board.md`", work)
+        self.assertIn("ห้ามย้ายทั้งคิวออกจาก repo หลัก", work)
+        self.assertIn("card-loop/paired.md", work)
+        self.assertIn("ชี้กลับ", work)
+        self.assertIn("อย่าสร้างไฟล์นี้แค่เพราะ board บันทึกชื่อไว้", work)
+        self.assertIn("คนเป็นคน merge ทั้งสอง repo", work)
+        self.assertIn(OLD_SCREEN, work)
+        self.assertIn("pair-not-passed", gate)
+        self.assertNotIn("jtekth", gate)
+        self.assertNotIn("git merge", gate)
+        self.assertIn("pair-not-passed", work)
+        self.assertIn("ถามครั้งเดียว", loop)
+        self.assertIn("ห้ามย้ายทั้งคิวออกจาก repo หลัก", loop)
+        self.assertIn("อย่าสร้างเพราะ board บันทึกชื่อไว้", loop)
+        self.assertIn("คนเป็นคน merge ทั้งสอง repo", loop)
+        self.assertIn("ไม่รัน git merge", loop)
+        self.assertIn("เอเจนต์ไม่เรียกสามคำสั่งนั้น", loop)
+        self.assertIn("`/jt-send-back` `/jt-merge` `/jt-drop-card`", loop)
+        self.assertIn("ไม่รัน git merge", merge)
+        self.assertIn("คนเป็นคน merge ทั้งสอง repo", merge)
+        self.assertEqual(template.count("\nคู่:"), 1)
+        self.assertEqual(readme.count("\n## "), 4)
+        self.assertIn("/jt-new-board", readme)
+        self.assertFalse(list(REPO.glob("*playbook*")))
+        self.assertFalse(list((REPO / "skills").glob("**/*playbook*")))
+
+
 if __name__ == "__main__":
     unittest.main()
