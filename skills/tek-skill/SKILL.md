@@ -1,11 +1,11 @@
 ---
 name: tek-skill
-description: Rulebook for the tek card loop in card-loop/. Read it when carrying out tek-setup-board, tek-brief, tek-add-card, tek-read-board, tek-scan-skills, tek-do-card, tek-open-review, tek-send-back, tek-mark-merge, or tek-mark-close. Do not pick or implement a card from this skill alone.
+description: Rulebook for the tek card loop in card-loop/. Read it when carrying out tek-setup-board, tek-brief, tek-add-card, tek-read-board, tek-scan-skills, tek-do-card, tek-gate, tek-open-review, tek-send-back, tek-mark-merge, or tek-mark-close. Do not pick or implement a card from this skill alone.
 license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo. The loop stays in the open repo.
 metadata:
   author: Thitinan
-  version: "18"
+  version: "19"
   short-description: Rulebook for the tek card loop
 ---
 
@@ -27,5 +27,6 @@ metadata:
 | `/tek-send-back` | คนเปลี่ยนเป็น `ส่งกลับ:` |
 | `/tek-mark-merge` | คนติ๊ก `merge:` |
 | `/tek-mark-close` | คนติ๊ก `ปิด:` |
+| `/tek-gate` | อ่านบรรทัดแล้วทำขั้นถัดไปที่กติกาอนุญาต ไม่ merge |
 
 ถ้าคนเรียก skill นี้ตรง ๆ ให้บอกคำสั่งแล้วหยุด ห้ามหยิบ card
