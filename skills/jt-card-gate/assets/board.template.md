@@ -1,6 +1,6 @@
 # Board — `<REPO_NAME>`
 
-กติกาอยู่ใน skill `jt-card-gate` เวอร์ชัน 19 · brief อยู่ที่ `brief.md` · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+กติกาอยู่ใน skill `jt-card-gate` เวอร์ชัน 20 · brief อยู่ที่ `brief.md` · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
 
 สาขาคิว:
 
@@ -15,6 +15,7 @@
 | ค่า | ใน repo นี้ |
 |---|---|
 | `<TEST_CMD>` | |
+| `<SETUP_CMD>` | |
 | `<TYPECHECK_CMD>` | |
 | `<LINT_CMD>` | |
 | `<BROWSER_TOOL>` | |
@@ -22,13 +23,15 @@
 | `<TEK_SKILLS>` | |
 | `<REPO_SKILLS>` | |
 
+`<SETUP_CMD>` คือคำสั่งเตรียม dependency รันใน worktree ของข้อก่อนเทสและก่อนสตาร์ท เว้นว่างคือไม่รัน
+
 `<TEK_SKILLS>` คือชื่อ skill ที่ทำให้การลงมือเก่งขึ้น `/jt-do-work` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง ตอนหาสาเหตุบั๊กก่อนเขียนเทส และตอนแก้โค้ดผลิต เว้นว่างคือไม่เปิด
 
 `<REPO_SKILLS>` คือชื่อ skill ของ repo นี้ที่ `/jt-do-work` เปิดตอน review โค้ดหลัง commit ที่ชนิดเป็น `feat` `fix` `style` `refactor` `perf` `test` `build` `ci` `chore` หรือ `revert` ชนิด `docs` ไม่เปิด เว้นว่างคือไม่เปิด อย่าสลับสองแถว `/jt-new-board` ใส่ชื่อจากหัว **ค้น** ให้แล้ว
 
 **ตอนนี้หยิบ:** อ่านคำบนบรรทัด ไม่ดูปุ่ม review ของโฮสต์
 
-`- [ ]` ยังไม่จบ · `- [x]` ปิดแล้วที่นี่ (`merge:` หรือ `ไม่เอา:`)
+`- [ ]` ยังไม่จบ · `- [x]` ปิดแล้วที่นี่ (`merge:` หรือ `ไม่เอา:`) · ข้อหลักที่ข้อย่อยครบเป็น `- [x]` ต่อท้าย `ครบ:`
 
 ชนิดตั๋ว: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
 

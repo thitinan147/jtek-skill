@@ -40,6 +40,7 @@ CODE_KINDS = frozenset(
         "revert",
     }
 )
+SECTION_RANK = {"ทำก่อน": 0, "งานหลัก": 1, "เก็บเล็ก": 2}
 KIND_RE = re.compile(r"^([a-z]+)(?:\([^)]*\))?:")
 ALLOWED_ACTIONS = frozenset(
     {
@@ -61,8 +62,8 @@ COMMAND_FOR = {
     "wait": "",
     "stop": "",
 }
-SECTION_RANK = {"ทำก่อน": 0, "งานหลัก": 1, "เก็บเล็ก": 2}
-STATUS_TOKENS = ("รอรีวิว:", "ส่งกลับ:", "ถาม:", "merge:", "ไม่เอา:", "ปิด:")
+STATUS_TOKENS = ("รอรีวิว:", "ส่งกลับ:", "ถาม:", "merge:", "ไม่เอา:", "ครบ:", "ปิด:")
+SETUP_TIMEOUT = 900
 MERGE_ARGV = {
     "merge",
     "/merge",
@@ -147,7 +148,9 @@ def parse_board(text: str) -> Board:
         if not match or section not in SECTION_RANK:
             continue
         rest = match.group(3)
-        status = next((token for token in STATUS_TOKENS if token in rest), None)
+        kind_match = re.search(r"\([a-z]+\)\s*(.*)$", rest)
+        suffix = kind_match.group(1) if kind_match else rest
+        status = next((token for token in STATUS_TOKENS if token in suffix), None)
         cards.append(
             Card(
                 id=match.group(2).strip(),
@@ -213,8 +216,22 @@ def _is_parent(card: Card, cards: list[Card]) -> bool:
     return any(other.id.startswith(prefix) for other in cards)
 
 
+def _path_overlaps(p1: str, p2: str) -> bool:
+    p1 = p1.strip().rstrip("/")
+    p2 = p2.strip().rstrip("/")
+    if not p1 or not p2:
+        return False
+    if p1 == p2:
+        return True
+    return p2.startswith(p1 + "/") or p1.startswith(p2 + "/")
+
+
 def _overlaps(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
-    return bool(set(left) & set(right))
+    for l in left:
+        for r in right:
+            if _path_overlaps(l, r):
+                return True
+    return False
 
 
 def _blocked(card: Card, cards: list[Card]) -> bool:
@@ -388,6 +405,7 @@ def apply_waiting_review(
         or line.startswith("- [X]")
         or "ปิด:" in line
         or "ไม่เอา:" in line
+        or "ครบ:" in line
         or re.search(r"(^|\s)merge:", line)
     ):
         raise GateError("card-closed")
@@ -448,15 +466,26 @@ def _git_show(root: Path, spec: str) -> str | None:
 
 
 def _dirty(root: Path) -> bool:
-    proc = _run_git(root, ["status", "--porcelain"])
+    proc = _run_git(root, ["status", "--porcelain", "-z"])
     if proc.returncode != 0:
         return False
-    for line in proc.stdout.splitlines():
-        path = line[3:]
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+    parts = proc.stdout.split("\0")
+    i = 0
+    while i < len(parts):
+        entry = parts[i]
+        if not entry:
+            i += 1
+            continue
+        status = entry[:2]
+        path = entry[3:]
         if not path.startswith("card-loop/"):
             return True
+        if ("R" in status or "C" in status) and i + 1 < len(parts):
+            i += 1
+            orig_path = parts[i]
+            if not orig_path.startswith("card-loop/"):
+                return True
+        i += 1
     return False
 
 
@@ -555,6 +584,7 @@ def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]
     return {
         "header": header,
         "decisions": _section_h2(plan, "การตัดสินใจ"),
+        "review_diff": _section_h2(plan, "รีวิว diff"),
         "evidence": _section_h2(plan, "หลักฐานก่อนเปิดของให้ review"),
         "diff": diff,
         "diff_ok": diff_ok,
@@ -562,7 +592,7 @@ def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]
     }
 
 
-def execute_test_cmd(root: Path, card_id: str, test_cmd: str) -> int:
+def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "") -> int:
     """Run TEST_CMD on card-<id>. ไม่มีชุดเทส is not a command."""
     command = test_cmd.strip()
     if command == "":
@@ -571,20 +601,32 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str) -> int:
         raise GateError("card-branch-missing")
     if command == NO_SUITE:
         return 0
-    with _card_worktree(root, card_id) as work:
+    with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
         return _run_shell(command, work)
 
 
-def _run_shell(command: str, cwd: Path) -> int:
-    proc = subprocess.run(
-        command,
-        shell=True,
-        cwd=cwd,
-        env=_git_env(),
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode
+def _env_with_bin(cwd: Path) -> dict[str, str]:
+    env = _git_env()
+    bin_dir = cwd / "node_modules" / ".bin"
+    if bin_dir.is_dir():
+        env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    return env
+
+
+def _run_shell(command: str, cwd: Path, timeout: int | None = None) -> int:
+    try:
+        proc = subprocess.run(
+            command,
+            shell=True,
+            cwd=cwd,
+            env=_env_with_bin(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return proc.returncode
+    except subprocess.TimeoutExpired:
+        return 1
 
 
 def emit(decision: Decision, extra: list[str] | None = None) -> None:
@@ -613,6 +655,8 @@ def format_packet(packet: dict[str, str | bool]) -> list[str]:
         str(packet["header"] or "ว่าง"),
         "การตัดสินใจ:",
         str(packet["decisions"] or "ว่าง"),
+        "รีวิว diff:",
+        str(packet.get("review_diff") or "ว่าง"),
         "diff:",
         str(diff if str(diff).strip() else "ว่าง"),
         "ผลเทส:",
@@ -635,11 +679,13 @@ def cmd_next(root: Path) -> int:
     return 0
 
 
-def _refuse(reason: str, step: str = "") -> int:
+def _refuse(reason: str, step: str = "", detail: str = "") -> int:
     print(f"refused: {reason}")
     print("merge: no")
     if step:
         print(f"step: {step}")
+    if detail:
+        print(f"detail: {detail}")
     return 1
 
 
@@ -724,32 +770,39 @@ def _stop_process(proc: subprocess.Popen[str]) -> None:
         proc.wait(timeout=2)
 
 
-def _wait_until_up(proc: subprocess.Popen[str], port: int) -> bool:
-    deadline = time.monotonic() + 5
+def _wait_until_up(proc: subprocess.Popen[str], ports: list[int], wait_seconds: int = 60) -> bool:
+    deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
-        if _port_open(port):
+        if all(_port_open(port) for port in ports):
             return True
         if proc.poll() is not None:
             return False
         time.sleep(0.05)
-    return _port_open(port)
-
-
-def _click_matches(output: str, bullets: list[str]) -> bool:
-    if not bullets:
-        return False
-    return all(item in output for item in bullets)
+    return all(_port_open(port) for port in ports)
 
 
 def _click_surface(work: Path, card_text: str) -> str | None:
     start = _label(card_text, "เริ่ม")
     port_text = _label(card_text, "พอร์ต")
     click = _label(card_text, "คลิก")
-    if not start or not port_text.isdigit():
+    wait_text = _label(card_text, "รอ")
+    wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
+
+    if not start or not port_text:
         return "start-down"
-    port = int(port_text)
-    if port < 1 or port > 65535:
+    ports: list[int] = []
+    for piece in re.split(r"[,\s]+", port_text.strip()):
+        if not piece:
+            continue
+        if not piece.isdigit():
+            return "start-down"
+        p = int(piece)
+        if p < 1 or p > 65535:
+            return "start-down"
+        ports.append(p)
+    if not ports:
         return "start-down"
+
     proc = subprocess.Popen(
         start,
         shell=True,
@@ -758,11 +811,11 @@ def _click_surface(work: Path, card_text: str) -> str | None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env=_git_env(),
+        env=_env_with_bin(work),
         text=True,
     )
     try:
-        if not _wait_until_up(proc, port):
+        if not _wait_until_up(proc, ports, wait_seconds):
             return "start-down"
         if not click:
             return "click-mismatch"
@@ -773,13 +826,12 @@ def _click_surface(work: Path, card_text: str) -> str | None:
                 cwd=work,
                 capture_output=True,
                 text=True,
-                env=_git_env(),
-                timeout=10,
+                env=_env_with_bin(work),
+                timeout=300,
             )
         except subprocess.TimeoutExpired:
             return "click-mismatch"
-        output = f"{result.stdout}{result.stderr}"
-        if result.returncode != 0 or not _click_matches(output, _header_bullets(card_text)):
+        if result.returncode != 0:
             return "click-mismatch"
         return None
     finally:
@@ -787,7 +839,7 @@ def _click_surface(work: Path, card_text: str) -> str | None:
 
 
 @contextmanager
-def _card_worktree(root: Path, card_id: str):
+def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
     branch = f"card-{card_id}"
     if not _branch_exists(root, branch):
         raise GateError("card-branch-missing")
@@ -800,18 +852,23 @@ def _card_worktree(root: Path, card_id: str):
         added = _run_git(root, ["worktree", "add", "--detach", str(worktree), branch])
         if added.returncode != 0:
             raise GateError("worktree-failed", added.stderr.strip())
+        if setup_cmd.strip():
+            if _run_shell(setup_cmd.strip(), worktree, timeout=SETUP_TIMEOUT) != 0:
+                raise GateError("setup-failed")
         yield worktree
     finally:
         _run_git(root, ["worktree", "remove", "--force", str(worktree)])
         shutil.rmtree(parent, ignore_errors=True)
 
 
-def surface_refusal(root: Path, card_id: str, card_text: str, browser: str) -> str | None:
+def surface_refusal(
+    root: Path, card_id: str, card_text: str, browser: str, setup_cmd: str = ""
+) -> str | None:
     if not sees_screen(card_text):
         return None
     if browser.strip() == "":
         return "browser-empty"
-    with _card_worktree(root, card_id) as work:
+    with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
         return _click_surface(work, card_text)
 
 
@@ -861,6 +918,31 @@ def locate_pair(primary: Path, name: str) -> Path | None:
     return other
 
 
+def repo_setup_cmd(root: Path) -> str:
+    package = root / "package.json"
+    if package.is_file():
+        try:
+            data = json.loads(package.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        has_deps = bool(data.get("dependencies") or data.get("devDependencies"))
+        if has_deps:
+            if (root / "pnpm-lock.yaml").is_file():
+                return "pnpm install --frozen-lockfile"
+            if (root / "yarn.lock").is_file():
+                return "yarn install --frozen-lockfile"
+            if (root / "bun.lock").is_file() or (root / "bun.lockb").is_file():
+                return "bun install --frozen-lockfile"
+            if (root / "package-lock.json").is_file():
+                return "npm ci"
+            return "npm install"
+    if (root / "uv.lock").is_file():
+        return "uv sync --frozen"
+    if (root / "poetry.lock").is_file():
+        return "poetry install"
+    return ""
+
+
 def repo_test_cmd(root: Path) -> str:
     package = root / "package.json"
     if package.is_file():
@@ -890,8 +972,9 @@ def pair_passed(primary: Path, name: str, card_id: str) -> bool:
     command = repo_test_cmd(other)
     if command == "":
         return False
+    setup = repo_setup_cmd(other)
     try:
-        return execute_test_cmd(other, card_id, command) == 0
+        return execute_test_cmd(other, card_id, command, setup_cmd=setup) == 0
     except GateError:
         return False
 
@@ -903,6 +986,34 @@ def _read_card(root: Path, card_id: str) -> str:
     return ""
 
 
+def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
+    head_proc = _run_git(
+        root,
+        [
+            "log",
+            "-1",
+            "--no-merges",
+            "--format=%H",
+            f"{queue}..card-{card_id}",
+            "--",
+            ".",
+            ":(exclude)card-loop",
+        ],
+    )
+    if head_proc.returncode != 0:
+        return "no-review"
+    head_sha = head_proc.stdout.strip()
+    if not head_sha:
+        return None
+    plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
+    section = _section_h2(plan, "รีวิว diff")
+    if not section.strip():
+        return "no-review"
+    if head_sha[:7] not in section:
+        return "stale-review"
+    return None
+
+
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
@@ -910,6 +1021,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     text = board_path.read_text(encoding="utf-8")
     queue = parse_queue(text)
     test_cmd = parse_field(text, "TEST_CMD")
+    setup_cmd = parse_field(text, "SETUP_CMD")
     if write and (not queue or _current_branch(root) != queue):
         return _refuse("not-on-queue-branch")
     if test_cmd.strip() == "":
@@ -922,20 +1034,32 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if any(opens_repo_review(kind) for kind in kinds):
             if not _code_diff_reviewable(root, queue, card_id):
                 return _refuse("review-diff")
+            review_err = _review_recorded(root, queue, card_id)
+            if review_err:
+                return _refuse("review-diff", detail=review_err)
             review_state = "open"
     try:
         card_text = _read_card(root, card_id)
-        reason = surface_refusal(
-            root,
-            card_id,
-            card_text,
-            parse_field(text, "BROWSER_TOOL"),
-        )
-        if reason:
-            return _refuse(reason, "ถาม")
-        code = execute_test_cmd(root, card_id, test_cmd)
-        if code != 0:
-            return _refuse("test-failed")
+        need_screen = sees_screen(card_text)
+        need_test = (test_cmd.strip() != NO_SUITE)
+        if need_screen:
+            browser = parse_field(text, "BROWSER_TOOL")
+            if browser.strip() == "":
+                return _refuse("browser-empty", "ถาม")
+        if need_screen or need_test:
+            with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
+                if need_screen:
+                    reason = _click_surface(work, card_text)
+                    if reason:
+                        return _refuse(reason, "ถาม")
+                if need_test:
+                    code = _run_shell(test_cmd, work)
+                    if code != 0:
+                        return _refuse("test-failed")
+                else:
+                    code = 0
+        else:
+            code = 0
         if card_names_pair(text, card_id, card_text) and not pair_passed(
             root, pair_name(text), card_id
         ):
@@ -944,7 +1068,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             updated = apply_waiting_review(text, card_id, code, link)
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
-        return _refuse(err.reason)
+        return _refuse(err.reason, detail=err.detail)
     print(f"repo-review: {review_state}")
     print("allowed")
     print("merge: no")

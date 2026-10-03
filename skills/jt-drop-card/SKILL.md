@@ -1,12 +1,12 @@
 ---
 name: jt-drop-card
-description: Change the word on the board line from ปิด to ไม่เอา. Use when the user runs /jt-drop-card. Do not delete extra lines. The human invokes this.
+description: Change the board line to mark dropped card with ไม่เอา. Use when the user runs /jt-drop-card. Do not delete extra lines. The human invokes this.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: Thitinan
-  version: "14"
-  short-description: Change ปิด to ไม่เอา on the board line
+  version: "20"
+  short-description: Mark card as dropped with ไม่เอา on the board line
 ---
 
 # jt-drop-card
@@ -17,7 +17,7 @@ metadata:
 
 working tree สกปรกให้หยุดโดยไม่เปลี่ยนบรรทัด
 
-checkout สาขาที่บรรทัด `สาขาคิว:` ชี้ เปลี่ยนคำบนบรรทัดนั้นจาก `ปิด` เป็น `ไม่เอา` ข้อเป็น `- [x]` ต่อท้าย `ไม่เอา:` พร้อมเหตุนั้น ไม่ลบบรรทัดอื่น ไม่ย้ายบรรทัด แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+checkout สาขาที่บรรทัด `สาขาคิว:` ชี้ เปลี่ยน `- [ ]` บนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `ไม่เอา: <เหตุ>` ไม่ลบบรรทัดอื่น ไม่ย้ายบรรทัด แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
 
 มี merge request ของ `card-<id>` ที่ยังเปิดอยู่ ให้ปิดใบนั้นโดยไม่ merge
 
