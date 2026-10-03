@@ -1,0 +1,4 @@
+interface:
+  display_name: "jtek-skill"
+  short_description: "Rulebook for the jtek card loop"
+  default_prompt: "Read the jtek card-loop rulebook. Do not pick a card. Tell me which jt- command to run."

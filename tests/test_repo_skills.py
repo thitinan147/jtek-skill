@@ -5,7 +5,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 TEK_SKILLS = """## `<TEK_SKILLS>` ทำให้การลงมือเก่งขึ้น
 
-`/tek-do-card` เปิดได้หนึ่งชื่อจากแถวนี้ต่อจังหวะ เฉพาะเมื่อ `description` ของใบนั้นตรงจังหวะ
+`/jt-do-card` เปิดได้หนึ่งชื่อจากแถวนี้ต่อจังหวะ เฉพาะเมื่อ `description` ของใบนั้นตรงจังหวะ
 
 | จังหวะ | คำใน description ของใบในแถว |
 |---|---|
@@ -19,10 +19,10 @@ TEK_SKILLS = """## `<TEK_SKILLS>` ทำให้การลงมือเก�
 
 class RepoSkillRuleTests(unittest.TestCase):
     def test_missing_repo_skill_must_review_the_diff_itself(self) -> None:
-        skills = (REPO / "skills" / "tek-skill" / "references" / "skills.md").read_text(
+        skills = (REPO / "skills" / "jtek-skill" / "references" / "skills.md").read_text(
             encoding="utf-8"
         )
-        do_card = (REPO / "skills" / "tek-do-card" / "SKILL.md").read_text(encoding="utf-8")
+        do_card = (REPO / "skills" / "jt-do-card" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn(TEK_SKILLS.strip(), skills)
         start = skills.index("## `<TEK_SKILLS>`")
         end = skills.index("## `<REPO_SKILLS>`")
@@ -38,26 +38,26 @@ class RepoSkillRuleTests(unittest.TestCase):
         self.assertIn("ห้ามตั้ง `รอรีวิว:`", do_card)
 
     def test_tek_skills_row_on_the_board_template_is_unchanged(self) -> None:
-        template = (REPO / "skills" / "tek-skill" / "assets" / "board.template.md").read_text(
+        template = (REPO / "skills" / "jtek-skill" / "assets" / "board.template.md").read_text(
             encoding="utf-8"
         )
         self.assertIn(
             "`<TEK_SKILLS>` คือชื่อ skill ที่ทำให้การลงมือเก่งขึ้น "
-            "`/tek-do-card` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง "
+            "`/jt-do-card` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง "
             "ตอนหาสาเหตุบั๊กก่อนเขียนเทส และตอนแก้โค้ดผลิต เว้นว่างคือไม่เปิด",
             template,
         )
 
     def test_name_check_is_not_in_ci_and_the_test_limit_is_not_a_loop_paragraph(self) -> None:
         workflow = (REPO / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "tek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
-        skills = (REPO / "skills" / "tek-skill" / "references" / "skills.md").read_text(
+        loop = (REPO / "skills" / "jtek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        skills = (REPO / "skills" / "jtek-skill" / "references" / "skills.md").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("REPO_SKILLS", workflow)
         self.assertNotIn("TEK_SKILLS", workflow)
         self.assertNotIn("reach-review", loop)
-        self.assertIn("/tek-gate", loop)
+        self.assertIn("/jt-gate", loop)
         self.assertIn("เวอร์ชัน 19", loop)
         self.assertNotIn("playwright", loop.lower())
         self.assertNotIn("เริ่ม:", loop)
