@@ -1,0 +1,4 @@
+interface:
+  display_name: "jt-card-gate"
+  short_description: "Rulebook for the jt-card-gate loop"
+  default_prompt: "Read the jt-card-gate rulebook. Do not pick a card. Tell me which jt- command to run."

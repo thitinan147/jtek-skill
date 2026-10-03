@@ -1,0 +1,5 @@
+interface:
+  display_name: "jt-merge"
+  short_description: "Change the merge mark on the board line"
+policy:
+  allow_implicit_invocation: false

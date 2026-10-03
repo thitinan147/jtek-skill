@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-gate" / "gate.py"
+GATE_PATH = REPO / "skills" / "jt-next-step" / "gate.py"
 
 
 def load_gate():
@@ -101,7 +101,7 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(decision.action, "do-card")
         self.assertEqual(decision.id, "13")
         self.assertEqual(decision.reason, "send-back")
-        self.assertEqual(decision.command, "/jt-do-card")
+        self.assertEqual(decision.command, "/jt-do-work")
         self.assertNotEqual(decision.action, "merge")
 
     def test_cleared_question_comes_before_a_fresh_card(self) -> None:
@@ -221,6 +221,15 @@ class ApplyReviewTests(unittest.TestCase):
         updated = gate.apply_waiting_review(text, "1", 0)
         self.assertIn("**1** parent (feat) รอรีวิว:", updated)
         self.assertNotIn("**1.1** child (feat) รอรีวิว:", updated)
+
+    def test_dropped_word_is_not_marked(self) -> None:
+        text = board_text("- [x] **12** fresh (feat) ไม่เอา: ไม่ทำ")
+        with self.assertRaises(gate.GateError) as caught:
+            gate.apply_waiting_review(text, "12", 0)
+        self.assertEqual(caught.exception.reason, "card-closed")
+        self.assertIn("/jt-do-work", gate.COMMAND_FOR.values())
+        self.assertNotIn("/jt-do-card", gate.COMMAND_FOR.values())
+        self.assertIn("/jt-merge", gate.MERGE_ARGV)
 
     def test_open_question_is_not_marked(self) -> None:
         text = board_text("- [ ] **12** asked (fix) ถาม:")
@@ -383,7 +392,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("action: open-review", result.stdout)
-        self.assertIn("command: /jt-open-review", result.stdout)
+        self.assertIn("command: /jt-open-work", result.stdout)
         self.assertIn("HEADER_TOKEN", result.stdout)
         self.assertIn("DECIDE_TOKEN", result.stdout)
         self.assertIn("CARD_ONLY", result.stdout)
@@ -398,7 +407,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("action: do-card", result.stdout)
-        self.assertIn("command: /jt-do-card", result.stdout)
+        self.assertIn("command: /jt-do-work", result.stdout)
         self.assertIn("id: 12", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
@@ -505,7 +514,7 @@ class ReachReviewGitTests(unittest.TestCase):
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "jtek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         source = GATE_PATH.read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: browser-empty", result.stdout)
@@ -538,7 +547,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("รอรีวิว:", after)
         self.assertIn("start-down", GATE_PATH.read_text(encoding="utf-8"))
-        loop = (REPO / "skills" / "jtek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         self.assertNotIn("start-down", loop)
 
     def test_screen_click_that_misses_the_header_cannot_reach_review(self) -> None:
@@ -559,7 +568,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("รอรีวิว:", after)
         self.assertIn("click-mismatch", GATE_PATH.read_text(encoding="utf-8"))
-        loop = (REPO / "skills" / "jtek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         self.assertNotIn("click-mismatch", loop)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and port_open(port):
@@ -620,10 +629,10 @@ class RepoReviewTests(unittest.TestCase):
         for kind in CODE_KINDS:
             self.assertTrue(gate.opens_repo_review(kind))
         self.assertFalse(gate.opens_repo_review("docs"))
-        skills = (REPO / "skills" / "jtek-skill" / "references" / "skills.md").read_text(
+        skills = (REPO / "skills" / "jt-card-gate" / "references" / "skills.md").read_text(
             encoding="utf-8"
         )
-        do_card = (REPO / "skills" / "jt-do-card" / "SKILL.md").read_text(encoding="utf-8")
+        do_card = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
         repo = skills.split("## `<REPO_SKILLS>`", 1)[1]
         for kind in CODE_KINDS:
             self.assertIn(f"`{kind}`", repo)
