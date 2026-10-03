@@ -1,5 +1,0 @@
-interface:
-  display_name: "jt-mark-close"
-  short_description: "Tick ปิด on a card"
-policy:
-  allow_implicit_invocation: false

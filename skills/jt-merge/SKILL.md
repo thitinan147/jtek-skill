@@ -1,0 +1,26 @@
+---
+name: jt-merge
+description: Change the merge mark on the board line. Use when the user runs /jt-merge. Do not run git merge. The human invokes this.
+disable-model-invocation: true
+license: MIT
+metadata:
+  author: Thitinan
+  version: "14"
+  short-description: Change the merge mark on the board line
+---
+
+# jt-merge
+
+รหัสที่ต่อท้ายคำสั่งคือใบที่จะรับ ถ้าไม่มีรหัสและมีบรรทัด `รอรีวิว:` ใบเดียว ให้ใช้ใบนั้น ถ้ามีหลายใบให้ถามรหัสแล้วหยุดโดยไม่เปลี่ยนบรรทัด
+
+คนเรียกคำสั่งนี้หลังดู `/jt-open-work` ของใบนั้นแล้วเท่านั้น
+
+working tree สกปรกให้หยุดโดยไม่เปลี่ยนบรรทัด
+
+อ่าน plan จาก branch `card-<id>` ตาราง **การตัดสินใจ** ว่าง หรือ diff จากสาขาคิวถึง `card-<id>` ไม่ตรงหัว **ตรวจผ่านเมื่อ** ให้หยุดแล้วบอกว่าหลักฐานไม่ครบ ห้ามเปลี่ยนเครื่องหมาย
+
+เมื่อหลักฐานครบ ให้อยู่บนสาขาคิว เปลี่ยนเครื่องหมายบนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `merge:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+
+คำสั่งนี้เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge ไม่ย้ายบรรทัด และไม่แตะโค้ด คนเป็นคน merge
+
+เสร็จเมื่อบรรทัดบนสาขาคิวเป็น `merge:` และไม่ได้รัน git merge
