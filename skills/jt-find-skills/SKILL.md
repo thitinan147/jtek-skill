@@ -4,7 +4,7 @@ description: Find REPO_SKILLS of the open repo and TEK_SKILLS at the moments the
 license: MIT
 metadata:
   author: Thitinan
-  version: "16"
+  version: "20"
   short-description: Propose skill names, then write the accepted ones
 ---
 

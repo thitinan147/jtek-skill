@@ -4,7 +4,7 @@ description: Interview until the user's desired work is clear, then write card-l
 license: MIT
 metadata:
   author: Thitinan
-  version: "17"
+  version: "20"
   short-description: Ask what to do, then write the brief
 ---
 

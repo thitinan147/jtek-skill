@@ -4,7 +4,7 @@ description: Move one line on card-loop/board.md. Use when the user runs /jt-mov
 license: MIT
 metadata:
   author: Thitinan
-  version: "19"
+  version: "20"
   short-description: Move a line on the board
 ---
 

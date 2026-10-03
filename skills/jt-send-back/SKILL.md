@@ -5,7 +5,7 @@ disable-model-invocation: true
 license: MIT
 metadata:
   author: Thitinan
-  version: "14"
+  version: "20"
   short-description: Mark the reviewed card ส่งกลับ
 ---
 
