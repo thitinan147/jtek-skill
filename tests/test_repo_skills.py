@@ -51,11 +51,21 @@ class RepoSkillRuleTests(unittest.TestCase):
     def test_name_check_is_not_in_ci_and_the_test_limit_is_not_a_loop_paragraph(self) -> None:
         workflow = (REPO / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
         loop = (REPO / "skills" / "tek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        skills = (REPO / "skills" / "tek-skill" / "references" / "skills.md").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("REPO_SKILLS", workflow)
         self.assertNotIn("TEK_SKILLS", workflow)
         self.assertNotIn("reach-review", loop)
         self.assertIn("/tek-gate", loop)
         self.assertIn("เวอร์ชัน 19", loop)
+        self.assertNotIn("playwright", loop.lower())
+        self.assertNotIn("เริ่ม:", loop)
+        self.assertNotIn("พอร์ต:", loop)
+        self.assertNotIn("คลิก:", loop)
+        self.assertNotIn("browser-empty", loop)
+        self.assertIn("เกตเป็นตัวปฏิเสธ", loop)
+        self.assertIn("`docs` ไม่เปิด", skills)
 
 
 if __name__ == "__main__":
