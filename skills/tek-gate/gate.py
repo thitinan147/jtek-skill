@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Read card-loop/board.md and take the next step the loop already allows.
 
-The gate cannot merge. A failing <TEST_CMD> cannot write รอรีวิว.
+The gate cannot merge. A failing test command cannot write รอรีวิว.
+A code commit whose diff cannot be reviewed cannot write รอรีวิว.
+Screen work that cannot be clicked cannot write รอรีวิว.
 """
 
 from __future__ import annotations
@@ -10,13 +12,32 @@ import argparse
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 NO_SUITE = "ไม่มีชุดเทส"
+CODE_KINDS = frozenset(
+    {
+        "feat",
+        "fix",
+        "style",
+        "refactor",
+        "perf",
+        "test",
+        "build",
+        "ci",
+        "chore",
+        "revert",
+    }
+)
+KIND_RE = re.compile(r"^([a-z]+)(?:\([^)]*\))?:")
 ALLOWED_ACTIONS = frozenset(
     {
         "setup-board",
@@ -542,23 +563,12 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str) -> int:
     command = test_cmd.strip()
     if command == "":
         raise GateError("test-cmd-empty")
-    branch = f"card-{card_id}"
-    if not _branch_exists(root, branch):
+    if not _branch_exists(root, f"card-{card_id}"):
         raise GateError("card-branch-missing")
     if command == NO_SUITE:
         return 0
-    if _current_branch(root) == branch:
-        return _run_shell(command, root)
-    parent = Path(tempfile.mkdtemp(prefix="tek-gate-"))
-    worktree = parent / "card"
-    try:
-        added = _run_git(root, ["worktree", "add", "--detach", str(worktree), branch])
-        if added.returncode != 0:
-            raise GateError("worktree-failed", added.stderr.strip())
-        return _run_shell(command, worktree)
-    finally:
-        _run_git(root, ["worktree", "remove", "--force", str(worktree)])
-        shutil.rmtree(parent, ignore_errors=True)
+    with _card_worktree(root, card_id) as work:
+        return _run_shell(command, work)
 
 
 def _run_shell(command: str, cwd: Path) -> int:
@@ -621,10 +631,191 @@ def cmd_next(root: Path) -> int:
     return 0
 
 
-def _refuse(reason: str) -> int:
+def _refuse(reason: str, step: str = "") -> int:
     print(f"refused: {reason}")
     print("merge: no")
+    if step:
+        print(f"step: {step}")
     return 1
+
+
+def opens_repo_review(kind: str) -> bool:
+    return kind in CODE_KINDS
+
+
+def _label(text: str, name: str) -> str:
+    prefix = f"{name}:"
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return ""
+
+
+def sees_screen(card_text: str) -> bool:
+    return _label(card_text, "เห็นจอ") == "ใช่"
+
+
+def _header_bullets(card_text: str) -> list[str]:
+    bullets: list[str] = []
+    for line in _section_label(card_text, "ตรวจผ่านเมื่อ:").splitlines():
+        if not line.startswith("- "):
+            continue
+        item = line[2:].strip()
+        if item and item != "-":
+            bullets.append(item)
+    return bullets
+
+
+def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
+    if not queue:
+        return None
+    proc = _run_git(root, ["log", "--format=%s", f"{queue}..card-{card_id}"])
+    if proc.returncode != 0:
+        return None
+    kinds: list[str] = []
+    for line in proc.stdout.splitlines():
+        match = KIND_RE.match(line.strip())
+        if match:
+            kinds.append(match.group(1))
+    return kinds
+
+
+def _code_diff_reviewable(root: Path, queue: str, card_id: str) -> bool:
+    proc = _run_git(
+        root,
+        [
+            "diff",
+            "--name-only",
+            f"{queue}...card-{card_id}",
+            "--",
+            ".",
+            ":(exclude)card-loop",
+        ],
+    )
+    if proc.returncode != 0:
+        return False
+    return any(line.strip() for line in proc.stdout.splitlines())
+
+
+def _port_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _stop_process(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=2)
+
+
+def _wait_until_up(proc: subprocess.Popen[str], port: int) -> bool:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if _port_open(port):
+            return True
+        if proc.poll() is not None:
+            return False
+        time.sleep(0.05)
+    return _port_open(port)
+
+
+def _click_matches(output: str, bullets: list[str]) -> bool:
+    if not bullets:
+        return False
+    return all(item in output for item in bullets)
+
+
+def _click_surface(work: Path, card_text: str) -> str | None:
+    start = _label(card_text, "เริ่ม")
+    port_text = _label(card_text, "พอร์ต")
+    click = _label(card_text, "คลิก")
+    if not start or not port_text.isdigit():
+        return "start-down"
+    port = int(port_text)
+    if port < 1 or port > 65535:
+        return "start-down"
+    proc = subprocess.Popen(
+        start,
+        shell=True,
+        cwd=work,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=_git_env(),
+        text=True,
+    )
+    try:
+        if not _wait_until_up(proc, port):
+            return "start-down"
+        if not click:
+            return "click-mismatch"
+        try:
+            result = subprocess.run(
+                click,
+                shell=True,
+                cwd=work,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            return "click-mismatch"
+        output = f"{result.stdout}{result.stderr}"
+        if result.returncode != 0 or not _click_matches(output, _header_bullets(card_text)):
+            return "click-mismatch"
+        return None
+    finally:
+        _stop_process(proc)
+
+
+@contextmanager
+def _card_worktree(root: Path, card_id: str):
+    branch = f"card-{card_id}"
+    if not _branch_exists(root, branch):
+        raise GateError("card-branch-missing")
+    if _current_branch(root) == branch:
+        yield root
+        return
+    parent = Path(tempfile.mkdtemp(prefix="tek-gate-"))
+    worktree = parent / "card"
+    try:
+        added = _run_git(root, ["worktree", "add", "--detach", str(worktree), branch])
+        if added.returncode != 0:
+            raise GateError("worktree-failed", added.stderr.strip())
+        yield worktree
+    finally:
+        _run_git(root, ["worktree", "remove", "--force", str(worktree)])
+        shutil.rmtree(parent, ignore_errors=True)
+
+
+def surface_refusal(root: Path, card_id: str, card_text: str, browser: str) -> str | None:
+    if not sees_screen(card_text):
+        return None
+    if browser.strip() == "":
+        return "browser-empty"
+    with _card_worktree(root, card_id) as work:
+        return _click_surface(work, card_text)
+
+
+def _read_card(root: Path, card_id: str) -> str:
+    path = root / "card-loop" / "backlog" / f"{card_id}.md"
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return ""
 
 
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
@@ -638,7 +829,24 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         return _refuse("not-on-queue-branch")
     if test_cmd.strip() == "":
         return _refuse("test-cmd-empty")
+    review_state = "skip"
+    if _branch_exists(root, f"card-{card_id}"):
+        kinds = _commit_kinds(root, queue, card_id)
+        if kinds is None:
+            return _refuse("review-diff")
+        if any(opens_repo_review(kind) for kind in kinds):
+            if not _code_diff_reviewable(root, queue, card_id):
+                return _refuse("review-diff")
+            review_state = "open"
     try:
+        reason = surface_refusal(
+            root,
+            card_id,
+            _read_card(root, card_id),
+            parse_field(text, "BROWSER_TOOL"),
+        )
+        if reason:
+            return _refuse(reason, "ถาม")
         code = execute_test_cmd(root, card_id, test_cmd)
         if write:
             updated = apply_waiting_review(text, card_id, code, link)
@@ -647,6 +855,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             return _refuse("test-failed")
     except GateError as err:
         return _refuse(err.reason)
+    print(f"repo-review: {review_state}")
     print("allowed")
     print("merge: no")
     return 0

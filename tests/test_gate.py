@@ -1,7 +1,9 @@
 import importlib.util
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -20,7 +22,12 @@ def load_gate():
 gate = load_gate()
 
 
-def board_text(cards: str, test: str = "python3 check.py", stack: str = "py · none · test · ban") -> str:
+def board_text(
+    cards: str,
+    test: str = "python3 check.py",
+    stack: str = "py · none · test · ban",
+    browser: str = "",
+) -> str:
     return (
         "# Board — app\n\n"
         "สาขาคิว: main\n\n"
@@ -29,7 +36,7 @@ def board_text(cards: str, test: str = "python3 check.py", stack: str = "py · n
         f"| `<TEST_CMD>` | {test} |\n"
         "| `<TYPECHECK_CMD>` | |\n"
         "| `<LINT_CMD>` | |\n"
-        "| `<BROWSER_TOOL>` | |\n"
+        f"| `<BROWSER_TOOL>` | {browser} |\n"
         f"| `<STACK_LOCK>` | {stack} |\n"
         "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
@@ -42,12 +49,25 @@ def board_text(cards: str, test: str = "python3 check.py", stack: str = "py · n
     )
 
 
-def card_body(files: list[str], question: str = "", header: str = "HEADER_TOKEN") -> str:
+def card_body(
+    files: list[str],
+    question: str = "",
+    header: str = "HEADER_TOKEN",
+    kind: str = "feat",
+    screen: bool = False,
+    start: str = "",
+    port: str = "",
+    click: str = "",
+) -> str:
     listed = "\n".join(f"- {name}" for name in files) if files else "-"
     question_line = "ถาม:" if not question else f"ถาม: {question}"
+    screen_block = ""
+    if screen:
+        screen_block = f"เห็นจอ: ใช่\nเริ่ม: {start}\nพอร์ต: {port}\nคลิก: {click}\n\n"
     return (
         "# 12 — title\n\n"
-        "ชนิด: feat\n\n"
+        f"ชนิด: {kind}\n\n"
+        f"{screen_block}"
         "ทำ:\n"
         "- something\n\n"
         "ไม่ทำ:\n"
@@ -390,6 +410,230 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("reason: dirty", result.stdout)
         self.assertNotIn("action: do-card", result.stdout)
         self.assertIn("merge: no", result.stdout)
+
+    def _advance_card(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        git(self.repo, "merge", "main")
+        git(self.repo, "checkout", "main")
+
+    def _commit_on_card(self, message: str) -> None:
+        git(self.repo, "checkout", "card-12")
+        commit_all(self.repo, message)
+        git(self.repo, "checkout", "main")
+
+    def test_chore_commit_opens_repo_review(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** note (chore)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: mark the chore")
+        self._advance_card()
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        self._commit_on_card("chore: touch the script")
+        opened = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        opened_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
+        self.assertIn("repo-review: open", opened.stdout)
+        self.assertIn("รอรีวิว: local", opened_board)
+        self.assertNotIn("merge:", opened_board)
+
+    def test_docs_commit_does_not_open_repo_review(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** note (docs)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: mark the note")
+        self._advance_card()
+        plan = self.repo / "card-loop" / "plan"
+        plan.mkdir(parents=True)
+        (plan / "12.md").write_text("จดใน plan แล้วเดินต่อ\n", encoding="utf-8")
+        self._commit_on_card("docs: note the plan")
+        skipped = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        skipped_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
+        self.assertEqual(skipped.returncode, 0, skipped.stdout + skipped.stderr)
+        self.assertIn("repo-review: skip", skipped.stdout)
+        self.assertNotIn("repo-review: open", skipped.stdout)
+        self.assertIn("รอรีวิว: local", skipped_board)
+        self.assertIn("จดใน plan แล้วเดินต่อ", noted.stdout)
+
+    def test_plan_note_on_a_code_commit_cannot_reach_review(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** note (chore)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: mark the chore")
+        self._advance_card()
+        plan = self.repo / "card-loop" / "plan"
+        plan.mkdir(parents=True)
+        (plan / "12.md").write_text("จดใน plan แล้วเดินต่อ\n", encoding="utf-8")
+        self._commit_on_card("chore: note the plan")
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
+        noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
+        self.assertIn("จดใน plan แล้วเดินต่อ", noted.stdout)
+
+    def _screen(self, kind: str, browser: str, start: str, port: str, click: str) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text(f"- [ ] **12** screen ({kind})", browser=browser),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(
+                ["app.py"],
+                kind=kind,
+                screen=True,
+                start=start,
+                port=port,
+                click=click,
+            ),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: describe the screen")
+        self._advance_card()
+        (self.repo / "app.py").write_text("BUTTON = True\n", encoding="utf-8")
+        self._commit_on_card(f"{kind}: move the button")
+
+    def test_screen_work_without_a_browser_cannot_reach_review(self) -> None:
+        self._screen("style", "", "python3 -c 'import sys; sys.exit(1)'", "9", "python3 -c 'print(1)'")
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "tek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        source = GATE_PATH.read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: browser-empty", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
+        self.assertIn("(style)", after)
+        self.assertIn("browser-empty", source)
+        self.assertNotIn("browser-empty", loop)
+        self.assertNotIn("playwright", loop.lower())
+        self.assertNotIn("เริ่ม:", loop)
+        self.assertNotIn("พอร์ต:", loop)
+        self.assertNotIn("คลิก:", loop)
+
+    def test_screen_start_that_does_not_come_up_cannot_reach_review(self) -> None:
+        self._screen(
+            "build",
+            "playwright",
+            "python3 -c 'import sys; sys.exit(1)'",
+            str(free_port()),
+            "python3 -c \"print('HEADER_TOKEN')\"",
+        )
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: start-down", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
+        self.assertIn("start-down", GATE_PATH.read_text(encoding="utf-8"))
+        loop = (REPO / "skills" / "tek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        self.assertNotIn("start-down", loop)
+
+    def test_screen_click_that_misses_the_header_cannot_reach_review(self) -> None:
+        port = free_port()
+        self._screen(
+            "refactor",
+            "playwright",
+            f"python3 -m http.server {port}",
+            str(port),
+            "python3 -c 'print(\"nope\")'",
+        )
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("refused: click-mismatch", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
+        self.assertIn("click-mismatch", GATE_PATH.read_text(encoding="utf-8"))
+        loop = (REPO / "skills" / "tek-skill" / "references" / "loop.md").read_text(encoding="utf-8")
+        self.assertNotIn("click-mismatch", loop)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and port_open(port):
+            time.sleep(0.05)
+        self.assertFalse(port_open(port))
+
+    def test_screen_click_that_matches_the_header_can_reach_review(self) -> None:
+        port = free_port()
+        self._screen(
+            "perf",
+            "playwright",
+            f"python3 -m http.server {port}",
+            str(port),
+            "python3 -c \"print('HEADER_TOKEN')\"",
+        )
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("repo-review: open", result.stdout)
+        self.assertIn("allowed", result.stdout)
+        self.assertIn("รอรีวิว: local", board)
+        self.assertNotIn("merge:", board)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and port_open(port):
+            time.sleep(0.05)
+        self.assertFalse(port_open(port))
+
+
+CODE_KINDS = (
+    "feat",
+    "fix",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "build",
+    "ci",
+    "chore",
+    "revert",
+)
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def port_open(port: int) -> bool:
+    with socket.socket() as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+class RepoReviewTests(unittest.TestCase):
+    def test_code_touching_type_opens_repo_review_and_docs_does_not(self) -> None:
+        self.assertEqual(gate.CODE_KINDS, frozenset(CODE_KINDS))
+        for kind in CODE_KINDS:
+            self.assertTrue(gate.opens_repo_review(kind))
+        self.assertFalse(gate.opens_repo_review("docs"))
+        skills = (REPO / "skills" / "tek-skill" / "references" / "skills.md").read_text(
+            encoding="utf-8"
+        )
+        do_card = (REPO / "skills" / "tek-do-card" / "SKILL.md").read_text(encoding="utf-8")
+        repo = skills.split("## `<REPO_SKILLS>`", 1)[1]
+        for kind in CODE_KINDS:
+            self.assertIn(f"`{kind}`", repo)
+            self.assertIn(f"`{kind}`", do_card)
+        self.assertIn("`docs` ไม่เปิด", repo)
+        self.assertIn("`docs` ไม่เปิด", do_card)
+        self.assertNotIn("ตัวอย่าง", skills)
+        self.assertIn("ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน", repo)
+        self.assertIn("ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน", do_card)
+        self.assertNotIn("TEK_SKILLS", GATE_PATH.read_text(encoding="utf-8"))
 
 
 class GateSourceTests(unittest.TestCase):

@@ -20,7 +20,7 @@
 
 `<TEK_SKILLS>` คือชื่อ skill ที่ทำให้การลงมือเก่งขึ้น `/tek-do-card` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง ตอนหาสาเหตุบั๊กก่อนเขียนเทส และตอนแก้โค้ดผลิต เว้นว่างคือไม่เปิด
 
-`<REPO_SKILLS>` คือชื่อ skill ของ repo นี้ที่ `/tek-do-card` เปิดตอน review โค้ดของ `feat` หรือ `fix` เว้นว่างคือไม่เปิด อย่าสลับสองแถว `/tek-setup-board` ใส่ชื่อจาก scan ให้แล้ว
+`<REPO_SKILLS>` คือชื่อ skill ของ repo นี้ที่ `/tek-do-card` เปิดตอน review โค้ดหลัง commit ที่ชนิดเป็น `feat` `fix` `style` `refactor` `perf` `test` `build` `ci` `chore` หรือ `revert` ชนิด `docs` ไม่เปิด เว้นว่างคือไม่เปิด อย่าสลับสองแถว `/tek-setup-board` ใส่ชื่อจาก scan ให้แล้ว
 
 **ตอนนี้หยิบ:** อ่านคำบนบรรทัด ไม่ดูปุ่ม review ของโฮสต์
 
