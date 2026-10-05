@@ -9,7 +9,8 @@ The same open topic cannot write รอรีวิว until a rule or check scr
 is updated and the plan records it. Unlinked cards of that topic cannot
 write รอรีวิว. A card whose heading names the paired repo cannot write
 รอรีวิว until both sides have passed. The board line ไม่มี keeps the
-single-repo path.
+single-repo path. A repo with a git remote cannot write รอรีวิว until
+an open draft pull request targets the queue branch from card-<id>.
 """
 
 from __future__ import annotations
@@ -1326,6 +1327,65 @@ def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]
     return not any(_is_rule_path(path) and _cited(path, section) for path in names)
 
 
+def _has_remote(root: Path) -> bool:
+    proc = _run_git(root, ["remote"])
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
+def classify_open_prs(prs: list[dict], head: str, base: str) -> tuple[str, str]:
+    matches = [
+        pr
+        for pr in prs
+        if isinstance(pr, dict) and pr.get("headRefName") == head
+    ]
+    if not matches:
+        return ("ask", "pr-missing")
+    if len(matches) > 1:
+        return ("ask", "pr-duplicate")
+    pr = matches[0]
+    if pr.get("baseRefName") != base:
+        return ("ask", "pr-base")
+    if pr.get("isDraft") is not True:
+        return ("ask", "pr-not-draft")
+    url = pr.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return ("ask", "pr-missing")
+    return ("ok", url.strip())
+
+
+def draft_pr_link(root: Path, head: str, base: str) -> tuple[str, str]:
+    if not _has_remote(root):
+        return ("local", "local")
+    if shutil.which("gh") is None:
+        return ("ask", "gh-missing")
+    proc = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--head",
+            head,
+            "--state",
+            "open",
+            "--json",
+            "url,isDraft,headRefName,baseRefName",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if proc.returncode != 0:
+        return ("ask", "pr-failed")
+    try:
+        data = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return ("ask", "pr-failed")
+    if not isinstance(data, list):
+        return ("ask", "pr-failed")
+    return classify_open_prs(data, head, base)
+
+
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
@@ -1385,6 +1445,11 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         ):
             return _refuse("pair-not-passed")
         if write:
+            kind, value = draft_pr_link(root, f"card-{card_id}", queue)
+            if kind == "ask":
+                return _refuse(value, "ถาม")
+            if kind == "ok":
+                link = value
             updated = apply_waiting_review(text, card_id, code, link)
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
