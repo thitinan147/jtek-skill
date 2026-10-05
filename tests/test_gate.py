@@ -312,12 +312,15 @@ def commit_all(repo: Path, message: str) -> None:
     git(repo, "commit", "-m", message)
 
 
-def run_gate(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run_gate(
+    repo: Path, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
         cwd=repo,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -1021,6 +1024,265 @@ def port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+class DraftPrReachTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)"),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["check.py"]),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add the board")
+        git(self.repo, "branch", "card-12")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _record_review(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        plan_dir = self.repo / "card-loop" / "plan"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "12.md").write_text(
+            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: record review")
+        git(self.repo, "checkout", "main")
+
+    def _commit_check(self, code: str) -> None:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "check.py").write_text(
+            f"import sys\nsys.exit({code})\n# card\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "test: set the card command")
+        git(self.repo, "checkout", "main")
+        self._record_review()
+
+    def _origin(self) -> None:
+        git(self.repo, "remote", "add", "origin", "https://example.invalid/repo.git")
+
+    def _gh(self, body: str) -> dict[str, str]:
+        bin_dir = self.repo / "fake-bin"
+        bin_dir.mkdir(exist_ok=True)
+        path = bin_dir / "gh"
+        path.write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
+        path.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+        return env
+
+    def _json_gh(self, payload: str) -> dict[str, str]:
+        return self._gh(f"printf '%s\\n' '{payload}'\n")
+
+    def _no_gh(self) -> dict[str, str]:
+        bin_dir = self.repo / "only-git"
+        bin_dir.mkdir(exist_ok=True)
+        for name in ("git", "python3"):
+            dest = bin_dir / name
+            if dest.exists():
+                continue
+            found = shutil.which(name)
+            if found:
+                dest.symlink_to(found)
+        env = os.environ.copy()
+        env["PATH"] = str(bin_dir)
+        return env
+
+    def _board(self) -> str:
+        return (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+
+    def test_classify_open_prs_names_the_draft_or_the_refusal(self) -> None:
+        head = "card-12"
+        base = "main"
+        url = "https://example.invalid/pull/7"
+        draft = {
+            "url": url,
+            "isDraft": True,
+            "headRefName": head,
+            "baseRefName": base,
+        }
+        self.assertEqual(gate.classify_open_prs([], head, base), ("ask", "pr-missing"))
+        self.assertEqual(gate.classify_open_prs([draft], head, base), ("ok", url))
+        ready = {**draft, "isDraft": False}
+        self.assertEqual(gate.classify_open_prs([ready], head, base), ("ask", "pr-not-draft"))
+        other_base = {**draft, "baseRefName": "dev"}
+        self.assertEqual(gate.classify_open_prs([other_base], head, base), ("ask", "pr-base"))
+        self.assertEqual(
+            gate.classify_open_prs([draft, dict(draft)], head, base),
+            ("ask", "pr-duplicate"),
+        )
+        blank = {**draft, "url": " "}
+        self.assertEqual(gate.classify_open_prs([blank], head, base), ("ask", "pr-missing"))
+        other_head = {**draft, "headRefName": "card-9"}
+        self.assertEqual(
+            gate.classify_open_prs([other_head], head, base),
+            ("ask", "pr-missing"),
+        )
+
+    def test_no_remote_writes_local_without_calling_gh(self) -> None:
+        self._commit_check("0")
+        marker = self.repo / "gh-called"
+        env = self._gh(f"touch {marker}\nexit 1\n")
+        result = run_gate(
+            self.repo, "reach-review", "--id", "12", "--write", "--link", "local", env=env
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("รอรีวิว: local", self._board())
+        self.assertFalse(marker.exists())
+
+    def test_dry_run_with_a_remote_stays_allowed_before_the_pull_request(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        before = self._board()
+        result = run_gate(self.repo, "reach-review", "--id", "12", env=self._json_gh("[]"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+        self.assertNotIn("pr-missing", result.stdout)
+        self.assertEqual(self._board(), before)
+
+    def test_remote_without_a_draft_refuses_and_leaves_the_line(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        before = self._board()
+        result = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._json_gh("[]"),
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: pr-missing", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertEqual(self._board(), before)
+        self.assertNotIn("รอรีวิว:", self._board())
+
+    def test_open_draft_into_the_queue_branch_writes_the_url(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        payload = (
+            '[{"url":"https://example.invalid/pull/7","isDraft":true,'
+            '"headRefName":"card-12","baseRefName":"main"}]'
+        )
+        result = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._json_gh(payload),
+        )
+        board = self._board()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("รอรีวิว: https://example.invalid/pull/7", board)
+        self.assertNotIn("รอรีวิว: local", board)
+        self.assertNotIn("merge:", board)
+
+    def test_ready_pull_request_is_not_review(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        payload = (
+            '[{"url":"https://example.invalid/pull/7","isDraft":false,'
+            '"headRefName":"card-12","baseRefName":"main"}]'
+        )
+        result = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._json_gh(payload),
+        )
+        self.assertIn("refused: pr-not-draft", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertNotIn("รอรีวิว:", self._board())
+
+    def test_two_open_pull_requests_do_not_write_review(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        one = (
+            '{"url":"https://example.invalid/pull/7","isDraft":true,'
+            '"headRefName":"card-12","baseRefName":"main"}'
+        )
+        result = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._json_gh(f"[{one},{one}]"),
+        )
+        self.assertIn("refused: pr-duplicate", result.stdout)
+        self.assertIn("step: ถาม", result.stdout)
+        self.assertNotIn("รอรีวิว:", self._board())
+
+    def test_gh_failure_and_a_missing_binary_ask_instead_of_review(self) -> None:
+        self._commit_check("0")
+        self._origin()
+        failed = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._gh("exit 1\n"),
+        )
+        self.assertIn("refused: pr-failed", failed.stdout)
+        self.assertIn("step: ถาม", failed.stdout)
+        self.assertNotIn("รอรีวิว:", self._board())
+        missing = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._no_gh(),
+        )
+        self.assertIn("refused: gh-missing", missing.stdout)
+        self.assertIn("step: ถาม", missing.stdout)
+        self.assertNotIn("รอรีวิว:", self._board())
+
+    def test_a_red_command_still_refuses_before_the_pull_request(self) -> None:
+        self._commit_check("1")
+        self._origin()
+        result = run_gate(
+            self.repo,
+            "reach-review",
+            "--id",
+            "12",
+            "--write",
+            "--link",
+            "local",
+            env=self._json_gh("[]"),
+        )
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertNotIn("pr-missing", result.stdout)
+        self.assertNotIn("รอรีวิว:", self._board())
+
+
 class RepoReviewTests(unittest.TestCase):
     def test_code_touching_type_opens_repo_review_and_docs_does_not(self) -> None:
         self.assertEqual(gate.CODE_KINDS, frozenset(CODE_KINDS))
@@ -1448,6 +1710,8 @@ class GateSourceTests(unittest.TestCase):
         self.assertIn("one-off-checker", source)
         self.assertIn("repeat-patch", source)
         self.assertIn('reason="related"', source)
+        self.assertIn("pr-missing", source)
+        self.assertNotIn("pr create", source)
 
 
 if __name__ == "__main__":

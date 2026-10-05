@@ -1,6 +1,6 @@
 ---
 name: jt-do-work
-description: Work every card the board allows, one branch and one merge request each. Skip lines marked รอรีวิว or an open ถาม, skip a card whose files overlap those lines, and continue ส่งกลับ on the same branch after merging in the queue branch. Use when the user runs /jt-do-work or asks to do the next cards.
+description: Work every card the board allows, one branch and one draft pull request each. Skip lines marked รอรีวิว or an open ถาม, skip a card whose files overlap those lines, and continue ส่งกลับ on the same branch after merging in the queue branch. Use when the user runs /jt-do-work or asks to do the next cards.
 license: MIT
 metadata:
   author: Thitinan
@@ -28,7 +28,7 @@ card มีชนิดเดียว ทางเดียว และหั�
 
 ให้ทำตามหัว **เขียน ถาม** เมื่อจะลบข้อมูล production, force-push, ส่งของออกนอก repo, หรือ merge `card-<id>` เข้าสาขาคิว
 
-push branch `card-<id>` เพื่อเปิด merge request ทำได้
+push branch `card-<id>` เพื่อเปิด draft PR ทำได้ ห้าม merge PR นั้น
 
 ## เกณฑ์ 3 รอบ
 
@@ -81,7 +81,7 @@ push branch `card-<id>` เพื่อเปิด merge request ทำได�
 
 บรรทัดเป็น `ส่งกลับ:` แต่ไม่มี branch `card-<id>` ให้ทำตามหัว **เขียน ถาม**
 
-มี branch `card-<id>` อยู่แล้วให้ checkout branch นั้น แล้ว merge สาขาคิวเข้า branch นี้ ใช้ merge request ใบเดิม branch ใหม่ให้สร้างจากสาขาคิวเท่านั้น ห้ามสร้างจาก branch `card-<id>` อื่น ชนให้แก้บน branch นี้ให้ตรงหัว **ทำ** แล้วรันเทสชุดที่เกี่ยวข้องใหม่ แก้โดยไม่เลือกแทนคนไม่ได้ ให้ทำตามหัว **เขียน ถาม** หัว **ไฟล์ที่แตะได้** ใน plan ว่าง ให้เติมจาก card ก่อนแก้ไฟล์งาน
+มี branch `card-<id>` อยู่แล้วให้ checkout branch นั้น แล้ว merge สาขาคิวเข้า branch นี้ ใช้ draft PR ใบเดิม branch ใหม่ให้สร้างจากสาขาคิวเท่านั้น ห้ามสร้างจาก branch `card-<id>` อื่น ชนให้แก้บน branch นี้ให้ตรงหัว **ทำ** แล้วรันเทสชุดที่เกี่ยวข้องใหม่ แก้โดยไม่เลือกแทนคนไม่ได้ ให้ทำตามหัว **เขียน ถาม** หัว **ไฟล์ที่แตะได้** ใน plan ว่าง ให้เติมจาก card ก่อนแก้ไฟล์งาน
 
 ยังไม่มี branch ให้สร้าง `card-<id>` จากสาขาคิว แล้ว checkout สร้าง `card-loop/plan/<id>.md` จาก `assets/plan.template.md` ของ skill `jt-card-gate` ใส่ช่อง Branch เป็น `card-<id>` คัดลอกหัว **ไฟล์ที่แตะได้** จาก card แล้ว commit เฉพาะไฟล์ plan บน branch นี้
 
@@ -133,9 +133,21 @@ push branch `card-<id>` เพื่อเปิด merge request ทำได�
 
 commit งานของข้อบน `card-<id>` ก่อน ตรวจหัว **ตรวจผ่านเมื่อ** กับ commit นั้น commit นี้ไม่มีคำว่า `รอรีวิว:` และไม่มี `card-loop/board.md` เว้นแต่หัว **ทำ** ของ card สั่งให้แก้ไฟล์นั้น
 
-checkout สาขาคิว แล้วรัน `python3 <โฟลเดอร์ skill jt-next-step>/gate.py reach-review --root .` ด้วย `--id` ของใบนี้และ `--write` ไม่มี remote ให้ใส่ `--link local` สคริปต์รัน `<SETUP_CMD>` และ `<TEST_CMD>` บน worktree สะอาดของ branch `card-<id>` หาก `<SETUP_CMD>` ล้มเหลว สคริปต์พิมพ์ `refused: setup-failed` ให้กลับไป `card-<id>` แก้ไขแล้วเดินหัว **เกณฑ์ 3 รอบ** คำสั่งเทสจบไม่เป็นศูนย์ สคริปต์ไม่เขียนบรรทัด ให้กลับไป `card-<id>` แล้วเดินหัว **เกณฑ์ 3 รอบ** ห้ามเขียนคำว่า `รอรีวิว:` เอง สคริปต์พิมพ์ `refused: review-diff` เมื่อไม่มีหัวข้อ `## รีวิว diff` หรือ commit SHA ใน plan ไม่ตรงกับ commit ล่าสุด หรือ review diff ไม่ได้ การจดใน plan ไม่นับ ให้เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `step: ถาม` เมื่อพื้นผิวคลิกไม่ได้ ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: pair-not-passed` เมื่อหัวใบมีชื่อ repo คู่และอีกฝั่งยังไม่ผ่าน ห้ามตั้ง `รอรีวิว:` ให้ทำให้ฝั่งนั้นผ่านบน branch `card-<id>` แล้วรันสคริปต์อีกครั้ง สคริปต์พิมพ์ `refused: one-off-checker` เมื่อ diff เพิ่มสคริปต์ที่ชื่อไฟล์ขึ้นต้น `check` `lint` หรือ `verify` และหัว **ทำ** ไม่ได้สั่งให้สร้างไฟล์นั้น ให้ลบไฟล์นั้นแล้วใช้คำสั่งบน board เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: repeat-patch` เมื่อใบที่ยังเปิดมี `ชั้น:` เดียวกัน แต่ตาราง **การตัดสินใจ** ไม่มีแถว `อัปเดตกติกา` ที่ชี้ path ของกติกา skill เกต หรือสคริปต์ lint/ตรวจใน diff ของใบนี้หรือใบที่ลิงก์ หรือมีแถวแต่ diff ไม่ได้แก้ไฟล์นั้น (`detail: prose-only`) ให้แก้กติกานั้นแล้วจดแถว เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: related` กับ `step: ถาม` เมื่อ `ชั้น:` เดียวกันแต่หัว **อ้างอิง** ยังไม่ชี้อีกฝั่ง ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์ตั้ง `รอรีวิว:` ครั้งเดียวบน board ของ repo หลัก บรรทัด `คู่:` เป็น `ไม่มี` สคริปต์ไม่รอฝั่งที่สอง
+checkout สาขาคิว แล้วรัน `python3 <โฟลเดอร์ skill jt-next-step>/gate.py reach-review --root .` ด้วย `--id` ของใบนี้ โดยยังไม่ใส่ `--write` สคริปต์รัน `<SETUP_CMD>` และ `<TEST_CMD>` บน worktree สะอาดของ branch `card-<id>` หาก `<SETUP_CMD>` ล้มเหลว สคริปต์พิมพ์ `refused: setup-failed` ให้กลับไป `card-<id>` แก้ไขแล้วเดินหัว **เกณฑ์ 3 รอบ** คำสั่งเทสจบไม่เป็นศูนย์ สคริปต์ไม่เขียนบรรทัด ให้กลับไป `card-<id>` แล้วเดินหัว **เกณฑ์ 3 รอบ** ห้ามเขียนคำว่า `รอรีวิว:` เอง สคริปต์พิมพ์ `refused: review-diff` เมื่อไม่มีหัวข้อ `## รีวิว diff` หรือ commit SHA ใน plan ไม่ตรงกับ commit ล่าสุด หรือ review diff ไม่ได้ หรือ `scripts/jt-diff-check` จบไม่เป็นศูนย์ การจดใน plan ไม่นับ ให้เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `step: ถาม` เมื่อพื้นผิวคลิกไม่ได้ ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: pair-not-passed` เมื่อหัวใบมีชื่อ repo คู่และอีกฝั่งยังไม่ผ่าน ห้ามตั้ง `รอรีวิว:` ให้ทำให้ฝั่งนั้นผ่านบน branch `card-<id>` แล้วรันสคริปต์อีกครั้ง สคริปต์พิมพ์ `refused: one-off-checker` เมื่อ diff เพิ่มสคริปต์ที่ชื่อไฟล์ขึ้นต้น `check` `lint` หรือ `verify` และหัว **ทำ** ไม่ได้สั่งให้สร้างไฟล์นั้น ให้ลบไฟล์นั้นแล้วใช้คำสั่งบน board เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: repeat-patch` เมื่อใบที่ยังเปิดมี `ชั้น:` เดียวกัน แต่ตาราง **การตัดสินใจ** ไม่มีแถว `อัปเดตกติกา` ที่ชี้ path ของกติกา skill เกต หรือสคริปต์ lint/ตรวจใน diff ของใบนี้หรือใบที่ลิงก์ หรือมีแถวแต่ diff ไม่ได้แก้ไฟล์นั้น (`detail: prose-only`) ให้แก้กติกานั้นแล้วจดแถว เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: related` กับ `step: ถาม` เมื่อ `ชั้น:` เดียวกันแต่หัว **อ้างอิง** ยังไม่ชี้อีกฝั่ง ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์ตั้ง `รอรีวิว:` ครั้งเดียวบน board ของ repo หลักเมื่อคำสั่งมี `--write` และเกตผ่าน บรรทัด `คู่:` เป็น `ไม่มี` สคริปต์ไม่รอฝั่งที่สอง
 
-สคริปต์ผ่านแล้ว ไม่มี remote ให้เขียนข้อความที่ต้องอยู่ในของที่เปิดให้ review ลงใน plan บรรทัดเป็น `รอรีวิว: local` จากสคริปต์แล้ว มี remote ให้ push เฉพาะ `card-<id>` แล้วเปิด merge request เมื่อข้อนี้ยังไม่มีใบ คิวที่มีใบอยู่แล้วให้อัปเดตใบเดิม ห้ามสร้าง remote จากนั้นเติมลิงก์ต่อท้าย `รอรีวิว:` บนบรรทัดเดิม ตั้ง `สถานะรอบ` ใน plan เป็น `รอรีวิว` commit เฉพาะไฟล์ plan บน `card-<id>` แล้ว checkout สาขาคิว commit เฉพาะ `card-loop/board.md` ข้อยังเป็น `- [ ]`
+สคริปต์พิมพ์ `allowed` และ `git remote` ว่าง ให้รันคำสั่งเดิมพร้อม `--write --link local` บรรทัดเป็น `รอรีวิว: local` จากสคริปต์
+
+`git remote` มีชื่อ และสคริปต์พิมพ์ `allowed` ให้ push เฉพาะ `card-<id>` แล้วเปิด draft PR เข้าสาขาคิว เมื่อยังไม่มี PR ที่เปิดอยู่สำหรับ head เดิม ห้ามเปิดซ้ำ และห้ามสร้าง remote
+
+```bash
+git push -u origin card-<id>
+gh pr list --head card-<id> --base <สาขาคิว> --state open --json number,isDraft,url,baseRefName
+gh pr create --draft --base <สาขาคิว> --head card-<id> --title "<id>" --body "card <id>"
+```
+
+รายการจาก `gh pr list` มีใบที่ `isDraft` เป็นจริงและ `baseRefName` เป็นสาขาคิวอยู่แล้ว ให้ข้าม `gh pr create` `gh` ไม่อยู่ใน PATH, push ไม่สำเร็จ, สร้างไม่สำเร็จ, ไม่มีใบเปิด, ใบเปิดไม่เป็น draft, หรือ base ไม่ใช่สาขาคิว ให้ทำตามหัว **เขียน ถาม** ห้ามใส่ `--write` บรรทัดต้องไม่เป็น `รอรีวิว:`
+
+เปิด draft ได้แล้วรัน reach-review พร้อม `--write` สคริปต์ตรวจ PR เอง ถ้าพิมพ์ `refused: pr-missing` หรือ `refused: gh-missing` หรือ `refused: pr-not-draft` หรือ `refused: pr-base` หรือ `refused: pr-duplicate` หรือ `refused: pr-failed` พร้อม `step: ถาม` ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์ผ่านแล้วบรรทัดเป็น `รอรีวิว:` ตามด้วย URL ของ draft นั้น ตั้ง `สถานะรอบ` ใน plan เป็น `รอรีวิว` commit เฉพาะไฟล์ plan บน `card-<id>` แล้ว checkout สาขาคิว commit เฉพาะ `card-loop/board.md` ข้อยังเป็น `- [ ]`
 
 กลับไปหัว **หยิบ**
 
