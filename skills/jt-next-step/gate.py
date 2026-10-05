@@ -843,28 +843,21 @@ def _wait_until_up(proc: subprocess.Popen[str], ports: list[int], wait_seconds: 
     return all(_port_open(port) for port in ports)
 
 
-def _click_surface(work: Path, card_text: str) -> str | None:
-    start = _label(card_text, "เริ่ม")
-    port_text = _label(card_text, "พอร์ต")
-    click = _label(card_text, "คลิก")
-    wait_text = _label(card_text, "รอ")
-    wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
-
-    if not start or not port_text:
-        return "start-down"
+def _parse_ports(port_text: str) -> list[int] | None:
     ports: list[int] = []
     for piece in re.split(r"[,\s]+", port_text.strip()):
         if not piece:
             continue
         if not piece.isdigit():
-            return "start-down"
-        p = int(piece)
-        if p < 1 or p > 65535:
-            return "start-down"
-        ports.append(p)
-    if not ports:
-        return "start-down"
+            return None
+        port = int(piece)
+        if port < 1 or port > 65535:
+            return None
+        ports.append(port)
+    return ports or None
 
+
+def _run_while_up(work: Path, start: str, ports: list[int], wait_seconds: int, run) -> str | None:
     proc = subprocess.Popen(
         start,
         shell=True,
@@ -879,6 +872,22 @@ def _click_surface(work: Path, card_text: str) -> str | None:
     try:
         if not _wait_until_up(proc, ports, wait_seconds):
             return "start-down"
+        return run()
+    finally:
+        _stop_process(proc)
+
+
+def _click_surface(work: Path, card_text: str) -> str | None:
+    start = _label(card_text, "เริ่ม")
+    port_text = _label(card_text, "พอร์ต")
+    click = _label(card_text, "คลิก")
+    wait_text = _label(card_text, "รอ")
+    wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
+    ports = _parse_ports(port_text)
+    if not start or ports is None:
+        return "start-down"
+
+    def run() -> str | None:
         if not click:
             return "click-mismatch"
         try:
@@ -896,8 +905,170 @@ def _click_surface(work: Path, card_text: str) -> str | None:
         if result.returncode != 0:
             return "click-mismatch"
         return None
-    finally:
-        _stop_process(proc)
+
+    return _run_while_up(work, start, ports, wait_seconds, run)
+
+
+_BROWSER_ORDER = ("playwright", "cypress")
+_BROWSER_TAIL = {"playwright": ("test",), "cypress": ("run",)}
+
+
+def _declared_browsers(root: Path) -> set[str]:
+    package = root / "package.json"
+    if not package.is_file():
+        return set()
+    try:
+        data = json.loads(package.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return set()
+    deps: set[str] = set()
+    for key in ("dependencies", "devDependencies", "optionalDependencies"):
+        block = data.get(key)
+        if isinstance(block, dict):
+            deps.update(str(name) for name in block)
+    found: set[str] = set()
+    if "playwright" in deps or "@playwright/test" in deps:
+        found.add("playwright")
+    if "cypress" in deps:
+        found.add("cypress")
+    scripts = data.get("scripts")
+    if isinstance(scripts, dict):
+        blob = "\n".join(value for value in scripts.values() if isinstance(value, str))
+        if "playwright" in blob:
+            found.add("playwright")
+        if "cypress" in blob:
+            found.add("cypress")
+    return found
+
+
+def resolve_browser_argv(root: Path, tool: str = "") -> list[str] | None:
+    """Argv for Playwright or Cypress already on PATH or declared by the package."""
+    name = tool.strip().lower()
+    if name in _BROWSER_TAIL:
+        order = (name,)
+    elif name == "":
+        order = _BROWSER_ORDER
+    else:
+        return None
+    env = _env_with_bin(root)
+    declared = _declared_browsers(root)
+    for candidate in order:
+        local = root / "node_modules" / ".bin" / candidate
+        tail = list(_BROWSER_TAIL[candidate])
+        if local.is_file() and os.access(local, os.X_OK):
+            return [str(local), *tail]
+        if shutil.which(candidate, path=env.get("PATH")):
+            return [candidate, *tail]
+        if candidate in declared:
+            # ponytail: npx --no-install only, no browser download
+            return ["npx", "--no-install", candidate, *tail]
+    return None
+
+
+def _run_argv(argv: list[str], cwd: Path, timeout: int = 300) -> int:
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=cwd,
+            env=_env_with_bin(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return 1
+    if proc.returncode != 0:
+        if proc.stdout:
+            sys.stderr.write(proc.stdout)
+            if not proc.stdout.endswith("\n"):
+                sys.stderr.write("\n")
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+            if not proc.stderr.endswith("\n"):
+                sys.stderr.write("\n")
+    return proc.returncode
+
+
+def run_screen_check(
+    root: Path,
+    *,
+    start: str = "",
+    ports: str = "",
+    wait: str = "",
+    browser: str = "",
+    no_start: bool = False,
+) -> int:
+    """Start the app when configured, run the repo browser tool, non-zero on fail."""
+    argv = resolve_browser_argv(root, browser)
+    if argv is None:
+        print("screen-check: browser-missing")
+        return 1
+    if no_start or not start.strip():
+        if _run_argv(argv, root) != 0:
+            print("screen-check: browser-failed")
+            return 1
+        print("screen-check: ok")
+        return 0
+    parsed = _parse_ports(ports)
+    if parsed is None:
+        print("screen-check: start-down")
+        return 1
+    wait_seconds = int(wait) if wait.isdigit() and int(wait) > 0 else 60
+
+    def run() -> str | None:
+        if _run_argv(argv, root) != 0:
+            return "browser-failed"
+        return None
+
+    reason = _run_while_up(root, start, parsed, wait_seconds, run)
+    if reason:
+        print(f"screen-check: {reason}")
+        return 1
+    print("screen-check: ok")
+    return 0
+
+
+def screen_check_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="jt-screen-check",
+        description=(
+            "ตรวจจอของ JTek: สตาร์ทแอปเมื่อมีการกำหนด "
+            "แล้วรัน playwright หรือ cypress ที่มีอยู่ จบไม่เป็นศูนย์เมื่อไม่ผ่าน"
+        ),
+    )
+    parser.add_argument("--root", default=".")
+    parser.add_argument("--id", default="")
+    parser.add_argument("--start", default="")
+    parser.add_argument("--port", default="")
+    parser.add_argument("--wait", default="")
+    parser.add_argument("--browser", default="")
+    parser.add_argument("--no-start", action="store_true")
+    args = parser.parse_args(argv)
+    root = Path(args.root).resolve()
+    start = args.start
+    ports = args.port
+    wait = args.wait
+    browser = args.browser
+    if args.id:
+        board = root / "card-loop" / "board.md"
+        text = board.read_text(encoding="utf-8") if board.is_file() else ""
+        card = _read_card(root, args.id)
+        if not browser:
+            browser = parse_field(text, "BROWSER_TOOL")
+        if not start:
+            start = _label(card, "เริ่ม")
+        if not ports:
+            ports = _label(card, "พอร์ต")
+        if not wait:
+            wait = _label(card, "รอ")
+    return run_screen_check(
+        root,
+        start=start,
+        ports=ports,
+        wait=wait,
+        browser=browser,
+        no_start=args.no_start,
+    )
 
 
 @contextmanager
