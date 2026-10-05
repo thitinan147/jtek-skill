@@ -67,6 +67,9 @@ class RepoSkillRuleTests(unittest.TestCase):
         self.assertNotIn("browser-empty", loop)
         self.assertIn("เกตเป็นตัวปฏิเสธ", loop)
         self.assertIn("`docs` ไม่เปิด", skills)
+        self.assertNotIn("one-off-checker", loop)
+        self.assertNotIn("repeat-patch", loop)
+        self.assertNotIn("reach-review", loop)
 
 
 COMMANDS = [
@@ -217,6 +220,54 @@ class PairedRepoRuleTests(unittest.TestCase):
         self.assertIn("/jt-new-board", readme)
         self.assertFalse(list(REPO.glob("*playbook*")))
         self.assertFalse(list((REPO / "skills").glob("**/*playbook*")))
+
+
+class RepeatRuleTests(unittest.TestCase):
+    def test_the_three_rules_agree_across_the_skills_and_the_readme(self) -> None:
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
+            encoding="utf-8"
+        )
+        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
+        nxt = (REPO / "skills" / "jt-next-step" / "SKILL.md").read_text(encoding="utf-8")
+        new_card = (REPO / "skills" / "jt-new-card" / "SKILL.md").read_text(encoding="utf-8")
+        reading = (REPO / "skills" / "jt-read-board" / "SKILL.md").read_text(encoding="utf-8")
+        skills = (REPO / "skills" / "jt-card-gate" / "references" / "skills.md").read_text(
+            encoding="utf-8"
+        )
+        plan = (REPO / "skills" / "jt-card-gate" / "assets" / "plan.template.md").read_text(
+            encoding="utf-8"
+        )
+        card = (REPO / "skills" / "jt-card-gate" / "assets" / "card.template.md").read_text(
+            encoding="utf-8"
+        )
+        gate = (REPO / "skills" / "jt-next-step" / "gate.py").read_text(encoding="utf-8")
+        for text in (readme, loop, work):
+            self.assertIn("คำสั่งตรวจที่มีอยู่", text)
+            self.assertIn("สคริปต์ตรวจใหม่", text)
+            self.assertIn("อัปเดตกติกา", text)
+            self.assertIn("ชั้น", text)
+        self.assertIn("ห้ามแยกเอเจนต์", readme)
+        self.assertIn("ห้ามแยกเป็นเอเจนต์คู่ขนานโดยไม่ลิงก์", loop)
+        self.assertIn("refused: one-off-checker", work)
+        self.assertIn("refused: repeat-patch", work)
+        self.assertIn("refused: related", work)
+        self.assertIn("reason` เป็น `related`", nxt)
+        self.assertIn("refused: one-off-checker", nxt)
+        self.assertIn("refused: repeat-patch", nxt)
+        self.assertIn("step: ถาม", nxt)
+        self.assertIn("ห้ามแยกเป็นเอเจนต์คู่ขนาน", new_card)
+        self.assertIn("ห้ามรายงานเป็นงานคู่ขนาน", reading)
+        self.assertIn("ไม่มาแทนคำสั่งตรวจบน board", skills)
+        self.assertIn("แถวนี้ว่างได้", skills)
+        self.assertIn("อัปเดตกติกา", plan)
+        self.assertIn("ชั้น:", card)
+        self.assertIn("one-off-checker", gate)
+        self.assertIn("repeat-patch", gate)
+        self.assertIn("อัปเดตกติกา", gate)
+        self.assertFalse(list(REPO.glob("*playbook*")))
+        self.assertFalse(list((REPO / "skills").glob("**/*playbook*")))
+        self.assertEqual(readme.count("\n## "), 4)
 
 
 if __name__ == "__main__":

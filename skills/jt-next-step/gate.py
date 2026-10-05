@@ -4,8 +4,12 @@
 The gate cannot merge. A failing test command cannot write รอรีวิว.
 A code commit whose diff cannot be reviewed cannot write รอรีวิว.
 Screen work that cannot be clicked cannot write รอรีวิว.
-A card whose heading names the paired repo cannot write รอรีวิว until both
-sides have passed. The board line ไม่มี keeps the single-repo path.
+A new checker script the card did not ask for cannot write รอรีวิว.
+The same open topic cannot write รอรีวิว until a rule or check script
+is updated and the plan records it. Unlinked cards of that topic cannot
+write รอรีวิว. A card whose heading names the paired repo cannot write
+รอรีวิว until both sides have passed. The board line ไม่มี keeps the
+single-repo path.
 """
 
 from __future__ import annotations
@@ -74,6 +78,12 @@ MERGE_ARGV = {
 }
 ROW_RE = re.compile(r"^\|\s*`<([^>]+)>`\s*\|\s*(.*?)\s*\|\s*$")
 CARD_RE = re.compile(r"^- \[([ xX])\] \*\*(.+?)\*\*\s*(.*)$")
+_CHECKER_BASENAME = re.compile(
+    r"^(?:check|lint|verify)(?:[-_.].+)?\.(?:py|sh)$",
+    re.IGNORECASE,
+)
+_CLOSED = frozenset({"merge:", "ไม่เอา:", "ครบ:"})
+_REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 
 
 class GateError(Exception):
@@ -95,6 +105,8 @@ class Card:
     question: str = ""
     question_empty: bool = True
     has_card_file: bool = False
+    topic: str = ""
+    refs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -204,11 +216,54 @@ def hydrate(board: Board, bodies: dict[str, str | None]) -> Board:
             card.files = ()
             card.question = ""
             card.question_empty = True
+            card.topic = ""
+            card.refs = ()
             continue
         card.files = tuple(parse_files(body))
         card.question = question_text(body)
         card.question_empty = card.question == ""
+        card.topic = _label(body, "ชั้น")
+        card.refs = parse_refs(body)
     return board
+
+
+def parse_refs(card_text: str) -> tuple[str, ...]:
+    found: list[str] = []
+    for line in _section_label(card_text, "อ้างอิง:").splitlines():
+        found.extend(_REF_ID.findall(line))
+    return tuple(dict.fromkeys(found))
+
+
+def _same_topic(card: Card, cards: list[Card]) -> list[Card]:
+    if not card.topic:
+        return []
+    return [
+        other
+        for other in cards
+        if other.id != card.id
+        and not other.checked
+        and other.section in SECTION_RANK
+        and other.status not in _CLOSED
+        and other.topic == card.topic
+    ]
+
+
+def _linked(card: Card, other: Card) -> bool:
+    return other.id in card.refs or card.id in other.refs
+
+
+def _related_stop(card: Card, cards: list[Card]) -> Decision | None:
+    others = _same_topic(card, cards)
+    if not others or all(_linked(card, other) for other in others):
+        return None
+    group = sorted([card, *others], key=lambda item: item.index)
+    return Decision(
+        "stop",
+        id=card.id,
+        ids=tuple(item.id for item in group),
+        reason="related",
+        line=card.line,
+    )
 
 
 def _is_parent(card: Card, cards: list[Card]) -> bool:
@@ -303,19 +358,19 @@ def decide(
     pool = _pool(board.cards)
     send_back = _work(pool, lambda card: card.status == "ส่งกลับ:" and card.has_card_file)
     if send_back:
-        return _do(send_back, "send-back")
+        return _take(board, send_back, "send-back")
     cleared = _work(
         pool,
         lambda card: card.status == "ถาม:" and card.question_empty and card.has_card_file,
     )
     if cleared:
-        return _do(cleared, "question-cleared")
+        return _take(board, cleared, "question-cleared")
     ready = _work(pool, lambda card: card.status is None and card.has_card_file)
     if ready:
-        return _do(ready, "ready")
+        return _take(board, ready, "ready")
     parent = _parent_ready(board.cards)
     if parent:
-        return _do(parent, "subcards-complete")
+        return _take(board, parent, "subcards-complete")
 
     reviews = [
         card
@@ -379,6 +434,13 @@ def _do(card: Card, reason: str) -> Decision:
         command=COMMAND_FOR["do-card"],
         line=card.line,
     )
+
+
+def _take(board: Board, card: Card, reason: str) -> Decision:
+    stopped = _related_stop(card, board.cards)
+    if stopped is not None:
+        return stopped
+    return _do(card, reason)
 
 
 def apply_waiting_review(
@@ -1014,6 +1076,85 @@ def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
     return None
 
 
+def _cards_from_text(root: Path, board_text: str) -> list[Card]:
+    board = parse_board(board_text)
+    bodies = {
+        card.id: _read_card(root, card.id) or None
+        for card in board.cards
+    }
+    return hydrate(board, bodies).cards
+
+
+def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) -> list[str] | None:
+    if not queue or not _branch_exists(root, f"card-{card_id}"):
+        return None
+    args = ["diff", "--name-only"]
+    if added_only:
+        args.append("--diff-filter=A")
+    args.extend([f"{queue}...card-{card_id}", "--", ".", ":(exclude)card-loop"])
+    proc = _run_git(root, args)
+    if proc.returncode != 0:
+        return None
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _is_rule_path(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    folded = f"/{path.strip('/')}"
+    if name in {"SKILL.md", "gate.py"}:
+        return True
+    if "/skills/" in folded or "/rules/" in folded:
+        return True
+    return _CHECKER_BASENAME.match(name) is not None
+
+
+def _cited(path: str, section: str) -> bool:
+    if path in section:
+        return True
+    name = path.rsplit("/", 1)[-1]
+    if "/" in path and name in {"SKILL.md", "gate.py"}:
+        return False
+    return name in section
+
+
+def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
+    """A new check/lint/verify script the card's ทำ section did not name."""
+    added = _diff_names(root, queue, card_id, added_only=True)
+    if not added:
+        return False
+    asked = _section_label(card_text, "ทำ:")
+    for path in added:
+        name = path.rsplit("/", 1)[-1]
+        if _CHECKER_BASENAME.match(name) is None:
+            continue
+        if name in asked or path in asked:
+            continue
+        return True
+    return False
+
+
+def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]) -> bool:
+    """Same open topic, and no recorded update to a rule or check script."""
+    current = next((card for card in cards if card.id == card_id), None)
+    if current is None:
+        return False
+    siblings = _same_topic(current, cards)
+    if not siblings:
+        return False
+    plan = ""
+    if _branch_exists(root, f"card-{card_id}"):
+        plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
+    section = _section_h2(plan, "การตัดสินใจ")
+    if "อัปเดตกติกา" not in section:
+        return True
+    names: list[str] = []
+    for item in (current, *siblings):
+        found = _diff_names(root, queue, item.id)
+        if found:
+            names.extend(found)
+    return not any(_is_rule_path(path) and _cited(path, section) for path in names)
+
+
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
@@ -1027,6 +1168,11 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if test_cmd.strip() == "":
         return _refuse("test-cmd-empty")
     review_state = "skip"
+    card_text = _read_card(root, card_id)
+    cards = _cards_from_text(root, text)
+    current = next((card for card in cards if card.id == card_id), None)
+    if current is not None and _related_stop(current, cards) is not None:
+        return _refuse("related", "ถาม")
     if _branch_exists(root, f"card-{card_id}"):
         kinds = _commit_kinds(root, queue, card_id)
         if kinds is None:
@@ -1038,8 +1184,11 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             if review_err:
                 return _refuse("review-diff", detail=review_err)
             review_state = "open"
+        if one_off_checker(root, queue, card_id, card_text):
+            return _refuse("one-off-checker")
+        if repeat_patch_missing(root, queue, card_id, cards):
+            return _refuse("repeat-patch")
     try:
-        card_text = _read_card(root, card_id)
         need_screen = sees_screen(card_text)
         need_test = (test_cmd.strip() != NO_SUITE)
         if need_screen:
