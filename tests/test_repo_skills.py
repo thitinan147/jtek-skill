@@ -270,5 +270,32 @@ class RepeatRuleTests(unittest.TestCase):
         self.assertEqual(readme.count("\n## "), 4)
 
 
+class DraftPrSkillTests(unittest.TestCase):
+    def test_the_loop_opens_a_draft_pr_before_review_and_merge_only_marks(self) -> None:
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
+            encoding="utf-8"
+        )
+        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
+        nxt = (REPO / "skills" / "jt-next-step" / "SKILL.md").read_text(encoding="utf-8")
+        merge = (REPO / "skills" / "jt-merge" / "SKILL.md").read_text(encoding="utf-8")
+        command = "gh pr create --draft --base <สาขาคิว> --head card-<id>"
+        for text in (readme, loop, work, nxt):
+            self.assertIn(command, text)
+            self.assertIn("บรรทัดต้องไม่เป็น `รอรีวิว:`", text)
+        for text in (work, nxt):
+            self.assertIn("refused: pr-missing", text)
+            self.assertIn("step: ถาม", text)
+        self.assertIn("ห้ามเปิดซ้ำ", work)
+        self.assertIn("ข้าม `gh pr create`", nxt)
+        self.assertIn("ไม่เปิด PR", merge)
+        self.assertIn("ไม่ merge PR", merge)
+        self.assertIn("ไม่รัน git merge", merge)
+        self.assertIn("git merge-base --is-ancestor", merge)
+        self.assertIn("รวมกรณี merge ผ่าน PR", readme)
+        self.assertIn("ไม่เปิด PR ไม่ merge PR และไม่รัน git merge", loop)
+        self.assertNotIn("reach-review", loop)
+
+
 if __name__ == "__main__":
     unittest.main()
