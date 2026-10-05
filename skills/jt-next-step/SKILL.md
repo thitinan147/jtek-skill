@@ -20,15 +20,29 @@ python3 <โฟลเดอร์ของ skill นี้>/gate.py next --root 
 
 ทำเฉพาะ `command` ที่สคริปต์พิมพ์ หนึ่งคำสั่ง แล้วหยุด `reason` เป็น `need-id` ให้ถามรหัสแล้วหยุด `reason` เป็น `wait` ให้แสดงคำถามแล้วหยุด `action` เป็น `stop` ให้บอก `reason` แล้วหยุด `reason` เป็น `related` ให้บอก `ids` แล้วหยุด ใบนั้น `ชั้น:` เดียวกันแต่หัว **อ้างอิง** ยังไม่ลิงก์ ห้ามแยกเอเจนต์คู่ขนาน `command` เป็น `/jt-open-work` ให้ใช้ข้อความใต้ `merge:` ที่สคริปต์พิมพ์ ห้ามเปลี่ยนบรรทัด
 
-สคริปต์ไม่มีทาง merge แม้คนจะพิมพ์คำว่า merge ในรอบนี้ เครื่องหมายอยู่ที่ `/jt-merge` หลังคนเทียบหัว **ตรวจผ่านเมื่อ** กับ diff แล้วเท่านั้น คำสั่งนั้นเปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge เกตนี้เรียกคำสั่งนั้นไม่ได้ คนเป็นคน merge
+สคริปต์ไม่มีทาง merge แม้คนจะพิมพ์คำว่า merge ในรอบนี้ เครื่องหมายอยู่ที่ `/jt-merge` หลังคนเทียบหัว **ตรวจผ่านเมื่อ** กับ diff แล้วเท่านั้น คำสั่งนั้นเปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge ไม่เปิด PR และไม่ merge PR เกตนี้เรียกคำสั่งนั้นไม่ได้ คนเป็นคน merge บน GitHub หลัง commit ของ card อยู่ในสาขาคิวแล้ว รวมกรณี merge ผ่าน PR
 
 `/jt-do-work` ตั้ง `รอรีวิว:` โดยรันสคริปต์นี้บนสาขาคิว
 
 ```bash
-python3 <โฟลเดอร์ของ skill นี้>/gate.py reach-review --root . --id <id> --write
+python3 <โฟลเดอร์ของ skill นี้>/gate.py reach-review --root . --id <id>
 ```
 
-ไม่มี remote ให้ใส่ `--link local` สคริปต์รัน `<SETUP_CMD>` และ `<TEST_CMD>` บน worktree สะอาดของ branch `card-<id>` หาก `<SETUP_CMD>` ล้มเหลว สคริปต์พิมพ์ `refused: setup-failed` คำสั่งเทสจบไม่เป็นศูนย์ สคริปต์ไม่เขียน `รอรีวิว:`
+รอบแรกยังไม่ใส่ `--write` สคริปต์รัน `<SETUP_CMD>` และ `<TEST_CMD>` บน worktree สะอาดของ branch `card-<id>` หาก `<SETUP_CMD>` ล้มเหลว สคริปต์พิมพ์ `refused: setup-failed` คำสั่งเทสจบไม่เป็นศูนย์ สคริปต์ไม่เขียน `รอรีวิว:`
+
+`git remote` ว่าง และรอบแรกพิมพ์ `allowed` ให้รันอีกครั้งพร้อม `--write --link local` บรรทัดเป็น `รอรีวิว: local`
+
+`git remote` มีชื่อ และรอบแรกพิมพ์ `allowed` ให้ push เฉพาะ `card-<id>` แล้วเปิด draft PR เข้าสาขาคิว ก่อน `--write` `gh` ต้องใช้ได้ และยังไม่มี PR เปิดสำหรับ head เดิม
+
+```bash
+git push -u origin card-<id>
+gh pr list --head card-<id> --base <สาขาคิว> --state open --json number,isDraft,url,baseRefName
+gh pr create --draft --base <สาขาคิว> --head card-<id> --title "<id>" --body "card <id>"
+```
+
+`gh pr list` มี draft ที่ `baseRefName` เป็นสาขาคิวอยู่แล้ว ให้ข้าม `gh pr create` push ไม่ได้, `gh` ไม่อยู่ใน PATH, สร้างไม่ได้, ไม่มีใบเปิด, ใบเปิดไม่เป็น draft, หรือ base ไม่ใช่สาขาคิว ให้เขียน `ถาม:` ห้ามใส่ `--write` บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
+
+จากนั้นรันพร้อม `--write` สคริปต์ตรวจ draft PR เอง ถ้าพิมพ์ `refused: pr-missing` หรือ `refused: gh-missing` หรือ `refused: pr-not-draft` หรือ `refused: pr-base` หรือ `refused: pr-duplicate` หรือ `refused: pr-failed` พร้อม `step: ถาม` ให้เขียน `ถาม:` ห้ามตั้ง `รอรีวิว:`
 
 commit บน branch นั้นที่ชนิดแตะโค้ด สคริปต์ตรวจหาหัวข้อ `## รีวิว diff` ใน `card-loop/plan/<id>.md` ถ้าไม่มีจะพิมพ์ `refused: review-diff (detail: no-review)` ถ้า commit SHA ใน plan ไม่ตรงกับ commit ล่าสุดจะพิมพ์ `refused: review-diff (detail: stale-review)` และไม่เขียน `รอรีวิว:` การจดใน plan โดยไม่มี SHA ที่ตรงไม่นับ ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน
 

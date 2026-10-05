@@ -1,6 +1,6 @@
 ---
 name: jt-merge
-description: Change the merge mark on the board line. Use when the user runs /jt-merge. Do not run git merge. The human invokes this.
+description: Change the merge mark on the board line after the card commit is already on the queue branch. Use when the user runs /jt-merge. Do not run git merge, do not open a pull request, and do not merge one. The human invokes this.
 disable-model-invocation: true
 license: MIT
 metadata:
@@ -21,10 +21,10 @@ working tree สกปรกให้หยุดโดยไม่เปลี�
 
 อ่าน plan จาก branch `card-<id>` ตาราง **การตัดสินใจ** ว่าง หรือ diff จากสาขาคิวถึง `card-<id>` ไม่ตรงหัว **ตรวจผ่านเมื่อ** ให้หยุดแล้วบอกว่าหลักฐานไม่ครบ ห้ามเปลี่ยนเครื่องหมาย
 
-ตรวจว่าคนได้ merge `card-<id>` เข้าสาขาคิวแล้วจริง โดยตรวจว่า commit ของ branch รวมอยู่ในสาขาคิวแล้ว (เช่น `git merge-base --is-ancestor card-<id> <สาขาคิว>`) หากยังไม่ได้ merge ให้บอกให้คน merge ก่อน ไม่รัน git merge เอง
+ตรวจว่า commit ของ `card-<id>` อยู่ในสาขาคิวแล้ว ด้วย `git merge-base --is-ancestor card-<id> <สาขาคิว>` การ merge ผ่าน PR บน GitHub ที่ทำให้ commit นั้นอยู่ในสาขาคิวใช้การตรวจเดียวกัน หากยังไม่อยู่ ให้บอกให้คน merge บน GitHub ก่อน ไม่รัน git merge ไม่เปิด PR และไม่ merge PR
 
-เมื่อหลักฐานครบและคน merge โค้ดแล้ว ให้อยู่บนสาขาคิว เปลี่ยนเฉพาะเครื่องหมายบนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `merge:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+เมื่อหลักฐานครบและ commit อยู่ในสาขาคิวแล้ว ให้อยู่บนสาขาคิว เปลี่ยนเฉพาะเครื่องหมายบนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `merge:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
 
-คำสั่งนี้เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge ไม่ย้ายบรรทัด และไม่แตะโค้ด คนเป็นคน merge ใบที่หัวมีชื่อ repo คู่ คนเป็นคน merge ทั้งสอง repo คำสั่งนี้ยังเปลี่ยนเฉพาะเครื่องหมายบนบรรทัดของ board หลัก
+คำสั่งนี้เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge ไม่เปิด PR ไม่ merge PR ไม่ย้ายบรรทัด และไม่แตะโค้ด คนเป็นคน merge บน GitHub ใบที่หัวมีชื่อ repo คู่ คนเป็นคน merge ทั้งสอง repo คำสั่งนี้ยังเปลี่ยนเฉพาะเครื่องหมายบนบรรทัดของ board หลัก
 
-เสร็จเมื่อบรรทัดบนสาขาคิวเป็น `merge:` และไม่ได้รัน git merge
+เสร็จเมื่อบรรทัดบนสาขาคิวเป็น `merge:` และไม่ได้รัน git merge และไม่ได้เปิดหรือ merge PR
