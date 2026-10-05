@@ -141,6 +141,12 @@ class RenamedCommandTests(unittest.TestCase):
         board = (REPO / "skills" / "jt-new-board" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("ตารางสถานะจากหัว **ค้น**", board)
         self.assertIn("แนะนำให้ลง", board)
+        self.assertIn("มีคำสั่ง `playwright` บน PATH", board)
+        self.assertIn("ชื่อเบราว์เซอร์ของเซสชันหรือ MCP ไม่ใส่", board)
+        self.assertNotIn(
+            "มี `playwright` ใน `package.json` ให้ใส่ `playwright` ไม่มีแต่มี `cypress` ให้ใส่ `cypress` นอกนั้นเว้นช่องว่าง",
+            board,
+        )
         self.assertIn("ไม่รัน git merge", merge)
         self.assertIn("เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด", merge)
         self.assertIn("เปลี่ยน `- [ ]` บนบรรทัดนั้นเป็น `- [x]`", drop)

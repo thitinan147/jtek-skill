@@ -25,7 +25,7 @@ metadata:
 | `<TEST_CMD>` | `scripts.test` ใน `package.json` เป็น `<ตัวจัดการ> test` ไม่มีให้ใช้ `cargo test` เมื่อมี `Cargo.toml` ไม่มีให้ใช้ `go test ./...` เมื่อมี `go.mod` ไม่มีให้ใช้ `pytest` เมื่อ `pyproject.toml` มี pytest ไม่มีทั้งสี่อย่างให้ใส่ `ไม่มีชุดเทส` |
 | `<TYPECHECK_CMD>` | `scripts.typecheck` เป็น `<ตัวจัดการ> run typecheck` ไม่มีแต่มี `tsconfig.json` ให้ใส่ `<ตัวจัดการ> exec tsc --noEmit` ไม่มีแต่มี `go.mod` ให้ใส่ `go vet ./...` นอกนั้นเว้นช่องว่าง |
 | `<LINT_CMD>` | `scripts.lint` เป็น `<ตัวจัดการ> run lint` นอกนั้นเว้นช่องว่าง |
-| `<BROWSER_TOOL>` | มี `playwright` ใน `package.json` ให้ใส่ `playwright` ไม่มีแต่มี `cypress` ให้ใส่ `cypress` นอกนั้นเว้นช่องว่าง |
+| `<BROWSER_TOOL>` | ใส่ชื่อแรกที่รันเป็นคำสั่งได้ มี `playwright` ใน `package.json` หรือมีคำสั่ง `playwright` บน PATH ให้ใส่ `playwright` ไม่มีให้ดู `cypress` แบบเดียวกัน ไม่พบให้เว้นช่องว่าง ชื่อเบราว์เซอร์ของเซสชันหรือ MCP ไม่ใส่ เพราะเกตใช้ช่องนี้แค่ตรวจว่าไม่ว่าง แล้วรันหัว `คลิก:` เป็นคำสั่ง shell |
 | `<STACK_LOCK>` | หนึ่งบรรทัด `ภาษา · เฟรมเวิร์กหรือไม่มีเฟรมเวิร์ก · คำสั่งใน <TEST_CMD> · ของที่ห้ามใช้: ไม่ได้ประกาศในไฟล์โปรเจกต์` อ่านภาษาและเฟรมเวิร์กจาก `package.json` `go.mod` `pyproject.toml` `Cargo.toml` |
 
 7. หาชื่อ skill ตามหัว **ค้น** ใน `skills/jt-find-skills/SKILL.md` เขียนชื่อที่หัวนั้นให้ลงช่อง ไม่เกินสามชื่อต่อกลุ่ม ลง `<TEK_SKILLS>` และ `<REPO_SKILLS>` คั่นด้วย `, ` ไม่มีชื่อในกลุ่มนั้นให้เว้นช่องนั้นว่าง
