@@ -1333,6 +1333,7 @@ def _has_remote(root: Path) -> bool:
 
 
 def classify_open_prs(prs: list[dict], head: str, base: str) -> tuple[str, str]:
+    """Return (ok, url) or (ask, reason) for open pull requests of one head."""
     matches = [
         pr
         for pr in prs
@@ -1353,7 +1354,8 @@ def classify_open_prs(prs: list[dict], head: str, base: str) -> tuple[str, str]:
     return ("ok", url.strip())
 
 
-def draft_pr_link(root: Path, head: str, base: str) -> tuple[str, str]:
+def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
+    """Return (local, local), (ok, url), or (ask, reason)."""
     if not _has_remote(root):
         return ("local", "local")
     if shutil.which("gh") is None:
@@ -1445,7 +1447,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         ):
             return _refuse("pair-not-passed")
         if write:
-            kind, value = draft_pr_link(root, f"card-{card_id}", queue)
+            kind, value = lookup_draft_pr(root, f"card-{card_id}", queue)
             if kind == "ask":
                 return _refuse(value, "ถาม")
             if kind == "ok":
