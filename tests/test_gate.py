@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -9,6 +11,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 GATE_PATH = REPO / "skills" / "jt-next-step" / "gate.py"
+DIFF_CHECK = REPO / "scripts" / "jt-diff-check"
 
 
 def load_gate():
@@ -316,6 +319,43 @@ def run_gate(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+def run_gate_env(
+    repo: Path, env: dict[str, str], *args: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def run_diff_check(repo: Path, card_id: str = "12") -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(DIFF_CHECK), "--root", str(repo), "--id", card_id],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _git_bin_env(repo: Path, name: str, gh_script: str = "") -> dict[str, str]:
+    bin_dir = repo / name
+    bin_dir.mkdir()
+    git_bin = shutil.which("git")
+    assert git_bin
+    os.symlink(git_bin, bin_dir / "git")
+    if gh_script:
+        gh = bin_dir / "gh"
+        gh.write_text(gh_script, encoding="utf-8")
+        gh.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(bin_dir)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 class ReachReviewGitTests(unittest.TestCase):
@@ -839,10 +879,44 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: repeat-patch", result.stdout)
+        self.assertIn("detail: no-row", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertNotIn("step: ถาม", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("รอรีวิว:", after)
+
+    def test_same_topic_plan_row_without_a_rule_file_cannot_reach_review(self) -> None:
+        self._topic_cards(["13"])
+        git(self.repo, "checkout", "card-12")
+        git(self.repo, "merge", "main")
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        commit_all(self.repo, "fix: patch only this card")
+        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        git(self.repo, "checkout", "main")
+        self._write_plan("12", sha, "อัปเดตกติกา | ชั้นเดิมซ้ำ | skills/jt-card-gate/SKILL.md")
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        plan = git(self.repo, "show", "card-12:card-loop/plan/12.md").stdout
+        names = git(
+            self.repo,
+            "diff",
+            "--name-only",
+            "main...card-12",
+            "--",
+            ".",
+            ":(exclude)card-loop",
+        ).stdout
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: repeat-patch", result.stdout)
+        self.assertIn("detail: prose-only", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
+        self.assertIn("อัปเดตกติกา", plan)
+        self.assertIn("app.py", names)
+        self.assertNotIn("SKILL.md", names)
+        self.assertNotIn("gate.py", names)
 
     def test_same_topic_with_a_recorded_rule_update_can_reach_review(self) -> None:
         self._topic_cards(["13"])
@@ -1151,6 +1225,217 @@ class V20FeatureTests(unittest.TestCase):
         self.assertEqual(parsed.cards[1].status, "ส่งกลับ:")
         self.assertEqual(parsed.cards[2].status, "ถาม:")
         self.assertEqual(parsed.cards[3].status, "รอรีวิว:")
+
+
+class LandedTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat) รอรีวิว: local"),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["app.py"]),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add the board")
+        git(self.repo, "branch", "card-12")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _diverge(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        commit_all(self.repo, "feat: card work")
+        git(self.repo, "checkout", "main")
+
+    def test_squash_merged_pr_is_landed_when_not_ancestor(self) -> None:
+        self._diverge()
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "card-12", "main"],
+            cwd=self.repo,
+            capture_output=True,
+        )
+        self.assertNotEqual(ancestor.returncode, 0)
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        env = _git_bin_env(
+            self.repo,
+            "bin-squash",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"card-12\"}'\n",
+        )
+        result = run_gate_env(self.repo, env, "landed", "--id", "12")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("landed: squash", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertNotIn("landed: ancestor", result.stdout)
+        self.assertEqual(after, before)
+
+    def test_open_pr_is_not_landed(self) -> None:
+        self._diverge()
+        env = _git_bin_env(
+            self.repo,
+            "bin-open",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"card-12\"}'\n",
+        )
+        result = run_gate_env(self.repo, env, "landed", "--id", "12")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: not-landed", result.stdout)
+        self.assertIn("detail: pr-open", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+
+    def test_ancestor_lands_without_calling_gh(self) -> None:
+        self._diverge()
+        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card")
+        result = run_gate_env(
+            self.repo, _git_bin_env(self.repo, "bin-ancestor"), "landed", "--id", "12"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("landed: ancestor", result.stdout)
+        self.assertNotIn("landed: squash", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+
+    def test_missing_pr_is_not_landed(self) -> None:
+        self._diverge()
+        result = run_gate_env(
+            self.repo, _git_bin_env(self.repo, "bin-missing"), "landed", "--id", "12"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: not-landed", result.stdout)
+        self.assertIn("detail: pr-missing", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+
+    def test_merged_pr_for_a_different_head_is_not_landed(self) -> None:
+        self._diverge()
+        env = _git_bin_env(
+            self.repo,
+            "bin-other",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"other\"}'\n",
+        )
+        result = run_gate_env(self.repo, env, "landed", "--id", "12")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: not-landed", result.stdout)
+        self.assertIn("detail: pr-missing", result.stdout)
+
+    def test_pr_list_covers_squash_when_view_fails(self) -> None:
+        self._diverge()
+        script = """#!/bin/sh
+if [ "$2" = "view" ]; then
+  exit 1
+fi
+printf '%s\\n' '[{"state":"MERGED","headRefName":"card-12"}]'
+exit 0
+"""
+        result = run_gate_env(
+            self.repo, _git_bin_env(self.repo, "bin-list", script), "landed", "--id", "12"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("landed: squash", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+
+
+class DiffCheckTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["app.py"]),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add the board")
+        git(self.repo, "branch", "card-12")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _commit_code(self) -> str:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        commit_all(self.repo, "feat: card work")
+        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        git(self.repo, "checkout", "main")
+        return sha
+
+    def _write_plan(self, body: str) -> None:
+        git(self.repo, "checkout", "card-12")
+        plan = self.repo / "card-loop" / "plan"
+        plan.mkdir(parents=True, exist_ok=True)
+        (plan / "12.md").write_text(body, encoding="utf-8")
+        commit_all(self.repo, "docs: record review")
+        git(self.repo, "checkout", "main")
+
+    def test_docs_only_range_skips(self) -> None:
+        result = run_diff_check(self.repo)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("diff-check: skip", result.stdout)
+
+    def test_matching_sha_exits_zero(self) -> None:
+        sha = self._commit_code()
+        self._write_plan(
+            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {sha}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n"
+        )
+        result = run_diff_check(self.repo)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "diff-check: ok")
+
+    def test_missing_section_exits_nonzero(self) -> None:
+        self._commit_code()
+        result = run_diff_check(self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diff-check: no-review", result.stdout)
+
+    def test_section_without_a_sha_exits_nonzero(self) -> None:
+        self._commit_code()
+        self._write_plan("# Plan 12\n\n## รีวิว diff\n\nจดอย่างเดียว\n")
+        result = run_diff_check(self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diff-check: no-sha", result.stdout)
+
+    def test_wrong_sha_exits_nonzero(self) -> None:
+        self._commit_code()
+        self._write_plan(
+            "# Plan 12\n\n## รีวิว diff\n\n- commit: "
+            "0123456789abcdef0123456789abcdef01234567\n"
+        )
+        result = run_diff_check(self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diff-check: stale-review", result.stdout)
+
+    def test_dirty_card_worktree_exits_nonzero(self) -> None:
+        sha = self._commit_code()
+        self._write_plan(
+            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {sha}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n"
+        )
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        result = run_diff_check(self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diff-check: stale-review", result.stdout)
+
+    def test_heading_alone_cannot_reach_review(self) -> None:
+        self._commit_code()
+        self._write_plan("# Plan 12\n\n## รีวิว diff\n\nจดอย่างเดียว\n")
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("detail: no-sha", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertEqual(after, before)
+        self.assertNotIn("รอรีวิว:", after)
 
 
 class GateSourceTests(unittest.TestCase):
