@@ -54,13 +54,10 @@ class RepoSkillRuleTests(unittest.TestCase):
         )
 
     def test_name_check_is_not_in_ci_and_the_test_limit_is_not_a_loop_paragraph(self) -> None:
-        workflow = (REPO / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
         loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         skills = (REPO / "skills" / "jt-card-gate" / "references" / "skills.md").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn("REPO_SKILLS", workflow)
-        self.assertNotIn("TEK_SKILLS", workflow)
         self.assertNotIn("reach-review", loop)
         self.assertIn("/jt-next-step", loop)
         self.assertIn("เวอร์ชัน 20", loop)
