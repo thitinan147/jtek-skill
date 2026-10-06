@@ -1,6 +1,6 @@
 ---
 name: jt-new-card
-description: Interview until each card has one ticket type, one path, and ทำ ไม่ทำ ตรวจผ่านเมื่อ headings that match the work. Propose several cards in one run when the work splits, then write the accepted cards and their board lines. Use when the user runs /jt-new-card or asks to add a card. Wait for them to accept the drafts before creating files.
+description: Interview until each card has one ticket type, one path, and do, out, and pass headings that match the work. Propose several cards in one run when the work splits, then write the accepted cards and their board lines. Use when the user runs /jt-new-card or asks to add a card. Wait for them to accept the drafts before creating files.
 license: MIT
 metadata:
   author: Thitinan
@@ -10,68 +10,68 @@ metadata:
 
 # jt-new-card
 
-ถามจนได้ card ที่คนต้องการ ครั้งเดียวเสนอได้หลายใบเมื่องานแยกกันได้ คนรับร่างแล้วจึงสร้างไฟล์
+Ask until you have the cards the human wants. One call may propose several cards when the work splits. Create files only after the human accepts the draft.
 
-ยังไม่สร้าง `card-loop/backlog/<id>.md` และยังไม่แก้ board ระหว่างถาม ห้ามเรียก `/jt-do-work`
+Do not create `card-loop/backlog/<id>.md` and do not edit the board while asking. Do not call `/jt-do-work`.
 
-## ก่อนถาม
+## Before you ask
 
-1. ไม่มี `card-loop/board.md` ให้หยุดแล้วบอกให้เรียก `/jt-new-board` ก่อน
-2. มี `card-loop/brief.md` ให้อ่านก่อน ใบที่ร่างต้องอยู่ในกรอบไฟล์นั้น งานนอกกรอบให้ถามก่อน ไม่ใส่ในร่าง
-3. รหัสที่ต่อท้ายคำสั่งคือรหัสของใบแรก ไม่มีรหัสให้เสนอรหัสที่ยังไม่มีไฟล์
-4. มีไฟล์ `card-loop/backlog/<id>.md` อยู่แล้ว ห้ามใช้รหัสนั้น
-5. ข้อเท็จจริงใน repo ที่เปิดอยู่ให้เปิดไฟล์ดูเอง อย่าถามสิ่งที่ดูแล้วรู้
-6. อย่าถามว่า repo คู่อยู่ที่ไหน อ่านบรรทัด `คู่:` บน board
+1. If `card-loop/board.md` is missing, stop and say to run `/jt-new-board` first.
+2. If `card-loop/brief.md` exists, read it first. Draft cards must stay inside that file. Ask before you include work outside it. Do not put that work in the draft.
+3. An id after the command is the first card's id. If there is no id, propose an id that has no file yet.
+4. If `card-loop/backlog/<id>.md` already exists, do not use that id.
+5. For facts in the open repo, open the file yourself. Do not ask something you can see.
+6. Do not ask where the paired repo is. Read the `pair:` line on the board.
 
-## ถาม
+## Ask
 
-ถามทีละรอบ หนึ่งรอบคือทุกคำถามที่ตอบได้ตอนนี้โดยไม่เดาคำตอบที่ยังไม่ได้ยิน แต่ละข้อมีคำตอบที่แนะนำหนึ่งข้อ แล้วหยุดรอคำตอบคน
+Ask one round at a time. One round is every question you can ask now without guessing an answer you have not heard. Each question has one suggested answer. Then stop and wait for the human.
 
-รอบแรกถามว่าอยากให้เกิดอะไร เมื่อคนตอบแล้วให้แยกเป็นใบ
+The first round asks what should happen. After the human answers, split the work into cards.
 
-- งานที่ลงมือแยกกันได้ คนละผล ให้เป็นคนละใบ
-- งานที่ยังเป็นทางเดียวและผลเดียวกัน ให้อยู่ใบเดียว
-- ใบที่เป็นบั๊กหรือหัวข้อเดียวกัน ให้ใส่ `ชั้น:` ค่าเดียวกัน และใส่รหัสอีกใบในหัว **อ้างอิง** ห้ามแยกเป็นเอเจนต์คู่ขนาน
-- แต่ละใบเขียนหัว **ไฟล์ที่แตะได้** เป็น path ที่จะสร้างหรือแก้
-- ไฟล์ที่หลายใบต้องเขียนร่วมกัน ให้เหลือบนใบท้ายใบเดียว ใบก่อนหน้าเขียนเฉพาะไฟล์ของตัวเอง
-- ใบที่ประกอบของจากใบอื่น ให้ใส่ path ของใบเหล่านั้นในหัว **ไฟล์ที่แตะได้** ด้วย ใบนั้นจะถูกหยิบเมื่อใบที่สร้าง path นั้นรวมเข้าสาขาคิวแล้ว
-- ถามว่างานนี้ผู้ใช้เห็นจอหรือไม่ ถ้าเห็นจอ (ทุกชนิด ไม่เฉพาะ `fix`) ให้ถามและบันทึก `เห็นจอ: ใช่` พร้อมคำสั่ง `เริ่ม:` พอร์ต `พอร์ต:` (คั่นด้วยจุลภาคหากมีหลายพอร์ต) วินาทีรอ `รอ:` และคำสั่งคลิก `คลิก:` ถ้าไม่เห็นจอให้ใส่ `เห็นจอ: ไม่`
+- Work that can be done separately, with different results, is a separate card.
+- Work that is still one path and one result stays on one card.
+- Cards that are the same bug or the same topic get the same `layer:` value, and each puts the other id under `refs`. Do not split into parallel agents.
+- Each card writes `files` as the paths it will create or edit.
+- A file that several cards must write together stays on the last card only. Earlier cards write only their own files.
+- A card that composes something from other cards also lists those paths under `files`. That card is picked after the cards that create those paths are on the queue branch.
+- Ask whether the user sees a screen. If they do, for every kind and not only `fix`, ask and record `screen: yes` plus the `start:` command, `port:` (comma-separated when there are several ports), `wait:` seconds, and the `click:` command. If they do not see a screen, write `screen: no`.
 
-แต่ละใบมีชนิดเดียว ทางเดียว หัว **ทำ** **ไม่ทำ** **ตรวจผ่านเมื่อ** และหัวข้อบน board
+Each card has one kind, one path, the headings `do`, `out`, and `pass`, and a board section.
 
-ถามรอบถัดไปเมื่อใบใดใบหนึ่งยังมีอย่างใดอย่างหนึ่ง
+Ask another round when any card still has one of these.
 
-- ขอบเขตคลุมเครือ
-- มีสองทางที่ผลไม่เท่ากัน
-- จะลบของที่อาจยังมีคนใช้โดยยังไม่เลือก
-- จะเปลี่ยนสัญญาที่คนอื่นเรียกโดยยังไม่เลือก
-- ชนิดยังไม่ใช่ค่าเดียวจากหัว **ชนิดตั๋ว** ใน `references/loop.md` ของ skill `jt-card-gate`
-- บรรทัดยังไม่รู้ว่าอยู่ **ทำก่อน** **งานหลัก** หรือ **เก็บเล็ก**
+- The scope is vague.
+- Two paths have different outcomes.
+- You would delete something people may still use, and the card has not chosen.
+- You would change a contract other callers use, and the card has not chosen.
+- The kind is not yet one value from **Ticket kinds** in `references/loop.md` of skill `jt-card-gate`.
+- The line does not yet know whether it belongs in **first**, **main**, or **later**.
 
-หยุดถามเมื่อทุกใบชนิดเดียว ทางเดียว สามหัวอ่านแล้วลงมือได้ และรู้หัวข้อบน board
+Stop asking when every card has one kind, one path, three headings that can be carried out, and a known board section.
 
-## ร่าง
+## Draft
 
-แสดงทุกใบตาม `assets/card.template.md` ของ skill `jt-card-gate` หัว **ถาม** ว่าง รหัสใบแรกใช้รหัสที่ต่อท้ายคำสั่ง ใบถัดไปใช้รหัสถัดไปที่ยังไม่มีไฟล์
+Show every card from `assets/card.template.md` of skill `jt-card-gate`. The `ask` heading is empty. The first card uses the id after the command. Later cards use the next id that has no file yet.
 
-ถามว่าจะรับใบไหน ตัดใบไหน หรือให้แก้ใบไหน คนแก้ให้แสดงร่างใหม่ทั้งชุด ยังไม่สร้างไฟล์ คนบอกว่ารับชุดนี้จึงไปหัว **สร้าง** รับเฉพาะใบที่คนไม่ตัด
+Ask which cards to accept, which to cut, and which to edit. If the human edits, show the whole draft again. Do not create files yet. Go to **Create** only when the human says they accept this set. Create only the cards the human did not cut.
 
-## สร้าง
+## Create
 
-1. บรรทัด `สาขาคิว:` ว่างให้หยุด มีไฟล์ที่แก้ค้างนอก `card-loop/` ให้หยุด
-2. checkout สาขาคิว ไฟล์ `card-loop/board.md` ที่ยังไม่ commit ให้รวมใน commit ของคำสั่งนี้
-3. เขียน `card-loop/backlog/<id>.md` ทุกใบที่รับ หัวไฟล์เป็น `# <id> — <ชื่อสั้น>` ใบที่แตะ repo คู่ต่อท้ายชื่อด้วย `·` และชื่อบนบรรทัด `คู่:` ใบที่ไม่แตะคู่ไม่ใส่ชื่อนั้น
-4. ใส่บรรทัด `- [ ] **<id>** <ชื่อสั้น> (<ชนิด>)` ของทุกใบในหัวข้อที่ตกลง ใบที่แตะ repo คู่ใส่ `·` และชื่อนั้นก่อน `(<ชนิด>)` บรรทัด `ไม่มีข้อ` ใต้หัวข้อนั้นให้เอาออกเมื่อมีใบแรกเข้าหัวข้อนั้น
-5. commit ไฟล์ card ที่รับกับ `card-loop/board.md` บนสาขาคิวครั้งเดียว ใบเดียวใช้ `docs(<id>):` ตามหัว **มาตรฐาน commit** ใน `references/loop.md` หลายใบใช้ `docs: add accepted cards`
+1. If the `queue:` line is empty, stop. If edited files are dirty outside `card-loop/`, stop.
+2. Check out the queue branch. Include an uncommitted `card-loop/board.md` in this command's commit.
+3. Write `card-loop/backlog/<id>.md` for every accepted card. The file heading is `# <id> - <short name>`. A card that touches the paired repo appends `·` and the name on the `pair:` line. A card that does not touch the pair does not include that name.
+4. Add the line `- [ ] **<id>** <short name> (<kind>)` for every card under the agreed section. A card that touches the paired repo puts `·` and that name before `(<kind>)`. Remove the `no items` line under that section when the first card enters it.
+5. Commit the accepted card files and `card-loop/board.md` on the queue branch in one commit. One card uses `docs(<id>):` per **Commit standard** in `references/loop.md`. Several cards use `docs: add accepted cards`.
 
-## repo คู่
+## Paired repo
 
-อย่าถามว่า repo คู่อยู่ที่ไหน อ่านบรรทัด `คู่:` บน board ใช้เฉพาะชื่อบนบรรทัดนั้น
+Do not ask where the paired repo is. Read the `pair:` line on the board. Use only the name on that line.
 
-บรรทัดเป็น `ไม่มี` หรือว่าง หัวใบไม่ใส่ชื่อ repo
+If the line is `none` or empty, the card heading does not include a repo name.
 
-ใบที่แตะ repo นั้นเป็นใบเดียว หัวไฟล์และบรรทัดบน board ใส่ `·` แล้วตามด้วยชื่อบนบรรทัด `คู่:` ใบที่ไม่แตะคู่ไม่ใส่ชื่อนั้น
+A card that touches that repo is one card. The file heading and the board line contain `·` followed by the name on the `pair:` line. A card that does not touch the pair does not include that name.
 
-อย่าสร้าง `card-loop/paired.md` ตอนสร้าง card และอย่าสร้างเพราะ board มีชื่อ
+Do not create `card-loop/paired.md` while creating the card. Do not create it because the board has the name.
 
-เสร็จเมื่อทุกไฟล์ card กับบรรทัดตรงใบที่คนรับ และหัว **ถาม** ของทุกใบยังว่าง
+Done when every card file and board line matches a card the human accepted, and every card's `ask` heading is still empty.

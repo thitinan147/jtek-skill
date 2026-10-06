@@ -10,28 +10,28 @@ metadata:
 
 # jt-new-board
 
-1. repo ที่เปิดอยู่ไม่ใช่ git repo ให้หยุดแล้วบอกให้ `git init` ก่อน
-2. HEAD ไม่อยู่บน branch ให้หยุดแล้วบอกให้ checkout branch ที่จะเก็บคิว
-3. มี `card-loop/board.md` อยู่แล้วให้หยุดแล้วบอกว่ามีแล้ว
-4. copy `assets/board.template.md` ของ skill `jt-card-gate` ไปที่ `card-loop/board.md`
-5. ใส่ชื่อ branch ปัจจุบันหลังบรรทัด `สาขาคิว:` และเปลี่ยน `<REPO_NAME>` ในหัวไฟล์เป็นชื่อโฟลเดอร์ของ repo
-6. เติมตารางจาก repo ที่เปิดอยู่ คนไม่กรอกตารางนี้
+1. If the open repo is not a git repo, stop and say to run `git init` first.
+2. If HEAD is not on a branch, stop and say to check out the branch that will hold the queue.
+3. If `card-loop/board.md` already exists, stop and say it is already there.
+4. Copy `assets/board.template.md` from skill `jt-card-gate` to `card-loop/board.md`.
+5. Write the current branch name after the `queue:` line, and replace `<REPO_NAME>` in the file heading with this repo's folder name.
+6. Fill the table from the open repo. The human does not fill this table.
 
-ใช้ตัวจัดการแพ็กเกจจากไฟล์ล็อกที่มีอยู่ คือ `pnpm-lock.yaml` เป็น `pnpm` ไม่มีไฟล์นั้นแต่มี `yarn.lock` เป็น `yarn` ไม่มีสองไฟล์นั้นแต่มี `bun.lock` หรือ `bun.lockb` เป็น `bun` นอกนั้นเป็น `npm`
+Use the package manager from the lockfile that exists. `pnpm-lock.yaml` means `pnpm`. If that file is absent and `yarn.lock` exists, use `yarn`. If both are absent and `bun.lock` or `bun.lockb` exists, use `bun`. Otherwise use `npm`.
 
-| ช่อง | ใส่ค่าแรกที่พบ |
+| Cell | Write the first value you find |
 |---|---|
-| `<SETUP_CMD>` | คำสั่งเตรียมสภาพแวดล้อมหรือติดตั้ง dependency: `pnpm install --frozen-lockfile` เมื่อมี `pnpm-lock.yaml`, `yarn install --frozen-lockfile` เมื่อมี `yarn.lock`, `bun install --frozen-lockfile` เมื่อมี `bun.lock` หรือ `bun.lockb`, `npm ci` เมื่อมี `package-lock.json`, `npm install` เมื่อมี `package.json`, `cargo build` เมื่อมี `Cargo.toml`, `go mod download` เมื่อมี `go.mod`, `uv sync --frozen` หรือ `poetry install` ตามเครื่องมือ python นอกนั้นเว้นช่องว่าง |
-| `<TEST_CMD>` | `scripts.test` ใน `package.json` เป็น `<ตัวจัดการ> test` ไม่มีให้ใช้ `cargo test` เมื่อมี `Cargo.toml` ไม่มีให้ใช้ `go test ./...` เมื่อมี `go.mod` ไม่มีให้ใช้ `pytest` เมื่อ `pyproject.toml` มี pytest ไม่มีทั้งสี่อย่างให้ใส่ `ไม่มีชุดเทส` |
-| `<TYPECHECK_CMD>` | `scripts.typecheck` เป็น `<ตัวจัดการ> run typecheck` ไม่มีแต่มี `tsconfig.json` ให้ใส่ `<ตัวจัดการ> exec tsc --noEmit` ไม่มีแต่มี `go.mod` ให้ใส่ `go vet ./...` นอกนั้นเว้นช่องว่าง |
-| `<LINT_CMD>` | `scripts.lint` เป็น `<ตัวจัดการ> run lint` นอกนั้นเว้นช่องว่าง |
-| `<BROWSER_TOOL>` | ใส่ชื่อแรกที่รันเป็นคำสั่งได้ มี `playwright` ใน `package.json` หรือมีคำสั่ง `playwright` บน PATH ให้ใส่ `playwright` ไม่มีให้ดู `cypress` แบบเดียวกัน ไม่พบให้เว้นช่องว่าง ชื่อเบราว์เซอร์ของเซสชันหรือ MCP ไม่ใส่ เพราะเกตใช้ช่องนี้แค่ตรวจว่าไม่ว่าง แล้วรันหัว `คลิก:` เป็นคำสั่ง shell |
-| `<STACK_LOCK>` | หนึ่งบรรทัด `ภาษา · เฟรมเวิร์กหรือไม่มีเฟรมเวิร์ก · คำสั่งใน <TEST_CMD> · ของที่ห้ามใช้: ไม่ได้ประกาศในไฟล์โปรเจกต์` อ่านภาษาและเฟรมเวิร์กจาก `package.json` `go.mod` `pyproject.toml` `Cargo.toml` |
+| `<SETUP_CMD>` | The command that prepares the environment or installs dependencies. `pnpm install --frozen-lockfile` when `pnpm-lock.yaml` exists, `yarn install --frozen-lockfile` when `yarn.lock` exists, `bun install --frozen-lockfile` when `bun.lock` or `bun.lockb` exists, `npm ci` when `package-lock.json` exists, `npm install` when `package.json` exists, `cargo build` when `Cargo.toml` exists, `go mod download` when `go.mod` exists, and `uv sync --frozen` or `poetry install` for the Python tool in use. Otherwise leave the cell empty. |
+| `<TEST_CMD>` | `scripts.test` in `package.json` becomes `<manager> test`. If that is absent, use `cargo test` when `Cargo.toml` exists. If that is absent, use `go test ./...` when `go.mod` exists. If that is absent, use `pytest` when `pyproject.toml` has pytest. If none of the four exist, write `no-suite`. |
+| `<TYPECHECK_CMD>` | `scripts.typecheck` becomes `<manager> run typecheck`. If that is absent and `tsconfig.json` exists, write `<manager> exec tsc --noEmit`. If that is absent and `go.mod` exists, write `go vet ./...`. Otherwise leave the cell empty. |
+| `<LINT_CMD>` | `scripts.lint` becomes `<manager> run lint`. Otherwise leave the cell empty. |
+| `<BROWSER_TOOL>` | Write the first name that can run as a command. If `playwright` is in `package.json` or a `playwright` command is on PATH, write `playwright`. If not, check `cypress` the same way. If neither is found, leave the cell empty. Do not put a session or MCP browser name, because the gate only checks that this cell is non-empty and then runs the `click:` heading as a shell command. |
+| `<STACK_LOCK>` | One line, `language · framework or no framework · the command in <TEST_CMD> · banned: not declared in the project files`. Read the language and framework from `package.json`, `go.mod`, `pyproject.toml`, or `Cargo.toml`. |
 
-7. หาชื่อ skill ตามหัว **ค้น** ใน `skills/jt-find-skills/SKILL.md` เขียนชื่อที่หัวนั้นให้ลงช่อง ไม่เกินสามชื่อต่อกลุ่ม ลง `<TEK_SKILLS>` และ `<REPO_SKILLS>` คั่นด้วย `, ` ไม่มีชื่อในกลุ่มนั้นให้เว้นช่องนั้นว่าง
-8. แสดงตารางสถานะจากหัว **ค้น** ในคำตอบ คำสั่งติดตั้งอยู่เฉพาะแถว `แนะนำให้ลง` ไม่รันคำสั่งนั้น
-9. ถามครั้งเดียวว่า repo คู่ชื่ออะไร เขียนคำตอบลงบรรทัด `คู่:` ที่มีอยู่แล้วบน board ของ repo นี้ บรรทัดนั้นเป็นชื่อที่คนตอบ หรือคำว่า `ไม่มี` ใช้เฉพาะคำที่คนตอบ ห้ามใส่ชื่อ repo เอง ห้ามถามซ้ำตอนเปิด card ใบหลัง ห้ามสร้าง `card-loop/paired.md` เพราะบรรทัดนี้ และห้ามสร้าง board ใน repo อื่น
+7. Find skill names under **Search** in `skills/jt-find-skills/SKILL.md`. Write the names that heading produces into the cells, at most three names per group. Write `<TEK_SKILLS>` and `<REPO_SKILLS>` separated by `, `. If a group has no names, leave that cell empty.
+8. Show the status table from **Search** in the reply. The install command appears only on an `install this` row. Do not run that command.
+9. Ask once what the paired repo is named. Write the answer on the `pair:` line that already exists on this repo's board. That line is the name the human answered, or the word `none`. Use only the words the human answered. Do not invent a repo name. Do not ask again when a later card opens. Do not create `card-loop/paired.md` because of this line, and do not create a board in another repo.
 
-ห้ามเรียก `/jt-do-work`
+Do not call `/jt-do-work`.
 
-เสร็จเมื่อ `สาขาคิว:` เป็นชื่อ branch จริง บรรทัด `คู่:` เป็นชื่อที่คนตอบหรือคำว่า `ไม่มี` ช่อง `<TEST_CMD>` กับ `<STACK_LOCK>` ไม่ว่าง และสองช่อง skill ได้ชื่อจากหัว **ค้น** แล้ว
+Done when `queue:` is a real branch name, the `pair:` line is the name the human answered or the word `none`, the `<TEST_CMD>` and `<STACK_LOCK>` cells are non-empty, and both skill cells have names from **Search**.

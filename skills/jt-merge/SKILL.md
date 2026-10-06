@@ -11,26 +11,26 @@ metadata:
 
 # jt-merge
 
-รหัสที่ต่อท้ายคำสั่งคือใบที่จะรับ ถ้าไม่มีรหัสและมีบรรทัด `รอรีวิว:` ใบเดียว ให้ใช้ใบนั้น ถ้ามีหลายใบให้ถามรหัสแล้วหยุดโดยไม่เปลี่ยนบรรทัด
+The id after the command is the card to accept. If there is no id and exactly one line is `review:`, use that card. If several lines match, ask for the id and stop without changing the line.
 
-คนเรียกคำสั่งนี้หลังดู `/jt-open-work` ของใบนั้นแล้วเท่านั้น
+The human calls this command only after looking at `/jt-open-work` for that card.
 
-working tree สกปรกให้หยุดโดยไม่เปลี่ยนบรรทัด
+If the working tree is dirty, stop without changing the line.
 
-บรรทัดของใบนั้นต้องมีสถานะ `รอรีวิว:` ถ้าไม่ใช่สถานะ `รอรีวิว:` ให้หยุดโดยไม่เปลี่ยนบรรทัด
+That card's line must have status `review:`. If it is not `review:`, stop without changing the line.
 
-อ่าน plan จาก branch `card-<id>` ตาราง **การตัดสินใจ** ว่าง หรือ diff จากสาขาคิวถึง `card-<id>` ไม่ตรงหัว **ตรวจผ่านเมื่อ** ให้หยุดแล้วบอกว่าหลักฐานไม่ครบ ห้ามเปลี่ยนเครื่องหมาย
+Read the plan from branch `card-<id>`. If the `decisions` table is empty, or the diff from the queue branch to `card-<id>` does not match the `pass` heading, stop and say the evidence is incomplete. Do not change the mark.
 
-ตรวจว่าคนได้รวม `card-<id>` เข้าสาขาคิวแล้ว ด้วยคำสั่งนี้ ไม่รัน git merge ไม่เปิด PR และไม่ merge PR
+Check that the human has already landed `card-<id>` on the queue branch with this command. This command does not run git merge, does not open a PR, and does not merge a PR.
 
 ```bash
-python3 <โฟลเดอร์ skill jt-next-step>/gate.py landed --root . --id <id>
+python3 <jt-next-step skill folder>/gate.py landed --root . --id <id>
 ```
 
-`landed: ancestor` คือ `git merge-base --is-ancestor card-<id> <สาขาคิว>` ผ่าน รวมกรณี merge ผ่าน PR ที่ทำให้ commit นั้นอยู่ในสาขาคิว `landed: squash` คือ `gh pr view card-<id>` ได้ `state` เป็น `MERGED` แม้ squash จะทำให้ `git merge-base --is-ancestor` ไม่ผ่าน ถ้า view หาใบไม่เจอ ให้ใช้ `gh pr list --head card-<id>` ใบที่ `MERGED` ก็พอ ถ้าได้ `refused: not-landed` ให้บอกให้คน merge บน GitHub ก่อน
+`landed: ancestor` means `git merge-base --is-ancestor card-<id> <queue>` passed, including a merge through a pull request that put that commit on the queue branch. `landed: squash` means `gh pr view card-<id>` returned `state` `MERGED`, even when a squash makes `git merge-base --is-ancestor` fail. If view cannot find the card, `gh pr list --head card-<id>` is enough when that item is `MERGED`. On `refused: not-landed`, tell the human to merge on GitHub first.
 
-เมื่อหลักฐานครบและ commit อยู่ในสาขาคิวแล้ว ให้อยู่บนสาขาคิว เปลี่ยนเฉพาะเครื่องหมายบนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `merge:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+When the evidence is complete and the commit is on the queue branch, stay on the queue branch. This command changes only the mark on that line, to `- [x]` followed by `merge:`, then commits only `card-loop/board.md` on the queue branch.
 
-คำสั่งนี้เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด ไม่รัน git merge ไม่เปิด PR ไม่ merge PR ไม่ย้ายบรรทัด และไม่แตะโค้ด คนเป็นคน merge บน GitHub ใบที่หัวมีชื่อ repo คู่ คนเป็นคน merge ทั้งสอง repo คำสั่งนี้ยังเปลี่ยนเฉพาะเครื่องหมายบนบรรทัดของ board หลัก
+This command changes only the mark on the line. It does not run git merge, does not open a PR, does not merge a PR, does not move the line, and does not touch code. The human merges on GitHub. The human merges both repos when the card heading names the paired repo. This command still changes only the mark on the primary board line.
 
-เสร็จเมื่อบรรทัดบนสาขาคิวเป็น `merge:` และไม่ได้รัน git merge และไม่ได้เปิดหรือ merge PR
+Done when the queue-branch line is `merge:`, and this command did not run git merge and did not open or merge a PR.

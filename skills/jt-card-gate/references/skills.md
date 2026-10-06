@@ -1,27 +1,27 @@
-# Skills สองแถวบน board
+# Two skill rows on the board
 
-วิธีเดินขั้นอยู่ที่ [loop.md](loop.md) เปิดได้เฉพาะชื่อที่คนเขียนไว้ แถวว่างคือไม่เปิดใบนั้น ห้ามติดตั้งระหว่างทำข้อ ห้ามเปิดชื่อที่ไม่อยู่ในแถว
+The steps live in [loop.md](loop.md). Open only a name the human wrote. An empty row opens nothing for that card. Do not install during an item. Do not open a name that is not in the row.
 
-## `<TEK_SKILLS>` ทำให้การลงมือเก่งขึ้น
+## `<TEK_SKILLS>` makes the work sharper
 
-`/jt-do-work` เปิดได้หนึ่งชื่อจากแถวนี้ต่อจังหวะ เฉพาะเมื่อ `description` ของใบนั้นตรงจังหวะ
+`/jt-do-work` may open one name from this row per moment, and only when that skill's `description` matches the moment.
 
-| จังหวะ | คำใน description ของใบในแถว |
+| Moment | Words in that skill's description |
 |---|---|
-| card ยังมีสองทางที่ผลไม่เท่ากัน ก่อนเขียน `ถาม:` | grill, interview |
-| `fix` ที่สาเหตุยังไม่ชัด ก่อนเขียนเทสที่แดง | diagnose, debug |
-| กำลังแก้โค้ดผลิต | YAGNI, stdlib, delete |
+| The card still has two outcomes before you write `ask:` | grill, interview |
+| A `fix` whose cause is still unclear, before a red test | diagnose, debug |
+| Editing production code | YAGNI, stdlib, delete |
 
-ไม่มีชื่อในแถวที่ตรงจังหวะ ให้เดินต่อโดยไม่เปิดใบ ใบกลุ่มนี้ไม่ถูกเปิดตอน review โค้ดของ repo
+If no name in the row matches the moment, continue without opening a skill. Do not open this group during the repo diff review.
 
-## `<REPO_SKILLS>` ของ repo นี้
+## `<REPO_SKILLS>` for this repo
 
-`/jt-do-work` เปิดทุกชื่อในแถวนี้หลัง commit ที่ชนิดเป็น `feat` `fix` `style` `refactor` `perf` `test` `build` `ci` `chore` หรือ `revert` และก่อนตั้ง `รอรีวิว:` เพื่อ review diff ของ repo นี้ ชนิด `docs` ไม่เปิด
+`/jt-do-work` opens every name in this row after a commit whose kind is `feat`, `fix`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`, and before it sets `review:`, to review this repo's diff. `docs` does not open.
 
-ชื่อในแถวนี้ที่ไม่มีในเครื่อง เอเจนต์ต้อง review diff ของข้อนี้เองก่อนถึง `รอรีวิว:` แม้ชื่ออื่นในแถวจะเปิดได้ ผลรีวิวเขียนในหัว **รีวิว diff** ของ plan: commit, ผู้รีวิว, สิ่งที่เจอ การจดใน plan แล้วเดินต่อไม่นับเป็นรีวิวนั้น รีวิวนั้นห้ามข้าม ก่อนถึง `รอรีวิว:` บนใบที่แตะโค้ด `scripts/jt-diff-check` ต้องจบเป็นศูนย์ ถ้า review diff ไม่ได้ ห้ามถึง `รอรีวิว:` ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน
+If a name in this row is not on this machine, review this card's diff yourself before `review:`, even when another name in the row did open. Write the review under the plan heading `review-diff`, with the commit, the reviewer, and what you found. A note in the plan is not that review. Do not skip that review. On a card that touches code, `scripts/jt-diff-check` must exit 0 before `review:`. If you cannot review the diff, stop. Do not set `review:`. A name from `<TEK_SKILLS>` does not do this review.
 
-ตอนหยิบ card ตอนเขียน `ถาม:` และตอนคนเรียก `/jt-open-work` `/jt-send-back` `/jt-merge` `/jt-drop-card` ไม่เปิดใบของ repo
+Do not open a repo skill while picking a card, while writing `ask:`, or when the human calls `/jt-open-work`, `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`.
 
-รีวิวของใบเหล่านี้ผ่านแต่หลักฐานใน loop.md ไม่ครบ ห้ามเปิดของให้ review
+If those skills pass but the evidence in loop.md is incomplete, do not open review.
 
-ชื่อจาก `<TEK_SKILLS>` ไม่มาแทนคำสั่งตรวจบน board และไม่มาแทนการจด `อัปเดตกติกา` เมื่อความผิดชั้นเดิมซ้ำ การจดแถวโดยไม่ได้แก้ไฟล์กติกาไม่พอ แถวนี้ว่างได้
+A name from `<TEK_SKILLS>` does not replace the check commands on the board, and it does not replace an `update-rule` row when the same layer fails again. A row with no rule-file change is not enough. This row may be empty.

@@ -4,17 +4,17 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-TEK_SKILLS = """## `<TEK_SKILLS>` ทำให้การลงมือเก่งขึ้น
+TEK_SKILLS = """## `<TEK_SKILLS>` makes the work sharper
 
-`/jt-do-work` เปิดได้หนึ่งชื่อจากแถวนี้ต่อจังหวะ เฉพาะเมื่อ `description` ของใบนั้นตรงจังหวะ
+`/jt-do-work` may open one name from this row per moment, and only when that skill's `description` matches the moment.
 
-| จังหวะ | คำใน description ของใบในแถว |
+| Moment | Words in that skill's description |
 |---|---|
-| card ยังมีสองทางที่ผลไม่เท่ากัน ก่อนเขียน `ถาม:` | grill, interview |
-| `fix` ที่สาเหตุยังไม่ชัด ก่อนเขียนเทสที่แดง | diagnose, debug |
-| กำลังแก้โค้ดผลิต | YAGNI, stdlib, delete |
+| The card still has two outcomes before you write `ask:` | grill, interview |
+| A `fix` whose cause is still unclear, before a red test | diagnose, debug |
+| Editing production code | YAGNI, stdlib, delete |
 
-ไม่มีชื่อในแถวที่ตรงจังหวะ ให้เดินต่อโดยไม่เปิดใบ ใบกลุ่มนี้ไม่ถูกเปิดตอน review โค้ดของ repo
+If no name in the row matches the moment, continue without opening a skill. Do not open this group during the repo diff review.
 """
 
 
@@ -29,27 +29,28 @@ class RepoSkillRuleTests(unittest.TestCase):
         end = skills.index("## `<REPO_SKILLS>`")
         self.assertEqual(skills[start:end].strip(), TEK_SKILLS.strip())
         for text in (skills, do_card):
-            self.assertNotIn("ชื่อที่ไม่มีในเครื่อง ให้จดใน plan แล้วเดินตาม loop.md ต่อ", text)
-            self.assertNotIn("ชื่อที่ไม่มีในเครื่องให้จดใน plan แล้วเดินต่อ", text)
-        self.assertIn("review diff ของข้อนี้เอง", skills)
-        self.assertIn("ห้ามข้าม", skills)
-        self.assertIn("review diff ไม่ได้", skills)
-        self.assertIn("การจดใน plan แล้วเดินต่อไม่นับเป็นรีวิวนั้น", skills)
+            self.assertNotIn("note it in the plan and continue along loop.md", text)
+            self.assertNotIn("note it in the plan and continue", text)
+        self.assertIn("review this card's diff yourself", skills)
+        self.assertIn("Do not skip", skills)
+        self.assertIn("cannot review the diff", skills)
+        self.assertIn("A note in the plan is not that review", skills)
         self.assertIn("review this card's diff yourself", do_card)
         self.assertIn("Do not skip that review", do_card)
         self.assertIn("cannot review the diff", do_card)
         self.assertIn("A note in the plan is not that review", do_card)
-        self.assertIn("ห้ามถึง `รอรีวิว:`", skills)
-        self.assertIn("Do not set `รอรีวิว:`", do_card)
+        self.assertIn("Do not set `review:`", skills)
+        self.assertIn("Do not set `review:`", do_card)
 
     def test_tek_skills_row_on_the_board_template_is_unchanged(self) -> None:
         template = (REPO / "skills" / "jt-card-gate" / "assets" / "board.template.md").read_text(
             encoding="utf-8"
         )
         self.assertIn(
-            "`<TEK_SKILLS>` คือชื่อ skill ที่ทำให้การลงมือเก่งขึ้น "
-            "`/jt-do-work` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง "
-            "ตอนหาสาเหตุบั๊กก่อนเขียนเทส และตอนแก้โค้ดผลิต เว้นว่างคือไม่เปิด",
+            "`<TEK_SKILLS>` names skills that make the work sharper. "
+            "`/jt-do-work` opens a name from this row when the card still has two paths, "
+            "when it is finding the bug cause before a test, and when it is editing production code. "
+            "An empty cell opens nothing.",
             template,
         )
 
@@ -60,14 +61,14 @@ class RepoSkillRuleTests(unittest.TestCase):
         )
         self.assertNotIn("reach-review", loop)
         self.assertIn("/jt-next-step", loop)
-        self.assertIn("เวอร์ชัน 20", loop)
+        self.assertIn("version 20", loop)
         self.assertNotIn("playwright", loop.lower())
-        self.assertNotIn("เริ่ม:", loop)
-        self.assertNotIn("พอร์ต:", loop)
-        self.assertNotIn("คลิก:", loop)
+        self.assertNotIn("start:", loop)
+        self.assertNotIn("port:", loop)
+        self.assertNotIn("click:", loop)
         self.assertNotIn("browser-empty", loop)
-        self.assertIn("เกตเป็นตัวปฏิเสธ", loop)
-        self.assertIn("`docs` ไม่เปิด", skills)
+        self.assertIn("The gate refuses", loop)
+        self.assertIn("`docs` does not open", skills)
         self.assertNotIn("one-off-checker", loop)
         self.assertNotIn("repeat-patch", loop)
         self.assertNotIn("reach-review", loop)
@@ -101,10 +102,10 @@ OLD_NAMES = [
 ]
 
 OLD_SCREEN = (
-    "หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว "
-    "และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` "
-    "ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก "
-    "งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่ใช่รอบนี้ ให้ทำตามหัว **เขียน ถาม**"
+    "One round is one full attempt. The evidence is that the relevant tests are green, "
+    "and for screen work of every kind, not only `fix`, "
+    "the same steps on the same screen do not show the bug. "
+    "Screen work that cannot be clicked is not this round. Follow **Write ask**."
 )
 
 
@@ -130,46 +131,46 @@ class RenamedCommandTests(unittest.TestCase):
         for text in (readme, loop, rule, find, merge, drop, move, work):
             for old in OLD_NAMES:
                 self.assertNotIn(old, text)
-        self.assertIn("`<REPO_SKILLS>` ของ repo ที่เปิดอยู่", find)
-        self.assertIn("`<TEK_SKILLS>` ตามจังหวะที่ลูปใช้อยู่แล้ว", find)
-        self.assertIn("ยังไม่เขียน `card-loop/board.md` จนกว่าคนจะรับ", find)
-        self.assertIn("ห้ามรันคำสั่งติดตั้ง", find)
-        self.assertNotIn("โฟลเดอร์ของเจ้าที่กำลังรันเท่านั้น", find)
-        self.assertIn("ทุกโฟลเดอร์ใน home ที่ชื่อขึ้นต้นด้วย `.`", find)
-        self.assertIn("ตาม symlink ไปจนถึงไฟล์จริง", find)
-        self.assertIn("path จริงเดียวกันนับเป็นใบเดียว", find)
-        self.assertIn("`มีในเครื่อง`", find)
-        self.assertIn("`แนะนำให้ลง`", find)
+        self.assertIn("`<REPO_SKILLS>` for the open repo", find)
+        self.assertIn("`<TEK_SKILLS>` for the moments the loop already uses", find)
+        self.assertIn("Do not write `card-loop/board.md` until the human accepts", find)
+        self.assertIn("Do not run an install command", find)
+        self.assertNotIn("only the folder of the agent that is running", find)
+        self.assertIn("every folder in home whose name starts with `.`", find)
+        self.assertIn("Follow each symlink to the real file", find)
+        self.assertIn("The same real path counts as one skill", find)
+        self.assertIn("`on this machine`", find)
+        self.assertIn("`install this`", find)
         self.assertIn("skills.sh/api/search", find)
-        self.assertNotIn("-a <เจ้าที่กำลังรัน>", find)
+        self.assertNotIn("-a <running-agent>", find)
         board = (REPO / "skills" / "jt-new-board" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("ตารางสถานะจากหัว **ค้น**", board)
-        self.assertIn("แนะนำให้ลง", board)
-        self.assertIn("มีคำสั่ง `playwright` บน PATH", board)
-        self.assertIn("ชื่อเบราว์เซอร์ของเซสชันหรือ MCP ไม่ใส่", board)
+        self.assertIn("the status table from **Search**", board)
+        self.assertIn("install this", board)
+        self.assertIn("a `playwright` command is on PATH", board)
+        self.assertIn("Do not put a session or MCP browser name", board)
         self.assertNotIn(
-            "มี `playwright` ใน `package.json` ให้ใส่ `playwright` ไม่มีแต่มี `cypress` ให้ใส่ `cypress` นอกนั้นเว้นช่องว่าง",
+            "If `playwright` is in `package.json`, write `playwright`. If not and `cypress` is present, write `cypress`. Otherwise leave the cell empty.",
             board,
         )
-        self.assertIn("ไม่รัน git merge", merge)
-        self.assertIn("เปลี่ยนเฉพาะเครื่องหมายบนบรรทัด", merge)
-        self.assertIn("เปลี่ยน `- [ ]` บนบรรทัดนั้นเป็น `- [x]`", drop)
-        self.assertIn("ไม่เอา:", drop)
-        self.assertIn("ไม่ลบบรรทัดอื่น", drop)
-        self.assertIn("ไม่เปลี่ยนสถานะบนบรรทัดนั้น", move)
-        self.assertIn("ไม่แตะโค้ด", move)
-        self.assertIn("ไม่ merge", move)
-        self.assertIn("เอเจนต์ไม่เรียกสามคำสั่งนั้น", loop)
+        self.assertIn("does not run git merge", merge)
+        self.assertIn("changes only the mark on that line", merge)
+        self.assertIn("Change `- [ ]` on that line to `- [x]`", drop)
+        self.assertIn("drop:", drop)
+        self.assertIn("Do not delete other lines", drop)
+        self.assertIn("Do not change the status on that line", move)
+        self.assertIn("Do not touch code", move)
+        self.assertIn("Do not merge", move)
+        self.assertIn("The agent does not call those three commands", loop)
         self.assertIn("`/jt-send-back` `/jt-merge` `/jt-drop-card`", loop)
-        self.assertIn("คนเป็นคน merge", loop)
-        self.assertIn("ไม่รัน git merge", loop)
+        self.assertIn("The human merges", loop)
+        self.assertIn("does not run git merge", loop)
         self.assertNotIn(OLD_SCREEN, work)
-        self.assertIn("**เกณฑ์ 3 รอบ**", work)
+        self.assertIn("**Three rounds**", work)
         self.assertIn(
-            "หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว "
-            "และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` "
-            "ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก "
-            "งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่นับเป็นรอบนี้ ให้เขียน `ถาม:`",
+            "One round is one full attempt. The evidence is that the relevant tests are green, "
+            "and for screen work of every kind, not only `fix`, "
+            "the same steps on the same screen do not show the bug. "
+            "Screen work that cannot be clicked does not count as this round. Write `ask:`.",
             loop,
         )
         self.assertIn("disable-model-invocation: true", merge)
@@ -194,15 +195,15 @@ class PairedRepoRuleTests(unittest.TestCase):
             encoding="utf-8"
         )
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("ถามครั้งเดียว", new_board)
-        self.assertIn("`ไม่มี`", new_board)
-        self.assertIn("ห้ามใส่ชื่อ repo เอง", new_board)
-        self.assertIn("ห้ามถามซ้ำ", new_board)
+        self.assertIn("Ask once", new_board)
+        self.assertIn("`none`", new_board)
+        self.assertIn("Do not invent a repo name", new_board)
+        self.assertIn("Do not ask again", new_board)
         self.assertIn("card-loop/paired.md", new_board)
-        self.assertIn("อย่าถามว่า repo คู่อยู่ที่ไหน", new_card)
-        self.assertIn("เป็นใบเดียว", new_card)
-        self.assertIn("ไม่ใส่ชื่อนั้น", new_card)
-        self.assertIn("อย่าสร้างเพราะ board มีชื่อ", new_card)
+        self.assertIn("Do not ask where the paired repo is", new_card)
+        self.assertIn("is one card", new_card)
+        self.assertIn("does not include that name", new_card)
+        self.assertIn("Do not create it because the board has the name", new_card)
         self.assertIn("Do not set status in the paired repo", work)
         self.assertIn("Do not create `card-loop/board.md`", work)
         self.assertIn("Do not move the whole queue off the primary repo", work)
@@ -211,21 +212,21 @@ class PairedRepoRuleTests(unittest.TestCase):
         self.assertIn("Do not create this file only because the board recorded the name", work)
         self.assertIn("The human merges both repos", work)
         self.assertNotIn(OLD_SCREEN, work)
-        self.assertIn("**เกณฑ์ 3 รอบ**", work)
+        self.assertIn("**Three rounds**", work)
         self.assertIn("pair-not-passed", gate)
         self.assertNotIn("jtekth", gate)
         self.assertNotIn("git merge", gate)
         self.assertIn("pair-not-passed", work)
-        self.assertIn("ถามครั้งเดียว", loop)
-        self.assertIn("ห้ามย้ายทั้งคิวออกจาก repo หลัก", loop)
-        self.assertIn("อย่าสร้างเพราะ board บันทึกชื่อไว้", loop)
-        self.assertIn("คนเป็นคน merge ทั้งสอง repo", loop)
-        self.assertIn("ไม่รัน git merge", loop)
-        self.assertIn("เอเจนต์ไม่เรียกสามคำสั่งนั้น", loop)
+        self.assertIn("Ask once", loop)
+        self.assertIn("Do not move the whole queue off the primary repo", loop)
+        self.assertIn("Do not create this file only because the board recorded the name", loop)
+        self.assertIn("The human merges both repos", loop)
+        self.assertIn("does not run git merge", loop)
+        self.assertIn("The agent does not call those three commands", loop)
         self.assertIn("`/jt-send-back` `/jt-merge` `/jt-drop-card`", loop)
-        self.assertIn("ไม่รัน git merge", merge)
-        self.assertIn("คนเป็นคน merge ทั้งสอง repo", merge)
-        self.assertEqual(template.count("\nคู่:"), 1)
+        self.assertIn("does not run git merge", merge)
+        self.assertIn("The human merges both repos", merge)
+        self.assertEqual(template.count("\npair:"), 1)
         self.assertEqual(readme.count("\n## "), 4)
         self.assertIn("/jt-new-board", readme)
         self.assertFalse(list(REPO.glob("*playbook*")))
@@ -252,32 +253,32 @@ class RepeatRuleTests(unittest.TestCase):
             encoding="utf-8"
         )
         gate = (REPO / "skills" / "jt-next-step" / "gate.py").read_text(encoding="utf-8")
-        self.assertIn("คำสั่งตรวจที่มีอยู่", loop)
-        self.assertIn("สคริปต์ตรวจใหม่", loop)
+        self.assertIn("existing check commands", loop)
+        self.assertIn("new check script", loop)
         for text in (readme, work):
             self.assertIn("existing check commands", text)
             self.assertIn("new check script", text)
         for text in (readme, loop, work):
-            self.assertIn("อัปเดตกติกา", text)
-            self.assertIn("ชั้น", text)
+            self.assertIn("update-rule", text)
+            self.assertIn("layer", text)
         self.assertIn("Do not split into parallel agents", readme)
-        self.assertIn("ห้ามแยกเป็นเอเจนต์คู่ขนานโดยไม่ลิงก์", loop)
+        self.assertIn("Do not split into parallel agents without a link", loop)
         self.assertIn("refused: one-off-checker", work)
         self.assertIn("refused: repeat-patch", work)
         self.assertIn("refused: related", work)
         self.assertIn("`reason` is `related`", nxt)
         self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("refused: repeat-patch", nxt)
-        self.assertIn("step: ถาม", nxt)
-        self.assertIn("ห้ามแยกเป็นเอเจนต์คู่ขนาน", new_card)
-        self.assertIn("ห้ามรายงานเป็นงานคู่ขนาน", reading)
-        self.assertIn("ไม่มาแทนคำสั่งตรวจบน board", skills)
-        self.assertIn("แถวนี้ว่างได้", skills)
-        self.assertIn("อัปเดตกติกา", plan)
-        self.assertIn("ชั้น:", card)
+        self.assertIn("step: ask", nxt)
+        self.assertIn("Do not split into parallel agents", new_card)
+        self.assertIn("Do not report them as parallel work", reading)
+        self.assertIn("does not replace the check commands on the board", skills)
+        self.assertIn("This row may be empty", skills)
+        self.assertIn("update-rule", plan)
+        self.assertIn("layer:", card)
         self.assertIn("one-off-checker", gate)
         self.assertIn("repeat-patch", gate)
-        self.assertIn("อัปเดตกติกา", gate)
+        self.assertIn("update-rule", gate)
         self.assertFalse(list(REPO.glob("*playbook*")))
         self.assertFalse(list((REPO / "skills").glob("**/*playbook*")))
         self.assertEqual(readme.count("\n## "), 4)
@@ -292,23 +293,23 @@ class DraftPrSkillTests(unittest.TestCase):
         work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
         nxt = (REPO / "skills" / "jt-next-step" / "SKILL.md").read_text(encoding="utf-8")
         merge = (REPO / "skills" / "jt-merge" / "SKILL.md").read_text(encoding="utf-8")
-        command = "gh pr create --draft --base <สาขาคิว> --head card-<id>"
+        command = "gh pr create --draft --base <queue> --head card-<id>"
         for text in (readme, loop, work, nxt):
             self.assertIn(command, text)
-        self.assertIn("บรรทัดต้องไม่เป็น `รอรีวิว:`", loop)
+        self.assertIn("The line must not be `review:`", loop)
         for text in (readme, work, nxt):
-            self.assertIn("The line must not be `รอรีวิว:`", text)
+            self.assertIn("The line must not be `review:`", text)
         for text in (work, nxt):
             self.assertIn("refused: pr-missing", text)
-            self.assertIn("step: ถาม", text)
+            self.assertIn("step: ask", text)
         self.assertIn("Do not open a duplicate", work)
         self.assertIn("skip `gh pr create`", nxt)
-        self.assertIn("ไม่เปิด PR", merge)
-        self.assertIn("ไม่ merge PR", merge)
-        self.assertIn("ไม่รัน git merge", merge)
+        self.assertIn("does not open a PR", merge)
+        self.assertIn("does not merge a PR", merge)
+        self.assertIn("does not run git merge", merge)
         self.assertIn("git merge-base --is-ancestor", merge)
         self.assertIn("including a merge through a pull request", readme)
-        self.assertIn("ไม่เปิด PR ไม่ merge PR และไม่รัน git merge", loop)
+        self.assertIn("does not open a PR, does not merge a PR, and does not run git merge", loop)
         self.assertNotIn("reach-review", loop)
 
 

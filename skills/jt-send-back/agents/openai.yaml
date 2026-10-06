@@ -1,5 +1,5 @@
 interface:
   display_name: "jt-send-back"
-  short_description: "Mark the reviewed card ส่งกลับ"
+  short_description: "Mark the reviewed card send-back"
 policy:
   allow_implicit_invocation: false

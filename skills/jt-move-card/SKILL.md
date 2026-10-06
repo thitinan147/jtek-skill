@@ -10,14 +10,14 @@ metadata:
 
 # jt-move-card
 
-รหัสที่ต่อท้ายคำสั่งคือบรรทัดที่จะย้าย คำที่เหลือคือหัวข้อปลายทาง คือ **ทำก่อน** **งานหลัก** **เก็บเล็ก** หรือ **ปิดแล้ว** ถ้าไม่มีรหัสหรือไม่มีหัวข้อให้ถามแล้วหยุดโดยไม่ย้าย
+The id after the command is the line to move. The remaining words are the destination heading, which is **first**, **main**, **later**, or **closed**. If there is no id or no heading, ask and stop without moving.
 
-ย้ายได้เฉพาะบรรทัดบน `card-loop/board.md`
+You may move only a line on `card-loop/board.md`.
 
-ไม่เปลี่ยนสถานะบนบรรทัดนั้น ไม่แตะโค้ด ไม่ merge
+Do not change the status on that line. Do not touch code. Do not merge.
 
-working tree สกปรกนอก `card-loop/` ให้หยุดโดยไม่ย้าย
+If the working tree is dirty outside `card-loop/`, stop without moving.
 
-checkout สาขาที่บรรทัด `สาขาคิว:` ชี้ ย้ายบรรทัดนั้นไปหัวข้อที่บอก โดยคงข้อความสถานะบนบรรทัดเดิม แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+Check out the branch the `queue:` line names. Move that line to the named heading and keep the status text on the line. Commit only `card-loop/board.md` on the queue branch.
 
-เสร็จเมื่อบรรทัดอยู่หัวข้อใหม่ และสถานะบนบรรทัดเท่าเดิม
+Done when the line is under the new heading and the status on the line is unchanged.

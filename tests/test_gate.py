@@ -33,12 +33,12 @@ def board_text(
     pair: str | None = None,
     setup: str = "",
 ) -> str:
-    pair_line = "" if pair is None else f"คู่: {pair}\n\n"
+    pair_line = "" if pair is None else f"pair: {pair}\n\n"
     return (
-        "# Board — app\n\n"
-        "สาขาคิว: main\n\n"
+        "# Board - app\n\n"
+        "queue: main\n\n"
         f"{pair_line}"
-        "| ค่า | ใน repo นี้ |\n"
+        "| Value | In this repo |\n"
         "|---|---|\n"
         f"| `<SETUP_CMD>` | {setup} |\n"
         f"| `<TEST_CMD>` | {test} |\n"
@@ -48,12 +48,12 @@ def board_text(
         f"| `<STACK_LOCK>` | {stack} |\n"
         "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
-        "## ทำก่อน\n\n"
+        "## first\n\n"
         f"{cards}\n\n"
-        "## งานหลัก\n\n"
-        "ไม่มีข้อ\n\n"
-        "## เก็บเล็ก\n\n"
-        "ไม่มีข้อ\n"
+        "## main\n\n"
+        "no items\n\n"
+        "## later\n\n"
+        "no items\n"
     )
 
 
@@ -73,29 +73,29 @@ def card_body(
     do: str = "something",
 ) -> str:
     listed = "\n".join(f"- {name}" for name in files) if files else "-"
-    question_line = "ถาม:" if not question else f"ถาม: {question}"
+    question_line = "ask:" if not question else f"ask: {question}"
     screen_block = ""
     if screen:
-        wait_line = f"รอ: {wait}\n" if wait else ""
-        screen_block = f"เห็นจอ: ใช่\nเริ่ม: {start}\nพอร์ต: {port}\n{wait_line}คลิก: {click}\n\n"
-    topic_line = f"ชั้น: {topic}\n\n" if topic else ""
+        wait_line = f"wait: {wait}\n" if wait else ""
+        screen_block = f"screen: yes\nstart: {start}\nport: {port}\n{wait_line}click: {click}\n\n"
+    topic_line = f"layer: {topic}\n\n" if topic else ""
     ref_body = "\n".join(f"- {ref}" for ref in refs) if refs else "-"
     return (
-        f"# 12 — {title}\n\n"
-        f"ชนิด: {kind}\n\n"
+        f"# 12 - {title}\n\n"
+        f"kind: {kind}\n\n"
         f"{topic_line}"
         f"{screen_block}"
-        "ทำ:\n"
+        "do:\n"
         f"- {do}\n\n"
-        "ไม่ทำ:\n"
+        "out:\n"
         "- other\n\n"
-        "ตรวจผ่านเมื่อ:\n"
+        "pass:\n"
         f"- {header}\n\n"
-        "ทางที่เลือกแล้ว:\n"
-        "- ไม่มีสองทาง\n\n"
-        "ไฟล์ที่แตะได้:\n"
+        "chosen:\n"
+        "- no fork\n\n"
+        "files:\n"
         f"{listed}\n\n"
-        "อ้างอิง:\n"
+        "refs:\n"
         f"{ref_body}\n\n"
         f"{question_line}\n"
     )
@@ -109,7 +109,7 @@ def decide_board(text: str, bodies: dict[str, str | None], brief: bool = False):
 class DecideTests(unittest.TestCase):
     def test_send_back_comes_before_a_fresh_card(self) -> None:
         text = board_text(
-            "- [ ] **12** fresh (feat)\n- [ ] **13** back (fix) ส่งกลับ:"
+            "- [ ] **12** fresh (feat)\n- [ ] **13** back (fix) send-back:"
         )
         decision = decide_board(
             text,
@@ -123,7 +123,7 @@ class DecideTests(unittest.TestCase):
 
     def test_cleared_question_comes_before_a_fresh_card(self) -> None:
         text = board_text(
-            "- [ ] **12** fresh (feat)\n- [ ] **13** asked (fix) ถาม:"
+            "- [ ] **12** fresh (feat)\n- [ ] **13** asked (fix) ask:"
         )
         decision = decide_board(
             text,
@@ -137,23 +137,23 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(decision.reason, "question-cleared")
 
     def test_open_question_waits_and_does_not_merge(self) -> None:
-        text = board_text("- [ ] **12** asked (fix) ถาม:")
-        decision = decide_board(text, {"12": card_body(["src/a.py"], question="จะลบไหม")})
+        text = board_text("- [ ] **12** asked (fix) ask:")
+        decision = decide_board(text, {"12": card_body(["src/a.py"], question="delete it?")})
         self.assertEqual(decision.action, "wait")
-        self.assertEqual(decision.question, "จะลบไหม")
+        self.assertEqual(decision.question, "delete it?")
         self.assertEqual(decision.command, "")
 
     def test_small_section_waits_while_a_higher_line_is_open(self) -> None:
         text = (
-            "# Board — app\n\nสาขาคิว: main\n\n"
-            "| ค่า | ใน repo นี้ |\n|---|---|\n"
+            "# Board - app\n\nqueue: main\n\n"
+            "| Value | In this repo |\n|---|---|\n"
             "| `<TEST_CMD>` | python3 check.py |\n"
             "| `<TYPECHECK_CMD>` | |\n| `<LINT_CMD>` | |\n| `<BROWSER_TOOL>` | |\n"
             "| `<STACK_LOCK>` | py · none · test · ban |\n"
             "| `<TEK_SKILLS>` | |\n| `<REPO_SKILLS>` | |\n\n"
-            "## ทำก่อน\n\n- [ ] **12** waiting (feat) รอรีวิว: local\n\n"
-            "## งานหลัก\n\nไม่มีข้อ\n\n"
-            "## เก็บเล็ก\n\n- [ ] **13** later (chore)\n"
+            "## first\n\n- [ ] **12** waiting (feat) review: local\n\n"
+            "## main\n\nno items\n\n"
+            "## later\n\n- [ ] **13** later (chore)\n"
         )
         decision = decide_board(
             text,
@@ -164,7 +164,7 @@ class DecideTests(unittest.TestCase):
 
     def test_overlap_with_review_does_not_start_work(self) -> None:
         text = board_text(
-            "- [ ] **12** waiting (feat) รอรีวิว: local\n- [ ] **13** next (feat)"
+            "- [ ] **12** waiting (feat) review: local\n- [ ] **13** next (feat)"
         )
         decision = decide_board(
             text,
@@ -175,7 +175,7 @@ class DecideTests(unittest.TestCase):
 
     def test_two_reviews_ask_for_an_id(self) -> None:
         text = board_text(
-            "- [ ] **12** one (feat) รอรีวิว: local\n- [ ] **13** two (fix) รอรีวิว: local"
+            "- [ ] **12** one (feat) review: local\n- [ ] **13** two (fix) review: local"
         )
         decision = decide_board(
             text,
@@ -189,9 +189,9 @@ class DecideTests(unittest.TestCase):
     def test_missing_board_is_setup_and_empty_queue_is_brief_then_add(self) -> None:
         setup = gate.decide(None, brief_exists=False, dirty=False, is_git=True)
         self.assertEqual(setup.action, "setup-board")
-        empty = decide_board(board_text("ไม่มีข้อ"), {})
+        empty = decide_board(board_text("no items"), {})
         self.assertEqual(empty.action, "brief")
-        with_brief = decide_board(board_text("ไม่มีข้อ"), {}, brief=True)
+        with_brief = decide_board(board_text("no items"), {}, brief=True)
         self.assertEqual(with_brief.action, "add-card")
 
     def test_empty_test_command_stops_before_work(self) -> None:
@@ -249,19 +249,19 @@ class ApplyReviewTests(unittest.TestCase):
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "12", 1)
         self.assertEqual(caught.exception.reason, "test-failed")
-        self.assertNotIn("รอรีวิว:", text)
+        self.assertNotIn("review:", text)
 
     def test_green_exit_writes_review_and_not_merge(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)")
         updated = gate.apply_waiting_review(text, "12", 0, "local")
-        self.assertIn("- [ ] **12** fresh (feat) รอรีวิว: local", updated)
+        self.assertIn("- [ ] **12** fresh (feat) review: local", updated)
         self.assertNotIn("merge:", updated.split("fresh", 1)[1])
 
     def test_green_exit_replaces_send_back(self) -> None:
-        text = board_text("- [ ] **12** fresh (fix) ส่งกลับ:")
+        text = board_text("- [ ] **12** fresh (fix) send-back:")
         updated = gate.apply_waiting_review(text, "12", 0)
-        self.assertIn("รอรีวิว:", updated)
-        self.assertNotIn("ส่งกลับ:", updated)
+        self.assertIn("review:", updated)
+        self.assertNotIn("send-back:", updated)
 
     def test_link_merge_is_refused(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)")
@@ -272,11 +272,11 @@ class ApplyReviewTests(unittest.TestCase):
     def test_id_one_does_not_mark_one_point_one(self) -> None:
         text = board_text("- [ ] **1** parent (feat)\n- [ ] **1.1** child (feat)")
         updated = gate.apply_waiting_review(text, "1", 0)
-        self.assertIn("**1** parent (feat) รอรีวิว:", updated)
-        self.assertNotIn("**1.1** child (feat) รอรีวิว:", updated)
+        self.assertIn("**1** parent (feat) review:", updated)
+        self.assertNotIn("**1.1** child (feat) review:", updated)
 
     def test_dropped_word_is_not_marked(self) -> None:
-        text = board_text("- [x] **12** fresh (feat) ไม่เอา: ไม่ทำ")
+        text = board_text("- [x] **12** fresh (feat) drop: dropped")
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "12", 0)
         self.assertEqual(caught.exception.reason, "card-closed")
@@ -285,7 +285,7 @@ class ApplyReviewTests(unittest.TestCase):
         self.assertIn("/jt-merge", gate.MERGE_ARGV)
 
     def test_open_question_is_not_marked(self) -> None:
-        text = board_text("- [ ] **12** asked (fix) ถาม:")
+        text = board_text("- [ ] **12** asked (fix) ask:")
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "12", 0)
         self.assertEqual(caught.exception.reason, "question-open")
@@ -389,7 +389,7 @@ class ReachReviewGitTests(unittest.TestCase):
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_path = plan_dir / f"{card_id}.md"
         plan_path.write_text(
-            f"# Plan {card_id}\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            f"# Plan {card_id}\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -415,7 +415,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: test-failed", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
         ancestor = subprocess.run(
             ["git", "merge-base", "--is-ancestor", "card-12", "main"],
             cwd=self.repo,
@@ -431,7 +431,7 @@ class ReachReviewGitTests(unittest.TestCase):
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("allowed", result.stdout)
-        self.assertIn("รอรีวิว: local", board)
+        self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
         self.assertIn("sys.exit(1)", (self.repo / "check.py").read_text(encoding="utf-8"))
         ancestor = subprocess.run(
@@ -451,7 +451,7 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         updated = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("รอรีวิว: local", updated)
+        self.assertIn("review: local", updated)
 
     def test_write_off_the_queue_branch_is_refused(self) -> None:
         self._set_card_check("0")
@@ -476,7 +476,7 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "merge")
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("เกตนี้ merge ไม่ได้", result.stderr)
+        self.assertIn("this gate cannot merge", result.stderr)
         self.assertIn("refused: merge", result.stdout)
         self.assertEqual(after, before)
 
@@ -486,14 +486,14 @@ class ReachReviewGitTests(unittest.TestCase):
         plan = self.repo / "card-loop" / "plan"
         plan.mkdir(parents=True)
         (plan / "12.md").write_text(
-            "# Plan 12\n\n## หลักฐานก่อนเปิดของให้ review\n\n- python3 check.py\n\n"
-            "## การตัดสินใจ\n\n| ตัดสิน | ทำไม | หลักฐาน |\n|---|---|---|\n"
+            "# Plan 12\n\n## evidence\n\n- python3 check.py\n\n"
+            "## decisions\n\n| decision | why | evidence |\n|---|---|---|\n"
             "| DECIDE_TOKEN | because | check.py |\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "feat: change the card")
         git(self.repo, "checkout", "main")
-        text = board_text("- [ ] **12** fresh (feat) รอรีวิว: local")
+        text = board_text("- [ ] **12** fresh (feat) review: local")
         (self.repo / "card-loop" / "board.md").write_text(text, encoding="utf-8")
         before = (self.repo / "card-loop" / "board.md").read_bytes()
         result = run_gate(self.repo, "next")
@@ -504,7 +504,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("HEADER_TOKEN", result.stdout)
         self.assertIn("DECIDE_TOKEN", result.stdout)
         self.assertIn("CARD_ONLY", result.stdout)
-        self.assertIn("compared: ตรวจผ่านเมื่อ diff", result.stdout)
+        self.assertIn("compared: pass diff", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertNotIn("action: merge", result.stdout)
         self.assertEqual(after, before)
@@ -552,7 +552,7 @@ class ReachReviewGitTests(unittest.TestCase):
         opened_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
         self.assertIn("repo-review: open", opened.stdout)
-        self.assertIn("รอรีวิว: local", opened_board)
+        self.assertIn("review: local", opened_board)
         self.assertNotIn("merge:", opened_board)
 
     def test_docs_commit_does_not_open_repo_review(self) -> None:
@@ -564,7 +564,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self._advance_card()
         plan = self.repo / "card-loop" / "plan"
         plan.mkdir(parents=True)
-        (plan / "12.md").write_text("จดใน plan แล้วเดินต่อ\n", encoding="utf-8")
+        (plan / "12.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
         self._commit_on_card("docs: note the plan")
         skipped = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         skipped_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
@@ -572,8 +572,8 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(skipped.returncode, 0, skipped.stdout + skipped.stderr)
         self.assertIn("repo-review: skip", skipped.stdout)
         self.assertNotIn("repo-review: open", skipped.stdout)
-        self.assertIn("รอรีวิว: local", skipped_board)
-        self.assertIn("จดใน plan แล้วเดินต่อ", noted.stdout)
+        self.assertIn("review: local", skipped_board)
+        self.assertIn("a note in the plan, then continue", noted.stdout)
 
     def test_plan_note_on_a_code_commit_cannot_reach_review(self) -> None:
         (self.repo / "card-loop" / "board.md").write_text(
@@ -584,7 +584,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self._advance_card()
         plan = self.repo / "card-loop" / "plan"
         plan.mkdir(parents=True)
-        (plan / "12.md").write_text("จดใน plan แล้วเดินต่อ\n", encoding="utf-8")
+        (plan / "12.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
         self._commit_on_card("chore: note the plan")
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
@@ -593,9 +593,9 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: review-diff", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
         noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
-        self.assertIn("จดใน plan แล้วเดินต่อ", noted.stdout)
+        self.assertIn("a note in the plan, then continue", noted.stdout)
 
     def _screen(self, kind: str, browser: str, start: str, port: str, click: str) -> None:
         (self.repo / "card-loop" / "board.md").write_text(
@@ -628,17 +628,17 @@ class ReachReviewGitTests(unittest.TestCase):
         source = GATE_PATH.read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: browser-empty", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("step: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
         self.assertIn("(style)", after)
         self.assertIn("browser-empty", source)
         self.assertNotIn("browser-empty", loop)
         self.assertNotIn("playwright", loop.lower())
-        self.assertNotIn("เริ่ม:", loop)
-        self.assertNotIn("พอร์ต:", loop)
-        self.assertNotIn("คลิก:", loop)
+        self.assertNotIn("start:", loop)
+        self.assertNotIn("port:", loop)
+        self.assertNotIn("click:", loop)
 
     def test_screen_start_that_does_not_come_up_cannot_reach_review(self) -> None:
         self._screen(
@@ -653,9 +653,9 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: start-down", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("step: ask", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
         self.assertIn("start-down", GATE_PATH.read_text(encoding="utf-8"))
         loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         self.assertNotIn("start-down", loop)
@@ -674,9 +674,9 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("refused: click-mismatch", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("step: ask", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
         self.assertIn("click-mismatch", GATE_PATH.read_text(encoding="utf-8"))
         loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(encoding="utf-8")
         self.assertNotIn("click-mismatch", loop)
@@ -699,7 +699,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("repo-review: open", result.stdout)
         self.assertIn("allowed", result.stdout)
-        self.assertIn("รอรีวิว: local", board)
+        self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and port_open(port):
@@ -783,12 +783,12 @@ class ReachReviewGitTests(unittest.TestCase):
         row = ""
         if decision:
             row = (
-                "\n## การตัดสินใจ\n\n| ตัดสิน | ทำไม | หลักฐาน |\n|---|---|---|\n"
+                "\n## decisions\n\n| decision | why | evidence |\n|---|---|---|\n"
                 f"| {decision} |\n"
             )
         (plan_dir / f"{card_id}.md").write_text(
-            f"# Plan {card_id}\n\n## รีวิว diff\n\n- commit: {sha}\n"
-            f"- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n{row}",
+            f"# Plan {card_id}\n\n## review-diff\n\n- commit: {sha}\n"
+            f"- reviewer: reviewer\n- found: pass\n{row}",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -822,13 +822,13 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: one-off-checker", result.stdout)
         self.assertIn("merge: no", result.stdout)
-        self.assertNotIn("step: ถาม", result.stdout)
+        self.assertNotIn("step: ask", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
 
     def test_checker_the_card_asked_for_can_reach_review(self) -> None:
         (self.repo / "card-loop" / "backlog" / "12.md").write_text(
-            card_body(["check_once.py"], do="สร้าง check_once.py"),
+            card_body(["check_once.py"], do="create check_once.py"),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: the card asks for the checker")
@@ -842,7 +842,7 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("รอรีวิว: local", board)
+        self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
 
     def test_checkout_module_is_not_a_one_off_checker(self) -> None:
@@ -863,10 +863,10 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: related", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("step: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
 
     def test_same_topic_without_a_rule_update_cannot_reach_review(self) -> None:
         self._topic_cards(["13"])
@@ -884,9 +884,9 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: repeat-patch", result.stdout)
         self.assertIn("detail: no-row", result.stdout)
         self.assertIn("merge: no", result.stdout)
-        self.assertNotIn("step: ถาม", result.stdout)
+        self.assertNotIn("step: ask", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
 
     def test_same_topic_plan_row_without_a_rule_file_cannot_reach_review(self) -> None:
         self._topic_cards(["13"])
@@ -896,7 +896,7 @@ class ReachReviewGitTests(unittest.TestCase):
         commit_all(self.repo, "fix: patch only this card")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         git(self.repo, "checkout", "main")
-        self._write_plan("12", sha, "อัปเดตกติกา | ชั้นเดิมซ้ำ | skills/jt-card-gate/SKILL.md")
+        self._write_plan("12", sha, "update-rule | same-layer | skills/jt-card-gate/SKILL.md")
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
@@ -915,8 +915,8 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("detail: prose-only", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
-        self.assertIn("อัปเดตกติกา", plan)
+        self.assertNotIn("review:", after)
+        self.assertIn("update-rule", plan)
         self.assertIn("app.py", names)
         self.assertNotIn("SKILL.md", names)
         self.assertNotIn("gate.py", names)
@@ -932,14 +932,14 @@ class ReachReviewGitTests(unittest.TestCase):
         commit_all(self.repo, "fix: update the checker")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         git(self.repo, "checkout", "main")
-        self._write_plan("12", sha, "อัปเดตกติกา | ชั้นเดิมซ้ำ | check.py")
+        self._write_plan("12", sha, "update-rule | same-layer | check.py")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("allowed", result.stdout)
-        self.assertIn("รอรีวิว: local", board)
+        self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
-        self.assertEqual(board.count("รอรีวิว"), 1)
+        self.assertEqual(board.count("review:"), 1)
 
     def test_rule_update_on_the_linked_card_covers_the_next_card(self) -> None:
         self._topic_cards(["13"])
@@ -957,12 +957,12 @@ class ReachReviewGitTests(unittest.TestCase):
         commit_all(self.repo, "fix: patch the second card")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         git(self.repo, "checkout", "main")
-        self._write_plan("13", sha, "อัปเดตกติกา | ชั้นเดิมซ้ำ | check.py")
+        self._write_plan("13", sha, "update-rule | same-layer | check.py")
         result = run_gate(self.repo, "reach-review", "--id", "13", "--write", "--link", "local")
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("**13** two (fix) รอรีวิว: local", board)
-        self.assertNotIn("**12** one (fix) รอรีวิว:", board)
+        self.assertIn("**13** two (fix) review: local", board)
+        self.assertNotIn("**12** one (fix) review:", board)
         self.assertNotIn("merge:", board)
 
     def test_a_single_topic_can_patch_code_without_a_rule_row(self) -> None:
@@ -975,8 +975,8 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("รอรีวิว: local", board)
-        self.assertNotIn("อัปเดตกติกา", board)
+        self.assertIn("review: local", board)
+        self.assertNotIn("update-rule", board)
 
     def test_multi_port_screen_check(self) -> None:
         port1 = free_port()
@@ -1051,7 +1051,7 @@ class DraftPrReachTests(unittest.TestCase):
         plan_dir = self.repo / "card-loop" / "plan"
         plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / "12.md").write_text(
-            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            f"# Plan 12\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1136,7 +1136,7 @@ class DraftPrReachTests(unittest.TestCase):
             self.repo, "reach-review", "--id", "12", "--write", "--link", "local", env=env
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("รอรีวิว: local", self._board())
+        self.assertIn("review: local", self._board())
         self.assertFalse(marker.exists())
 
     def test_dry_run_with_a_remote_stays_allowed_before_the_pull_request(self) -> None:
@@ -1165,10 +1165,10 @@ class DraftPrReachTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: pr-missing", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
+        self.assertIn("step: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(self._board(), before)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertNotIn("review:", self._board())
 
     def test_open_draft_into_the_queue_branch_writes_the_url(self) -> None:
         self._commit_check("0")
@@ -1189,8 +1189,8 @@ class DraftPrReachTests(unittest.TestCase):
         )
         board = self._board()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("รอรีวิว: https://example.invalid/pull/7", board)
-        self.assertNotIn("รอรีวิว: local", board)
+        self.assertIn("review: https://example.invalid/pull/7", board)
+        self.assertNotIn("review: local", board)
         self.assertNotIn("merge:", board)
 
     def test_ready_pull_request_is_not_review(self) -> None:
@@ -1211,8 +1211,8 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._json_gh(payload),
         )
         self.assertIn("refused: pr-not-draft", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertIn("step: ask", result.stdout)
+        self.assertNotIn("review:", self._board())
 
     def test_two_open_pull_requests_do_not_write_review(self) -> None:
         self._commit_check("0")
@@ -1232,8 +1232,8 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._json_gh(f"[{one},{one}]"),
         )
         self.assertIn("refused: pr-duplicate", result.stdout)
-        self.assertIn("step: ถาม", result.stdout)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertIn("step: ask", result.stdout)
+        self.assertNotIn("review:", self._board())
 
     def test_gh_failure_and_a_missing_binary_ask_instead_of_review(self) -> None:
         self._commit_check("0")
@@ -1249,8 +1249,8 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._gh("exit 1\n"),
         )
         self.assertIn("refused: pr-failed", failed.stdout)
-        self.assertIn("step: ถาม", failed.stdout)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertIn("step: ask", failed.stdout)
+        self.assertNotIn("review:", self._board())
         missing = run_gate(
             self.repo,
             "reach-review",
@@ -1262,8 +1262,8 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._no_gh(),
         )
         self.assertIn("refused: gh-missing", missing.stdout)
-        self.assertIn("step: ถาม", missing.stdout)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertIn("step: ask", missing.stdout)
+        self.assertNotIn("review:", self._board())
 
     def test_a_red_command_still_refuses_before_the_pull_request(self) -> None:
         self._commit_check("1")
@@ -1280,7 +1280,7 @@ class DraftPrReachTests(unittest.TestCase):
         )
         self.assertIn("refused: test-failed", result.stdout)
         self.assertNotIn("pr-missing", result.stdout)
-        self.assertNotIn("รอรีวิว:", self._board())
+        self.assertNotIn("review:", self._board())
 
 
 class RepoReviewTests(unittest.TestCase):
@@ -1297,10 +1297,9 @@ class RepoReviewTests(unittest.TestCase):
         for kind in CODE_KINDS:
             self.assertIn(f"`{kind}`", repo)
             self.assertIn(f"`{kind}`", do_card)
-        self.assertIn("`docs` ไม่เปิด", repo)
+        self.assertIn("`docs` does not open", repo)
         self.assertIn("`docs` does not open", do_card)
-        self.assertNotIn("ตัวอย่าง", skills)
-        self.assertIn("ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน", repo)
+        self.assertIn("A name from `<TEK_SKILLS>` does not do this review", repo)
         self.assertIn("A name from `<TEK_SKILLS>` does not do this review", do_card)
         self.assertNotIn("TEK_SKILLS", GATE_PATH.read_text(encoding="utf-8"))
 
@@ -1310,13 +1309,13 @@ class PairHeadingTests(unittest.TestCase):
         named = board_text("- [ ] **12** fresh · side-repo (feat)", pair="side-repo")
         self.assertTrue(gate.card_names_pair(named, "12", ""))
         plain = board_text("- [ ] **12** fresh (feat)", pair="side-repo")
-        body = "# 12 — fresh\n\nทำ:\n- · side-repo\n"
+        body = "# 12 - fresh\n\ndo:\n- · side-repo\n"
         self.assertFalse(gate.card_names_pair(plain, "12", body))
         titled = board_text("- [ ] **12** fresh (feat)", pair="side-repo")
-        self.assertTrue(gate.card_names_pair(titled, "12", "# 12 — fresh · side-repo\n"))
-        absent = board_text("- [ ] **12** fresh · side-repo (feat)", pair="ไม่มี")
-        self.assertFalse(gate.card_names_pair(absent, "12", "# 12 — fresh · side-repo\n"))
-        self.assertEqual(gate.pair_name(absent), "ไม่มี")
+        self.assertTrue(gate.card_names_pair(titled, "12", "# 12 - fresh · side-repo\n"))
+        absent = board_text("- [ ] **12** fresh · side-repo (feat)", pair="none")
+        self.assertFalse(gate.card_names_pair(absent, "12", "# 12 - fresh · side-repo\n"))
+        self.assertEqual(gate.pair_name(absent), "none")
         self.assertNotIn("jtekth", GATE_PATH.read_text(encoding="utf-8"))
         self.assertIn("pair-not-passed", GATE_PATH.read_text(encoding="utf-8"))
 
@@ -1383,9 +1382,9 @@ class PairedRepoGateTests(unittest.TestCase):
         self.assertIn("merge: no", refused.stdout)
         self.assertNotIn("refused: test-failed", refused.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
-        self.assertNotIn("รอรีวิว", _tree_text(pair))
-        self.assertNotIn("รอรีวิว", _tree_text(decoy))
+        self.assertNotIn("review:", after)
+        self.assertNotIn("review", _tree_text(pair))
+        self.assertNotIn("review", _tree_text(decoy))
         self.assertFalse((pair / "card-loop" / "board.md").exists())
         self.assertFalse((pair / "card-loop" / "paired.md").exists())
         (pair / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
@@ -1395,20 +1394,20 @@ class PairedRepoGateTests(unittest.TestCase):
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
         self.assertIn("allowed", allowed.stdout)
-        self.assertEqual(board.count("รอรีวิว"), 1)
-        self.assertIn("รอรีวิว: local", board)
+        self.assertEqual(board.count("review:"), 1)
+        self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
-        self.assertNotIn("รอรีวิว", _tree_text(pair))
+        self.assertNotIn("review", _tree_text(pair))
         self.assertFalse((pair / "card-loop" / "board.md").exists())
         self.assertFalse((pair / "card-loop" / "paired.md").exists())
 
     def test_none_keeps_the_single_repo_path(self) -> None:
-        self._primary("- [ ] **12** fresh · side-repo (feat)", "ไม่มี", "fresh · side-repo")
+        self._primary("- [ ] **12** fresh · side-repo (feat)", "none", "fresh · side-repo")
         pair = self._sibling("side-repo", "1")
         result = self._reach()
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(board.count("รอรีวิว"), 1)
+        self.assertEqual(board.count("review:"), 1)
         self.assertFalse((pair / "card-loop" / "paired.md").exists())
         self.assertFalse((pair / "card-loop" / "board.md").exists())
 
@@ -1418,7 +1417,7 @@ class PairedRepoGateTests(unittest.TestCase):
         result = self._reach()
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(board.count("รอรีวิว"), 1)
+        self.assertEqual(board.count("review:"), 1)
         self.assertNotIn("· side-repo", board.split("fresh", 1)[1])
         self.assertFalse((pair / "card-loop" / "board.md").exists())
 
@@ -1432,7 +1431,7 @@ class PairedRepoGateTests(unittest.TestCase):
         plan_dir = self.repo / "card-loop" / "plan"
         plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / "12.md").write_text(
-            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {head}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n",
+            f"# Plan 12\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1444,7 +1443,7 @@ class PairedRepoGateTests(unittest.TestCase):
         self.assertIn("refused: test-failed", result.stdout)
         self.assertNotIn("pair-not-passed", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
 
     def test_missing_pair_repo_cannot_reach_review(self) -> None:
         self._primary("- [ ] **12** fresh · side-repo (feat)", "side-repo", "fresh · side-repo")
@@ -1466,10 +1465,10 @@ class V20FeatureTests(unittest.TestCase):
         self.assertFalse(gate._overlaps(("src/app",), ("src/other.py",)))
 
     def test_parent_card_completed_token_is_closed(self) -> None:
-        text = board_text("- [x] **1** parent (feat) ครบ:\n- [x] **1.1** child (feat) merge:")
+        text = board_text("- [x] **1** parent (feat) complete:\n- [x] **1.1** child (feat) merge:")
         parsed = gate.parse_board(text)
         self.assertEqual(len(parsed.cards), 2)
-        self.assertEqual(parsed.cards[0].status, "ครบ:")
+        self.assertEqual(parsed.cards[0].status, "complete:")
         self.assertTrue(parsed.cards[0].checked)
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "1", 0)
@@ -1477,16 +1476,16 @@ class V20FeatureTests(unittest.TestCase):
 
     def test_status_token_parsed_after_kind_suffix(self) -> None:
         text = board_text(
-            "- [ ] **1** item (feat) ครบ:\n"
-            "- [ ] **2** item (fix) ส่งกลับ:\n"
-            "- [ ] **3** item (chore) ถาม:\n"
-            "- [ ] **4** item (feat) รอรีวิว: local"
+            "- [ ] **1** item (feat) complete:\n"
+            "- [ ] **2** item (fix) send-back:\n"
+            "- [ ] **3** item (chore) ask:\n"
+            "- [ ] **4** item (feat) review: local"
         )
         parsed = gate.parse_board(text)
-        self.assertEqual(parsed.cards[0].status, "ครบ:")
-        self.assertEqual(parsed.cards[1].status, "ส่งกลับ:")
-        self.assertEqual(parsed.cards[2].status, "ถาม:")
-        self.assertEqual(parsed.cards[3].status, "รอรีวิว:")
+        self.assertEqual(parsed.cards[0].status, "complete:")
+        self.assertEqual(parsed.cards[1].status, "send-back:")
+        self.assertEqual(parsed.cards[2].status, "ask:")
+        self.assertEqual(parsed.cards[3].status, "review:")
 
 
 class LandedTests(unittest.TestCase):
@@ -1497,7 +1496,7 @@ class LandedTests(unittest.TestCase):
         (self.repo / "card-loop" / "backlog").mkdir(parents=True)
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
         (self.repo / "card-loop" / "board.md").write_text(
-            board_text("- [ ] **12** fresh (feat) รอรีวิว: local"),
+            board_text("- [ ] **12** fresh (feat) review: local"),
             encoding="utf-8",
         )
         (self.repo / "card-loop" / "backlog" / "12.md").write_text(
@@ -1646,7 +1645,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_matching_sha_exits_zero(self) -> None:
         sha = self._commit_code()
         self._write_plan(
-            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {sha}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n"
+            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
         )
         result = run_diff_check(self.repo)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1660,7 +1659,7 @@ class DiffCheckTests(unittest.TestCase):
 
     def test_section_without_a_sha_exits_nonzero(self) -> None:
         self._commit_code()
-        self._write_plan("# Plan 12\n\n## รีวิว diff\n\nจดอย่างเดียว\n")
+        self._write_plan("# Plan 12\n\n## review-diff\n\nnote only\n")
         result = run_diff_check(self.repo)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("diff-check: no-sha", result.stdout)
@@ -1668,7 +1667,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_wrong_sha_exits_nonzero(self) -> None:
         self._commit_code()
         self._write_plan(
-            "# Plan 12\n\n## รีวิว diff\n\n- commit: "
+            "# Plan 12\n\n## review-diff\n\n- commit: "
             "0123456789abcdef0123456789abcdef01234567\n"
         )
         result = run_diff_check(self.repo)
@@ -1678,7 +1677,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_dirty_card_worktree_exits_nonzero(self) -> None:
         sha = self._commit_code()
         self._write_plan(
-            f"# Plan 12\n\n## รีวิว diff\n\n- commit: {sha}\n- ผู้รีวิว: reviewer\n- เจอ: ผ่าน\n"
+            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
         )
         git(self.repo, "checkout", "card-12")
         (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
@@ -1688,7 +1687,7 @@ class DiffCheckTests(unittest.TestCase):
 
     def test_heading_alone_cannot_reach_review(self) -> None:
         self._commit_code()
-        self._write_plan("# Plan 12\n\n## รีวิว diff\n\nจดอย่างเดียว\n")
+        self._write_plan("# Plan 12\n\n## review-diff\n\nnote only\n")
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
@@ -1697,7 +1696,7 @@ class DiffCheckTests(unittest.TestCase):
         self.assertIn("detail: no-sha", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
-        self.assertNotIn("รอรีวิว:", after)
+        self.assertNotIn("review:", after)
 
 
 class GateSourceTests(unittest.TestCase):

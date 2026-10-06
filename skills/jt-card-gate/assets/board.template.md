@@ -1,18 +1,18 @@
-# Board — `<REPO_NAME>`
+# Board - `<REPO_NAME>`
 
-กติกาอยู่ใน skill `jt-card-gate` เวอร์ชัน 20 · brief อยู่ที่ `brief.md` · card อยู่ที่ `backlog/<id>.md` · plan อยู่ที่ `plan/<id>.md`
+The rules live in skill `jt-card-gate` version 20. The brief is `brief.md`. A card is `backlog/<id>.md`. A plan is `plan/<id>.md`.
 
-สาขาคิว:
+queue:
 
-คู่:
+pair:
 
-ชื่อบนบรรทัด `คู่:` คือคำตอบครั้งเดียวตอน `/jt-new-board` หรือคำว่า `ไม่มี` ห้ามใส่ชื่อเอง
+The name on the `pair:` line is the one answer from `/jt-new-board`, or the word `none`. Do not invent a name.
 
-`/jt-new-board` เติมตารางนี้จาก repo ที่เปิดอยู่ คนไม่กรอกเอง
+`/jt-new-board` fills this table from the open repo. The human does not fill it.
 
-`<STACK_LOCK>` ต้องมีอย่างน้อย: ภาษา · เฟรมเวิร์ก · คำสั่งเทสหรือชนิดตรวจ · ของที่ห้ามใช้ใน repo นี้
+`<STACK_LOCK>` must include at least a language, a framework, the test command or the check kind, and what this repo must not use.
 
-| ค่า | ใน repo นี้ |
+| Value | In this repo |
 |---|---|
 | `<TEST_CMD>` | |
 | `<SETUP_CMD>` | |
@@ -23,52 +23,52 @@
 | `<TEK_SKILLS>` | |
 | `<REPO_SKILLS>` | |
 
-`<SETUP_CMD>` คือคำสั่งเตรียม dependency รันใน worktree ของข้อก่อนเทสและก่อนสตาร์ท เว้นว่างคือไม่รัน
+`<SETUP_CMD>` is the command that prepares dependencies. The gate runs it in the card worktree before tests and before start. An empty cell means do not run it.
 
-`<TEK_SKILLS>` คือชื่อ skill ที่ทำให้การลงมือเก่งขึ้น `/jt-do-work` เปิดชื่อในแถวนี้ตอน card ยังมีสองทาง ตอนหาสาเหตุบั๊กก่อนเขียนเทส และตอนแก้โค้ดผลิต เว้นว่างคือไม่เปิด
+`<TEK_SKILLS>` names skills that make the work sharper. `/jt-do-work` opens a name from this row when the card still has two paths, when it is finding the bug cause before a test, and when it is editing production code. An empty cell opens nothing.
 
-`<REPO_SKILLS>` คือชื่อ skill ของ repo นี้ที่ `/jt-do-work` เปิดตอน review โค้ดหลัง commit ที่ชนิดเป็น `feat` `fix` `style` `refactor` `perf` `test` `build` `ci` `chore` หรือ `revert` ชนิด `docs` ไม่เปิด เว้นว่างคือไม่เปิด อย่าสลับสองแถว `/jt-new-board` ใส่ชื่อจากหัว **ค้น** ให้แล้ว
+`<REPO_SKILLS>` names this repo's skills. `/jt-do-work` opens them when it reviews code after a commit whose kind is `feat`, `fix`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`. Kind `docs` does not open. An empty cell opens nothing. Do not swap the two rows. `/jt-new-board` writes the names from **Search**.
 
-**ตอนนี้หยิบ:** อ่านคำบนบรรทัด ไม่ดูปุ่ม review ของโฮสต์
+**Pick now.** Read the words on the line. Do not look at the host review button.
 
-`- [ ]` ยังไม่จบ · `- [x]` ปิดแล้วที่นี่ (`merge:` หรือ `ไม่เอา:`) · ข้อหลักที่ข้อย่อยครบเป็น `- [x]` ต่อท้าย `ครบ:`
+`- [ ]` is open. `- [x]` is closed here (`merge:` or `drop:`). A parent whose children are all done is `- [x]` followed by `complete:`.
 
-ชนิดตั๋ว: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
+Ticket kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 
-เลขข้อ: **1, 2, 3** คือข้อหลัก · **1.1, 1.2** คือข้อย่อย ติ๊กข้อหลักได้เมื่อข้อย่อยครบ
+Item numbers. **1, 2, 3** are parents. **1.1, 1.2** are children. Check a parent only when every child is done.
 
-ลำดับหยิบคือหัวข้อ **ทำก่อน** แล้ว **งานหลัก** แล้ว **เก็บเล็ก** บรรทัดที่มีข้อย่อยอยู่ใต้ตัวเองไม่ถูกหยิบ และไม่มี card ของตัวเอง
+Pick **first**, then **main**, then **later**. A line that has children under it is not picked, and it has no card of its own.
 
-| อันดับ | ก้อน | ทำไมมาก่อน |
+| Rank | Block | Why it comes first |
 |---|---|---|
-| **P0** | ทำก่อน | รั่วสู่ผู้ใช้ หรือบล็อกงานหลัก |
-| **P1** | งานหลัก | |
-| **P4** | เก็บเล็ก | หยิบเมื่อข้อที่สูงกว่าไม่มี `- [ ]` |
+| **P0** | first | It leaks to a user, or it blocks the main work |
+| **P1** | main | |
+| **P4** | later | Pick it when no higher item is still `- [ ]` |
 
-## ปิดแล้ว
+## closed
 
-`/jt-move-card` ย้ายบรรทัดมาที่นี่ได้ถ้าคิวยาว โดยไม่เปลี่ยนสถานะบนบรรทัด ข้อตกลงยังอยู่ในไฟล์ card
+`/jt-move-card` may move a line here when the queue is long. That move does not change the status on the line. The agreement stays in the card file.
 
-- (ย้ายจากด้านล่าง)
+- (moved from below)
 
-## ทำก่อน
+## first
 
-ไม่มีข้อ
+no items
 
-## งานหลัก
+## main
 
-ไม่มีข้อ
+no items
 
-## เก็บเล็ก
+## later
 
-หยิบเมื่อ **ทำก่อน** และ **งานหลัก** ไม่มี `- [ ]` เหลือ
+Pick these when **first** and **main** have no `- [ ]` left.
 
-ไม่มีข้อ
+no items
 
-## รอ card
+## waiting
 
-ยังไม่มีข้อตกลงจากคน ห้ามให้เอเจนต์เขียน card เองแล้วหยิบ
+The human has not accepted a card yet. Do not let an agent write a card and pick it.
 
-## ไม่ต้องทำ
+## skip
 
-อย่าติ๊กส่วนนี้เป็นงาน
+Do not check this section off as work.

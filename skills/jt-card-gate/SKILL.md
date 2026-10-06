@@ -11,25 +11,25 @@ metadata:
 
 # jt-card-gate
 
-กติกาทั้งก้อนอยู่ที่ [references/loop.md](references/loop.md) จุดที่เปิด skill อื่นอยู่ที่ [references/skills.md](references/skills.md) แม่แบบอยู่ที่ `assets/` ข้างไฟล์นี้
+The whole rule set is [references/loop.md](references/loop.md). The points that open another skill are [references/skills.md](references/skills.md). Templates are in `assets/` next to this file.
 
-คนเรียกคำสั่งเหล่านี้ ไม่ได้เรียก `/jt-card-gate` เพื่อลงมือ
+The human calls these commands. The human does not call `/jt-card-gate` to start work.
 
-| คำสั่ง | งาน |
+| Command | Work |
 |---|---|
-| `/jt-new-board` | สร้าง board แล้วเติมตารางกับชื่อ skill และถาม repo คู่ครั้งเดียว |
-| `/jt-ask-brief` | ถามว่าอยากทำอะไร แล้วเขียน `card-loop/brief.md` |
-| `/jt-new-card` | ถามจนคนรับร่าง ครั้งเดียวได้หลายใบ |
-| `/jt-read-board` | อ่านคิว |
-| `/jt-find-skills` | เสนอชื่อให้คนเลือก ยังไม่เขียน board จนกว่าจะรับ |
-| `/jt-do-work` | ทำทุก card ที่บรรทัดอนุญาต ข้ามใบที่ `รอรีวิว:` |
-| `/jt-open-work` | เปิดของที่ `รอรีวิว:` |
-| `/jt-send-back` | คนเปลี่ยนเป็น `ส่งกลับ:` |
-| `/jt-merge` | คนเปลี่ยนเครื่องหมาย `merge:` หลัง commit ของ card อยู่ในสาขาคิวแล้ว ไม่รัน git merge ไม่เปิด PR และไม่ merge PR |
-| `/jt-drop-card` | คนเปลี่ยนคำเป็น `ไม่เอา` ไม่ลบบรรทัดอื่น |
-| `/jt-move-card` | ย้ายบรรทัดบน board ไม่เปลี่ยนสถานะ |
-| `/jt-next-step` | อ่านบรรทัดแล้วทำขั้นถัดไปที่กติกาอนุญาต ไม่ merge |
+| `/jt-new-board` | Create the board, fill the table and the skill names, and ask once for the paired repo. |
+| `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. |
+| `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards. |
+| `/jt-read-board` | Read the queue. |
+| `/jt-find-skills` | Offer names for the human to choose. Do not write the board until they accept. |
+| `/jt-do-work` | Do every card the line allows. Skip a card that is `review:`. |
+| `/jt-open-work` | Open work that is `review:`. |
+| `/jt-send-back` | The human changes the line to `send-back:`. |
+| `/jt-merge` | The human changes the mark to `merge:` after the card commit is on the queue branch. Do not run git merge, open a PR, or merge a PR. |
+| `/jt-drop-card` | The human changes the words to `drop`. Do not delete other lines. |
+| `/jt-move-card` | Move a line on the board. Do not change its status. |
+| `/jt-next-step` | Read the line and do the next step the rules allow. Do not merge. |
 
-งานที่ผู้ใช้เห็นจอ ก่อน `รอรีวิว:` ใช้คำสั่งตรวจจอของ JTek ที่ `scripts/jt-screen-check` หรือคำสั่งตรวจที่มีอยู่บน board ห้ามสร้างสคริปต์ตรวจใหม่ ใบที่แตะโค้ด ก่อน `รอรีวิว:` ต้องให้ `scripts/jt-diff-check` จบเป็นศูนย์ การเขียนหัวรีวิวใน plan อย่างเดียวไม่พอ รายละเอียดอยู่ใน [references/loop.md](references/loop.md)
+Screen work, before `review:`, uses the JTek screen command at `scripts/jt-screen-check` or a check command already on the board. Do not create a new check script. On a card that touches code, `scripts/jt-diff-check` must exit 0 before `review:`. A review heading in the plan is not enough. The detail is in [references/loop.md](references/loop.md). Use the existing check commands on the board.
 
-ถ้าคนเรียก skill นี้ตรง ๆ ให้บอกคำสั่งแล้วหยุด ห้ามหยิบ card
+If the human calls this skill directly, name the command and stop. Do not pick a card.
