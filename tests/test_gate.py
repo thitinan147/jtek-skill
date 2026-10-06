@@ -1699,6 +1699,147 @@ class DiffCheckTests(unittest.TestCase):
         self.assertNotIn("review:", after)
 
 
+class StatusBoundaryTests(unittest.TestCase):
+    def test_unknown_status_stops_instead_of_starting_work(self) -> None:
+        for token in ("wip:", "reveiw:", "รอรีวิว:", "ปิด:", "closed:"):
+            text = board_text(f"- [ ] **13** bad (feat) {token}")
+            decision = decide_board(text, {"13": card_body(["src/b.py"])})
+            self.assertEqual(decision.action, "stop", token)
+            self.assertEqual(decision.reason, "unknown-status", token)
+            self.assertEqual(decision.id, "13", token)
+            self.assertEqual(decision.command, "", token)
+            self.assertNotEqual(decision.reason, "ready", token)
+            with self.assertRaises(gate.GateError) as caught:
+                gate.apply_waiting_review(text, "13", 0, "local")
+            self.assertEqual(caught.exception.reason, "unknown-status", token)
+
+    def test_unknown_status_blocks_a_sibling_card(self) -> None:
+        text = board_text("- [ ] **12** fresh (feat)\n- [ ] **13** bad (feat) wip:")
+        decision = decide_board(
+            text,
+            {"12": card_body(["src/a.py"]), "13": card_body(["src/b.py"])},
+        )
+        self.assertEqual(decision.action, "stop")
+        self.assertEqual(decision.reason, "unknown-status")
+        self.assertEqual(decision.id, "13")
+        self.assertNotEqual(decision.action, "do-card")
+
+    def test_title_colon_words_stay_ready_and_can_be_marked_review(self) -> None:
+        for name in ("task: login", "backdrop: night", "incomplete: form", "mask: login"):
+            line = f"- [ ] **12** {name} (feat)"
+            text = board_text(line)
+            parsed = gate.parse_board(text)
+            self.assertEqual(len(parsed.cards), 1, name)
+            self.assertIsNone(parsed.cards[0].status, name)
+            decision = decide_board(text, {"12": card_body(["src/a.py"])})
+            self.assertEqual(decision.action, "do-card", name)
+            self.assertEqual(decision.id, "12", name)
+            self.assertEqual(decision.reason, "ready", name)
+            updated = gate.apply_waiting_review(text, "12", 0, "local")
+            self.assertIn(f"{name} (feat) review: local", updated)
+
+    def test_send_back_in_the_title_is_not_replaced(self) -> None:
+        text = board_text("- [ ] **12** send-back: title (feat)")
+        parsed = gate.parse_board(text)
+        self.assertIsNone(parsed.cards[0].status)
+        updated = gate.apply_waiting_review(text, "12", 0, "local")
+        self.assertIn("- [ ] **12** send-back: title (feat) review: local", updated)
+
+    def test_note_with_review_keeps_the_real_status(self) -> None:
+        text = board_text("- [ ] **12** fresh (fix) send-back: review: the diff")
+        parsed = gate.parse_board(text)
+        self.assertEqual(parsed.cards[0].status, "send-back:")
+        decision = decide_board(text, {"12": card_body(["src/a.py"])})
+        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.id, "12")
+        self.assertEqual(decision.reason, "send-back")
+        updated = gate.apply_waiting_review(text, "12", 0, "local")
+        self.assertIn("fresh (fix) review: local review: the diff", updated)
+        self.assertNotIn("send-back:", updated)
+
+        asked = board_text("- [ ] **13** fresh (fix) ask: review: please look")
+        parsed_ask = gate.parse_board(asked)
+        self.assertEqual(parsed_ask.cards[0].status, "ask:")
+        decision_ask = decide_board(
+            asked,
+            {"13": card_body(["src/a.py"], question="which?")},
+        )
+        self.assertEqual(decision_ask.action, "wait")
+        self.assertEqual(decision_ask.question, "which?")
+        with self.assertRaises(gate.GateError) as caught:
+            gate.apply_waiting_review(asked, "13", 0, "local")
+        self.assertEqual(caught.exception.reason, "question-open")
+
+    def test_parent_review_ask_or_complete_is_not_do_card(self) -> None:
+        bodies = {"1": card_body(["src/a.py"]), "1.1": card_body(["src/b.py"])}
+        review = board_text(
+            "- [ ] **1** parent (feat) review: local\n- [x] **1.1** child (feat) merge:"
+        )
+        decision = decide_board(review, bodies)
+        self.assertEqual(decision.action, "open-review")
+        self.assertEqual(decision.id, "1")
+        self.assertEqual(decision.reason, "review")
+
+        asked = board_text(
+            "- [ ] **1** parent (feat) ask:\n- [x] **1.1** child (feat) merge:"
+        )
+        decision = decide_board(
+            asked,
+            {
+                "1": card_body(["src/a.py"], question="which?"),
+                "1.1": card_body(["src/b.py"]),
+            },
+        )
+        self.assertEqual(decision.action, "wait")
+        self.assertEqual(decision.question, "which?")
+
+        done = board_text(
+            "- [ ] **1** parent (feat) complete:\n- [x] **1.1** child (feat) merge:"
+        )
+        decision = decide_board(done, bodies)
+        self.assertEqual(decision.action, "stop")
+        self.assertNotEqual(decision.reason, "subcards-complete")
+        self.assertNotEqual(decision.action, "do-card")
+
+        open_parent = board_text(
+            "- [ ] **1** parent (feat)\n- [x] **1.1** child (feat) merge:"
+        )
+        decision = decide_board(open_parent, bodies)
+        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.id, "1")
+        self.assertEqual(decision.reason, "subcards-complete")
+
+    def test_review_link_may_contain_merge_colon(self) -> None:
+        text = board_text("- [ ] **12** fresh (feat)")
+        link = "https://example.com/merge:1"
+        updated = gate.apply_waiting_review(text, "12", 0, link)
+        self.assertIn("review: https://example.com/merge:1", updated)
+
+    def test_capitalized_section_heading_is_still_the_queue(self) -> None:
+        text = board_text("- [ ] **12** fresh (feat)").replace("## first\n", "## First\n", 1)
+        decision = decide_board(text, {"12": card_body(["src/a.py"])})
+        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.id, "12")
+        self.assertEqual(decision.reason, "ready")
+
+    def test_title_colon_does_not_hide_the_paired_repo(self) -> None:
+        text = board_text("- [ ] **12** mask: login · side-repo (feat)", pair="side-repo")
+        self.assertTrue(gate.card_names_pair(text, "12", ""))
+
+    def test_cargo_and_go_repos_have_setup_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Cargo.toml").write_text(
+                "[package]\nname = \"a\"\nversion = \"0.1.0\"\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(gate.repo_setup_cmd(root), "cargo build")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "go.mod").write_text("module example.com/a\n\ngo 1.22\n", encoding="utf-8")
+            self.assertEqual(gate.repo_setup_cmd(root), "go mod download")
+
+
 class GateSourceTests(unittest.TestCase):
     def test_gate_source_has_no_merge_and_no_skill_name_check(self) -> None:
         source = GATE_PATH.read_text(encoding="utf-8")
