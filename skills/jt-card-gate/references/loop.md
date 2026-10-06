@@ -69,7 +69,7 @@ The board line is the whole queue, so it lives on a different branch from each i
 
 Each time you choose a path, stop for `ask:`, or the evidence passes, add one row to the plan's `decisions` table. Record what you decided, why, and evidence as a path, a test command, or a commit.
 
-The only statuses to trust are the words on the line. They are `ask:`, `review:`, `send-back:`, `merge:`, `drop:`, and `complete:`.
+The only statuses to trust are the words on the line. They are `ask:`, `review:`, `send-back:`, `merge:`, `drop:`, and `complete:`. A colon word in the short name is not a status. Any other colon word in the status slot stops the queue. `closed:` is not a status.
 
 ```text
 human accepts the draft from /jt-new-card
