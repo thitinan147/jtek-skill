@@ -10,61 +10,44 @@ metadata:
 
 # jt-do-work
 
-ทำใน repo ที่เปิดอยู่ ที่อยู่ของ commit อยู่ในหัว **ที่อยู่ของ commit** ของ `references/loop.md` ใน skill `jt-card-gate` เปิด skill อื่นตาม `references/skills.md` ของ skill นั้น รูปแบบ commit อยู่ในหัว **มาตรฐาน commit** ของไฟล์เดียวกัน
+Work in the open repo. Commit locations are under **ที่อยู่ของ commit** in `skills/jt-card-gate/references/loop.md`. Open other skills per `references/skills.md` in that skill. Commit form is under **มาตรฐาน commit** in the same file.
 
-หนึ่งรอบถือใบเดียว จบใบเมื่อบรรทัดเป็น `รอรีวิว:` หรือ `ถาม:` แล้วกลับไปหัว **หยิบ**
+`loop.md` is the shared policy. This file is the procedure. `skills/jt-next-step/gate.py` enforces. Do not restate the gate here.
 
-## เจตนาต้องปิดก่อนลงมือ
+One round holds one card. The card is done when the line is `รอรีวิว:` or `ถาม:`. Then return to **Pick a card**.
 
-card มีชนิดเดียว ทางเดียว และหัว **ทำ** **ไม่ทำ** **ตรวจผ่านเมื่อ** อ่านแล้วลงมือได้
+Before work, read these headings in `loop.md` and follow them.
 
-ยังไม่ปิดเมื่อขอบเขตคลุมเครือ มีสองทางที่ผลไม่เท่ากัน จะลบของที่อาจยังมีคนใช้โดย card ยังไม่เลือก หรือจะเปลี่ยนสัญญาที่คนอื่นเรียกโดย card ยังไม่เลือก ให้ทำตามหัว **เขียน ถาม**
+- Closed intent. **เจตนาปิดแล้ว**.
+- Irreversible work. **งานที่ย้อนกลับไม่ได้**.
+- Three evidence rounds. **เกณฑ์ 3 รอบ**.
+- When review is forbidden. **กติกา** and **สรุป**.
 
-`<TEST_CMD>` เป็น `ไม่มีชุดเทส` และ card เป็น `feat` หรือ `fix` แต่หัว **ตรวจผ่านเมื่อ** ไม่มีคำสั่งเทส ให้ทำตามหัว **เขียน ถาม** เพื่อขอคำสั่งเทส
+If the gate refuses, follow **Write ถาม** or **เกณฑ์ 3 รอบ**. Do not write `รอรีวิว:` yourself.
 
-งานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` เมื่อ `<BROWSER_TOOL>` ว่าง ให้ทำตามหัว **เขียน ถาม** วิธีสตาร์ท พอร์ต และขั้นตอนคลิกอยู่บน card ของ repo นี้
+## Pick a card
 
-## งานที่ย้อนกลับไม่ได้
+1. If `card-loop/board.md` is missing, stop and say to run `/jt-new-board` first. If the file exists and `สาขาคิว:` is empty, or `<TEST_CMD>` is empty, or `<STACK_LOCK>` is empty, stop the whole queue and name the field to fill. The value `ไม่มีชุดเทส` is allowed. Do not run it as a command.
+2. If files outside `card-loop/` are dirty, stop the whole queue. If the human edited files under `card-loop/`, commit them on the queue branch before you create the card branch.
+3. Check out the queue branch.
+4. Make three passes in this order. On each pass, walk **ทำก่อน**, then **งานหลัก**. Walk **เก็บเล็ก** only when every `- [ ]` under **ทำก่อน** and **งานหลัก** is done. When you find a card, stop. Do not continue past the rest.
+   - Pass one. The first line marked `ส่งกลับ:`.
+   - Pass two. The first line marked `ถาม:` whose card heading **ถาม** is empty.
+   - Pass three. The first line with no `ถาม:`, `รอรีวิว:`, or `ส่งกลับ:`, and with `card-loop/backlog/<id>.md`.
+5. On every pass, skip `รอรีวิว:`. Skip `ถาม:` while heading **ถาม** still has text. Skip a line with no card file. Skip a card whose **ไฟล์ที่แตะได้** uses the same path as another line that is still `รอรีวิว:` or `ส่งกลับ:`. A parent line is a line `**<parent>**` with a line `**<parent>.<child>**` below it. Do not pick that parent line. A section heading such as `## งานหลัก` is not that line. When every child is done, change the parent's `- [ ]` to `- [x]`, append `ครบ:`, and commit only `card-loop/board.md` on the queue branch.
+6. If step 4 finds no card, stop the whole queue here. A line left on `รอรีวิว:` is not a reason to stop. For a card skipped because files overlap, say it waits until that other card is on the queue branch.
+7. When you have a card, and its `ชั้น:` matches another card that is still open, and **อ้างอิง** does not point at the other card, follow **Write ถาม** and return to step 1. When they are linked, do them one at a time in this order. Do not split into parallel agents. Then check **เจตนาปิดแล้ว** in `loop.md`.
+   - If the line is `ถาม:` and intent is closed, delete `ถาม:` from the line, commit only `card-loop/board.md` on the queue branch, and go to **Do the work**.
+   - If the line has no `ถาม:` and intent is closed, go to **Do the work**.
+   - Otherwise follow **Write ถาม** and return to step 1. Before you write `ถาม:` because two outcomes remain, open one `<TEK_SKILLS>` name whose description mentions grill or interview, if one exists.
 
-ให้ทำตามหัว **เขียน ถาม** เมื่อจะลบข้อมูล production, force-push, ส่งของออกนอก repo, หรือ merge `card-<id>` เข้าสาขาคิว
+The card id is the text inside `**` on the line. The line form is under **ที่อยู่ของ commit**.
 
-push branch `card-<id>` เพื่อเปิด draft PR ทำได้ ห้าม merge PR นั้น
+## Write ถาม
 
-## เกณฑ์ 3 รอบ
-
-หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่ใช่รอบนี้ ให้ทำตามหัว **เขียน ถาม**
-
-เริ่มที่ `รอบหลักฐาน` = 1 พยายามทั้งชุดแล้วยังไม่ผ่าน ถ้าค่าน้อยกว่า 3 ให้บวก 1 แล้วพยายามใหม่บนใบเดิม ถ้าค่าเป็น 3 อยู่แล้วและยังไม่ผ่าน ให้ทำตามหัว **เขียน ถาม** เทสแดงที่ตั้งใจก่อนลงมือไม่นับเป็นรอบที่ล้ม นับจากช่องใน plan เท่านั้น
-
-## ห้ามเปิดของให้ review เมื่อ
-
-เทสที่เกี่ยวข้องยังแดง diff ออกนอกหัว **ทำ** หรือล้ำหัว **ไม่ทำ** ตาราง **การตัดสินใจ** ว่าง งานที่ผู้ใช้เห็นจอยังไม่ได้คลิกให้ตรงหัว **ตรวจผ่านเมื่อ** หรือเป็น `fix` ที่ผู้ใช้เห็นจอแต่พื้นผิวยังเป็นบั๊ก เทสเขียวอย่างเดียวไม่พอ สคริปต์ตรวจใหม่ที่หัว **ทำ** ไม่ได้สั่งก็เปิดไม่ได้ ความผิดชั้นเดิมซ้ำแต่ยังไม่จด `อัปเดตกติกา` พร้อมกติกาหรือสคริปต์ตรวจที่แก้ก็เปิดไม่ได้ การจดแถวนั้นอย่างเดียวโดยไฟล์กติกาไม่เปลี่ยนก็เปิดไม่ได้
-
-เข้าเงื่อนไขนี้แล้วบรรทัดยังไม่มี `ถาม:` หรือ `รอรีวิว:` ให้เดินหัว **เกณฑ์ 3 รอบ** บนใบเดิม
-
-## หยิบ
-
-1. ไม่มี `card-loop/board.md` ให้หยุดแล้วบอกให้เรียก `/jt-new-board` ก่อน มีไฟล์แล้วบรรทัด `สาขาคิว:` ว่าง หรือช่อง `<TEST_CMD>` ว่าง หรือช่อง `<STACK_LOCK>` ว่าง ให้หยุดทั้งคิวแล้วบอกช่องที่ต้องเติม ค่า `ไม่มีชุดเทส` เป็นค่าที่ใช้ได้ และไม่รันเป็นคำสั่ง
-2. มีไฟล์ที่แก้ค้างนอก `card-loop/` ให้หยุดทั้งคิว ไฟล์ใต้ `card-loop/` ที่คนแก้ให้ commit บนสาขาคิวก่อนแตก branch
-3. checkout สาขาคิว
-4. ผ่านสามครั้งตามลำดับนี้ แต่ละครั้งเดินหัวข้อ **ทำก่อน** แล้ว **งานหลัก** โดยหัวข้อ **เก็บเล็ก** จะหยิบได้ต่อเมื่อทุกใบใต้ **ทำก่อน** และ **งานหลัก** ไม่มี `- [ ]` ที่ยังไม่เสร็จ เจอใบแล้วไม่เดินผ่านที่เหลือ
-   - ผ่านที่หนึ่ง ใบแรกที่บรรทัดเป็น `ส่งกลับ:`
-   - ผ่านที่สอง ใบแรกที่บรรทัดเป็น `ถาม:` และหัว **ถาม** ใน card ว่าง
-   - ผ่านที่สาม ใบแรกที่บรรทัดไม่มี `ถาม:` `รอรีวิว:` หรือ `ส่งกลับ:` และมีไฟล์ `card-loop/backlog/<id>.md`
-5. ทุกผ่านให้ข้าม `รอรีวิว:` ข้าม `ถาม:` ที่หัว **ถาม** ยังมีข้อความ และข้ามบรรทัดที่ไม่มีไฟล์ card ข้ามใบที่หัว **ไฟล์ที่แตะได้** ใช้ path เดียวกับใบอื่นที่บรรทัดยังเป็น `รอรีวิว:` หรือ `ส่งกลับ:` บรรทัดหัวของข้อย่อยคือบรรทัด `**<เลขหลัก>**` ที่มีบรรทัด `**<เลขหลัก>.<เลขย่อย>**` อยู่ถัดลงไป บรรทัดนั้นไม่ถูกหยิบ หัวส่วนเช่น `## งานหลัก` ไม่ใช่บรรทัดนั้น เมื่อข้อย่อยครบทุกข้อให้เปลี่ยน `- [ ]` ที่บรรทัดหัวเป็น `- [x]` และต่อท้ายด้วย `ครบ:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
-6. ไม่มีใบจากข้อ 4 ให้หยุดทั้งคิวตรงนี้ ใบที่ค้าง `รอรีวิว:` ไม่ใช่เหตุหยุด ใบที่ข้ามเพราะไฟล์ซ้อนให้บอกว่ารอใบนั้นรวมเข้าสาขาคิวก่อน
-7. มีใบแล้ว ถ้า `ชั้น:` ตรงกับใบอื่นที่ยังไม่ปิด และหัว **อ้างอิง** ยังไม่ชี้อีกฝั่ง ให้ทำตามหัว **เขียน ถาม** แล้วกลับข้อ 1 ลิงก์แล้วให้ทำทีละใบตามลำดับนี้ ห้ามแยกเอเจนต์คู่ขนาน จากนั้นตรวจหัว **เจตนาต้องปิดก่อนลงมือ**
-   - บรรทัดเป็น `ถาม:` และเจตนาปิดแล้ว ให้ลบ `ถาม:` ออกจากบรรทัด commit เฉพาะ `card-loop/board.md` บนสาขาคิว แล้วไปหัว **ลงมือ**
-   - บรรทัดไม่มี `ถาม:` และเจตนาปิดแล้ว ให้ไปหัว **ลงมือ**
-   - นอกนั้น ให้ทำตามหัว **เขียน ถาม** แล้วกลับข้อ 1 ก่อนเขียนเพราะยังมีสองทาง ให้เปิดหนึ่งชื่อจาก `<TEK_SKILLS>` ที่ description พูดถึง grill หรือ interview ถ้ามี
-
-รหัสข้อคือข้อความใน `**` บนบรรทัด รูปแบบบรรทัดอยู่ในหัว **ที่อยู่ของ commit**
-
-## เขียน ถาม
-
-1. มี branch `card-<id>` และมีไฟล์งานที่ยังไม่ commit ให้ commit บน branch นั้น แล้วเติมหนึ่งแถวในตาราง **การตัดสินใจ** commit เฉพาะไฟล์ plan บน branch นั้น
-2. checkout สาขาคิว
-3. แทนหัว `ถาม:` ที่ว่างใน card ด้วยสามบรรทัดนี้ โดยไม่เขียนหัวซ้ำ บนบรรทัด board ต่อท้ายด้วย `ถาม:` ข้อยังเป็น `- [ ]`
+1. If branch `card-<id>` exists and work files are uncommitted, commit them on that branch. Add one row to **การตัดสินใจ**. Commit only the plan file on that branch.
+2. Check out the queue branch.
+3. Replace an empty `ถาม:` heading in the card with these three lines. Do not write the heading twice. On the board line, append `ถาม:`. The item stays `- [ ]`.
 
 ```markdown
 ถาม: <หนึ่งคำถาม>
@@ -72,72 +55,70 @@ push branch `card-<id>` เพื่อเปิด draft PR ทำได้ ห
 ทางที่เห็น: <ทางที่คนเลือกได้>
 ```
 
-4. commit เฉพาะ `card-loop/board.md` กับ `card-loop/backlog/<id>.md` บนสาขาคิว
-5. กลับไปหัว **หยิบ**
+4. Commit only `card-loop/board.md` and `card-loop/backlog/<id>.md` on the queue branch.
+5. Return to **Pick a card**.
 
-เสร็จเมื่อบรรทัดบนสาขาคิวมี `ถาม:` และหัว **ถาม** ใน card มีคำถาม
+Done when the queue-branch line contains `ถาม:` and the card heading **ถาม** contains a question.
 
-## ลงมือ
+## Do the work
 
-บรรทัดเป็น `ส่งกลับ:` แต่ไม่มี branch `card-<id>` ให้ทำตามหัว **เขียน ถาม**
+If the line is `ส่งกลับ:` and branch `card-<id>` does not exist, follow **Write ถาม**.
 
-มี branch `card-<id>` อยู่แล้วให้ checkout branch นั้น แล้ว merge สาขาคิวเข้า branch นี้ ใช้ draft PR ใบเดิม branch ใหม่ให้สร้างจากสาขาคิวเท่านั้น ห้ามสร้างจาก branch `card-<id>` อื่น ชนให้แก้บน branch นี้ให้ตรงหัว **ทำ** แล้วรันเทสชุดที่เกี่ยวข้องใหม่ แก้โดยไม่เลือกแทนคนไม่ได้ ให้ทำตามหัว **เขียน ถาม** หัว **ไฟล์ที่แตะได้** ใน plan ว่าง ให้เติมจาก card ก่อนแก้ไฟล์งาน
+If branch `card-<id>` already exists, check it out and merge the queue branch into this branch. Keep the existing draft PR. Create a new branch only from the queue branch. Do not create it from another `card-<id>` branch. On a conflict, edit this branch to match **ทำ**, then rerun the relevant tests. If you cannot resolve the conflict without choosing for the human, follow **Write ถาม**. If **ไฟล์ที่แตะได้** in the plan is empty, copy it from the card before you edit work files.
 
-ยังไม่มี branch ให้สร้าง `card-<id>` จากสาขาคิว แล้ว checkout สร้าง `card-loop/plan/<id>.md` จาก `assets/plan.template.md` ของ skill `jt-card-gate` ใส่ช่อง Branch เป็น `card-<id>` คัดลอกหัว **ไฟล์ที่แตะได้** จาก card แล้ว commit เฉพาะไฟล์ plan บน branch นี้
+If the branch does not exist yet, create `card-<id>` from the queue branch and check it out. Create `card-loop/plan/<id>.md` from `assets/plan.template.md` in skill `jt-card-gate`. Set Branch to `card-<id>`. Copy **ไฟล์ที่แตะได้** from the card. Commit only the plan file on this branch.
 
-บรรทัดเป็น `ส่งกลับ:` และ `สถานะรอบ` ยังไม่ใช่ `ส่งกลับ` ให้ตั้ง `รอบหลักฐาน` เป็น 1 และ `สถานะรอบ` เป็น `ส่งกลับ` แล้ว commit เฉพาะไฟล์ plan บน `card-<id>` `สถานะรอบ` เป็น `ส่งกลับ` อยู่แล้วให้คงรอบเดิม
+If the line is `ส่งกลับ:` and `สถานะรอบ` is not `ส่งกลับ`, set `รอบหลักฐาน` to 1 and `สถานะรอบ` to `ส่งกลับ`, then commit only the plan file on `card-<id>`. If `สถานะรอบ` is already `ส่งกลับ`, keep the current round.
 
-จากนั้นบน `card-<id>`:
+Then, on `card-<id>`:
 
-- `fix` ที่สาเหตุยังไม่ชัด ก่อนเขียนเทสแดง ให้เปิดหนึ่งชื่อจาก `<TEK_SKILLS>` ที่ description พูดถึง diagnose หรือ debug ถ้ามี
-- กำลังแก้โค้ดผลิต ให้เปิดหนึ่งชื่อจาก `<TEK_SKILLS>` ที่ description พูดถึง YAGNI, stdlib หรือ delete ถ้ามี
-- `feat` / `fix` เขียนเทสของพฤติกรรมนั้นให้แดงเพราะ assertion ยังไม่จริง แล้วทำให้เขียว
-- `test` เทสที่เพิ่มเขียว โดยไม่เปลี่ยนพฤติกรรมผลิตเพื่อให้ผ่าน
-- งานที่ผู้ใช้เห็นจอ ทุกชนิด ต้องมี `เห็นจอ: ใช่` พร้อม `เริ่ม:` `พอร์ต:` `รอ:` และ `คลิก:` บน card แล้วสตาร์ท frontend กับ backend จริงตามคำสั่ง คลิกต้องจบด้วย exit code 0 และตรงหัว **ตรวจผ่านเมื่อ** สตาร์ทไม่ขึ้นหรือคลิกไม่ผ่าน ให้ทำตามหัว **เขียน ถาม**
-- `fix` ที่ผู้ใช้เห็นจอ บันทึกขั้นตอนที่ทำให้บั๊กเกิด แล้วขั้นตอนเดิมหลังแก้ต้องไม่เกิด
-- แก้ได้เฉพาะไฟล์ในหัว **ไฟล์ที่แตะได้** ของ plan
-- งานที่ย้อนกลับไม่ได้ ให้ทำตามหัว **เขียน ถาม**
-- หลักฐานไม่ผ่านทั้งชุด ให้เดินหัว **เกณฑ์ 3 รอบ**
-- ทุกครั้งที่เลือกทาง เขียน `ถาม:` หรือผ่านหลักฐาน ให้เติมหนึ่งแถวในตาราง **การตัดสินใจ**
-- ใบนี้กับใบอื่นที่ยังเปิดมี `ชั้น:` เดียวกัน ให้แก้กติกา skill เกต หรือสคริปต์ lint/ตรวจ แล้วเติมแถว `อัปเดตกติกา` ในตาราง **การตัดสินใจ** ช่องหลักฐานเป็น path นั้น อย่าแก้แค่โค้ดใบนี้ แถวอย่างเดียวโดย diff ไม่มีไฟล์นั้นเปิดไม่ได้
+- For a `fix` whose cause is still unclear, before a red test, open one `<TEK_SKILLS>` name whose description mentions diagnose or debug, if one exists.
+- While editing production code, open one `<TEK_SKILLS>` name whose description mentions YAGNI, stdlib, or delete, if one exists.
+- For `feat` or `fix`, write a test of that behavior that is red because the assertion is not true yet, then make it green.
+- For `test`, the added test is green, and you do not change production behavior to make it pass.
+- Screen work of every kind needs `เห็นจอ: ใช่` plus `เริ่ม:`, `พอร์ต:`, `รอ:`, and `คลิก:` on the card. Start the real frontend and the real backend from those commands. The click must exit 0 and match **ตรวจผ่านเมื่อ**. If start fails or the click fails, follow **Write ถาม**.
+- For a screen `fix`, record the steps that show the bug. The same steps after the fix must not show it.
+- Edit only files under **ไฟล์ที่แตะได้** in the plan.
+- For irreversible work, follow **งานที่ย้อนกลับไม่ได้** in `loop.md`, then **Write ถาม**.
+- If the whole evidence set fails, follow **เกณฑ์ 3 รอบ** in `loop.md`.
+- Each time you choose a path, write `ถาม:`, or the evidence passes, add one row to **การตัดสินใจ**.
+- If this card and another open card share `ชั้น:`, change the skill rule, the gate, or the lint or check script, then add an `อัปเดตกติกา` row in **การตัดสินใจ**. The evidence cell is that path. Do not patch only this card's code. A row alone, with no such file in the diff, cannot open review.
 
-ก่อนเปิดของให้ review รันคำสั่งจากตารางบน board ใช้คำสั่งตรวจที่มีอยู่แล้ว คือ `<TEST_CMD>` `<TYPECHECK_CMD>` และ `<LINT_CMD>` ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบนี้ เว้นแต่หัว **ทำ** สั่งให้สร้างไฟล์นั้น งานที่ผู้ใช้เห็นจอ ก่อน `รอรีวิว:` ให้ใช้คำสั่งตรวจจอของ JTek `scripts/jt-screen-check` หรือคำสั่งตรวจที่มีอยู่บน board
+Before you open review, run the existing check commands on the board. Run `<TEST_CMD>`, `<TYPECHECK_CMD>`, and `<LINT_CMD>` when the field has a command and the touched files are in scope. For `feat` or `fix`, run `<TEST_CMD>` unless the value is `ไม่มีชุดเทส`. For any other kind whose value is `ไม่มีชุดเทส`, write in the review notes that there is no test suite. Do not create a new check script for this round unless **ทำ** says to create that file. Screen work, before `รอรีวิว:`, uses JTek `scripts/jt-screen-check` or another existing check command on the board. With `<BROWSER_TOOL>` set, start from `เริ่ม:` and `พอร์ต:`, and set `คลิก:` to `python3 <jtek-skill folder>/scripts/jt-screen-check --root . --no-start`, including other pages that read the same state. With `<BROWSER_TOOL>` empty on screen work, follow **Write ถาม**. When the work is not on screen and `<BROWSER_TOOL>` is empty, write which surface could not be checked.
 
-- `feat` / `fix` รัน `<TEST_CMD>` ในขอบเขตไฟล์ที่เปลี่ยน เมื่อค่าไม่ใช่ `ไม่มีชุดเทส`
-- ชนิดอื่นเมื่อค่าเป็น `ไม่มีชุดเทส` ให้เขียนในของที่เปิดให้ review ว่าไม่มีชุดเทส
-- `<TYPECHECK_CMD>` เมื่อแตะไฟล์ที่ type ครอบ และช่องนี้มีคำสั่ง
-- `<LINT_CMD>` เมื่อแตะไฟล์ที่ lint ครอบ และช่องนี้มีคำสั่ง
-- งานที่ผู้ใช้เห็นจอ และ `<BROWSER_TOOL>` มีค่า ให้สตาร์ท frontend กับ backend จริงตาม `เริ่ม:` และ `พอร์ต:` บน card แล้วรัน `คลิก:` ให้ตรงหัว **ตรวจผ่านเมื่อ** รวมหน้าอื่นที่อ่าน state เดียวกัน คำสั่ง `คลิก:` ให้เป็น `python3 <โฟลเดอร์ jtek-skill>/scripts/jt-screen-check --root . --no-start` หรือคำสั่งตรวจที่มีอยู่บน board ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบนี้
-- งานที่ผู้ใช้เห็นจอ และ `<BROWSER_TOOL>` ว่าง ให้ทำตามหัว **เขียน ถาม**
-- ไม่ใช่งานที่ผู้ใช้เห็นจอ และ `<BROWSER_TOOL>` ว่าง ให้เขียนในของที่เปิดให้ review ว่าตรวจพื้นผิวอะไรไม่ได้
+## Paired repo
 
-## repo คู่
+Read the name from the `คู่:` line on the primary repo's board. Do not ask again where the paired repo is. That name is the folder beside the primary repo. Do not invent a repo name.
 
-อ่านชื่อจากบรรทัด `คู่:` บน board ของ repo หลัก อย่าถามซ้ำว่า repo คู่อยู่ที่ไหน ชื่อนั้นคือโฟลเดอร์ที่อยู่ข้าง repo หลัก ห้ามใส่ชื่อ repo เอง
+If the line is `ไม่มี` or empty, follow the single-repo path. Do not wait for a second side. Do not create files in another repo.
 
-บรรทัดเป็น `ไม่มี` หรือว่าง ให้เดินทางของ repo เดียว ไม่รออีกฝั่ง และไม่สร้างไฟล์ใน repo อื่น
+A card that touches both sides is one card. The card heading and the board line contain `·` plus the name on the `คู่:` line. A card that does not touch the pair does not include that name.
 
-ใบที่แตะทั้งสองฝั่งเป็นใบเดียว หัวใบและบรรทัดบน board มี `·` ตามด้วยชื่อบนบรรทัด `คู่:` ใบที่ไม่แตะคู่ไม่มีชื่อนั้น
+The card's work may happen in the paired repo, on branch `card-<id>`. The queue and every status stay on the primary repo's board only. Do not set status in the paired repo. Do not create `card-loop/board.md` there. Do not move the whole queue off the primary repo.
 
-งานของใบนั้นเกิดใน repo คู่ได้ บน branch `card-<id>` คิวและทุกสถานะอยู่บน board ของ repo หลักเท่านั้น ห้ามตั้งสถานะใน repo คู่ ห้ามสร้าง `card-loop/board.md` ที่นั่น ห้ามย้ายทั้งคิวออกจาก repo หลัก
+Create `card-loop/paired.md` in the paired repo only when this card touches that repo. The contents point back at the primary repo's folder name and `card-loop/board.md`. Under `card-loop/` in the paired repo, this file is the only one allowed. Do not create this file only because the board recorded the name.
 
-สร้าง `card-loop/paired.md` ใน repo คู่เฉพาะเมื่อใบนี้แตะ repo นั้น เนื้อหาชี้กลับที่ชื่อโฟลเดอร์ของ repo หลักกับ `card-loop/board.md` ใต้ `card-loop/` ของ repo คู่มีได้แค่ไฟล์นี้ อย่าสร้างไฟล์นี้แค่เพราะ board บันทึกชื่อไว้
+The human merges both repos.
 
-คนเป็นคน merge ทั้งสอง repo
+## Open for review
 
-## เปิดของให้ review
+Read **กติกา** and **สรุป** in `loop.md` first. If those rules block review, follow **เกณฑ์ 3 รอบ** on this card. Do not set `รอรีวิว:`.
 
-ตรวจหัว **ห้ามเปิดของให้ review เมื่อ** ก่อน เข้าเงื่อนไขนั้นให้เดินหัว **เกณฑ์ 3 รอบ** บนใบเดิม
+After a commit whose kind is `feat`, `fix`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`, and before `รอรีวิว:`, open every name in `<REPO_SKILLS>`. `docs` does not open. An empty row opens nothing else. If a name in that row is not on this machine, review this card's diff yourself before `รอรีวิว:`, even when another name in the row did open. A name from `<TEK_SKILLS>` does not do this review. A note in the plan is not that review. Do not skip that review. If you cannot review the diff, do not set `รอรีวิว:`. Follow **เกณฑ์ 3 รอบ**. The gate refuses that line. If an opened skill passes but the evidence in this section is incomplete, follow **เกณฑ์ 3 รอบ**. On a card that touches code, record the review under `## รีวิว diff` in the plan, with `- commit:` as the full SHA of the latest commit, `- ผู้รีวิว:`, and `- เจอ:`, before `รอรีวิว:`. Run `python3 <jtek-skill folder>/scripts/jt-diff-check --root . --id <id>` and require exit 0. A review heading alone is not enough.
 
-หลัง commit ที่ชนิดเป็น `feat` `fix` `style` `refactor` `perf` `test` `build` `ci` `chore` หรือ `revert` และก่อนตั้ง `รอรีวิว:` เปิดทุกชื่อใน `<REPO_SKILLS>` ชนิด `docs` ไม่เปิด แถวว่างคือไม่เปิดใบอื่น ชื่อในแถวนั้นที่ไม่มีในเครื่อง เอเจนต์ต้อง review diff ของข้อนี้เองก่อนตั้ง `รอรีวิว:` แม้ชื่ออื่นในแถวจะเปิดได้ ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน การจดใน plan แล้วเดินต่อไม่นับเป็นรีวิวนั้น รีวิวนั้นห้ามข้าม ถ้า review diff ไม่ได้ ห้ามตั้ง `รอรีวิว:` ให้เดินหัว **เกณฑ์ 3 รอบ** เกตปฏิเสธบรรทัดนั้น รีวิวของใบที่เปิดได้ผ่านแต่หลักฐานในหัวนี้ไม่ครบ ให้เดินหัว **เกณฑ์ 3 รอบ** บันทึกผลการรีวิวในหัวข้อ `## รีวิว diff` ของ plan ให้มี `- commit:` เป็น full SHA ของ commit ล่าสุด, `- ผู้รีวิว:` และ `- เจอ:` ก่อนตั้ง `รอรีวิว:` บนใบที่แตะโค้ด รัน `python3 <โฟลเดอร์ jtek-skill>/scripts/jt-diff-check --root . --id <id>` ให้จบเป็นศูนย์ หัวข้อรีวิวอย่างเดียวไม่พอ สคริปต์จบไม่เป็นศูนย์คือ review ไม่ผ่าน
+Commit the card's work on `card-<id>` first. Check **ตรวจผ่านเมื่อ** against that commit. This commit does not contain the word `รอรีวิว:` and does not contain `card-loop/board.md`, unless **ทำ** on the card says to edit that file.
 
-commit งานของข้อบน `card-<id>` ก่อน ตรวจหัว **ตรวจผ่านเมื่อ** กับ commit นั้น commit นี้ไม่มีคำว่า `รอรีวิว:` และไม่มี `card-loop/board.md` เว้นแต่หัว **ทำ** ของ card สั่งให้แก้ไฟล์นั้น
+Check out the queue branch. Run reach-review without `--write`.
 
-checkout สาขาคิว แล้วรัน `python3 <โฟลเดอร์ skill jt-next-step>/gate.py reach-review --root .` ด้วย `--id` ของใบนี้ โดยยังไม่ใส่ `--write` สคริปต์รัน `<SETUP_CMD>` และ `<TEST_CMD>` บน worktree สะอาดของ branch `card-<id>` หาก `<SETUP_CMD>` ล้มเหลว สคริปต์พิมพ์ `refused: setup-failed` ให้กลับไป `card-<id>` แก้ไขแล้วเดินหัว **เกณฑ์ 3 รอบ** คำสั่งเทสจบไม่เป็นศูนย์ สคริปต์ไม่เขียนบรรทัด ให้กลับไป `card-<id>` แล้วเดินหัว **เกณฑ์ 3 รอบ** ห้ามเขียนคำว่า `รอรีวิว:` เอง สคริปต์พิมพ์ `refused: review-diff` เมื่อไม่มีหัวข้อ `## รีวิว diff` หรือ commit SHA ใน plan ไม่ตรงกับ commit ล่าสุด หรือ review diff ไม่ได้ หรือ `scripts/jt-diff-check` จบไม่เป็นศูนย์ การจดใน plan ไม่นับ ให้เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `step: ถาม` เมื่อพื้นผิวคลิกไม่ได้ ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: pair-not-passed` เมื่อหัวใบมีชื่อ repo คู่และอีกฝั่งยังไม่ผ่าน ห้ามตั้ง `รอรีวิว:` ให้ทำให้ฝั่งนั้นผ่านบน branch `card-<id>` แล้วรันสคริปต์อีกครั้ง สคริปต์พิมพ์ `refused: one-off-checker` เมื่อ diff เพิ่มสคริปต์ที่ชื่อไฟล์ขึ้นต้น `check` `lint` หรือ `verify` และหัว **ทำ** ไม่ได้สั่งให้สร้างไฟล์นั้น ให้ลบไฟล์นั้นแล้วใช้คำสั่งบน board เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: repeat-patch` เมื่อใบที่ยังเปิดมี `ชั้น:` เดียวกัน แต่ตาราง **การตัดสินใจ** ไม่มีแถว `อัปเดตกติกา` ที่ชี้ path ของกติกา skill เกต หรือสคริปต์ lint/ตรวจใน diff ของใบนี้หรือใบที่ลิงก์ หรือมีแถวแต่ diff ไม่ได้แก้ไฟล์นั้น (`detail: prose-only`) ให้แก้กติกานั้นแล้วจดแถว เดินหัว **เกณฑ์ 3 รอบ** ห้ามตั้ง `รอรีวิว:` สคริปต์พิมพ์ `refused: related` กับ `step: ถาม` เมื่อ `ชั้น:` เดียวกันแต่หัว **อ้างอิง** ยังไม่ชี้อีกฝั่ง ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์ตั้ง `รอรีวิว:` ครั้งเดียวบน board ของ repo หลักเมื่อคำสั่งมี `--write` และเกตผ่าน บรรทัด `คู่:` เป็น `ไม่มี` สคริปต์ไม่รอฝั่งที่สอง
+```bash
+python3 <jt-next-step skill folder>/gate.py reach-review --root . --id <id>
+```
 
-สคริปต์พิมพ์ `allowed` และ `git remote` ว่าง ให้รันคำสั่งเดิมพร้อม `--write --link local` บรรทัดเป็น `รอรีวิว: local` จากสคริปต์
+Trust the output. Do not write `รอรีวิว:` yourself.
 
-`git remote` มีชื่อ และสคริปต์พิมพ์ `allowed` ให้ push เฉพาะ `card-<id>` แล้วเปิด draft PR เข้าสาขาคิว เมื่อยังไม่มี PR ที่เปิดอยู่สำหรับ head เดิม ห้ามเปิดซ้ำ และห้ามสร้าง remote
+If the script prints `allowed` and `git remote` is empty, rerun the same command with `--write --link local`. The script sets the line to `รอรีวิว: local`.
+
+If the script prints `allowed` and `git remote` has a name, push only `card-<id>` and open one draft PR into the queue branch when no open pull request exists for that head. Do not open a duplicate. Do not create a remote.
 
 ```bash
 git push -u origin card-<id>
@@ -145,10 +126,20 @@ gh pr list --head card-<id> --base <สาขาคิว> --state open --json n
 gh pr create --draft --base <สาขาคิว> --head card-<id> --title "<id>" --body "card <id>"
 ```
 
-รายการจาก `gh pr list` มีใบที่ `isDraft` เป็นจริงและ `baseRefName` เป็นสาขาคิวอยู่แล้ว ให้ข้าม `gh pr create` `gh` ไม่อยู่ใน PATH, push ไม่สำเร็จ, สร้างไม่สำเร็จ, ไม่มีใบเปิด, ใบเปิดไม่เป็น draft, หรือ base ไม่ใช่สาขาคิว ให้ทำตามหัว **เขียน ถาม** ห้ามใส่ `--write` บรรทัดต้องไม่เป็น `รอรีวิว:`
+If `gh pr list` already has an item whose `isDraft` is true and whose `baseRefName` is the queue branch, skip `gh pr create`. If `gh` is not on PATH, push fails, create fails, there is no open PR, the open PR is not a draft, or the base is not the queue branch, follow **Write ถาม**. Do not pass `--write`. The line must not be `รอรีวิว:`.
 
-เปิด draft ได้แล้วรัน reach-review พร้อม `--write` สคริปต์ตรวจ PR เอง ถ้าพิมพ์ `refused: pr-missing` หรือ `refused: gh-missing` หรือ `refused: pr-not-draft` หรือ `refused: pr-base` หรือ `refused: pr-duplicate` หรือ `refused: pr-failed` พร้อม `step: ถาม` ให้ทำตามหัว **เขียน ถาม** ห้ามตั้ง `รอรีวิว:` สคริปต์ผ่านแล้วบรรทัดเป็น `รอรีวิว:` ตามด้วย URL ของ draft นั้น ตั้ง `สถานะรอบ` ใน plan เป็น `รอรีวิว` commit เฉพาะไฟล์ plan บน `card-<id>` แล้ว checkout สาขาคิว commit เฉพาะ `card-loop/board.md` ข้อยังเป็น `- [ ]`
+When the draft exists, run reach-review with `--write`. The script checks the pull request. If it prints `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, or `refused: pr-failed` with `step: ถาม`, follow **Write ถาม**. Do not set `รอรีวิว:`.
 
-กลับไปหัว **หยิบ**
+For any other `refused:`, use this map. Do not restate the gate condition.
 
-เสร็จเมื่อหัว **หยิบ** ข้อ 6 เป็นจริง
+| Output | Action |
+|---|---|
+| `step: ถาม`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch` | Follow **Write ถาม**. Do not set `รอรีวิว:`. |
+| `refused: setup-failed`, `refused: test-failed`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **เกณฑ์ 3 รอบ** on this card. Do not set `รอรีวิว:`. |
+| any other `refused:` | Stop. Do not set `รอรีวิว:`. Do not add a new check script. |
+
+When the script passes, the line is `รอรีวิว:` followed by that draft URL. Set `สถานะรอบ` in the plan to `รอรีวิว`. Commit only the plan file on `card-<id>`. Check out the queue branch and commit only `card-loop/board.md`. The item stays `- [ ]`.
+
+Return to **Pick a card**.
+
+Done when **Pick a card** step 6 is true.

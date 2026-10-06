@@ -227,7 +227,10 @@ class ScreenCheckDocTests(unittest.TestCase):
         for text in (readme, work, loop, rule, nxt):
             self.assertIn("scripts/jt-screen-check", text)
             self.assertIn("JTek", text)
+        for text in (loop, rule):
             self.assertIn("คำสั่งตรวจที่มีอยู่", text)
+        for text in (readme, work, nxt):
+            self.assertIn("existing check commands", text)
         self.assertIn("refused: one-off-checker", work)
         self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("one-off-checker", GATE_PATH.read_text(encoding="utf-8"))
