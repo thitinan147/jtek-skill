@@ -54,7 +54,7 @@ COMMAND_FOR = {
     "wait": "",
     "stop": "",
 }
-STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:", "closed:")
+STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:")
 SETUP_TIMEOUT = 900
 MERGE_ARGV = {
     "merge",
@@ -71,8 +71,58 @@ _CHECKER_BASENAME = re.compile(
     re.IGNORECASE,
 )
 _CLOSED = frozenset({"merge:", "drop:", "complete:"})
+UNKNOWN_STATUS = "unknown:"
+_STATUS_SET = frozenset(STATUS_TOKENS)
+_COLON_TOKEN = re.compile(r"(?<!\S)([^\s:]+):")
+_KIND_TAIL = re.compile(r"\([a-z]+\)\s*(.*)$")
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
+
+
+def status_on_line(text: str) -> str | None:
+    match = _COLON_TOKEN.search(text)
+    if not match:
+        return None
+    token = f"{match.group(1)}:"
+    if token in _STATUS_SET:
+        return token
+    return UNKNOWN_STATUS
+
+
+def _after_kind(rest: str) -> tuple[str, int]:
+    kind_match = _KIND_TAIL.search(rest)
+    if kind_match:
+        return kind_match.group(1), kind_match.start(1)
+    return rest, 0
+
+
+def _status_span(line: str) -> tuple[str | None, int, int]:
+    match = CARD_RE.match(line)
+    if not match:
+        return None, 0, 0
+    suffix, suffix_at_rest = _after_kind(match.group(3))
+    suffix_at = match.start(3) + suffix_at_rest
+    found = _COLON_TOKEN.search(suffix)
+    if not found:
+        return None, suffix_at, suffix_at
+    token = f"{found.group(1)}:"
+    start = suffix_at + found.start()
+    end = start + len(token)
+    if token not in _STATUS_SET:
+        return UNKNOWN_STATUS, start, end
+    return token, start, end
+
+
+def _has_boundary_token(text: str, token: str) -> bool:
+    return re.search(rf"(?<!\S){re.escape(token)}", text) is not None
+
+
+def _cut_known_status(text: str) -> str:
+    for found in _COLON_TOKEN.finditer(text):
+        token = f"{found.group(1)}:"
+        if token in _STATUS_SET:
+            return text[: found.start()]
+    return text
 
 
 class GateError(Exception):
@@ -143,15 +193,13 @@ def parse_board(text: str) -> Board:
     cards: list[Card] = []
     for index, line in enumerate(text.splitlines()):
         if line.startswith("## "):
-            section = line[3:].strip()
+            section = line[3:].strip().casefold()
             continue
         match = CARD_RE.match(line)
         if not match or section not in SECTION_RANK:
             continue
-        rest = match.group(3)
-        kind_match = re.search(r"\([a-z]+\)\s*(.*)$", rest)
-        suffix = kind_match.group(1) if kind_match else rest
-        status = next((token for token in STATUS_TOKENS if token in suffix), None)
+        suffix, _suffix_at = _after_kind(match.group(3))
+        status = status_on_line(suffix)
         cards.append(
             Card(
                 id=match.group(2).strip(),
@@ -311,6 +359,8 @@ def _parent_ready(cards: list[Card]) -> Card | None:
     for card in _ordered(cards):
         if card.checked or card.section not in SECTION_RANK or not _is_parent(card, cards):
             continue
+        if card.status is not None:
+            continue
         children = [other for other in cards if other.id.startswith(card.id + ".")]
         if children and all(child.checked for child in children):
             return card
@@ -343,6 +393,19 @@ def decide(
         return Decision("stop", reason="not-git")
     if dirty:
         return Decision("stop", reason="dirty")
+
+    unknown = next(
+        (
+            card
+            for card in _ordered(board.cards)
+            if not card.checked
+            and card.section in SECTION_RANK
+            and card.status == UNKNOWN_STATUS
+        ),
+        None,
+    )
+    if unknown:
+        return Decision("stop", id=unknown.id, reason="unknown-status", line=unknown.line)
 
     pool = _pool(board.cards)
     send_back = _work(pool, lambda card: card.status == "send-back:" and card.has_card_file)
@@ -441,7 +504,7 @@ def apply_waiting_review(
     if test_exit != 0:
         raise GateError("test-failed")
     cleaned = link.strip()
-    if cleaned == "merge" or "merge:" in cleaned:
+    if cleaned == "merge" or _has_boundary_token(cleaned, "merge:"):
         raise GateError("merge-refused")
     pattern = re.compile(
         rf"^(- \[[ xX]\] \*\*{re.escape(card_id)}\*\*.*)$",
@@ -451,25 +514,23 @@ def apply_waiting_review(
     if len(found) != 1:
         raise GateError("card-line-missing")
     line = found[0].group(1)
-    if (
-        line.startswith("- [x]")
-        or line.startswith("- [X]")
-        or "closed:" in line
-        or "drop:" in line
-        or "complete:" in line
-        or re.search(r"(^|\s)merge:", line)
-    ):
+    token, start, end = _status_span(line)
+    if line.startswith("- [x]") or line.startswith("- [X]") or token in _CLOSED:
         raise GateError("card-closed")
+    if token == UNKNOWN_STATUS:
+        raise GateError("unknown-status")
     suffix = "review:" if not cleaned else f"review: {cleaned}"
-    if "send-back:" in line:
-        new_line = line.replace("send-back:", suffix, 1)
-    elif "ask:" in line:
+    if token == "send-back:":
+        new_line = f"{line[:start]}{suffix}{line[end:]}"
+    elif token == "ask:":
         raise GateError("question-open")
-    elif "review:" in line:
+    elif token == "review:":
         new_line = f"{line} {cleaned}" if cleaned and re.search(r"review:\s*$", line) else line
-    else:
+    elif token is None:
         new_line = f"{line} {suffix}"
-    if re.search(r"(^|\s)merge:", new_line):
+    else:
+        raise GateError("card-closed")
+    if _has_boundary_token(new_line, "merge:"):
         raise GateError("merge-refused")
     start, end = found[0].start(1), found[0].end(1)
     return board_text[:start] + new_line + board_text[end:]
@@ -1100,11 +1161,7 @@ def pair_name(text: str) -> str:
 def _heading_has_pair(heading: str, pair: str) -> bool:
     if not pair or pair == "none":
         return False
-    cut = heading
-    for token in STATUS_TOKENS:
-        index = cut.find(token)
-        if index != -1:
-            cut = cut[:index]
+    cut = _cut_known_status(heading)
     return re.search(rf"· {re.escape(pair)}(?=\s|\(|$)", cut) is not None
 
 
@@ -1158,6 +1215,10 @@ def repo_setup_cmd(root: Path) -> str:
         return "uv sync --frozen"
     if (root / "poetry.lock").is_file():
         return "poetry install"
+    if (root / "Cargo.toml").is_file():
+        return "cargo build"
+    if (root / "go.mod").is_file():
+        return "go mod download"
     return ""
 
 
