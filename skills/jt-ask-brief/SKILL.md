@@ -10,54 +10,54 @@ metadata:
 
 # jt-ask-brief
 
-ถามว่าอยากทำอะไร ถามจนงานที่อยากได้ชัด คนรับร่างแล้วจึงเขียน `card-loop/brief.md`
+Ask what the human wants to do. Keep asking until the wanted work is clear. Write `card-loop/brief.md` only after the human accepts the draft.
 
-ยังไม่สร้าง card ยังไม่แก้บรรทัดบน board ห้ามเรียก `/jt-new-card` หรือ `/jt-do-work`
+Do not create a card. Do not edit a line on the board. Do not call `/jt-new-card` or `/jt-do-work`.
 
-## ก่อนถาม
+## Before you ask
 
-1. ไม่มี `card-loop/board.md` ให้หยุดแล้วบอกให้เรียก `/jt-new-board` ก่อน
-2. ข้อเท็จจริงใน repo ที่เปิดอยู่ให้เปิดไฟล์ดูเอง อย่าถามสิ่งที่ดูแล้วรู้
-3. มี `card-loop/brief.md` อยู่แล้วให้อ่านไฟล์นั้น แล้วถามว่าจะเขียน brief ใหม่หรือหยุด ยังไม่เขียนทับจนกว่าคนจะรับร่างใหม่
+1. If `card-loop/board.md` is missing, stop and say to run `/jt-new-board` first.
+2. For facts in the open repo, open the file yourself. Do not ask something you can see.
+3. If `card-loop/brief.md` already exists, read that file, then ask whether to write a new brief or stop. Do not overwrite it until the human accepts a new draft.
 
-## ถาม
+## Ask
 
-ถามทีละรอบ หนึ่งรอบคือทุกคำถามที่ตอบได้ตอนนี้โดยไม่เดาคำตอบที่ยังไม่ได้ยิน แต่ละข้อมีคำตอบที่แนะนำหนึ่งข้อ แล้วหยุดรอคำตอบคน
+Ask one round at a time. One round is every question you can ask now without guessing an answer you have not heard. Each question has one suggested answer. Then stop and wait for the human.
 
-รอบแรกถามว่าอยากทำอะไร
+The first round asks what they want to do.
 
-ถามรอบถัดไปเมื่อยังมีอย่างใดอย่างหนึ่ง
+Ask another round while any of these is still true.
 
-- ยังบอกไม่ได้ว่าเสร็จแล้วจะได้อะไร
-- มีสองทางที่ผลไม่เท่ากันโดยยังไม่เลือก
-- ขอบเขตคลุมเครือจนแยกเป็น card ไม่ได้
+- You cannot yet say what exists when the work is done.
+- Two paths have different outcomes and neither is chosen.
+- The scope is too vague to split into cards.
 
-หยุดถามเมื่อบอกได้ว่าอยากได้อะไร อะไรไม่ทำในรอบนี้ และงานไหนแยกเป็นคนละ card ได้
+Stop asking when you can say what they want, what this round will not do, and which work can be split into separate cards.
 
-## ร่าง
+## Draft
 
-แสดง brief ทั้งไฟล์แล้วถามว่านี่คือสิ่งที่อยากทำหรือไม่
+Show the whole brief and ask whether this is the work they want.
 
 ```markdown
 # Brief
 
-อยากทำอะไร:
+want:
 -
 
-ไม่ทำในรอบนี้:
+out:
 -
 
-งานที่แยกได้:
+split:
 -
 ```
 
-คนแก้ให้แสดงร่างใหม่ ยังไม่สร้างไฟล์ คนบอกว่ารับร่างนี้จึงไปหัว **สร้าง**
+If the human edits, show the draft again. Do not create the file yet. Go to **Create** only when the human says they accept this draft.
 
-## สร้าง
+## Create
 
-1. บรรทัด `สาขาคิว:` ว่างให้หยุด มีไฟล์ที่แก้ค้างนอก `card-loop/` ให้หยุด
-2. checkout สาขาคิว
-3. เขียน `card-loop/brief.md` ตามร่างที่รับ
-4. commit เฉพาะไฟล์นั้นบนสาขาคิว ด้วย `docs: add the brief`
+1. If the `queue:` line is empty, stop. If edited files are dirty outside `card-loop/`, stop.
+2. Check out the queue branch.
+3. Write `card-loop/brief.md` from the accepted draft.
+4. Commit only that file on the queue branch with `docs: add the brief`.
 
-เสร็จเมื่อไฟล์ตรงร่างที่คนรับ และยังไม่มี card ใบใหม่
+Done when the file matches the draft the human accepted, and no new card exists yet.

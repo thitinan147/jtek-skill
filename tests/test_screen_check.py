@@ -131,7 +131,7 @@ class ScreenCheckCliTests(unittest.TestCase):
         result = self._run("--root", str(self.root))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("screen-check: browser-missing", result.stdout)
-        self.assertNotIn("รอรีวิว", result.stdout)
+        self.assertNotIn("review", result.stdout)
 
     def test_browser_failure_exits_nonzero(self) -> None:
         self._playwright("#!/bin/sh\nexit 3\n")
@@ -199,7 +199,7 @@ class ScreenCheckCliTests(unittest.TestCase):
             encoding="utf-8",
         )
         (card_dir / "12.md").write_text(
-            f"เห็นจอ: ใช่\nเริ่ม: python3 -m http.server {port}\nพอร์ต: {port}\nรอ: 5\nคลิก:\n",
+            f"screen: yes\nstart: python3 -m http.server {port}\nport: {port}\nwait: 5\nclick:\n",
             encoding="utf-8",
         )
         self._playwright(
@@ -228,16 +228,16 @@ class ScreenCheckDocTests(unittest.TestCase):
             self.assertIn("scripts/jt-screen-check", text)
             self.assertIn("JTek", text)
         for text in (loop, rule):
-            self.assertIn("คำสั่งตรวจที่มีอยู่", text)
+            self.assertIn("existing check commands", text)
         for text in (readme, work, nxt):
             self.assertIn("existing check commands", text)
         self.assertIn("refused: one-off-checker", work)
         self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("one-off-checker", GATE_PATH.read_text(encoding="utf-8"))
         self.assertNotIn("playwright", loop.lower())
-        self.assertNotIn("เริ่ม:", loop)
-        self.assertNotIn("พอร์ต:", loop)
-        self.assertNotIn("คลิก:", loop)
+        self.assertNotIn("start:", loop)
+        self.assertNotIn("port:", loop)
+        self.assertNotIn("click:", loop)
         self.assertNotIn("one-off-checker", loop)
         self.assertEqual(readme.count("\n## "), 4)
         self.assertTrue(os.access(CLI, os.X_OK))

@@ -10,50 +10,50 @@ metadata:
 
 # jt-find-skills
 
-หา `<REPO_SKILLS>` ของ repo ที่เปิดอยู่ และ `<TEK_SKILLS>` ตามจังหวะที่ลูปใช้อยู่แล้วใน `references/skills.md` ของ skill `jt-card-gate` เสนอชื่อให้คนเลือก
+Find `<REPO_SKILLS>` for the open repo and `<TEK_SKILLS>` for the moments the loop already uses, from `references/skills.md` in skill `jt-card-gate`. Propose the names for the human to choose.
 
-ยังไม่ติดตั้ง และยังไม่เขียน `card-loop/board.md` จนกว่าคนจะรับชื่อที่เลือก
+Do not install yet. Do not write `card-loop/board.md` until the human accepts the chosen names.
 
-`/jt-new-board` เติมชื่อจากหัว **ค้น** ตอนสร้าง board คำสั่งนี้เมื่อถูกรันเองให้เสนอชื่อก่อน
+`/jt-new-board` fills names from **Search** when it creates the board. When this command runs on its own, propose the names first.
 
-## ค้น
+## Search
 
-สแตกอ่านจาก repo ที่เปิดอยู่ คือ `<STACK_LOCK>` บน `card-loop/board.md` ถ้ามี และ `package.json` `go.mod` `pyproject.toml` `Cargo.toml`
+Read the stack from the open repo. That is `<STACK_LOCK>` on `card-loop/board.md` when it exists, plus `package.json`, `go.mod`, `pyproject.toml`, and `Cargo.toml`.
 
-skill ที่ติดตั้งแล้วคือทุกไฟล์ `SKILL.md` ใต้ทุกโฟลเดอร์ใน home ที่ชื่อขึ้นต้นด้วย `.` รวมใต้ `~/.config` โฮมชื่อ `.npm` `.cache` `.local` `.Trash` ไม่ต้องเดิน ระหว่างเดินข้ามโฟลเดอร์ชื่อ `node_modules` `.git` `.tmp` `backups` `sessions` `projects` `tmp` `downloads` ตาม symlink ไปจนถึงไฟล์จริง path จริงเดียวกันนับเป็นใบเดียว และชื่อ `name` เดียวกันนับเป็นใบเดียว อ่าน `name` กับ `description` จากทุกใบที่เหลือ
+Installed skills are every `SKILL.md` under every folder in home whose name starts with `.`, including under `~/.config`. Do not walk home folders named `.npm`, `.cache`, `.local`, or `.Trash`. While walking, skip folders named `node_modules`, `.git`, `.tmp`, `backups`, `sessions`, `projects`, `tmp`, or `downloads`. Follow each symlink to the real file. The same real path counts as one skill, and the same `name` counts as one skill. Read `name` and `description` from every skill that remains.
 
-ชื่อที่ขึ้นต้นด้วย `jt-` หรือ `jtek-` ไม่เข้าสองกลุ่ม
+A name that starts with `jt-` or `jtek-` does not enter either group.
 
-ใบที่ไม่มีจากกติกานี้ให้ค้นด้วย
+Search for a skill this rule did not find with
 
-`https://skills.sh/api/search?q=<คำ>&limit=5`
+`https://skills.sh/api/search?q=<words>&limit=5`
 
-อ่าน `skills[].skillId` `skills[].source` และ `skills[].installs` เรียง `installs` จากมากไปน้อย ข้ามใบที่ `installs` เป็น 0 ข้ามใบที่ชื่อตรงกับใบที่พบแล้ว
+Read `skills[].skillId`, `skills[].source`, and `skills[].installs`. Sort `installs` from high to low. Skip a skill whose `installs` is 0. Skip a skill whose name matches one you already found.
 
-กลุ่มลงมือคือ `<TEK_SKILLS>` ตามจังหวะที่ลูปใช้อยู่แล้ว ค้นสามคำ คือ `grill` `debug` `yagni` แล้วเก็บใบที่ `description` บนเครื่องหรือ `skillId` จากเว็บตรงจังหวะใน `references/skills.md` ห้ามเพิ่มจังหวะ
+The work group is `<TEK_SKILLS>` for the moments the loop already uses. Search the three words `grill`, `debug`, and `yagni`, then keep a skill whose on-machine `description` or web `skillId` matches a moment in `references/skills.md`. Do not add a moment.
 
-กลุ่มของ repo คือ `<REPO_SKILLS>` ของ repo ที่เปิดอยู่ อ่าน `name` จาก `SKILL.md` ใน repo นี้ก่อน แล้วจึงค้นด้วยชื่อภาษาหรือเฟรมเวิร์กที่พบใน repo นี้เมื่อช่องยังไม่ครบ ห้ามเปิด repo อื่น
+The repo group is `<REPO_SKILLS>` for the open repo. Read `name` from `SKILL.md` in this repo first, then search by the language or framework found in this repo when the cell is not full. Do not open another repo.
 
-แต่ละกลุ่มบน board ได้ไม่เกินสามชื่อ ชื่อที่พบจาก `SKILL.md` มาก่อน ชื่อจากเว็บเติมที่เหลือ ตารางด้านล่างแสดงครบทุกชื่อที่เข้าเกณฑ์ รวมใบจากเว็บแม้ช่องบน board จะเต็ม
+Each group on the board gets at most three names. Names found from `SKILL.md` come first. Names from the web fill what remains. The table below shows every name that qualifies, including web skills, even when the board cell is full.
 
-แสดงตารางนี้ในคำตอบ หนึ่งแถวต่อหนึ่งชื่อที่เข้าเกณฑ์
+Show this table in the reply, one row per qualifying name.
 
-| กลุ่ม | ชื่อ | สถานะ |
+| Group | Name | Status |
 |---|---|---|
-| ชื่อกลุ่ม | ชื่อ skill | `มีในเครื่อง` หรือ `แนะนำให้ลง` |
+| group name | skill name | `on this machine` or `install this` |
 
-`มีในเครื่อง` เมื่อพบ `SKILL.md` จากกติกาด้านบน `แนะนำให้ลง` เมื่อชื่อมาจากเว็บและยังไม่พบไฟล์นั้น
+`on this machine` means you found `SKILL.md` by the rule above. `install this` means the name came from the web and that file is not found yet.
 
-แถว `แนะนำให้ลง` ให้คำสั่งนี้คนคัดลอก ไม่รันคำสั่ง คำสั่งไม่ใส่ `-a` จึงลงให้ทุกเจ้าที่ CLI เห็นบนเครื่อง
+An `install this` row gives the human this command to copy. Do not run an install command. The command does not pass `-a`, so it installs for every agent the CLI sees on this machine.
 
 `npx skills add <source>@<skillId> -g -y`
 
-## เสนอ
+## Propose
 
-เสนอชื่อสองกลุ่มด้วยตารางสถานะในหัว **ค้น** ให้คนเลือก ห้ามรันคำสั่งติดตั้ง ห้ามเปิดใบใด ยังไม่เขียน board
+Propose both groups with the status table from **Search**. The human chooses. Do not run an install command. Do not open any skill. Do not write the board yet.
 
-คนรับชื่อแล้ว จึงเขียนเฉพาะชื่อที่รับลงช่อง `<TEK_SKILLS>` กับ `<REPO_SKILLS>` บนสาขาคิว ชื่อที่คนไม่รับไม่เขียน ไม่ลบบรรทัดอื่น แล้ว commit เฉพาะ `card-loop/board.md` ยังไม่รับให้หยุดโดยไม่แก้ board
+After the human accepts names, write only the accepted names into `<TEK_SKILLS>` and `<REPO_SKILLS>` on the queue branch. Do not write a name the human did not accept. Do not delete other lines. Then commit only `card-loop/board.md`. If the human has not accepted, stop without editing the board.
 
-ไม่มี `card-loop/board.md` ให้หยุดแล้วบอกให้เรียก `/jt-new-board` ก่อน
+If `card-loop/board.md` is missing, stop and say to run `/jt-new-board` first.
 
-เสร็จเมื่อคนรับแล้วสองช่องตรงชื่อที่รับ หรือคนยังไม่รับและ board ยังไม่ถูกเขียนจากการสั่งนี้
+Done when the human has accepted and both cells match the accepted names, or the human has not accepted and this command has not written the board.

@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""Read card-loop/board.md and take the next step the loop already allows.
-
-The gate cannot merge. A failing test command cannot write รอรีวิว.
-A code commit whose diff cannot be reviewed cannot write รอรีวิว.
-Screen work that cannot be clicked cannot write รอรีวิว.
-A new checker script the card did not ask for cannot write รอรีวิว.
-The same open topic cannot write รอรีวิว until a rule or check script
-is updated and the plan records that file. A plan row alone cannot.
-Unlinked cards of that topic cannot write รอรีวิว. A card whose heading
-names the paired repo cannot write รอรีวิว until both sides have passed.
-The board line ไม่มี keeps the single-repo path. scripts/jt-diff-check
-must exit 0 before a code card can write รอรีวิว. A repo with a git
-remote cannot write รอรีวิว until an open draft pull request targets
-the queue branch from card-<id>. A merged pull request for that head
-can count as landed when the card commit is not an ancestor.
-"""
 
 from __future__ import annotations
 
@@ -33,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-NO_SUITE = "ไม่มีชุดเทส"
+NO_SUITE = "no-suite"
 CODE_KINDS = frozenset(
     {
         "feat",
@@ -48,7 +32,7 @@ CODE_KINDS = frozenset(
         "revert",
     }
 )
-SECTION_RANK = {"ทำก่อน": 0, "งานหลัก": 1, "เก็บเล็ก": 2}
+SECTION_RANK = {"first": 0, "main": 1, "later": 2}
 KIND_RE = re.compile(r"^([a-z]+)(?:\([^)]*\))?:")
 ALLOWED_ACTIONS = frozenset(
     {
@@ -70,7 +54,7 @@ COMMAND_FOR = {
     "wait": "",
     "stop": "",
 }
-STATUS_TOKENS = ("รอรีวิว:", "ส่งกลับ:", "ถาม:", "merge:", "ไม่เอา:", "ครบ:", "ปิด:")
+STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:", "closed:")
 SETUP_TIMEOUT = 900
 MERGE_ARGV = {
     "merge",
@@ -86,7 +70,7 @@ _CHECKER_BASENAME = re.compile(
     r"^(?:check|lint|verify)(?:[-_.].+)?\.(?:py|sh)$",
     re.IGNORECASE,
 )
-_CLOSED = frozenset({"merge:", "ไม่เอา:", "ครบ:"})
+_CLOSED = frozenset({"merge:", "drop:", "complete:"})
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 
@@ -141,7 +125,7 @@ class Decision:
 
 def parse_queue(text: str) -> str:
     for line in text.splitlines():
-        if line.startswith("สาขาคิว:"):
+        if line.startswith("queue:"):
             return line.split(":", 1)[1].strip()
     return ""
 
@@ -189,8 +173,8 @@ def parse_board(text: str) -> Board:
 
 def question_text(card_text: str) -> str:
     for line in card_text.splitlines():
-        if line.startswith("ถาม:"):
-            return line[len("ถาม:") :].strip()
+        if line.startswith("ask:"):
+            return line[len("ask:") :].strip()
     return ""
 
 
@@ -198,7 +182,7 @@ def parse_files(card_text: str) -> list[str]:
     collecting = False
     files: list[str] = []
     for line in card_text.splitlines():
-        if line.startswith("ไฟล์ที่แตะได้:"):
+        if line.startswith("files:"):
             collecting = True
             continue
         if not collecting:
@@ -227,14 +211,14 @@ def hydrate(board: Board, bodies: dict[str, str | None]) -> Board:
         card.files = tuple(parse_files(body))
         card.question = question_text(body)
         card.question_empty = card.question == ""
-        card.topic = _label(body, "ชั้น")
+        card.topic = _label(body, "layer")
         card.refs = parse_refs(body)
     return board
 
 
 def parse_refs(card_text: str) -> tuple[str, ...]:
     found: list[str] = []
-    for line in _section_label(card_text, "อ้างอิง:").splitlines():
+    for line in _section_label(card_text, "refs:").splitlines():
         found.extend(_REF_ID.findall(line))
     return tuple(dict.fromkeys(found))
 
@@ -298,7 +282,7 @@ def _blocked(card: Card, cards: list[Card]) -> bool:
     for other in cards:
         if other.id == card.id:
             continue
-        if other.status in {"รอรีวิว:", "ส่งกลับ:"} and _overlaps(card.files, other.files):
+        if other.status in {"review:", "send-back:"} and _overlaps(card.files, other.files):
             return True
     return False
 
@@ -309,13 +293,13 @@ def _ordered(cards: list[Card]) -> list[Card]:
 
 def _pool(cards: list[Card]) -> list[Card]:
     higher_open = any(
-        (not card.checked) and card.section in {"ทำก่อน", "งานหลัก"} for card in cards
+        (not card.checked) and card.section in {"first", "main"} for card in cards
     )
     chosen: list[Card] = []
     for card in cards:
         if card.checked or card.section not in SECTION_RANK:
             continue
-        if card.section == "เก็บเล็ก" and higher_open:
+        if card.section == "later" and higher_open:
             continue
         if _is_parent(card, cards) or _blocked(card, cards):
             continue
@@ -348,7 +332,7 @@ def decide(
         return Decision("setup-board", reason="no-board", command=COMMAND_FOR["setup-board"])
     missing: list[str] = []
     if not board.queue_branch:
-        missing.append("สาขาคิว")
+        missing.append("queue")
     if board.test_cmd.strip() == "":
         missing.append("TEST_CMD")
     if board.stack_lock.strip() == "":
@@ -361,12 +345,12 @@ def decide(
         return Decision("stop", reason="dirty")
 
     pool = _pool(board.cards)
-    send_back = _work(pool, lambda card: card.status == "ส่งกลับ:" and card.has_card_file)
+    send_back = _work(pool, lambda card: card.status == "send-back:" and card.has_card_file)
     if send_back:
         return _take(board, send_back, "send-back")
     cleared = _work(
         pool,
-        lambda card: card.status == "ถาม:" and card.question_empty and card.has_card_file,
+        lambda card: card.status == "ask:" and card.question_empty and card.has_card_file,
     )
     if cleared:
         return _take(board, cleared, "question-cleared")
@@ -380,7 +364,7 @@ def decide(
     reviews = [
         card
         for card in _ordered(board.cards)
-        if not card.checked and card.status == "รอรีวิว:" and card.section in SECTION_RANK
+        if not card.checked and card.status == "review:" and card.section in SECTION_RANK
     ]
     if len(reviews) == 1:
         return Decision(
@@ -401,7 +385,7 @@ def decide(
     waiting = [
         card
         for card in _ordered(board.cards)
-        if not card.checked and card.status == "ถาม:" and not card.question_empty
+        if not card.checked and card.status == "ask:" and not card.question_empty
     ]
     if waiting:
         return Decision(
@@ -470,19 +454,19 @@ def apply_waiting_review(
     if (
         line.startswith("- [x]")
         or line.startswith("- [X]")
-        or "ปิด:" in line
-        or "ไม่เอา:" in line
-        or "ครบ:" in line
+        or "closed:" in line
+        or "drop:" in line
+        or "complete:" in line
         or re.search(r"(^|\s)merge:", line)
     ):
         raise GateError("card-closed")
-    suffix = "รอรีวิว:" if not cleaned else f"รอรีวิว: {cleaned}"
-    if "ส่งกลับ:" in line:
-        new_line = line.replace("ส่งกลับ:", suffix, 1)
-    elif "ถาม:" in line:
+    suffix = "review:" if not cleaned else f"review: {cleaned}"
+    if "send-back:" in line:
+        new_line = line.replace("send-back:", suffix, 1)
+    elif "ask:" in line:
         raise GateError("question-open")
-    elif "รอรีวิว:" in line:
-        new_line = f"{line} {cleaned}" if cleaned and re.search(r"รอรีวิว:\s*$", line) else line
+    elif "review:" in line:
+        new_line = f"{line} {cleaned}" if cleaned and re.search(r"review:\s*$", line) else line
     else:
         new_line = f"{line} {suffix}"
     if re.search(r"(^|\s)merge:", new_line):
@@ -640,19 +624,19 @@ def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]
         path = root / "card-loop" / "backlog" / f"{card_id}.md"
         card = path.read_text(encoding="utf-8") if path.is_file() else ""
     plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
-    header = _section_label(card, "ตรวจผ่านเมื่อ:")
+    header = _section_label(card, "pass:")
     diff_ok = False
     diff = ""
     if queue and _branch_exists(root, f"card-{card_id}"):
         proc = _run_git(root, ["diff", f"{queue}...card-{card_id}"])
         diff_ok = proc.returncode == 0
         diff = proc.stdout if diff_ok else ""
-    compared = "ตรวจผ่านเมื่อ diff" if header and diff_ok else "incomplete"
+    compared = "pass diff" if header and diff_ok else "incomplete"
     return {
         "header": header,
-        "decisions": _section_h2(plan, "การตัดสินใจ"),
-        "review_diff": _section_h2(plan, "รีวิว diff"),
-        "evidence": _section_h2(plan, "หลักฐานก่อนเปิดของให้ review"),
+        "decisions": _section_h2(plan, "decisions"),
+        "review_diff": _section_h2(plan, "review-diff"),
+        "evidence": _section_h2(plan, "evidence"),
         "diff": diff,
         "diff_ok": diff_ok,
         "compared": compared,
@@ -660,7 +644,6 @@ def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]
 
 
 def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "") -> int:
-    """Run TEST_CMD on card-<id>. ไม่มีชุดเทส is not a command."""
     command = test_cmd.strip()
     if command == "":
         raise GateError("test-cmd-empty")
@@ -709,25 +692,25 @@ def emit(decision: Decision, extra: list[str] | None = None) -> None:
     if decision.line:
         print(f"line: {decision.line}")
     if decision.question:
-        print(f"ถาม: {decision.question}")
+        print(f"ask: {decision.question}")
     if extra:
         print("\n".join(extra))
 
 
 def format_packet(packet: dict[str, str | bool]) -> list[str]:
-    diff = packet["diff"] if packet["diff_ok"] else "อ่านไม่ได้"
+    diff = packet["diff"] if packet["diff_ok"] else "unreadable"
     return [
         f"compared: {packet['compared']}",
-        "ตรวจผ่านเมื่อ:",
-        str(packet["header"] or "ว่าง"),
-        "การตัดสินใจ:",
-        str(packet["decisions"] or "ว่าง"),
-        "รีวิว diff:",
-        str(packet.get("review_diff") or "ว่าง"),
+        "pass:",
+        str(packet["header"] or "empty"),
+        "decisions:",
+        str(packet["decisions"] or "empty"),
+        "review-diff:",
+        str(packet.get("review_diff") or "empty"),
         "diff:",
-        str(diff if str(diff).strip() else "ว่าง"),
-        "ผลเทส:",
-        str(packet["evidence"] or "ว่าง"),
+        str(diff if str(diff).strip() else "empty"),
+        "evidence:",
+        str(packet["evidence"] or "empty"),
     ]
 
 
@@ -769,12 +752,12 @@ def _label(text: str, name: str) -> str:
 
 
 def sees_screen(card_text: str) -> bool:
-    return _label(card_text, "เห็นจอ") == "ใช่"
+    return _label(card_text, "screen") == "yes"
 
 
 def _header_bullets(card_text: str) -> list[str]:
     bullets: list[str] = []
-    for line in _section_label(card_text, "ตรวจผ่านเมื่อ:").splitlines():
+    for line in _section_label(card_text, "pass:").splitlines():
         if not line.startswith("- "):
             continue
         item = line[2:].strip()
@@ -883,10 +866,10 @@ def _run_while_up(work: Path, start: str, ports: list[int], wait_seconds: int, r
 
 
 def _click_surface(work: Path, card_text: str) -> str | None:
-    start = _label(card_text, "เริ่ม")
-    port_text = _label(card_text, "พอร์ต")
-    click = _label(card_text, "คลิก")
-    wait_text = _label(card_text, "รอ")
+    start = _label(card_text, "start")
+    port_text = _label(card_text, "port")
+    click = _label(card_text, "click")
+    wait_text = _label(card_text, "wait")
     wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
     ports = _parse_ports(port_text)
     if not start or ports is None:
@@ -947,7 +930,6 @@ def _declared_browsers(root: Path) -> set[str]:
 
 
 def resolve_browser_argv(root: Path, tool: str = "") -> list[str] | None:
-    """Argv for Playwright or Cypress already on PATH or declared by the package."""
     name = tool.strip().lower()
     if name in _BROWSER_TAIL:
         order = (name,)
@@ -965,7 +947,6 @@ def resolve_browser_argv(root: Path, tool: str = "") -> list[str] | None:
         if shutil.which(candidate, path=env.get("PATH")):
             return [candidate, *tail]
         if candidate in declared:
-            # ponytail: npx --no-install only, no browser download
             return ["npx", "--no-install", candidate, *tail]
     return None
 
@@ -1003,7 +984,6 @@ def run_screen_check(
     browser: str = "",
     no_start: bool = False,
 ) -> int:
-    """Start the app when configured, run the repo browser tool, non-zero on fail."""
     argv = resolve_browser_argv(root, browser)
     if argv is None:
         print("screen-check: browser-missing")
@@ -1037,8 +1017,8 @@ def screen_check_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="jt-screen-check",
         description=(
-            "ตรวจจอของ JTek: สตาร์ทแอปเมื่อมีการกำหนด "
-            "แล้วรัน playwright หรือ cypress ที่มีอยู่ จบไม่เป็นศูนย์เมื่อไม่ผ่าน"
+            "JTek screen check. Start the app when start is set, "
+            "then run the playwright or cypress command that already exists. Exit non-zero on failure"
         ),
     )
     parser.add_argument("--root", default=".")
@@ -1061,11 +1041,11 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         if not browser:
             browser = parse_field(text, "BROWSER_TOOL")
         if not start:
-            start = _label(card, "เริ่ม")
+            start = _label(card, "start")
         if not ports:
-            ports = _label(card, "พอร์ต")
+            ports = _label(card, "port")
         if not wait:
-            wait = _label(card, "รอ")
+            wait = _label(card, "wait")
     return run_screen_check(
         root,
         start=start,
@@ -1112,13 +1092,13 @@ def surface_refusal(
 
 def pair_name(text: str) -> str:
     for line in text.splitlines():
-        if line.startswith("คู่:"):
+        if line.startswith("pair:"):
             return line.split(":", 1)[1].strip()
     return ""
 
 
 def _heading_has_pair(heading: str, pair: str) -> bool:
-    if not pair or pair == "ไม่มี":
+    if not pair or pair == "none":
         return False
     cut = heading
     for token in STATUS_TOKENS:
@@ -1143,7 +1123,7 @@ def card_names_pair(board_text: str, card_id: str, card_text: str = "") -> bool:
 
 
 def locate_pair(primary: Path, name: str) -> Path | None:
-    if not name or name == "ไม่มี" or any(mark in name for mark in ("/", "\\", "\x00")):
+    if not name or name == "none" or any(mark in name for mark in ("/", "\\", "\x00")):
         return None
     if name.strip() in {".", ".."}:
         return None
@@ -1264,7 +1244,6 @@ def _payload_mark(raw: str, head: str) -> str:
 
 
 def _github_mark(root: Path, card_id: str) -> str:
-    """merged, open, or missing. A bad payload stays missing."""
     head = f"card-{card_id}"
     view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
@@ -1290,7 +1269,6 @@ def _github_mark(root: Path, card_id: str) -> str:
 
 
 def landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
-    """(ancestor|squash|'', detail). Squash is a MERGED pull request."""
     if _is_ancestor(root, f"card-{card_id}", queue):
         return "ancestor", ""
     mark = _github_mark(root, card_id)
@@ -1346,7 +1324,6 @@ def _card_worktree_drift(root: Path, card_id: str) -> bool:
 
 
 def diff_review_detail(root: Path, card_id: str) -> str:
-    """ok, skip, no-review, no-sha, or stale-review."""
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
         return "no-review"
@@ -1362,7 +1339,7 @@ def diff_review_detail(root: Path, card_id: str) -> str:
     if not sha:
         return "no-review"
     plan = _git_show(root, f"{branch}:card-loop/plan/{card_id}.md") or ""
-    section = _section_h2(plan, "รีวิว diff")
+    section = _section_h2(plan, "review-diff")
     if not section.strip():
         return "no-review"
     if _SHA.search(section) is None:
@@ -1452,11 +1429,10 @@ def _cited(path: str, section: str) -> bool:
 
 
 def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
-    """A new check/lint/verify script the card's ทำ section did not name."""
     added = _diff_names(root, queue, card_id, added_only=True)
     if not added:
         return False
-    asked = _section_label(card_text, "ทำ:")
+    asked = _section_label(card_text, "do:")
     for path in added:
         name = path.rsplit("/", 1)[-1]
         if _CHECKER_BASENAME.match(name) is None:
@@ -1468,7 +1444,6 @@ def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> boo
 
 
 def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]) -> str:
-    """no-row, prose-only, or empty when a cited rule file is in the diff."""
     current = next((card for card in cards if card.id == card_id), None)
     if current is None:
         return ""
@@ -1478,8 +1453,8 @@ def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]
     plan = ""
     if _branch_exists(root, f"card-{card_id}"):
         plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
-    section = _section_h2(plan, "การตัดสินใจ")
-    if "อัปเดตกติกา" not in section:
+    section = _section_h2(plan, "decisions")
+    if "update-rule" not in section:
         return "no-row"
     names: list[str] = []
     for item in (current, *siblings):
@@ -1497,7 +1472,6 @@ def _has_remote(root: Path) -> bool:
 
 
 def classify_open_prs(prs: list[dict], head: str, base: str) -> tuple[str, str]:
-    """Return (ok, url) or (ask, reason) for open pull requests of one head."""
     matches = [
         pr
         for pr in prs
@@ -1519,7 +1493,6 @@ def classify_open_prs(prs: list[dict], head: str, base: str) -> tuple[str, str]:
 
 
 def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
-    """Return (local, local), (ok, url), or (ask, reason)."""
     if not _has_remote(root):
         return ("local", "local")
     if shutil.which("gh") is None:
@@ -1569,7 +1542,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     cards = _cards_from_text(root, text)
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
-        return _refuse("related", "ถาม")
+        return _refuse("related", "ask")
     if _branch_exists(root, f"card-{card_id}"):
         kinds = _commit_kinds(root, queue, card_id)
         if kinds is None:
@@ -1592,13 +1565,13 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if need_screen:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
-                return _refuse("browser-empty", "ถาม")
+                return _refuse("browser-empty", "ask")
         if need_screen or need_test:
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 if need_screen:
                     reason = _click_surface(work, card_text)
                     if reason:
-                        return _refuse(reason, "ถาม")
+                        return _refuse(reason, "ask")
                 if need_test:
                     code = _run_shell(test_cmd, work)
                     if code != 0:
@@ -1614,7 +1587,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if write:
             kind, value = lookup_draft_pr(root, f"card-{card_id}", queue)
             if kind == "ask":
-                return _refuse(value, "ถาม")
+                return _refuse(value, "ask")
             if kind == "ok":
                 link = value
             updated = apply_waiting_review(text, card_id, code, link)
@@ -1630,7 +1603,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in MERGE_ARGV:
-        sys.stderr.write("เกตนี้ merge ไม่ได้\n")
+        sys.stderr.write("this gate cannot merge\n")
         print("refused: merge")
         print("merge: no")
         return 2

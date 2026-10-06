@@ -1,6 +1,6 @@
 ---
 name: jt-open-work
-description: Show the card marked รอรีวิว against its ตรวจผ่านเมื่อ, the decision table, the diff, test results, and surface evidence. Use when the user runs /jt-open-work. Do not change the board line.
+description: Show the card marked review against its pass heading, the decision table, the diff, test results, and screen evidence. Use when the user runs /jt-open-work. Do not change the board line.
 license: MIT
 metadata:
   author: Thitinan
@@ -10,18 +10,18 @@ metadata:
 
 # jt-open-work
 
-รหัสที่ต่อท้ายคำสั่งคือใบที่จะเปิด ถ้าไม่มีรหัสและมีบรรทัด `รอรีวิว:` ใบเดียว ให้เปิดใบนั้น ถ้ามีหลายใบให้ถามรหัสแล้วหยุดโดยไม่เปลี่ยนบรรทัด
+The id after the command is the card to open. If there is no id and exactly one line is `review:`, open that card. If several lines match, ask for the id and stop without changing the line.
 
-อ่าน board จาก branch ที่บรรทัด `สาขาคิว:` ชี้ อ่าน card, plan, และ diff จาก branch `card-<id>` เทียบกับสาขาคิว อยู่บน branch อื่นได้โดยไม่ checkout
+Read the board from the branch the `queue:` line names. Read the card, the plan, and the diff from branch `card-<id>` against the queue branch. You may stay on another branch. Do not check out.
 
-วางห้าอย่างนี้ให้คนเทียบ
+Lay out these five things for the human to compare.
 
-1. หัว **ตรวจผ่านเมื่อ** ของ card
-2. ตาราง **การตัดสินใจ** ใน plan ของ branch `card-<id>` ถ้าว่างให้บอกว่าตารางว่าง
-3. หัวข้อ **รีวิว diff** ใน plan ของ branch `card-<id>`
-4. diff จากสาขาคิวถึง `card-<id>` ว่าอยู่ในหัว **ทำ** และไม่ล้ำหัว **ไม่ทำ**
-5. ผลเทส และหลักฐานบนพื้นผิวถ้า card ต้องการ
+1. The card heading `pass`.
+2. The `decisions` table in the plan on branch `card-<id>`. If it is empty, say the table is empty.
+3. The `review-diff` heading in the plan on branch `card-<id>`.
+4. The diff from the queue branch to `card-<id>`, and whether it stays inside `do` and does not cross `out`.
+5. The test result, and screen evidence when the card needs it.
 
-ห้ามเปลี่ยนบรรทัดบน board ห้ามติ๊ก `merge:` หรือ `ไม่เอา:`
+Do not change the line on the board. Do not check `merge:` or `drop:`.
 
-เสร็จเมื่อคนเห็นห้าอย่างนั้น และบรรทัดบนสาขาคิวยังเป็น `รอรีวิว:`
+Done when the human has seen those five things and the queue-branch line is still `review:`.

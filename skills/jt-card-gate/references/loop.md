@@ -1,207 +1,207 @@
-# ลูป card — เวอร์ชัน 20
+# Card loop, version 20
 
-กติกานี้เป็นของ skill `jt-card-gate` ไม่ได้ copy เข้า repo ที่เปิดอยู่
+These rules belong to skill `jt-card-gate`. They are not copied into the open repo.
 
-คิวอยู่ที่ repo ที่เปิดอยู่ งานของใบที่หัวมีชื่อ repo คู่ทำใน repo นั้นได้ และสถานะไม่ไปอยู่ที่นั่น
+The queue lives in the open repo. Work for a card whose heading names the paired repo may happen in that repo, and status does not live there.
 
-คนตอบ `/jt-ask-brief` จนรับร่าง เอเจนต์จึงเขียน `card-loop/brief.md` คนตอบ `/jt-new-card` จนรับร่าง เอเจนต์จึงสร้างไฟล์ card คนเปลี่ยนคำบนบรรทัด คนเรียก `/jt-send-back` `/jt-merge` `/jt-drop-card` เอง เอเจนต์ไม่เรียกสามคำสั่งนั้น
+The human answers `/jt-ask-brief` until they accept the draft. The agent then writes `card-loop/brief.md`. The human answers `/jt-new-card` until they accept the draft. The agent then creates the card files. The human changes the words on the line. The human calls `/jt-send-back` `/jt-merge` `/jt-drop-card`. The agent does not call those three commands.
 
-## คำสั่ง
+## Commands
 
-| คำสั่ง | ทำอะไร |
+| Command | What it does |
 |---|---|
-| `/jt-new-board` | สร้าง `card-loop/board.md` เติมตารางจาก repo และชื่อ skill จากหัว **ค้น** แล้วถามชื่อ repo คู่ครั้งเดียว |
-| `/jt-ask-brief` | ถามว่าอยากทำอะไร แล้วเขียน `card-loop/brief.md` ไม่สร้าง card |
-| `/jt-new-card` | ถามจนคนรับร่าง ครั้งเดียวได้หลายใบ แล้วสร้าง card กับบรรทัดบน board |
-| `/jt-read-board` | อ่านคิว ไม่ลงมือ |
-| `/jt-find-skills` | เสนอชื่อ `<REPO_SKILLS>` ของ repo ที่เปิดอยู่ และ `<TEK_SKILLS>` ตามจังหวะที่ลูปใช้อยู่แล้ว ให้คนเลือก ไม่ติดตั้ง และยังไม่เขียน board จนกว่าคนจะรับ |
-| `/jt-do-work` | ทำทุก card ที่ลงมือได้ ข้ามใบที่ `รอรีวิว:` |
-| `/jt-open-work` | เปิดของที่ `รอรีวิว:` เทียบหัว **ตรวจผ่านเมื่อ** ไม่เปลี่ยนบรรทัด |
-| `/jt-send-back` | เปลี่ยน `รอรีวิว:` เป็น `ส่งกลับ:` |
-| `/jt-merge` | เปลี่ยนเครื่องหมายบนบรรทัดเป็น `merge:` หลัง commit ของ card อยู่ในสาขาคิวแล้ว ไม่รัน git merge ไม่เปิด PR และไม่ merge PR |
-| `/jt-drop-card` | เปลี่ยน `- [ ]` เป็น `- [x]` ต่อท้าย `ไม่เอา: <เหตุ>` ไม่ลบบรรทัดอื่น |
-| `/jt-move-card` | ย้ายบรรทัดบน board อย่างเดียว ไม่เปลี่ยนสถานะของบรรทัดนั้น ไม่แตะโค้ด และไม่ merge |
-| `/jt-next-step` | อ่านบรรทัดบน board แล้วทำขั้นถัดไปที่กติกาอนุญาต ไม่ merge |
+| `/jt-new-board` | Create `card-loop/board.md`, fill the table from the repo and skill names from **Search**, and ask once for the paired repo name. |
+| `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. Do not create a card. |
+| `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards, then create the cards and their board lines. |
+| `/jt-read-board` | Read the queue. Do not start work. |
+| `/jt-find-skills` | Offer `<REPO_SKILLS>` names for the open repo and `<TEK_SKILLS>` names for the moments the loop already uses. The human chooses. Do not install. Do not write the board until the human accepts. |
+| `/jt-do-work` | Do every card that can be worked. Skip a card that is `review:`. |
+| `/jt-open-work` | Open work that is `review:`. Compare the `pass` heading. Do not change the line. |
+| `/jt-send-back` | Change `review:` to `send-back:`. |
+| `/jt-merge` | Change the mark on the line to `merge:` after the card commit is on the queue branch. This command does not run git merge, does not open a PR, and does not merge a PR. |
+| `/jt-drop-card` | Change `- [ ]` to `- [x]` and append `drop: <reason>`. Do not delete other lines. |
+| `/jt-move-card` | Move a board line only. Do not change that line's status, touch code, or merge. |
+| `/jt-next-step` | Read the line on the board and do the next step the rules allow. Do not merge. |
 
-ใน Codex ใช้ `$` แทน `/` พิมพ์แค่ชื่อคำสั่งได้
+In Codex, use `$` instead of `/`. You can type only the command name.
 
-ต่อท้ายรหัสข้อได้ที่ `/jt-new-card` `/jt-open-work` `/jt-send-back` `/jt-merge` `/jt-drop-card` และ `/jt-move-card` `/jt-do-work` ไม่รับรหัส เพราะทำทุกใบที่ลงมือได้ `/jt-drop-card` รับเหตุต่อท้ายรหัส เช่น `/jt-drop-card 12 ไม่ทำแล้ว`
+You can append an item id to `/jt-new-card`, `/jt-open-work`, `/jt-send-back`, `/jt-merge`, `/jt-drop-card`, and `/jt-move-card`. `/jt-do-work` does not take an id, because it works every card that can be worked. `/jt-drop-card` takes a reason after the id, for example `/jt-drop-card 12 not doing this`.
 
-## ไฟล์ใน repo ที่เปิดอยู่
+## Files in the open repo
 
-- `card-loop/board.md` = คิว คำบนบรรทัดคือสถานะเดียว และตารางคำสั่งเทสของ repo นี้
-- `card-loop/brief.md` = งานที่คนอยากทำในรอบนี้ คนรับร่างแล้ว
-- `card-loop/backlog/<id>.md` = card ที่คนรับร่างแล้ว
-- `card-loop/plan/<id>.md` = โน้ตลงมือของเอเจนต์ และตาราง **การตัดสินใจ** ที่คนอ่านตอน `/jt-open-work`
-- repo คู่มีได้แค่ `card-loop/paired.md` เมื่อมีใบที่แตะ repo นั้น ไฟล์นั้นชี้กลับมาที่ repo หลัก ไม่มี board และไม่มีสถานะ
+- `card-loop/board.md` is the queue. The words on the line are the only status, plus this repo's test-command table.
+- `card-loop/brief.md` is the work the human wants this round, after they accept the draft.
+- `card-loop/backlog/<id>.md` is a card the human accepted.
+- `card-loop/plan/<id>.md` is the agent's working notes, and the `decisions` table the human reads during `/jt-open-work`.
+- The paired repo may contain only `card-loop/paired.md`, and only when a card touches that repo. That file points back at the primary repo. It has no board and no status.
 
-อ่านตารางใน `card-loop/board.md` ก่อนลงมือ ช่อง `<STACK_LOCK>` ว่าง หรือช่อง `<TEST_CMD>` ว่าง คือบอร์ดยังไม่พร้อม หยุดทั้งคิวก่อนหยิบใบ `<STACK_LOCK>` ที่เติมแล้วมีอย่างน้อยภาษา เฟรมเวิร์ก คำสั่งเทสหรือชนิดตรวจ และของที่ห้ามใช้ใน repo นี้ ค่า `<TEST_CMD>` เป็น `ไม่มีชุดเทส` คือไม่มีชุดให้รัน ช่อง `<SETUP_CMD>` มีคำสั่ง เกตรันใน worktree ของข้อก่อนเทสและก่อนสตาร์ท ใบที่เปิดได้มีแค่ชื่อใน `<TEK_SKILLS>` กับ `<REPO_SKILLS>` ตาม [skills.md](skills.md)
+Read the table in `card-loop/board.md` before work. An empty `<STACK_LOCK>` cell or an empty `<TEST_CMD>` cell means the board is not ready. Stop the whole queue before you pick a card. A filled `<STACK_LOCK>` has at least a language, a framework, the test command or the check kind, and what this repo must not use. The value `no-suite` means there is no suite to run. When `<SETUP_CMD>` has a command, the gate runs it in the card worktree before tests and before start. The only skills a card may open are the names in `<TEK_SKILLS>` and `<REPO_SKILLS>`, per [skills.md](skills.md).
 
-## repo คู่
+## Paired repo
 
-`/jt-new-board` ถามครั้งเดียวว่า repo คู่ชื่ออะไร แล้วเขียนหนึ่งบรรทัด `คู่:` บน board ของ repo หลัก เป็นชื่อที่คนตอบ หรือคำว่า `ไม่มี` หลังนั้นไม่ถามอีก ห้ามใส่ชื่อ repo เอง ชื่อนั้นคือโฟลเดอร์ที่อยู่ข้าง repo หลัก
+Ask once. `/jt-new-board` asks what the paired repo is named, then writes one `pair:` line on the primary repo's board. The line is the name the human answered, or the word `none`. Do not ask again after that. Do not invent a repo name. That name is the folder beside the primary repo.
 
-คิวและทุกสถานะอยู่บน board ของ repo หลักเท่านั้น งานเกิดใน repo คู่ได้ แต่ห้ามตั้งสถานะที่นั่น ห้ามสร้าง board ที่สอง และห้ามย้ายทั้งคิวออกจาก repo หลัก
+The queue and every status live only on the primary repo's board. Work may happen in the paired repo, but do not set status there. Do not create a second board. Do not move the whole queue off the primary repo.
 
-ใบที่แตะทั้งสองฝั่งเป็นใบเดียว หัวใบมี `·` ตามด้วยชื่อบนบรรทัด `คู่:` ใบที่ไม่แตะคู่ไม่ใส่ชื่อนั้น
+A card that touches both sides is one card. The heading contains `·` plus the name on the `pair:` line. A card that does not touch the pair does not include that name.
 
-ถ้าหัวใบมีชื่อ repo คู่ เกตไม่ตั้ง `รอรีวิว:` จนกว่าทั้งสองฝั่งจะผ่าน แล้วตั้งครั้งเดียวบน board ของ repo หลัก บรรทัด `คู่:` เป็น `ไม่มี` ให้เดินทางของ repo เดียว ไม่รอฝั่งที่สอง เกตเป็นตัวปฏิเสธ
+If the heading names the paired repo, the gate does not set `review:` until both sides have passed, and it sets that status once on the primary repo's board. When the `pair:` line is `none`, follow the single-repo path. Do not wait for a second side. The gate refuses.
 
-repo คู่มีได้แค่ `card-loop/paired.md` และเฉพาะเมื่อมีใบที่แตะ repo นั้น ไฟล์นั้นชี้กลับมาที่ repo หลัก อย่าสร้างเพราะ board บันทึกชื่อไว้
+The paired repo may contain only `card-loop/paired.md`, and only when a card touches that repo. That file points back at the primary repo. Do not create this file only because the board recorded the name.
 
-คนเป็นคน merge ทั้งสอง repo เอเจนต์ไม่เรียก `/jt-send-back` `/jt-merge` `/jt-drop-card` คน merge ทั้งสอง repo เข้าสาขาคิวก่อนแล้วจึงเรียก `/jt-merge` เปลี่ยนเฉพาะเครื่องหมายบนบรรทัดของ board หลัก ไม่รัน git merge ไม่เปิด PR และไม่ merge PR
+The human merges both repos. The agent does not call `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`. The human merges both repos into the queue branch first, then calls `/jt-merge`. That command changes only the mark on the primary board line. It does not run git merge, does not open a PR, and does not merge a PR.
 
-ทั้งสองฝั่งผ่านเมื่อแต่ละ repo มี branch `card-<id>` และคำสั่งเทสของ repo นั้นจบเป็นศูนย์ คำสั่งของ repo หลักคือ `<TEST_CMD>` คำสั่งของ repo คู่คือสคริปต์เทสของ repo นั้น repo ที่ไม่มีชุดเทสผ่านฝั่งนั้นได้
+Both sides have passed when each repo has branch `card-<id>` and that repo's test command exits 0. The primary repo's command is `<TEST_CMD>`. The paired repo's command is that repo's test script. A repo with no test suite can pass that side.
 
-## ที่อยู่ของ commit
+## Where commits go
 
-บรรทัดบน board คือคิวทั้งก้อน จึงอยู่คนละ branch กับโค้ดของแต่ละข้อ
+The board line is the whole queue, so it lives on a different branch from each item's code.
 
-- `สาขาคิว` คือชื่อบนบรรทัด `สาขาคิว:` ใน `card-loop/board.md` อ่าน board จาก branch นั้น
-- `card-loop/board.md` `card-loop/brief.md` และ `card-loop/backlog/` commit บนสาขาคิว
-- โค้ดของข้อ และ `card-loop/plan/<id>.md` commit บน branch `card-<id>`
-- บรรทัดข้อคือ `- [ ] **<id>** <ชื่อสั้น> (<ชนิด>)` ต่อท้ายด้วย `ถาม:` หรือ `รอรีวิว:` หรือ `ส่งกลับ:` เมื่อมีสถานะ ข้อที่ปิดเป็น `- [x]` ต่อท้าย `merge:` หรือ `ไม่เอา:` หรือ `ครบ:`
-- `/jt-do-work` push เฉพาะ `card-<id>` แล้วเปิด draft PR เข้าสาขาคิวเมื่อ `git remote` มีชื่อและ `gh` ใช้ได้ ยังไม่มี PR เปิดสำหรับ head เดิมจึงใช้ `gh pr create --draft --base <สาขาคิว> --head card-<id>` มีใบเปิดอยู่แล้วห้ามเปิดซ้ำ
-- ไม่มี remote ให้เขียนลิงก์ว่า `local` แล้วไปใบถัดไป เปิด draft PR ไม่ได้ให้เขียน `ถาม:` บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
-- `/jt-merge` เปลี่ยนเฉพาะเครื่องหมาย `merge:` บนบรรทัด ไม่เปิด PR ไม่ merge PR และไม่รัน git merge คน merge บน GitHub จน commit ของ `card-<id>` อยู่ในสาขาคิว (`git merge-base --is-ancestor`) รวมกรณี merge ผ่าน PR แล้วจึงเรียก `/jt-merge` push สาขาคิวได้เมื่อ branch นั้นมี remote ใช้ push ธรรมดา
-- ไฟล์นอก `card-loop/` สกปรกให้หยุดทั้งคิว ไฟล์ใต้ `card-loop/` ที่คนแก้ให้ commit บนสาขาคิวก่อนแตก branch ของข้อ
-- ใบที่ถืออยู่และบรรทัดยังไม่มี `ถาม:` หรือ `รอรีวิว:` ให้เดินเกณฑ์ 3 รอบบนใบนั้น ครบแล้วเขียน `ถาม:` จึงไปใบถัดไป
+- `queue` is the name on the `queue:` line in `card-loop/board.md`. Read the board from that branch.
+- Commit `card-loop/board.md`, `card-loop/brief.md`, and `card-loop/backlog/` on the queue branch.
+- Commit the item's code and `card-loop/plan/<id>.md` on branch `card-<id>`.
+- An item line is `- [ ] **<id>** <short name> (<kind>)`, followed by `ask:`, `review:`, or `send-back:` when it has a status. A closed item is `- [x]` followed by `merge:`, `drop:`, or `complete:`.
+- `/jt-do-work` pushes only `card-<id>`, then opens a draft PR into the queue branch when `git remote` has a name and `gh` is available. When no open PR exists for that head, use `gh pr create --draft --base <queue> --head card-<id>`. If one is already open, do not open another.
+- With no remote, write the link `local` and go to the next card. If the draft PR cannot be opened, write `ask:`. The line must not be `review:`. The gate refuses.
+- `/jt-merge` changes only the `merge:` mark on the line. It does not open a PR, does not merge a PR, and does not run git merge. The human merges on GitHub until the `card-<id>` commit is on the queue branch (`git merge-base --is-ancestor`), including a merge through a pull request, and then calls `/jt-merge`. Push the queue branch with a normal push when that branch has a remote.
+- If files outside `card-loop/` are dirty, stop the whole queue. If the human edited files under `card-loop/`, commit them on the queue branch before you create the item branch.
+- For a card you are holding whose line has no `ask:` or `review:` yet, follow **Three rounds** on that card. When the rounds are used up, write `ask:` and go to the next card.
 
-ทุกครั้งที่เลือกทาง หยุดเพื่อ `ถาม:` หรือผ่านหลักฐาน ให้เติมหนึ่งแถวในตาราง **การตัดสินใจ** ของ plan: ตัดสินอะไร ทำไม หลักฐานเป็น path หรือคำสั่งเทสหรือ commit
+Each time you choose a path, stop for `ask:`, or the evidence passes, add one row to the plan's `decisions` table. Record what you decided, why, and evidence as a path, a test command, or a commit.
 
-สถานะที่เชื่อมีแค่คำบนบรรทัด คือ `ถาม:` `รอรีวิว:` `ส่งกลับ:` `merge:` `ไม่เอา:` และ `ครบ:`
+The only statuses to trust are the words on the line. They are `ask:`, `review:`, `send-back:`, `merge:`, `drop:`, and `complete:`.
 
 ```text
-คนรับร่างจาก /jt-new-card
-    → เอเจนต์ทำ /jt-do-work
-        เจตนายังไม่ปิด → เขียน ถาม ที่ card และบรรทัด board → ไม่เปิดของให้ review
-        เจตนาปิดแล้ว → ลงมือบน branch → เก็บผลเทสและหลักฐานบนพื้นผิว
-            ย้อนกลับไม่ได้ หรือครบ 3 รอบแล้วยังไม่ผ่าน → เขียน ถาม → ไม่ขอ review
-            ผ่านและไม่มี remote → ตั้งบรรทัดเป็น รอรีวิว local → หยิบข้อถัดไป
-            ผ่านและมี remote → push แล้วเปิด draft PR เข้าสาขาคิว แล้วตั้งบรรทัดเป็น รอรีวิว → หยิบข้อถัดไป
-                คนตามมา /jt-open-work ทีหลัง
-                    รับ → คน merge บน GitHub แล้ว /jt-merge
-                    ไม่ครบ → /jt-send-back
-                    ไม่เอา → /jt-drop-card
-            เปิด draft PR ไม่ได้ → เขียน ถาม → บรรทัดไม่เป็น รอรีวิว
+human accepts the draft from /jt-new-card
+    -> agent runs /jt-do-work
+        intent still open -> write ask on the card and the board line -> do not open review
+        intent closed -> work on the branch -> record tests and screen evidence
+            irreversible, or 3 rounds used and still failing -> write ask -> do not request review
+            passed and no remote -> set the line to review local -> pick the next item
+            passed and a remote exists -> push, open a draft PR into the queue branch, set the line to review -> pick the next item
+                human later runs /jt-open-work
+                    accept -> human merges on GitHub, then /jt-merge
+                    incomplete -> /jt-send-back
+                    drop -> /jt-drop-card
+            draft PR cannot be opened -> write ask -> the line is not review
 ```
 
-## กติกา
+## Rules
 
-- ลงมือทีละ branch ที่แตกจากสาขาคิว เปิด draft PR เข้าสาขาคิวได้ใบละข้อ คิวไม่หยุดที่ `รอรีวิว:`
-- ใบที่หัว **ไฟล์ที่แตะได้** ใช้ path เดียวกับใบที่ยังเป็น `รอรีวิว:` หรือ `ส่งกลับ:` ให้รอใบนั้นรวมเข้าสาขาคิวก่อน
-- branch ที่มีอยู่แล้วให้นำสาขาคิวชุดล่าสุดเข้า branch นั้นก่อนทำต่อ แล้วรันเทสใหม่
-- ข้อที่บรรทัดเป็น `ส่งกลับ:` ทำต่อของเดิมบน branch เดิม ห้ามเปิด draft PR ใบใหม่ พอหลักฐานผ่านให้เปลี่ยนบรรทัดเป็น `รอรีวิว:` แล้วหยิบข้อถัดไป
-- เจตนาไม่ปิด งานย้อนกลับไม่ได้ หรือครบ 3 รอบแล้วยังไม่ผ่านหลักฐาน → เขียน `ถาม:` ทั้งท้าย card และท้ายบรรทัด แล้วข้ามไปข้อที่ลงมือได้
-- เปิดของให้ review ได้เมื่อหลักฐานครบ เทสที่เกี่ยวข้องเขียว และ diff อยู่ในหัว **ทำ** / **ไม่ทำ**
-- ก่อนเปิดของให้ review ให้ใช้คำสั่งตรวจที่มีอยู่บน board คือ `<TEST_CMD>` `<TYPECHECK_CMD>` และ `<LINT_CMD>` ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบนี้ เว้นแต่หัว **ทำ** สั่งให้สร้างเครื่องมือนั้น ถ้าสร้างทั้งที่ไม่ได้สั่ง บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
-- ความผิดชั้นเดียวกันเกิดซ้ำ ให้แก้กติกา skill เกต หรือสคริปต์ lint หรือสคริปต์ตรวจ มากกว่าแก้แค่โค้ดของใบนั้น และจดแถว `อัปเดตกติกา` ในตาราง **การตัดสินใจ** ของ plan ถ้าแก้แค่โค้ดใบเดียว หรือจดแถวอย่างเดียวโดยไฟล์กติกาไม่เปลี่ยน บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
-- ใบที่ยังเปิดและมี `ชั้น:` เดียวกัน ให้รวมหรือทำทีละใบ ใส่รหัสอีกใบในหัว **อ้างอิง** ห้ามแยกเป็นเอเจนต์คู่ขนานโดยไม่ลิงก์ `/jt-do-work` เขียน `ถาม:` ได้ `/jt-next-step` หยุดได้
-- เอเจนต์ไม่ติ๊ก `merge:` หรือ `ไม่เอา:` และไม่ merge สาขาหลัก
-- ยังไม่ push สาขาหลักจนกว่าคนจะ merge เอง
-- อย่าใส่ trailer ของโมเดลใน commit
+- Work one branch at a time, branched from the queue branch. One item may open one draft PR into the queue branch. The queue does not stop at `review:`.
+- If a card's `files` heading uses the same path as a line that is still `review:` or `send-back:`, wait until that card is on the queue branch.
+- If the branch already exists, bring the latest queue branch into that branch before you continue, then run the tests again.
+- An item whose line is `send-back:` continues the same work on the same branch. Do not open a new draft PR. When the evidence passes, change the line to `review:` and pick the next item.
+- If intent is not closed, the work is irreversible, or 3 rounds are used and the evidence still fails, write `ask:` at the end of the card and at the end of the line, then skip to an item that can be worked.
+- Open review only when the evidence is complete, the relevant tests are green, and the diff stays inside `do` and does not cross `out`.
+- Before you open review, use the existing check commands on the board, which are `<TEST_CMD>`, `<TYPECHECK_CMD>`, and `<LINT_CMD>`. Do not create a new check script for this round unless `do` says to create that tool. If you create one without that order, the line must not be `review:`. The gate refuses.
+- When the same layer fails again, change the skill rule, the gate, or the lint or check script, rather than patching only that card's code, and record an `update-rule` row in the plan's `decisions` table. If you patch only one card, or you record a row while the rule file does not change, the line must not be `review:`. The gate refuses.
+- Open cards that share `layer:` must be combined or done one at a time. Put the other card's id under `refs`. Do not split into parallel agents without a link. `/jt-do-work` may write `ask:`. `/jt-next-step` may stop.
+- The agent does not check `merge:` or `drop:`, and does not merge the main branch.
+- Do not push the main branch until the human merges it.
+- Do not put a model trailer on a commit.
 
-### เจตนาปิดแล้ว
+### Closed intent
 
-card มีชนิดเดียว ทางเดียว และหัว **ทำ** **ไม่ทำ** **ตรวจผ่านเมื่อ** อ่านแล้วลงมือได้โดยไม่ต้องเลือกแทนคน
+The card has one kind, one path, and `do`, `out`, and `pass` headings that can be carried out without choosing for the human.
 
-ยังไม่ปิดเมื่อขอบเขตคลุมเครือ มีสองทางที่ผลไม่เท่ากัน จะลบของที่อาจยังมีคนใช้โดย card ยังไม่เลือก หรือจะเปลี่ยนสัญญาที่คนอื่นเรียกโดย card ยังไม่เลือก
+Intent is not closed when the scope is vague, two paths have different outcomes, you would delete something people may still use and the card has not chosen, or you would change a contract other callers use and the card has not chosen.
 
-### งานที่ย้อนกลับไม่ได้
+### Irreversible work
 
-เขียน `ถาม:` ที่ card และบรรทัด แล้วข้ามใบนั้น ห้ามลงมือใบนั้นต่อเมื่อจะลบข้อมูล production, force-push, ส่งข้อความหรือของออกนอก repo, หรือ merge `card-<id>` เข้าสาขาคิว
+Write `ask:` on the card and the line, then skip that card. Do not continue that card when the work would delete production data, force-push, send a message or an artifact out of the repo, or merge `card-<id>` into the queue branch.
 
-push branch ของข้อเพื่อเปิด draft PR ทำได้ ห้าม merge PR นั้น
+You may push the item branch to open a draft PR. Do not merge that PR.
 
-### เกณฑ์ 3 รอบ
+### Three rounds
 
-หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่นับเป็นรอบนี้ ให้เขียน `ถาม:`
+One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. Write `ask:`.
 
-เริ่มที่ `รอบหลักฐาน` = 1 ใน plan พยายามทั้งชุดแล้วยังไม่ผ่าน ให้ดูค่าปัจจุบันก่อน ถ้าน้อยกว่า 3 ให้บวก 1 แล้วพยายามใหม่ ถ้าค่าเป็น 3 อยู่แล้วและยังไม่ผ่าน → `ถาม:` ที่ card และที่บรรทัด ห้ามขอ review เทสแดงที่ตั้งใจก่อนลงมือไม่นับเป็นรอบที่ล้ม
+Start with `round` set to 1 in the plan. After a full attempt still fails, read the current value first. If it is less than 3, add 1 and try again. If the value is already 3 and it still fails, write `ask:` on the card and on the line. Do not request review. A red test you wrote on purpose before the fix does not count as a failed round.
 
-คนเรียก `/jt-send-back` คือคำขอใหม่ ครั้งแรกที่เอเจนต์เห็นให้ตั้ง `รอบหลักฐาน` เป็น 1 และตั้ง `สถานะรอบ` ใน plan เป็น `ส่งกลับ` ถ้า plan เป็น `ส่งกลับ` อยู่แล้ว ห้ามรีเซ็ตซ้ำ
+A human `/jt-send-back` is a new request. The first time the agent sees it, set `round` to 1 and set `round-status` in the plan to `send-back`. If the plan is already `send-back`, do not reset the round again.
 
-หลักฐานผ่านขณะบรรทัดเป็น `ส่งกลับ:` ให้ตั้ง `สถานะรอบ` เป็น `รอรีวิว` บน `card-<id>` แล้วเปลี่ยนบรรทัดบนสาขาคิวเป็น `รอรีวิว:` แล้วหยิบข้อถัดไป
+When the evidence passes while the line is `send-back:`, set `round-status` to `review` on `card-<id>`, change the queue-branch line to `review:`, and pick the next item.
 
-นับรอบจากช่อง `รอบหลักฐาน` ใน plan เท่านั้น
+Count rounds only from the `round` field in the plan.
 
-### ถาม
+### Ask
 
-วางท้าย card และต่อท้ายบรรทัดด้วย `ถาม:` โดยข้อยังเป็น `- [ ]` แล้ว commit `card-loop/board.md` กับ `card-loop/backlog/<id>.md` บนสาขาคิว แล้วข้ามไปข้อที่ลงมือได้
+Put `ask:` at the end of the card and at the end of the line. The item stays `- [ ]`. Commit `card-loop/board.md` and `card-loop/backlog/<id>.md` on the queue branch, then skip to an item that can be worked.
 
 ```markdown
-ถาม: <หนึ่งคำถาม>
-ทำไมถึงไปต่อไม่ได้: <เหตุ>
-ทางที่เห็น: <ทางที่คนเลือกได้>
+ask: <one question>
+blocked: <why work cannot continue>
+options: <choices the human can pick>
 ```
 
-คนตอบด้วยการล้างหัว **ถาม** ใน card และแก้ card จนเจตนาปิด ไม่ต้องแก้บรรทัด
+The human answers by clearing the `ask` heading in the card and editing the card until intent is closed. The human does not have to edit the line.
 
-เอเจนต์เห็นหัว **ถาม** ว่างและเจตนาปิดแล้ว จึงลบ `ถาม:` ออกจากบรรทัด commit ที่ `card-loop/` แล้วทำข้อนั้นต่อได้
+When the agent sees an empty `ask` heading and closed intent, delete `ask:` from the line, commit that change under `card-loop/`, and continue the item.
 
-## ชนิดตั๋ว
+## Ticket kinds
 
-หนึ่งค่า จากชุดที่ Conventional Commits อนุญาต และที่ `@commitlint/config-conventional` ใช้
+One value from the set Conventional Commits allows, and the set `@commitlint/config-conventional` uses.
 
-| ชนิด | ความหมาย | หลักฐานก่อนเปิดของให้ review |
+| Kind | Meaning | Evidence before review opens |
 |---|---|---|
-| `feat` | พฤติกรรมหรือ interface ใหม่ | เทสของพฤติกรรมนั้นเขียว ด้วย `<TEST_CMD>` หรือคำสั่งที่หัว **ตรวจผ่านเมื่อ** เขียนไว้ |
-| `fix` | บั๊กที่พฤติกรรมพัง | เทสของพฤติกรรมนั้นเขียว ด้วย `<TEST_CMD>` หรือคำสั่งที่หัว **ตรวจผ่านเมื่อ** เขียนไว้ |
-| `docs` | เอกสารอย่างเดียว | ไม่แตะโค้ดผลิต |
-| `style` | จัดรูปแบบ ความหมายของโค้ดไม่เปลี่ยน | ชุดเดิมผ่าน |
-| `refactor` | ไม่แก้บั๊กและไม่เพิ่มพฤติกรรม รวมการลบของที่ไม่มีคนใช้ | ชุดเดิมผ่าน |
-| `perf` | ทำให้เร็วขึ้น พฤติกรรมผู้ใช้เท่าเดิม | ชุดเดิมผ่าน |
-| `test` | เพิ่มหรือแก้เทส | เทสที่เพิ่มเขียว โดยไม่เปลี่ยนพฤติกรรมผลิตเพื่อให้ผ่าน |
-| `build` | ระบบ build หรือ dependency | ชุดเดิมผ่าน |
-| `ci` | สคริปต์ CI | ชุดเดิมผ่าน |
-| `chore` | งานอื่นที่ไม่ได้เปลี่ยนซอร์สหรือเทส | ชุดเดิมผ่าน |
-| `revert` | ย้อน commit เดิม | หลังย้อน ชุดเดิมผ่าน |
+| `feat` | New behavior or a new interface | That behavior's tests are green, via `<TEST_CMD>` or the command the `pass` heading names |
+| `fix` | A bug whose behavior is broken | That behavior's tests are green, via `<TEST_CMD>` or the command the `pass` heading names |
+| `docs` | Docs only | Do not touch production code |
+| `style` | Formatting, and the code's meaning does not change | The existing suite passes |
+| `refactor` | No bug fix and no new behavior, including deletion of something unused | The existing suite passes |
+| `perf` | Faster, with the same user-facing behavior | The existing suite passes |
+| `test` | Add or change tests | The added tests are green, without changing production behavior to make them pass |
+| `build` | The build system or dependencies | The existing suite passes |
+| `ci` | CI scripts | The existing suite passes |
+| `chore` | Other work that does not change source or tests | The existing suite passes |
+| `revert` | Revert an earlier commit | After the revert, the existing suite passes |
 
-หลัง commit ที่ชนิดแตะโค้ด ให้เปิด `<REPO_SKILLS>` ตาม [skills.md](skills.md) ชนิด `docs` ไม่เปิด ถ้า review diff ไม่ได้ บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ การจดใน plan ไม่นับ รีวิวนับเมื่อ `scripts/jt-diff-check` จบเป็นศูนย์ และหัว **รีวิว diff** ใน plan อ้าง commit โค้ดล่าสุด ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน
+After a commit whose kind touches code, open `<REPO_SKILLS>` per [skills.md](skills.md). `docs` does not open. If you cannot review the diff, the line must not be `review:`. The gate refuses. A note in the plan does not count. The review counts when `scripts/jt-diff-check` exits 0 and the plan heading `review-diff` cites the latest code commit. A name from `<TEK_SKILLS>` does not do this review.
 
-งานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` ต้องสตาร์ท frontend กับ backend จริง แล้วคลิกตามหัว **ตรวจผ่านเมื่อ** วิธีสตาร์ท พอร์ต และขั้นตอนคลิกอยู่ที่ repo นั้น
+Screen work of every kind, not only `fix`, must start the real frontend and the real backend, then click what the `pass` heading names. How to start, which ports, and the click steps live in that repo.
 
-`<BROWSER_TOOL>` ว่าง สตาร์ทไม่ขึ้น หรือคลิกไม่ตรงหัว **ตรวจผ่านเมื่อ** ให้เขียน `ถาม:` บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
+If `<BROWSER_TOOL>` is empty, start does not come up, or the click misses the `pass` heading, write `ask:`. The line must not be `review:`. The gate refuses.
 
-ก่อนบรรทัดเป็น `รอรีวิว:` งานที่ผู้ใช้เห็นจอให้ใช้คำสั่งตรวจจอของ JTek ที่ `scripts/jt-screen-check` หรือคำสั่งตรวจที่มีอยู่บน board ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบนี้
+Before the line is `review:`, screen work uses the JTek screen command at `scripts/jt-screen-check` or a check command already on the board. Do not create a new check script for this round.
 
-`fix` ที่ผู้ใช้เห็นจอ ทำให้บั๊กเกิดบนพื้นผิวเดิมก่อนลงมือ แล้วทำขั้นตอนเดิมหลังแก้จนไม่เกิด เทสเขียวแต่พื้นผิวยังเป็นบั๊ก เปิดให้ review ไม่ได้
+For a screen `fix`, make the bug appear on the same screen before the fix, then repeat the same steps after the fix until it does not appear. Green tests with the bug still on screen cannot open review.
 
-`<TEST_CMD>` เป็น `ไม่มีชุดเทส` และ card ของ `feat` หรือ `fix` ไม่ได้เขียนคำสั่งเทสไว้ในหัว **ตรวจผ่านเมื่อ** คือเจตนายังไม่ปิด เขียน `ถาม:` ขอคำสั่งเทส ช่อง `<TEST_CMD>` ว่างให้หยุดทั้งคิวก่อนหยิบใบ
+When `<TEST_CMD>` is `no-suite` and a `feat` or `fix` card does not name a test command under `pass`, intent is not closed. Write `ask:` and request a test command. An empty `<TEST_CMD>` cell stops the whole queue before you pick a card.
 
-ชนิดอื่นเมื่อ `<TEST_CMD>` เป็น `ไม่มีชุดเทส` เขียนในของที่เปิดให้ review ว่าไม่มีชุดเทส ช่องว่างไม่ใช่ค่านี้
+For any other kind, when `<TEST_CMD>` is `no-suite`, write in the review notes that there is no test suite. An empty cell is not this value.
 
-ชื่อเทสตาม scenario หรือพฤติกรรม
+Name tests after the scenario or the behavior.
 
-### มาตรฐาน commit
+### Commit standard
 
 ```text
-<ชนิด>(<id>): <สรุป>
+<kind>(<id>): <summary>
 ```
 
-`<ชนิด>` ตรงชนิดของ card `<id>` ตรงชื่อไฟล์ card `<สรุป>` ภาษาอังกฤษ รูปคำสั่ง ปัจจุบัน ไม่ขึ้นต้นด้วยตัวใหญ่ ไม่มีจุดท้าย
+`<kind>` matches the card kind. `<id>` matches the card file name. `<summary>` is English, imperative, present tense, not capitalized, and has no trailing period.
 
-ชนิดอื่นที่ไม่ใช่ `docs` ให้เว้นบรรทัดแล้วตามด้วยเหตุผลหนึ่งประโยค ชนิด `docs` จบที่บรรทัดหัว หนึ่ง commit หนึ่งชนิด งานนอกคิวไม่มี `<id>` ถ้าจะอยู่ในลูปให้มี card ก่อน
+For a kind other than `docs`, leave a blank line and then one sentence of why. Kind `docs` ends at the subject line. One commit has one kind. Work outside the queue has no `<id>`. If it belongs in the loop, create a card first.
 
-commit ที่แก้แค่ไฟล์ใต้ `card-loop/` ใช้ `docs(<id>):` เมื่อเกี่ยวกับข้อเดียว หลายข้อในครั้งเดียวใช้ `docs: add accepted cards`
+A commit that changes only files under `card-loop/` uses `docs(<id>):` when it is about one item. Several items in one commit use `docs: add accepted cards`.
 
-## ขั้นตอนของแต่ละคำสั่ง
+## Steps for each command
 
-ขั้นตอนที่ทำให้คำสั่งจบอยู่ใน `SKILL.md` ของคำสั่งนั้น อ่านกติการ่วมด้านบนเฉพาะหัวที่คำสั่งนั้นชี้
+The steps that finish a command live in that command's `SKILL.md`. Read the shared rules above only for the heading that command points at.
 
-คนเรียก `/jt-open-work` ก่อนตัดสิน ตาราง **การตัดสินใจ** ว่างหรือ diff ไม่ตรง card คือหลักฐานไม่ครบ ห้ามติ๊ก `merge:`
+The human calls `/jt-open-work` before deciding. An empty `decisions` table, or a diff that does not match the card, means the evidence is incomplete. Do not check `merge:`.
 
-## สรุป
+## Summary
 
-| ผล | ทำอะไรต่อ |
+| Result | What happens next |
 |---|---|
-| เจตนาไม่ปิด | `ถาม:` ที่ card และบรรทัด คนล้างหัว **ถาม** แล้วเรียก `/jt-do-work` |
-| ย้อนกลับไม่ได้ หรือครบ 3 รอบ | `ถาม:` ที่ card และบรรทัด |
-| คลิกพื้นผิวไม่ได้ | `ถาม:` ที่ card และบรรทัด |
-| หลักฐานผ่าน | เปิด draft PR เข้าสาขาคิว ต่อท้าย `รอรีวิว:` แล้วหยิบข้อถัดไป เปิดไม่ได้ให้เขียน `ถาม:` |
-| สคริปต์ตรวจใหม่ที่ card ไม่ได้สั่ง | ไม่เปิดของให้ review |
-| ความผิดชั้นเดิมซ้ำแต่ยังไม่แก้กติกา | ไม่เปิดของให้ review จด `อัปเดตกติกา` หลังแก้กติกาหรือสคริปต์ตรวจ แถวอย่างเดียวไม่พอ |
-| ใบชั้นเดียวกันยังไม่ลิงก์ | `ถาม:` หรือหยุด ห้ามแยกเอเจนต์ |
-| คนรับ | `/jt-merge` |
-| คนส่งกลับ | `/jt-send-back` แล้ว `/jt-do-work` |
-| คนไม่เอา | `/jt-drop-card` |
+| Intent is not closed | `ask:` on the card and the line. The human clears `ask`, then calls `/jt-do-work`. |
+| Irreversible, or 3 rounds used | `ask:` on the card and the line |
+| The screen cannot be clicked | `ask:` on the card and the line |
+| Evidence passed | Open a draft PR into the queue branch, append `review:`, and pick the next item. If it cannot be opened, write `ask:`. |
+| A new check script the card did not order | Do not open review |
+| The same layer failed again and the rule is unchanged | Do not open review. Record `update-rule` after the rule or the check script changes. A row alone is not enough. |
+| Same-layer cards are still unlinked | `ask:`, or stop. Do not split agents. |
+| The human accepts | `/jt-merge` |
+| The human sends it back | `/jt-send-back`, then `/jt-do-work` |
+| The human drops it | `/jt-drop-card` |

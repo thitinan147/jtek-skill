@@ -1,22 +1,22 @@
 ---
 name: jt-send-back
-description: Change the รอรีวิว line on card-loop/board.md to ส่งกลับ. Use when the user runs /jt-send-back after looking at the review. The human invokes this.
+description: Change the review line on card-loop/board.md to send-back. Use when the user runs /jt-send-back after looking at the review. The human invokes this.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: Thitinan
   version: "20"
-  short-description: Mark the reviewed card ส่งกลับ
+  short-description: Mark the reviewed card send-back
 ---
 
 # jt-send-back
 
-รหัสที่ต่อท้ายคำสั่งคือใบที่จะส่งกลับ ถ้าไม่มีรหัสและมีบรรทัด `รอรีวิว:` ใบเดียว ให้ใช้ใบนั้น ถ้ามีหลายใบให้ถามรหัสแล้วหยุดโดยไม่เปลี่ยนบรรทัด
+The id after the command is the card to send back. If there is no id and exactly one line is `review:`, use that card. If several lines match, ask for the id and stop without changing the line.
 
-working tree สกปรกให้หยุดโดยไม่เปลี่ยนบรรทัด
+If the working tree is dirty, stop without changing the line.
 
-checkout สาขาที่บรรทัด `สาขาคิว:` ชี้ เปลี่ยนบรรทัด `- [ ]` ของใบนั้นจาก `รอรีวิว:` เป็น `ส่งกลับ:` บนบรรทัดเดิม ข้อยังเป็น `- [ ]` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
+Check out the branch the `queue:` line names. On that same line, change `- [ ]` from `review:` to `send-back:`. The item stays `- [ ]`. Commit only `card-loop/board.md` on the queue branch.
 
-จากนั้น checkout `card-<id>` เมื่อ branch นั้นมีอยู่ ถ้า `สถานะรอบ` ยังไม่ใช่ `ส่งกลับ` ให้ตั้งเป็น `ส่งกลับ` และตั้ง `รอบหลักฐาน` เป็น 1 ถ้าเป็น `ส่งกลับ` อยู่แล้ว ให้คงรอบเดิม แล้ว commit เฉพาะ `card-loop/plan/<id>.md` บน branch นั้น แล้ว checkout สาขาคิว ไม่มี branch `card-<id>` ให้หยุดหลัง commit บรรทัด แล้วบอกว่าหา branch ไม่เจอ
+Then check out `card-<id>` when that branch exists. If `round-status` is not `send-back`, set it to `send-back` and set `round` to 1. If it is already `send-back`, keep the current round. Commit only `card-loop/plan/<id>.md` on that branch, then check out the queue branch. If branch `card-<id>` does not exist, stop after the line commit and say the branch was not found.
 
-เสร็จเมื่อบรรทัดบนสาขาคิวเป็น `ส่งกลับ:` และยังไม่มีการแก้โค้ดของข้อ
+Done when the queue-branch line is `send-back:` and this command has not edited the item's code.
