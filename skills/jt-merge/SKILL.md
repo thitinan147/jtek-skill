@@ -21,7 +21,13 @@ working tree สกปรกให้หยุดโดยไม่เปลี�
 
 อ่าน plan จาก branch `card-<id>` ตาราง **การตัดสินใจ** ว่าง หรือ diff จากสาขาคิวถึง `card-<id>` ไม่ตรงหัว **ตรวจผ่านเมื่อ** ให้หยุดแล้วบอกว่าหลักฐานไม่ครบ ห้ามเปลี่ยนเครื่องหมาย
 
-ตรวจว่า commit ของ `card-<id>` อยู่ในสาขาคิวแล้ว ด้วย `git merge-base --is-ancestor card-<id> <สาขาคิว>` การ merge ผ่าน PR บน GitHub ที่ทำให้ commit นั้นอยู่ในสาขาคิวใช้การตรวจเดียวกัน หากยังไม่อยู่ ให้บอกให้คน merge บน GitHub ก่อน ไม่รัน git merge ไม่เปิด PR และไม่ merge PR
+ตรวจว่าคนได้รวม `card-<id>` เข้าสาขาคิวแล้ว ด้วยคำสั่งนี้ ไม่รัน git merge ไม่เปิด PR และไม่ merge PR
+
+```bash
+python3 <โฟลเดอร์ skill jt-next-step>/gate.py landed --root . --id <id>
+```
+
+`landed: ancestor` คือ `git merge-base --is-ancestor card-<id> <สาขาคิว>` ผ่าน รวมกรณี merge ผ่าน PR ที่ทำให้ commit นั้นอยู่ในสาขาคิว `landed: squash` คือ `gh pr view card-<id>` ได้ `state` เป็น `MERGED` แม้ squash จะทำให้ `git merge-base --is-ancestor` ไม่ผ่าน ถ้า view หาใบไม่เจอ ให้ใช้ `gh pr list --head card-<id>` ใบที่ `MERGED` ก็พอ ถ้าได้ `refused: not-landed` ให้บอกให้คน merge บน GitHub ก่อน
 
 เมื่อหลักฐานครบและ commit อยู่ในสาขาคิวแล้ว ให้อยู่บนสาขาคิว เปลี่ยนเฉพาะเครื่องหมายบนบรรทัดนั้นเป็น `- [x]` ต่อท้าย `merge:` แล้ว commit เฉพาะ `card-loop/board.md` บนสาขาคิว
 

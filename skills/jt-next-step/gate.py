@@ -6,11 +6,14 @@ A code commit whose diff cannot be reviewed cannot write รอรีวิว.
 Screen work that cannot be clicked cannot write รอรีวิว.
 A new checker script the card did not ask for cannot write รอรีวิว.
 The same open topic cannot write รอรีวิว until a rule or check script
-is updated and the plan records it. Unlinked cards of that topic cannot
-write รอรีวิว. A card whose heading names the paired repo cannot write
-รอรีวิว until both sides have passed. The board line ไม่มี keeps the
-single-repo path. A repo with a git remote cannot write รอรีวิว until
-an open draft pull request targets the queue branch from card-<id>.
+is updated and the plan records that file. A plan row alone cannot.
+Unlinked cards of that topic cannot write รอรีวิว. A card whose heading
+names the paired repo cannot write รอรีวิว until both sides have passed.
+The board line ไม่มี keeps the single-repo path. scripts/jt-diff-check
+must exit 0 before a code card can write รอรีวิว. A repo with a git
+remote cannot write รอรีวิว until an open draft pull request targets
+the queue branch from card-<id>. A merged pull request for that head
+can count as landed when the card commit is not an ancestor.
 """
 
 from __future__ import annotations
@@ -85,6 +88,7 @@ _CHECKER_BASENAME = re.compile(
 )
 _CLOSED = frozenset({"merge:", "ไม่เอา:", "ครบ:"})
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
+_SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 
 
 class GateError(Exception):
@@ -1220,8 +1224,98 @@ def _read_card(root: Path, card_id: str) -> str:
     return ""
 
 
-def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
-    head_proc = _run_git(
+def _is_ancestor(root: Path, child: str, parent: str) -> bool:
+    if not child or not parent:
+        return False
+    if not _branch_exists(root, child) or not _branch_exists(root, parent):
+        return False
+    proc = _run_git(root, ["merge-base", "--is-ancestor", child, parent])
+    return proc.returncode == 0
+
+
+def _gh(root: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            ["gh", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+    except FileNotFoundError:
+        return None
+
+
+def _payload_mark(raw: str, head: str) -> str:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return "missing"
+    rows = data if isinstance(data, list) else [data]
+    saw_open = False
+    for row in rows:
+        if not isinstance(row, dict) or row.get("headRefName") != head:
+            continue
+        if row.get("state") == "MERGED":
+            return "merged"
+        if row.get("state") == "OPEN":
+            saw_open = True
+    return "open" if saw_open else "missing"
+
+
+def _github_mark(root: Path, card_id: str) -> str:
+    """merged, open, or missing. A bad payload stays missing."""
+    head = f"card-{card_id}"
+    view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
+    if view is not None and view.returncode == 0:
+        mark = _payload_mark(view.stdout, head)
+        if mark in {"merged", "open"}:
+            return mark
+    listed = _gh(
+        root,
+        [
+            "pr",
+            "list",
+            "--head",
+            head,
+            "--state",
+            "all",
+            "--json",
+            "state,headRefName",
+        ],
+    )
+    if listed is None or listed.returncode != 0:
+        return "missing"
+    return _payload_mark(listed.stdout, head)
+
+
+def landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
+    """(ancestor|squash|'', detail). Squash is a MERGED pull request."""
+    if _is_ancestor(root, f"card-{card_id}", queue):
+        return "ancestor", ""
+    mark = _github_mark(root, card_id)
+    if mark == "merged":
+        return "squash", ""
+    return "", "pr-open" if mark == "open" else "pr-missing"
+
+
+def cmd_landed(root: Path, card_id: str) -> int:
+    board_path = root / "card-loop" / "board.md"
+    if not board_path.is_file():
+        return _refuse("board-missing")
+    queue = parse_queue(board_path.read_text(encoding="utf-8"))
+    if not queue:
+        return _refuse("not-landed", detail="no-queue")
+    via, detail = landed_via(root, card_id, queue)
+    if not via:
+        return _refuse("not-landed", detail=detail)
+    print(f"landed: {via}")
+    print("merge: no")
+    return 0
+
+
+def _code_tip_sha(root: Path, queue: str, card_id: str) -> str | None:
+    proc = _run_git(
         root,
         [
             "log",
@@ -1234,18 +1328,86 @@ def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
             ":(exclude)card-loop",
         ],
     )
-    if head_proc.returncode != 0:
-        return "no-review"
-    head_sha = head_proc.stdout.strip()
-    if not head_sha:
+    if proc.returncode != 0:
         return None
-    plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
+    return proc.stdout.strip()
+
+
+def _card_worktree_drift(root: Path, card_id: str) -> bool:
+    if _current_branch(root) != f"card-{card_id}":
+        return False
+    proc = _run_git(
+        root,
+        ["status", "--porcelain", "--", ".", ":(exclude)card-loop"],
+    )
+    if proc.returncode != 0:
+        return True
+    return bool(proc.stdout.strip())
+
+
+def diff_review_detail(root: Path, card_id: str) -> str:
+    """ok, skip, no-review, no-sha, or stale-review."""
+    board_path = root / "card-loop" / "board.md"
+    if not board_path.is_file():
+        return "no-review"
+    queue = parse_queue(board_path.read_text(encoding="utf-8"))
+    branch = f"card-{card_id}"
+    if not queue or not _branch_exists(root, branch):
+        return "no-review"
+    if not _code_diff_reviewable(root, queue, card_id):
+        return "skip"
+    if _card_worktree_drift(root, card_id):
+        return "stale-review"
+    sha = _code_tip_sha(root, queue, card_id)
+    if not sha:
+        return "no-review"
+    plan = _git_show(root, f"{branch}:card-loop/plan/{card_id}.md") or ""
     section = _section_h2(plan, "รีวิว diff")
     if not section.strip():
         return "no-review"
-    if head_sha[:7] not in section:
+    if _SHA.search(section) is None:
+        return "no-sha"
+    if sha not in section and sha[:7] not in section:
         return "stale-review"
-    return None
+    return "ok"
+
+
+def diff_check_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="jt-diff-check")
+    parser.add_argument("--root", default=".")
+    parser.add_argument("--id", required=True)
+    args = parser.parse_args(argv)
+    status = diff_review_detail(Path(args.root).resolve(), args.id)
+    print(f"diff-check: {status}")
+    return 0 if status in {"ok", "skip"} else 1
+
+
+def _diff_check_script() -> Path:
+    return Path(__file__).resolve().parents[2] / "scripts" / "jt-diff-check"
+
+
+def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
+    if not queue:
+        return "no-review"
+    script = _diff_check_script()
+    if not script.is_file():
+        return "no-review"
+    proc = subprocess.run(
+        [sys.executable, str(script), "--root", str(root), "--id", card_id],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    detail = ""
+    for line in proc.stdout.splitlines():
+        if line.startswith("diff-check:"):
+            detail = line.split(":", 1)[1].strip()
+    if proc.returncode == 0 and detail == "ok":
+        return None
+    if detail in {"no-review", "no-sha", "stale-review"}:
+        return detail
+    return "no-review"
 
 
 def _cards_from_text(root: Path, board_text: str) -> list[Card]:
@@ -1305,26 +1467,28 @@ def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> boo
     return False
 
 
-def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]) -> bool:
-    """Same open topic, and no recorded update to a rule or check script."""
+def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]) -> str:
+    """no-row, prose-only, or empty when a cited rule file is in the diff."""
     current = next((card for card in cards if card.id == card_id), None)
     if current is None:
-        return False
+        return ""
     siblings = _same_topic(current, cards)
     if not siblings:
-        return False
+        return ""
     plan = ""
     if _branch_exists(root, f"card-{card_id}"):
         plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
     section = _section_h2(plan, "การตัดสินใจ")
     if "อัปเดตกติกา" not in section:
-        return True
+        return "no-row"
     names: list[str] = []
     for item in (current, *siblings):
         found = _diff_names(root, queue, item.id)
         if found:
             names.extend(found)
-    return not any(_is_rule_path(path) and _cited(path, section) for path in names)
+    if any(_is_rule_path(path) and _cited(path, section) for path in names):
+        return ""
+    return "prose-only"
 
 
 def _has_remote(root: Path) -> bool:
@@ -1419,8 +1583,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             review_state = "open"
         if one_off_checker(root, queue, card_id, card_text):
             return _refuse("one-off-checker")
-        if repeat_patch_missing(root, queue, card_id, cards):
-            return _refuse("repeat-patch")
+        repeat = repeat_patch_missing(root, queue, card_id, cards)
+        if repeat:
+            return _refuse("repeat-patch", detail=repeat)
     try:
         need_screen = sees_screen(card_text)
         need_test = (test_cmd.strip() != NO_SUITE)
@@ -1480,6 +1645,8 @@ def main(argv: list[str] | None = None) -> int:
     reach.add_argument("--id", required=True)
     reach.add_argument("--write", action="store_true")
     reach.add_argument("--link", default="")
+    landed = sub.add_parser("landed", parents=[common])
+    landed.add_argument("--id", required=True)
 
     parsed = parser.parse_args(args)
     root = Path(parsed.root).resolve()
@@ -1487,6 +1654,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_next(root)
     if parsed.cmd == "reach-review":
         return cmd_reach_review(root, parsed.id, parsed.write, parsed.link)
+    if parsed.cmd == "landed":
+        return cmd_landed(root, parsed.id)
     return _refuse("merge")
 
 
