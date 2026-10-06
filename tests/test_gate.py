@@ -1298,10 +1298,10 @@ class RepoReviewTests(unittest.TestCase):
             self.assertIn(f"`{kind}`", repo)
             self.assertIn(f"`{kind}`", do_card)
         self.assertIn("`docs` ไม่เปิด", repo)
-        self.assertIn("`docs` ไม่เปิด", do_card)
+        self.assertIn("`docs` does not open", do_card)
         self.assertNotIn("ตัวอย่าง", skills)
         self.assertIn("ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน", repo)
-        self.assertIn("ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน", do_card)
+        self.assertIn("A name from `<TEK_SKILLS>` does not do this review", do_card)
         self.assertNotIn("TEK_SKILLS", GATE_PATH.read_text(encoding="utf-8"))
 
 

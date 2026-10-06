@@ -31,12 +31,16 @@ class RepoSkillRuleTests(unittest.TestCase):
         for text in (skills, do_card):
             self.assertNotIn("ชื่อที่ไม่มีในเครื่อง ให้จดใน plan แล้วเดินตาม loop.md ต่อ", text)
             self.assertNotIn("ชื่อที่ไม่มีในเครื่องให้จดใน plan แล้วเดินต่อ", text)
-            self.assertIn("review diff ของข้อนี้เอง", text)
-            self.assertIn("ห้ามข้าม", text)
-            self.assertIn("review diff ไม่ได้", text)
-            self.assertIn("การจดใน plan แล้วเดินต่อไม่นับเป็นรีวิวนั้น", text)
+        self.assertIn("review diff ของข้อนี้เอง", skills)
+        self.assertIn("ห้ามข้าม", skills)
+        self.assertIn("review diff ไม่ได้", skills)
+        self.assertIn("การจดใน plan แล้วเดินต่อไม่นับเป็นรีวิวนั้น", skills)
+        self.assertIn("review this card's diff yourself", do_card)
+        self.assertIn("Do not skip that review", do_card)
+        self.assertIn("cannot review the diff", do_card)
+        self.assertIn("A note in the plan is not that review", do_card)
         self.assertIn("ห้ามถึง `รอรีวิว:`", skills)
-        self.assertIn("ห้ามตั้ง `รอรีวิว:`", do_card)
+        self.assertIn("Do not set `รอรีวิว:`", do_card)
 
     def test_tek_skills_row_on_the_board_template_is_unchanged(self) -> None:
         template = (REPO / "skills" / "jt-card-gate" / "assets" / "board.template.md").read_text(
@@ -120,7 +124,7 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertEqual(rows, COMMANDS)
         self.assertEqual(re.findall(r"^\| `(/jt-[^`]+)`", loop, re.M), COMMANDS)
         self.assertEqual(readme.count("\n## "), 4)
-        self.assertIn("ชุด skill หลายสิบตัว", readme)
+        self.assertIn("not a catalog of dozens of skills", readme)
         self.assertIn("npx skills add thitinan147/jtek-skill -g", readme)
         self.assertIn("name: jt-card-gate", rule)
         for text in (readme, loop, rule, find, merge, drop, move, work):
@@ -159,7 +163,15 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertIn("`/jt-send-back` `/jt-merge` `/jt-drop-card`", loop)
         self.assertIn("คนเป็นคน merge", loop)
         self.assertIn("ไม่รัน git merge", loop)
-        self.assertIn(OLD_SCREEN, work)
+        self.assertNotIn(OLD_SCREEN, work)
+        self.assertIn("**เกณฑ์ 3 รอบ**", work)
+        self.assertIn(
+            "หนึ่งรอบคือพยายามทั้งชุดจนจบครั้งหนึ่ง หลักฐานคือเทสที่เกี่ยวข้องเขียว "
+            "และถ้าเป็นงานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` "
+            "ขั้นตอนเดิมบนพื้นผิวเดิมไม่เกิดบั๊ก "
+            "งานที่ผู้ใช้เห็นจอแต่คลิกไม่ได้ไม่นับเป็นรอบนี้ ให้เขียน `ถาม:`",
+            loop,
+        )
         self.assertIn("disable-model-invocation: true", merge)
         self.assertIn("disable-model-invocation: true", drop)
         send = (REPO / "skills" / "jt-send-back" / "SKILL.md").read_text(encoding="utf-8")
@@ -191,14 +203,15 @@ class PairedRepoRuleTests(unittest.TestCase):
         self.assertIn("เป็นใบเดียว", new_card)
         self.assertIn("ไม่ใส่ชื่อนั้น", new_card)
         self.assertIn("อย่าสร้างเพราะ board มีชื่อ", new_card)
-        self.assertIn("ห้ามตั้งสถานะใน repo คู่", work)
-        self.assertIn("ห้ามสร้าง `card-loop/board.md`", work)
-        self.assertIn("ห้ามย้ายทั้งคิวออกจาก repo หลัก", work)
+        self.assertIn("Do not set status in the paired repo", work)
+        self.assertIn("Do not create `card-loop/board.md`", work)
+        self.assertIn("Do not move the whole queue off the primary repo", work)
         self.assertIn("card-loop/paired.md", work)
-        self.assertIn("ชี้กลับ", work)
-        self.assertIn("อย่าสร้างไฟล์นี้แค่เพราะ board บันทึกชื่อไว้", work)
-        self.assertIn("คนเป็นคน merge ทั้งสอง repo", work)
-        self.assertIn(OLD_SCREEN, work)
+        self.assertIn("point back", work)
+        self.assertIn("Do not create this file only because the board recorded the name", work)
+        self.assertIn("The human merges both repos", work)
+        self.assertNotIn(OLD_SCREEN, work)
+        self.assertIn("**เกณฑ์ 3 รอบ**", work)
         self.assertIn("pair-not-passed", gate)
         self.assertNotIn("jtekth", gate)
         self.assertNotIn("git merge", gate)
@@ -239,17 +252,20 @@ class RepeatRuleTests(unittest.TestCase):
             encoding="utf-8"
         )
         gate = (REPO / "skills" / "jt-next-step" / "gate.py").read_text(encoding="utf-8")
+        self.assertIn("คำสั่งตรวจที่มีอยู่", loop)
+        self.assertIn("สคริปต์ตรวจใหม่", loop)
+        for text in (readme, work):
+            self.assertIn("existing check commands", text)
+            self.assertIn("new check script", text)
         for text in (readme, loop, work):
-            self.assertIn("คำสั่งตรวจที่มีอยู่", text)
-            self.assertIn("สคริปต์ตรวจใหม่", text)
             self.assertIn("อัปเดตกติกา", text)
             self.assertIn("ชั้น", text)
-        self.assertIn("ห้ามแยกเอเจนต์", readme)
+        self.assertIn("Do not split into parallel agents", readme)
         self.assertIn("ห้ามแยกเป็นเอเจนต์คู่ขนานโดยไม่ลิงก์", loop)
         self.assertIn("refused: one-off-checker", work)
         self.assertIn("refused: repeat-patch", work)
         self.assertIn("refused: related", work)
-        self.assertIn("reason` เป็น `related`", nxt)
+        self.assertIn("`reason` is `related`", nxt)
         self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("refused: repeat-patch", nxt)
         self.assertIn("step: ถาม", nxt)
@@ -279,17 +295,19 @@ class DraftPrSkillTests(unittest.TestCase):
         command = "gh pr create --draft --base <สาขาคิว> --head card-<id>"
         for text in (readme, loop, work, nxt):
             self.assertIn(command, text)
-            self.assertIn("บรรทัดต้องไม่เป็น `รอรีวิว:`", text)
+        self.assertIn("บรรทัดต้องไม่เป็น `รอรีวิว:`", loop)
+        for text in (readme, work, nxt):
+            self.assertIn("The line must not be `รอรีวิว:`", text)
         for text in (work, nxt):
             self.assertIn("refused: pr-missing", text)
             self.assertIn("step: ถาม", text)
-        self.assertIn("ห้ามเปิดซ้ำ", work)
-        self.assertIn("ข้าม `gh pr create`", nxt)
+        self.assertIn("Do not open a duplicate", work)
+        self.assertIn("skip `gh pr create`", nxt)
         self.assertIn("ไม่เปิด PR", merge)
         self.assertIn("ไม่ merge PR", merge)
         self.assertIn("ไม่รัน git merge", merge)
         self.assertIn("git merge-base --is-ancestor", merge)
-        self.assertIn("รวมกรณี merge ผ่าน PR", readme)
+        self.assertIn("including a merge through a pull request", readme)
         self.assertIn("ไม่เปิด PR ไม่ merge PR และไม่รัน git merge", loop)
         self.assertNotIn("reach-review", loop)
 

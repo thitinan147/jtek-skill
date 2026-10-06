@@ -1,69 +1,56 @@
 # jt-card-gate
 
-นี่คือลูปของ repo ที่เปิดอยู่ ไม่ใช่ชุด skill หลายสิบตัว คุณไม่เลือก skill เอเจนต์เรียกขั้นถัดไปผ่าน `/jt-next-step` คิวและสถานะอยู่บน board ของ repo นี้ คุณเปลี่ยนคำบนบรรทัด เอเจนต์ทำเฉพาะข้อที่บรรทัดอนุญาต คนเรียก `/jt-send-back` `/jt-merge` `/jt-drop-card` เอง เอเจนต์ไม่เรียกสามคำสั่งนั้น `/jt-next-step` merge ไม่ได้ กติกานี้เป็นของ skill นี้ ไม่ได้ copy เข้า repo ที่เปิดอยู่
+This is the loop for the open repo, not a catalog of dozens of skills. You do not pick a skill. The agent calls the next step through `/jt-next-step`. The queue and the status live on this repo's board. You change the words on the line. The agent works only the cards that line allows. You call `/jt-send-back`, `/jt-merge`, and `/jt-drop-card` yourself. The agent does not call those three commands. `/jt-next-step` cannot merge. The rules belong to this skill. They are not copied into the open repo.
 
-## ติดตั้ง
+## Install
 
-ครั้งเดียวบนเครื่อง
+Once per machine.
 
 ```bash
 npx skills add thitinan147/jtek-skill -g
 ```
 
-## เริ่ม
+## Start
 
-เปิด git repo ที่จะทำ อยู่บน branch ที่จะเก็บคิว และไม่มีไฟล์ค้างนอกโฟลเดอร์ `card-loop/` แล้วพิมพ์ `/jt-next-step`
+Open the git repo you will work in. Stay on the branch that will hold the queue. Leave no dirty files outside `card-loop/`. Then run `/jt-next-step`.
 
-คุณไม่เลือก skill เอเจนต์เรียกขั้นถัดไปที่กติกาอนุญาต คุณตอบจนรับร่างเมื่อขั้นนั้นถาม คำสั่งนี้ merge ไม่ได้
+You do not pick a skill. The agent runs the next step the rules allow. You answer until you accept a draft when that step asks. This command cannot merge.
 
-## เกตก่อน `รอรีวิว`
+## Before `รอรีวิว:`
 
-งานที่แตะโค้ดต้อง review diff และบันทึกหลักฐานใน `## รีวิว diff` ของ plan ก่อนบรรทัดเป็น `รอรีวิว:` การจดใน plan โดยไม่มี SHA ที่ตรงไม่นับ ก่อนบรรทัดนั้นบนใบที่แตะโค้ด `scripts/jt-diff-check` ต้องจบเป็นศูนย์ การมีหัวข้อรีวิวอย่างเดียวไม่พอ ถ้า review นั้นทำไม่ได้ ขั้นคือ `ถาม:` และบรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ ชนิด `docs` ไม่เปิด ชื่อจาก `<TEK_SKILLS>` ไม่มาทำรีวิวนี้แทน
+Shared policy is `skills/jt-card-gate/references/loop.md`. `skills/jt-next-step/gate.py` enforces it. `/jt-do-work` runs `gate.py reach-review` and trusts that output. Read those files for the rules. This page does not restate them.
 
-```bash
-python3 <โฟลเดอร์ jtek-skill>/scripts/jt-diff-check --root . --id <id>
-```
+When the gate fails, the only moves are `ถาม:` or a human `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`. Do not skip the gate. Do not write `รอรีวิว:` yourself. Do not invent a one-off checker.
 
-งานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` ต้องสตาร์ท frontend กับ backend จริง แล้วคลิกแอปจริงตามหัว **ตรวจผ่านเมื่อ** ให้ได้ exit code 0 ก่อนบรรทัดเป็น `รอรีวิว:` ถ้าคลิกไม่ได้ ขั้นคือ `ถาม:` `<BROWSER_TOOL>` ว่าง ให้เขียน `ถาม:` บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ
+Use the existing check commands on the board, including JTek `scripts/jt-screen-check` for screen work. A new check script that the card did not order cannot reach `รอรีวิว:`. A repeated fault on the same `ชั้น:` needs an `อัปเดตกติกา` row after the rule or the check script changes. A row with no such file change is not enough. Do not split into parallel agents while **อ้างอิง** is unlinked.
 
-ก่อน `รอรีวิว:` ให้ใช้คำสั่งตรวจที่มีอยู่บน board ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบ เว้นแต่ card สั่งให้สร้างเครื่องมือนั้น ความผิดชั้นเดียวกันที่ซ้ำ ให้แก้กติกา skill เกต หรือสคริปต์ตรวจ แล้วจดใน plan การจด `อัปเดตกติกา` อย่างเดียวโดยไฟล์กติกานั้นไม่เปลี่ยน บรรทัดต้องไม่เป็น `รอรีวิว:` ใบที่เปิดอยู่และเป็นเรื่องเดียวกันให้รวมหรือทำทีละใบ ห้ามแยกเอเจนต์โดยหัว **อ้างอิง** ยังไม่ลิงก์ เกตเป็นตัวปฏิเสธ
-
-งานที่ผู้ใช้เห็นจอ ก่อนบรรทัดเป็น `รอรีวิว:` ให้ใช้คำสั่งตรวจจอของ JTek หรือคำสั่งตรวจที่มีอยู่บน board ห้ามสร้างสคริปต์ตรวจใหม่เฉพาะรอบ
-
-```bash
-python3 <โฟลเดอร์ jtek-skill>/scripts/jt-screen-check --root . --id <id>
-```
-
-คำสั่งนี้สตาร์ทแอปเมื่อ card กำหนดไว้ แล้วรัน playwright หรือ cypress จาก PATH หรือจากแพ็กเกจของ repo จบไม่เป็นศูนย์เมื่อสตาร์ทไม่ขึ้นหรือเครื่องมือตรวจไม่ผ่าน ใส่ `--no-start` เมื่อเกตสตาร์ทแอปให้แล้ว
-
-มี remote แล้ว หลังเกตอื่นผ่าน ให้ push `card-<id>` แล้วเปิด draft PR เข้าสาขาคิว `gh` ต้องใช้ได้ และยังไม่มี PR เปิดสำหรับ head เดิม
+The line must not be `รอรีวิว:` until the gate allows it. If a draft pull request cannot be opened, write `ถาม:`.
 
 ```bash
 gh pr create --draft --base <สาขาคิว> --head card-<id> --title "<id>" --body "card <id>"
 ```
 
-เปิดไม่ได้ให้เขียน `ถาม:` บรรทัดต้องไม่เป็น `รอรีวิว:` เกตเป็นตัวปฏิเสธ ไม่มี remote ให้ใช้ `รอรีวิว: local` คน merge PR นั้นบน GitHub
+With a remote, push `card-<id>` and open that draft into the queue branch after the other gates pass. `gh` must be available, and no open pull request may already exist for that head. With no remote, the line is `รอรีวิว: local`. The human merges that pull request on GitHub.
 
-## คำสั่ง
+## Commands
 
-| คำสั่ง | ทำอะไร |
+| Command | What it does |
 |---|---|
-| `/jt-new-board` | สร้าง `card-loop/board.md` เติมตารางจาก repo และชื่อ skill จากหัว **ค้น** แล้วถามชื่อ repo คู่ครั้งเดียว |
-| `/jt-ask-brief` | ถามว่าอยากทำอะไร แล้วเขียน `card-loop/brief.md` ไม่สร้าง card |
-| `/jt-new-card` | ถามจนคนรับร่าง ครั้งเดียวได้หลายใบ แล้วสร้าง card กับบรรทัดบน board |
-| `/jt-read-board` | อ่านคิว ไม่ลงมือ |
-| `/jt-find-skills` | เสนอชื่อ `<REPO_SKILLS>` ของ repo ที่เปิดอยู่ และ `<TEK_SKILLS>` ตามจังหวะที่ลูปใช้อยู่แล้ว ให้คนเลือก ไม่ติดตั้ง และยังไม่เขียน board จนกว่าคนจะรับ |
-| `/jt-do-work` | ทำทุก card ที่ลงมือได้ ข้ามใบที่ `รอรีวิว:` ก่อนบรรทัดเป็น `รอรีวิว:` งานที่แตะโค้ดต้อง review diff และ `scripts/jt-diff-check` ต้องจบเป็นศูนย์ การจดใน plan ไม่นับ ถ้า review นั้นทำไม่ได้ ขั้นคือ `ถาม:` และบรรทัดต้องไม่เป็น `รอรีวิว:` งานที่ผู้ใช้เห็นจอ ทุกชนิด ไม่เฉพาะ `fix` ต้องสตาร์ท frontend กับ backend จริง แล้วคลิกแอปจริงตามหัว **ตรวจผ่านเมื่อ** ถ้าคลิกไม่ได้ ขั้นคือ `ถาม:` `<BROWSER_TOOL>` ว่าง ให้เขียน `ถาม:` บรรทัดต้องไม่เป็น `รอรีวิว:` ใบที่ `ชั้น:` เดียวกันแต่ยังไม่ลิงก์ให้เขียน `ถาม:` ห้ามแยกเอเจนต์ ใช้คำสั่งตรวจที่มีอยู่ ห้ามสร้างสคริปต์ตรวจใหม่ที่ card ไม่ได้สั่ง ความผิดชั้นเดิมซ้ำต้องจด `อัปเดตกติกา` หลังแก้กติกาหรือสคริปต์ตรวจ การจดแถวอย่างเดียวไม่พอ |
-| `/jt-open-work` | เปิดของที่ `รอรีวิว:` เทียบหัว **ตรวจผ่านเมื่อ** ไม่เปลี่ยนบรรทัด |
-| `/jt-send-back` | เปลี่ยน `รอรีวิว:` เป็น `ส่งกลับ:` |
-| `/jt-merge` | เปลี่ยนเครื่องหมายบนบรรทัดเป็น `merge:` เมื่อ `landed: ancestor` หรือ `landed: squash` รวมกรณี merge ผ่าน PR ไม่เปิด PR ไม่ merge PR และไม่รัน git merge |
-| `/jt-drop-card` | เปลี่ยน `- [ ]` เป็น `- [x]` ต่อท้าย `ไม่เอา:` พร้อมเหตุ ไม่ลบบรรทัดอื่น |
-| `/jt-move-card` | ย้ายบรรทัดบน board อย่างเดียว ไม่เปลี่ยนสถานะของบรรทัดนั้น ไม่แตะโค้ด และไม่ merge |
-| `/jt-next-step` | อ่านบรรทัดบน board แล้วทำขั้นถัดไปที่กติกาอนุญาต ไม่ merge ใบชั้นเดียวกันที่ยังไม่ลิงก์ให้หยุด |
+| `/jt-new-board` | Create `card-loop/board.md`, fill the table from the repo and skill names from **ค้น**, and ask once for the paired repo name. |
+| `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. Do not create a card. |
+| `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards and their board lines. |
+| `/jt-read-board` | Read the queue. Do not start work. |
+| `/jt-find-skills` | Offer `<REPO_SKILLS>` names for the open repo and `<TEK_SKILLS>` names for the current loop moment. The human chooses. Do not install. Do not write the board until the human accepts. |
+| `/jt-do-work` | Work every card the line allows. Skip `รอรีวิว:`. Run `gate.py reach-review` and trust it. Do not write `รอรีวิว:` yourself. |
+| `/jt-open-work` | Open a card that is `รอรีวิว:` and compare **ตรวจผ่านเมื่อ**. Do not change the line. |
+| `/jt-send-back` | Change `รอรีวิว:` to `ส่งกลับ:`. |
+| `/jt-merge` | Set the line mark to `merge:` when `landed: ancestor` or `landed: squash`, including a merge through a pull request. Do not open a PR, merge a PR, or run git merge. |
+| `/jt-drop-card` | Change `- [ ]` to `- [x]`, append `ไม่เอา:` plus the reason, and do not delete other lines. |
+| `/jt-move-card` | Move a board line only. Do not change that line's status, touch code, or merge. |
+| `/jt-next-step` | Read the board line and do the next step the rules allow. Do not merge. Stop when same-`ชั้น:` cards are still unlinked. |
 
-`/jt-merge` เรียก `python3 <โฟลเดอร์ skill jt-next-step>/gate.py landed --root . --id <id>` แล้วเปลี่ยนเฉพาะเครื่องหมายบนบรรทัด `landed: ancestor` คือ commit ของ `card-<id>` อยู่ในสาขาคิว `landed: squash` คือ pull request ที่ head เป็น `card-<id>` มีสถานะ `MERGED` รวม squash ที่ทำให้ `git merge-base --is-ancestor` ไม่ผ่าน สคริปต์ไม่รัน git merge ถ้าได้ `refused: not-landed` คนยังไม่ได้รวมโค้ด
+`/jt-merge` runs `python3 <jt-next-step skill folder>/gate.py landed --root . --id <id>` and changes only the line mark. `landed: ancestor` means the `card-<id>` commit is on the queue branch. `landed: squash` means the pull request whose head is `card-<id>` has status `MERGED`, including a squash that makes `git merge-base --is-ancestor` fail. The script does not run git merge. On `refused: not-landed`, the human has not landed the code yet.
 
-ใน Codex ใช้ `$` แทน `/` พิมพ์แค่ชื่อคำสั่งได้
+In Codex, use `$` instead of `/`. You can type only the command name.
 
-ต่อท้ายรหัสข้อได้ที่ `/jt-new-card` `/jt-open-work` `/jt-send-back` `/jt-merge` `/jt-drop-card` และ `/jt-move-card` `/jt-do-work` ไม่รับรหัส เพราะทำทุกใบที่ลงมือได้ `/jt-drop-card` รับเหตุต่อท้ายรหัส
-
+You can append a card id to `/jt-new-card`, `/jt-open-work`, `/jt-send-back`, `/jt-merge`, `/jt-drop-card`, and `/jt-move-card`. `/jt-do-work` does not take an id, because it works every card the line allows. `/jt-drop-card` takes a reason after the id.
