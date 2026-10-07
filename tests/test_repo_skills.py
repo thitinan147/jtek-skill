@@ -313,5 +313,47 @@ class DraftPrSkillTests(unittest.TestCase):
         self.assertNotIn("reach-review", loop)
 
 
+class PlanTemplateTests(unittest.TestCase):
+    def test_plan_template_requires_done_when_and_escape(self) -> None:
+        plan = (REPO / "skills" / "jt-card-gate" / "assets" / "plan.template.md").read_text(
+            encoding="utf-8"
+        )
+        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
+            encoding="utf-8"
+        )
+        new_card = (REPO / "skills" / "jt-new-card" / "SKILL.md").read_text(encoding="utf-8")
+        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
+        for heading in (
+            "## Goal",
+            "## Architecture",
+            "## Files",
+            "## Steps",
+            "## Out of scope",
+            "## Done when",
+            "## Escape",
+            "## review-diff",
+            "## decisions",
+        ):
+            self.assertIn(heading, plan)
+        self.assertIn("Optional. Leave this heading empty unless two modules must change together.", plan)
+        self.assertIn("| Path | Action |", plan)
+        self.assertIn("update-rule", plan)
+        self.assertNotIn("\n## do\n", plan)
+        self.assertNotIn("\n## risks\n", plan)
+        self.assertIn("### Plan", loop)
+        self.assertIn(
+            "If Escape is empty, or an Escape line is true, write `ask:` and do not set `review:`.",
+            loop,
+        )
+        self.assertIn("A Done when line is a command to run, or an artifact to open.", loop)
+        self.assertIn("If Done when has no command and no artifact, write `ask:`.", loop)
+        self.assertIn("**Plan**", new_card)
+        self.assertIn("one Escape stop", new_card)
+        self.assertIn("**Plan**", work)
+        self.assertIn("Then follow **Plan** in `loop.md`.", work)
+        for text in (plan, loop, new_card, work):
+            self.assertNotIn("usePreventNavigation", text)
+
+
 if __name__ == "__main__":
     unittest.main()

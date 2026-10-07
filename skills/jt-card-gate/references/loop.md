@@ -101,6 +101,14 @@ human accepts the draft from /jt-new-card
 - Do not push the main branch until the human merges it.
 - Do not put a model trailer on a commit.
 
+### Plan
+
+Create `card-loop/plan/<id>.md` from `assets/plan.template.md` in this skill. Fill Goal, Done when, and Escape before you edit work files. Architecture may be empty. Fill Files and Steps when you know the paths and the order.
+
+A Done when line is a command to run, or an artifact to open. If Done when has no command and no artifact, write `ask:`. Do not open review when a Done when line has not been run. Do not open review when the command fails or the artifact is missing.
+
+If Escape is empty, or an Escape line is true, write `ask:` and do not set `review:`.
+
 ### Closed intent
 
 The card has one kind, one path, and `do`, `out`, and `pass` headings that can be carried out without choosing for the human.

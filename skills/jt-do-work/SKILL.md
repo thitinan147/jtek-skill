@@ -22,6 +22,7 @@ Before work, read these headings in `loop.md` and follow them.
 - Irreversible work. **Irreversible work**.
 - Three evidence rounds. **Three rounds**.
 - When review is forbidden. **Rules** and **Summary**.
+- The plan shape and when to stop. **Plan**.
 
 If the gate refuses, follow **Write ask** or **Three rounds**. Do not write `review:` yourself.
 
@@ -64,9 +65,9 @@ Done when the queue-branch line contains `ask:` and the card heading `ask` conta
 
 If the line is `send-back:` and branch `card-<id>` does not exist, follow **Write ask**.
 
-If branch `card-<id>` already exists, check it out and merge the queue branch into this branch. Keep the existing draft PR. Create a new branch only from the queue branch. Do not create it from another `card-<id>` branch. On a conflict, edit this branch to match `do`, then rerun the relevant tests. If you cannot resolve the conflict without choosing for the human, follow **Write ask**. If `files` in the plan is empty, copy it from the card before you edit work files.
+If branch `card-<id>` already exists, check it out and merge the queue branch into this branch. Keep the existing draft PR. Create a new branch only from the queue branch. Do not create it from another `card-<id>` branch. On a conflict, edit this branch to match `do`, then rerun the relevant tests. If you cannot resolve the conflict without choosing for the human, follow **Write ask**. If the Files table has no path, copy paths from the card before you edit work files.
 
-If the branch does not exist yet, create `card-<id>` from the queue branch and check it out. Create `card-loop/plan/<id>.md` from `assets/plan.template.md` in skill `jt-card-gate`. Set Branch to `card-<id>`. Copy `files` from the card. Commit only the plan file on this branch.
+If the branch does not exist yet, create `card-<id>` from the queue branch and check it out. Create `card-loop/plan/<id>.md` from `assets/plan.template.md` in skill `jt-card-gate`. Set Branch to `card-<id>`. Copy card paths into the Files table. Set each action to create, edit, or delete. Copy `do` into Goal, `out` into Out of scope, and `pass` into Done when. Write one Escape line from a stop the card already chose. Then follow **Plan** in `loop.md`. Commit only the plan file on this branch.
 
 If the line is `send-back:` and `round-status` is not `send-back`, set `round` to 1 and `round-status` to `send-back`, then commit only the plan file on `card-<id>`. If `round-status` is already `send-back`, keep the current round.
 
@@ -78,7 +79,7 @@ Then, on `card-<id>`:
 - For `test`, the added test is green, and you do not change production behavior to make it pass.
 - Screen work of every kind needs `screen: yes` plus `start:`, `port:`, `wait:`, and `click:` on the card. Start the real frontend and the real backend from those commands. The click must exit 0 and match `pass`. If start fails or the click fails, follow **Write ask**.
 - For a screen `fix`, record the steps that show the bug. The same steps after the fix must not show it.
-- Edit only files under `files` in the plan.
+- Edit only paths in the Files table.
 - For irreversible work, follow **Irreversible work** in `loop.md`, then **Write ask**.
 - If the whole evidence set fails, follow **Three rounds** in `loop.md`.
 - Each time you choose a path, write `ask:`, or the evidence passes, add one row to `decisions`.

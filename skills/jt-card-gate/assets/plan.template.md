@@ -9,18 +9,46 @@ The agent's working notes. The human does not accept a plan before review opens.
 - Branch:
 - Commit:
 
-## do
+## Goal
 
-## out
+<one sentence from the card heading do>
 
-## files
+## Architecture
+
+Optional. Leave this heading empty unless two modules must change together.
+
+## Files
+
+| Path | Action |
+|---|---|
+| `<path>` | create, edit, or delete |
+
+## Steps
+
+1. `<step>`
+
+## Out of scope
+
+-
+
+## Done when
+
+Each line is a command to run, or an artifact to open. Do not use a line that has no command and no artifact.
+
+- `<command>`
+
+## Escape
+
+Stop when a line here is true. Write `ask:`. Do not set `review:`.
+
+-
 
 ## evidence
 
-## steps
-
 ## open-review
 
+- Every Done when line was run. The command exited 0, or the artifact is the one the line names.
+- No Escape line is true.
 - The card heading `pass` passes in the work commit
 - `feat` or `fix` runs `<TEST_CMD>` when the value is not `no-suite`
 - `<TYPECHECK_CMD>` and `<LINT_CMD>` run when that cell has a command and the touched files are in scope
@@ -35,5 +63,3 @@ The agent's working notes. The human does not accept a plan before review opens.
 
 | decision | why | evidence |
 |---|---|---|
-
-## risks
