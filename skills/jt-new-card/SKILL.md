@@ -37,7 +37,7 @@ The first round asks what should happen. After the human answers, split the work
 - A card that composes something from other cards also lists those paths under `files`. That card is picked after the cards that create those paths are on the queue branch.
 - Ask whether the user sees a screen. If they do, for every kind and not only `fix`, ask and record `screen: yes` plus the `start:` command, `port:` (comma-separated when there are several ports), `wait:` seconds, and the `click:` command. If they do not see a screen, write `screen: no`.
 
-Each card has one kind, one path, the headings `do`, `out`, and `pass`, and a board section.
+Each card has one kind, one path, the headings `do`, `out`, and `pass`, and a board section. `pass` becomes Done when on the plan. `out` becomes Out of scope. Read **Plan** in `references/loop.md` of skill `jt-card-gate`. Do not create the plan in this command.
 
 Ask another round when any card still has one of these.
 
@@ -47,6 +47,8 @@ Ask another round when any card still has one of these.
 - You would change a contract other callers use, and the card has not chosen.
 - The kind is not yet one value from **Ticket kinds** in `references/loop.md` of skill `jt-card-gate`.
 - The line does not yet know whether it belongs in **first**, **main**, or **later**.
+- `pass` is not yet a command to run, or an artifact to open.
+- You cannot yet name one Escape stop for the plan.
 
 Stop asking when every card has one kind, one path, three headings that can be carried out, and a known board section.
 
