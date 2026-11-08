@@ -9,8 +9,14 @@ Designed for **Claude Code**, **Codex**, **Cursor**, **Grok Build**, and **Antig
 ## Install
 
 ```bash
+# Recommended: pin a release so later changes cannot reach you unreviewed
+npx skills add thitinan147/jtek-skill#v21.0.0 -g
+
+# Or follow the default branch (latest, unpinned)
 npx skills add thitinan147/jtek-skill -g
 ```
+
+After installing, read [SECURITY.md](SECURITY.md): the gate runs your test command, so a human must approve it first.
 
 ## Two Commands
 

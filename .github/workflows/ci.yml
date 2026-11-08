@@ -10,23 +10,25 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ["3.10", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - run: git config --global user.email ci@example.invalid && git config --global user.name ci
       - run: python -m unittest discover -s tests
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
       - name: bandit (new shell=True without a reviewed nosec fails)
         run: uvx bandit -r skills -s B404,B603,B607,B105
       - name: Agent Skills spec validation
@@ -41,13 +43,15 @@ jobs:
   skillspector:
     # Report-only for now: jt-work-queue intentionally runs shell commands, so the score stays high.
     # Results go to the Security tab. Tighten to blocking once the baseline is stable.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
       - run: uv tool install git+https://github.com/NVIDIA/skillspector.git@v2.12.0
       - name: Scan each skill (static, no LLM)
         run: |
