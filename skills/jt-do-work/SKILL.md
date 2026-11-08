@@ -48,12 +48,10 @@ The card id is the text inside `**` on the line. The line form is under **Where 
 
 1. If branch `card-<id>` exists and work files are uncommitted, commit them on that branch. Add one row to `decisions`. Commit only the plan file on that branch.
 2. Check out the queue branch.
-3. Replace an empty `ask:` heading in the card with these three lines. Do not write the heading twice. On the board line, append `ask:`. The item stays `- [ ]`.
+3. Run `gate.py ask` to write the question to the card and append `ask:` on the board line:
 
-```markdown
-ask: <one question>
-blocked: <why work cannot continue>
-options: <choices the human can pick>
+```bash
+python3 <jt-next-step skill folder>/gate.py ask --root . --id <id> --question "<question, blocker, and options>" [--refused <token>]
 ```
 
 4. Commit only `card-loop/board.md` and `card-loop/backlog/<id>.md` on the queue branch.

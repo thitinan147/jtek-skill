@@ -289,6 +289,12 @@ class ApplyReviewTests(unittest.TestCase):
             gate.apply_waiting_review(text, "12", 0)
         self.assertEqual(caught.exception.reason, "question-open")
 
+    def test_cleared_question_replaces_ask_with_review(self) -> None:
+        text = board_text("- [ ] **12** asked (fix) ask:")
+        updated = gate.apply_waiting_review(text, "12", 0, "local", question_empty=True)
+        self.assertIn("- [ ] **12** asked (fix) review: local", updated)
+        self.assertNotIn("ask:", updated)
+
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -498,6 +504,59 @@ class ReachReviewGitTests(unittest.TestCase):
             check=True,
         )
         self.assertEqual(status.stdout.strip(), "")
+
+    def test_ask_command_and_question_cleared_to_review_flow(self) -> None:
+        first = run_gate(
+            self.repo,
+            "ask",
+            "--id",
+            "12",
+            "--question",
+            "which option?",
+            "--refused",
+            "related",
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = run_gate(
+            self.repo,
+            "ask",
+            "--id",
+            "12",
+            "--question",
+            "updated question?",
+            "--refused",
+            "test-failed",
+        )
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        card = (self.repo / "card-loop" / "backlog" / "12.md").read_text(encoding="utf-8")
+        self.assertEqual(board.count("ask:"), 1)
+        self.assertIn("- [ ] **12** fresh (feat) ask:", board)
+        self.assertEqual(card.count("\nask:"), 1)
+        self.assertIn("ask: updated question?", card)
+        self.assertEqual(card.count("\nrefused:"), 1)
+        self.assertIn("refused: test-failed", card)
+
+        refused_while_open = run_gate(
+            self.repo, "reach-review", "--id", "12", "--write", "--link", "local"
+        )
+        self.assertNotEqual(refused_while_open.returncode, 0)
+        self.assertIn("refused: question-open", refused_while_open.stdout)
+
+        cleared_card = card.replace("ask: updated question?", "ask:")
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(cleared_card, encoding="utf-8")
+        commit_all(self.repo, "docs: human clears ask")
+
+        nxt = run_gate(self.repo, "next")
+        self.assertIn("action: do-card", nxt.stdout)
+        self.assertIn("reason: question-cleared", nxt.stdout)
+
+        self._set_card_check("0")
+        reached = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertEqual(reached.returncode, 0, reached.stdout + reached.stderr)
+        final_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertIn("- [ ] **12** fresh (feat) review: local", final_board)
+        self.assertNotIn("ask:", final_board)
 
     def test_merge_argument_cannot_merge(self) -> None:
         before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")

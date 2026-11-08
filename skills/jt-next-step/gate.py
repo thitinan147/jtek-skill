@@ -530,6 +530,8 @@ def apply_waiting_review(
     card_id: str,
     test_exit: int,
     link: str = "",
+    *,
+    question_empty: bool = False,
 ) -> str:
     if not valid_card_id(card_id):
         raise GateError("invalid-id")
@@ -555,7 +557,9 @@ def apply_waiting_review(
     if token == "send-back:":
         new_line = f"{line[:start]}{suffix}{line[end:]}"
     elif token == "ask:":
-        raise GateError("question-open")
+        if not question_empty:
+            raise GateError("question-open")
+        new_line = f"{line[:start].rstrip()} {suffix}"
     elif token == "review:":
         new_line = f"{line} {cleaned}" if cleaned and re.search(r"review:\s*$", line) else line
     elif token is None:
@@ -566,6 +570,87 @@ def apply_waiting_review(
         raise GateError("merge-refused")
     start, end = found[0].start(1), found[0].end(1)
     return board_text[:start] + new_line + board_text[end:]
+
+
+def apply_card_ask(card_text: str, question: str, refused: str = "") -> str:
+    q = " ".join(question.strip().splitlines()).strip()
+    ref = refused.strip()
+    lines: list[str] = []
+    replaced_ask = False
+    for line in card_text.splitlines():
+        if line.startswith("refused:"):
+            continue
+        if line.startswith("ask:"):
+            if not replaced_ask:
+                lines.append(f"ask: {q}")
+                if ref:
+                    lines.append(f"refused: {ref}")
+                replaced_ask = True
+            continue
+        lines.append(line)
+    if not replaced_ask:
+        if lines and lines[-1].strip() != "":
+            lines.append("")
+        lines.append(f"ask: {q}")
+        if ref:
+            lines.append(f"refused: {ref}")
+    return "\n".join(lines) + "\n"
+
+
+def apply_board_ask(board_text: str, card_id: str) -> str:
+    if not valid_card_id(card_id):
+        raise GateError("invalid-id")
+    pattern = re.compile(
+        rf"^(- \[[ xX]\] \*\*{re.escape(card_id)}\*\*.*)$",
+        re.M,
+    )
+    found = list(pattern.finditer(board_text))
+    if len(found) != 1:
+        raise GateError("card-line-missing")
+    line = found[0].group(1)
+    token, start, _end = _status_span(line)
+    if line.startswith("- [x]") or line.startswith("- [X]") or token in _CLOSED:
+        raise GateError("card-closed")
+    if token == UNKNOWN_STATUS:
+        raise GateError("unknown-status")
+    if token == "ask:":
+        new_line = line
+    elif token in {"review:", "send-back:"}:
+        new_line = f"{line[:start].rstrip()} ask:"
+    elif token is None:
+        new_line = f"{line} ask:"
+    else:
+        raise GateError("card-closed")
+    if _has_boundary_token(new_line, "merge:"):
+        raise GateError("merge-refused")
+    s, e = found[0].start(1), found[0].end(1)
+    return board_text[:s] + new_line + board_text[e:]
+
+
+def cmd_ask(root: Path, card_id: str, question: str, refused: str = "") -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    board_path = root / "card-loop" / "board.md"
+    if not board_path.is_file():
+        return _refuse("board-missing")
+    text = board_path.read_text(encoding="utf-8")
+    queue = parse_queue(text)
+    if not queue or _current_branch(root) != queue:
+        return _refuse("not-on-queue-branch")
+    backlog = (root / "card-loop" / "backlog").resolve()
+    card_path = (backlog / f"{card_id}.md").resolve()
+    if not card_path.is_relative_to(backlog) or not card_path.is_file():
+        return _refuse("card-line-missing")
+    try:
+        updated_board = apply_board_ask(text, card_id)
+    except GateError as err:
+        return _refuse(err.reason, detail=err.detail)
+    updated_card = apply_card_ask(card_path.read_text(encoding="utf-8"), question, refused)
+    card_path.write_text(updated_card, encoding="utf-8")
+    board_path.write_text(updated_board, encoding="utf-8")
+    print(f"asked: {card_id}")
+    print("merge: no")
+    return 0
 
 
 def _git_env() -> dict[str, str]:
@@ -1588,6 +1673,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         return _refuse("test-cmd-empty")
     review_state = "skip"
     card_text = _read_card(root, card_id)
+    question_empty = question_text(card_text) == ""
+    if not question_empty:
+        return _refuse("question-open")
     cards = _cards_from_text(root, text)
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
@@ -1637,7 +1725,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                 return _refuse(value)
             if kind == "ok":
                 link = value
-            updated = apply_waiting_review(text, card_id, code, link)
+            updated = apply_waiting_review(
+                text, card_id, code, link, question_empty=question_empty
+            )
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
         return _refuse(err.reason, detail=err.detail, log=err.log)
@@ -1666,6 +1756,10 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--root", default=".")
 
     sub.add_parser("next", parents=[common])
+    ask_parser = sub.add_parser("ask", parents=[common])
+    ask_parser.add_argument("--id", required=True)
+    ask_parser.add_argument("--question", required=True)
+    ask_parser.add_argument("--refused", default="")
     reach = sub.add_parser("reach-review", parents=[common])
     reach.add_argument("--id", required=True)
     reach.add_argument("--write", action="store_true")
@@ -1686,6 +1780,8 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(parsed.root).resolve()
     if parsed.cmd == "next":
         return cmd_next(root)
+    if parsed.cmd == "ask":
+        return cmd_ask(root, parsed.id, parsed.question, parsed.refused)
     if parsed.cmd == "reach-review":
         return cmd_reach_review(root, parsed.id, parsed.write, parsed.link)
     if parsed.cmd == "landed":
