@@ -76,7 +76,12 @@ _STATUS_SET = frozenset(STATUS_TOKENS)
 _COLON_TOKEN = re.compile(r"(?<!\S)([^\s:]+):")
 _KIND_TAIL = re.compile(r"\([a-z]+\)\s*(.*)$")
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
+_CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
+
+
+def valid_card_id(card_id: str) -> bool:
+    return bool(_CARD_ID_RE.match(card_id))
 
 
 def status_on_line(text: str) -> str | None:
@@ -375,7 +380,7 @@ def decide(
     board: Board | None,
     *,
     brief_exists: bool,
-    dirty: bool,
+    dirty: bool | str,
     is_git: bool,
 ) -> Decision:
     if board is None:
@@ -391,8 +396,23 @@ def decide(
         return Decision("stop", reason="not-ready", fields=tuple(missing))
     if not is_git:
         return Decision("stop", reason="not-git")
-    if dirty:
+    if dirty == "unknown":
+        return Decision("stop", reason="git-status-failed")
+    if dirty is True or dirty == "dirty":
         return Decision("stop", reason="dirty")
+
+    invalid = next(
+        (
+            card
+            for card in _ordered(board.cards)
+            if not card.checked
+            and card.section in SECTION_RANK
+            and not valid_card_id(card.id)
+        ),
+        None,
+    )
+    if invalid:
+        return Decision("stop", id=invalid.id, reason="invalid-id", line=invalid.line)
 
     unknown = next(
         (
@@ -501,6 +521,8 @@ def apply_waiting_review(
     test_exit: int,
     link: str = "",
 ) -> str:
+    if not valid_card_id(card_id):
+        raise GateError("invalid-id")
     if test_exit != 0:
         raise GateError("test-failed")
     cleaned = link.strip()
@@ -577,10 +599,10 @@ def _git_show(root: Path, spec: str) -> str | None:
     return proc.stdout
 
 
-def _dirty(root: Path) -> bool:
+def _dirty(root: Path) -> str:
     proc = _run_git(root, ["status", "--porcelain", "-z"])
     if proc.returncode != 0:
-        return False
+        return "unknown"
     parts = proc.stdout.split("\0")
     i = 0
     while i < len(parts):
@@ -591,14 +613,14 @@ def _dirty(root: Path) -> bool:
         status = entry[:2]
         path = entry[3:]
         if not path.startswith("card-loop/"):
-            return True
+            return "dirty"
         if ("R" in status or "C" in status) and i + 1 < len(parts):
             i += 1
             orig_path = parts[i]
             if not orig_path.startswith("card-loop/"):
-                return True
+                return "dirty"
         i += 1
-    return False
+    return "clean"
 
 
 def read_board_text(root: Path) -> str | None:
@@ -635,7 +657,11 @@ def load_board(root: Path) -> tuple[Board | None, bool]:
         return None, False
     board = parse_board(text)
     bodies = {
-        card.id: _read_repo_file(root, board.queue_branch, f"card-loop/backlog/{card.id}.md")
+        card.id: (
+            _read_repo_file(root, board.queue_branch, f"card-loop/backlog/{card.id}.md")
+            if valid_card_id(card.id)
+            else None
+        )
         for card in board.cards
     }
     brief = _read_repo_file(root, board.queue_branch, "card-loop/brief.md")
@@ -679,11 +705,10 @@ def _section_h2(text: str, title: str) -> str:
 
 def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]:
     card = ""
-    if queue:
+    if valid_card_id(card_id) and queue:
         card = _git_show(root, f"{queue}:card-loop/backlog/{card_id}.md") or ""
     if not card:
-        path = root / "card-loop" / "backlog" / f"{card_id}.md"
-        card = path.read_text(encoding="utf-8") if path.is_file() else ""
+        card = _read_card(root, card_id)
     plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
     header = _section_label(card, "pass:")
     diff_ok = False
@@ -777,11 +802,12 @@ def format_packet(packet: dict[str, str | bool]) -> list[str]:
 
 def cmd_next(root: Path) -> int:
     board, brief_exists = load_board(root)
+    has_git = _is_git(root) or (root / ".git").exists()
     decision = decide(
         board,
         brief_exists=brief_exists,
-        dirty=_dirty(root) if board is not None and _is_git(root) else False,
-        is_git=True if board is None else _is_git(root),
+        dirty=_dirty(root) if board is not None and has_git else "clean",
+        is_git=True if board is None else has_git,
     )
     extra = None
     if decision.action == "open-review" and decision.id and board is not None:
@@ -1096,6 +1122,8 @@ def screen_check_main(argv: list[str] | None = None) -> int:
     wait = args.wait
     browser = args.browser
     if args.id:
+        if not valid_card_id(args.id):
+            return _refuse("invalid-id")
         board = root / "card-loop" / "board.md"
         text = board.read_text(encoding="utf-8") if board.is_file() else ""
         card = _read_card(root, args.id)
@@ -1259,7 +1287,12 @@ def pair_passed(primary: Path, name: str, card_id: str) -> bool:
 
 
 def _read_card(root: Path, card_id: str) -> str:
-    path = root / "card-loop" / "backlog" / f"{card_id}.md"
+    if not valid_card_id(card_id):
+        return ""
+    backlog = (root / "card-loop" / "backlog").resolve()
+    path = (backlog / f"{card_id}.md").resolve()
+    if not path.is_relative_to(backlog):
+        return ""
     if path.is_file():
         return path.read_text(encoding="utf-8")
     return ""
@@ -1339,6 +1372,8 @@ def landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
 
 
 def cmd_landed(root: Path, card_id: str) -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
         return _refuse("board-missing")
@@ -1385,6 +1420,8 @@ def _card_worktree_drift(root: Path, card_id: str) -> bool:
 
 
 def diff_review_detail(root: Path, card_id: str) -> str:
+    if not valid_card_id(card_id):
+        return "no-review"
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
         return "no-review"
@@ -1415,6 +1452,8 @@ def diff_check_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", default=".")
     parser.add_argument("--id", required=True)
     args = parser.parse_args(argv)
+    if not valid_card_id(args.id):
+        return _refuse("invalid-id")
     status = diff_review_detail(Path(args.root).resolve(), args.id)
     print(f"diff-check: {status}")
     return 0 if status in {"ok", "skip"} else 1
@@ -1570,6 +1609,8 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
 
 
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
     board_path = root / "card-loop" / "board.md"
     if not board_path.is_file():
         return _refuse("board-missing")

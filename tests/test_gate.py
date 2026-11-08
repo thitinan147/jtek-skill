@@ -527,6 +527,35 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn("action: do-card", result.stdout)
         self.assertIn("merge: no", result.stdout)
 
+    def test_broken_git_status_stops_with_git_status_failed(self) -> None:
+        (self.repo / ".git" / "index").write_bytes(b"corrupt-index-bytes")
+        result = run_gate(self.repo, "next")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("action: stop", result.stdout)
+        self.assertIn("reason: git-status-failed", result.stdout)
+        self.assertNotIn("action: do-card", result.stdout)
+
+    def test_invalid_card_id_from_cli_is_refused(self) -> None:
+        for bad_id in ("../../etc/passwd", "1/2", "..", "abc", "../12"):
+            for subcmd in ("reach-review", "landed", "diff-check", "screen-check"):
+                result = run_gate(self.repo, subcmd, "--id", bad_id)
+                self.assertNotEqual(result.returncode, 0, f"{subcmd} {bad_id}")
+                self.assertIn("refused: invalid-id", result.stdout, f"{subcmd} {bad_id}")
+
+    def test_board_with_invalid_card_id_does_not_read_outside_backlog_and_stops(self) -> None:
+        secret = self.repo / "card-loop" / "secret.md"
+        secret.write_text("ask: LEAKED_SECRET\n", encoding="utf-8")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **../secret** traversal (feat) ask:"),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add bad card id")
+        self.assertEqual(gate._read_card(self.repo, "../secret"), "")
+        result = run_gate(self.repo, "next")
+        self.assertIn("action: stop", result.stdout)
+        self.assertIn("reason: invalid-id", result.stdout)
+        self.assertNotIn("LEAKED_SECRET", result.stdout)
+
     def _advance_card(self) -> None:
         git(self.repo, "checkout", "card-12")
         git(self.repo, "merge", "main")
