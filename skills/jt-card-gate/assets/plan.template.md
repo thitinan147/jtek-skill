@@ -55,7 +55,6 @@ Stop when a line here is true. Write `ask:`. Do not set `review:`.
 - Work that touches code has a `review-diff` heading that cites the latest code commit, and `python3 <jt-next-step skill folder>/gate.py diff-check` exits 0
 - Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-next-step skill folder>/gate.py screen-check` or a check command already on the board
 - Use the check commands already on the board. Do not create a new check script unless `do` says to create it
-- A repeated fault on the same layer has an `update-rule` row, and the diff contains a skill rule, the gate, or a lint or check script. A row alone is not enough
 
 ## review-diff
 

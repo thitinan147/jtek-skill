@@ -78,7 +78,7 @@ human accepts the draft from /jt-new-card
 - If intent is not closed, the work is irreversible, or 3 rounds are used and the evidence still fails, write `ask:` at the end of the card and at the end of the line, then skip to an item that can be worked.
 - Open review only when the evidence is complete, the relevant tests are green, and the diff stays inside `do` and does not cross `out`.
 - Before you open review, use the existing check commands on the board, which are `<TEST_CMD>`, `<TYPECHECK_CMD>`, and `<LINT_CMD>`. Do not create a new check script for this round unless `do` says to create that tool. If you create one without that order, the line must not be `review:`. The gate refuses.
-- When the same layer fails again, change the skill rule, the gate, or the lint or check script, rather than patching only that card's code, and record an `update-rule` row in the plan's `decisions` table. If you patch only one card, or you record a row while the rule file does not change, the line must not be `review:`. The gate refuses.
+- When recurring failures occur across cards, propose a new `chore` card with evidence for human approval. Never modify rule files (`SKILL.md` or `gate.py`) inside the current card's diff.
 - Open cards that share `layer:` must be combined or done one at a time. Put the other card's id under `refs`. Do not split into parallel agents without a link. `/jt-do-work` may write `ask:`. `/jt-next-step` may stop.
 - The agent does not check `merge:` or `drop:`, and does not merge the main branch.
 - Do not push the main branch until the human merges it.
@@ -156,7 +156,7 @@ If `<BROWSER_TOOL>` is empty, start does not come up, or the click misses the `p
 
 Before the line is `review:`, screen work uses the JTek screen command at `python3 <jt-next-step skill folder>/gate.py screen-check` or a check command already on the board. Do not create a new check script for this round.
 
-For a screen `fix`, make the bug appear on the same screen before the fix, then repeat the same steps after the fix until it does not appear. Green tests with the bug still on screen cannot open review.
+For a screen `fix`, make the bug appear on the same screen before the fix, then run the same steps after the fix until it does not appear. Green tests with the bug still on screen cannot open review.
 
 When `<TEST_CMD>` is `no-suite` and a `feat` or `fix` card does not name a test command under `pass`, intent is not closed. Write `ask:` and request a test command. An empty `<TEST_CMD>` cell stops the whole queue before you pick a card.
 
@@ -191,7 +191,6 @@ The human calls `/jt-open-work` before deciding. An empty `decisions` table, or 
 | The screen cannot be clicked | `ask:` on the card and the line |
 | Evidence passed | Open a draft PR into the queue branch, append `review:`, and pick the next item. If it cannot be opened, write `ask:`. |
 | A new check script the card did not order | Do not open review |
-| The same layer failed again and the rule is unchanged | Do not open review. Record `update-rule` after the rule or the check script changes. A row alone is not enough. |
 | Same-layer cards are still unlinked | `ask:`, or stop. Do not split agents. |
 | The human accepts | `/jt-merge` |
 | The human sends it back | `/jt-send-back`, then `/jt-do-work` |

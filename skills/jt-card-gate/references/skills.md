@@ -24,4 +24,4 @@ Do not open a repo skill while picking a card, while writing `ask:`, or when the
 
 If those skills pass but the evidence in loop.md is incomplete, do not open review.
 
-A name from `<TEK_SKILLS>` does not replace the check commands on the board, and it does not replace an `update-rule` row when the same layer fails again. A row with no rule-file change is not enough. This row may be empty.
+A name from `<TEK_SKILLS>` does not replace the check commands on the board. This row may be empty.

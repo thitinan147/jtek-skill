@@ -957,7 +957,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
 
-    def test_same_topic_without_a_rule_update_cannot_reach_review(self) -> None:
+    def test_same_topic_linked_cards_can_reach_review_without_rule_update(self) -> None:
         self._topic_cards(["13"])
         git(self.repo, "checkout", "card-12")
         git(self.repo, "merge", "main")
@@ -966,92 +966,11 @@ class ReachReviewGitTests(unittest.TestCase):
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         git(self.repo, "checkout", "main")
         self._write_plan("12", sha)
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("refused: repeat-patch", result.stdout)
-        self.assertIn("detail: no-row", result.stdout)
-        self.assertIn("merge: no", result.stdout)
-        self.assertNotIn("next: ask", result.stdout)
-        self.assertEqual(after, before)
-        self.assertNotIn("review:", after)
-
-    def test_same_topic_plan_row_without_a_rule_file_cannot_reach_review(self) -> None:
-        self._topic_cards(["13"])
-        git(self.repo, "checkout", "card-12")
-        git(self.repo, "merge", "main")
-        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-        commit_all(self.repo, "fix: patch only this card")
-        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        git(self.repo, "checkout", "main")
-        self._write_plan("12", sha, "update-rule | same-layer | skills/jt-card-gate/SKILL.md")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        plan = git(self.repo, "show", "card-12:card-loop/plan/12.md").stdout
-        names = git(
-            self.repo,
-            "diff",
-            "--name-only",
-            "main...card-12",
-            "--",
-            ".",
-            ":(exclude)card-loop",
-        ).stdout
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("refused: repeat-patch", result.stdout)
-        self.assertIn("detail: prose-only", result.stdout)
-        self.assertIn("merge: no", result.stdout)
-        self.assertEqual(after, before)
-        self.assertNotIn("review:", after)
-        self.assertIn("update-rule", plan)
-        self.assertIn("app.py", names)
-        self.assertNotIn("SKILL.md", names)
-        self.assertNotIn("gate.py", names)
-
-    def test_same_topic_with_a_recorded_rule_update_can_reach_review(self) -> None:
-        self._topic_cards(["13"])
-        git(self.repo, "checkout", "card-12")
-        git(self.repo, "merge", "main")
-        (self.repo / "check.py").write_text(
-            "import sys\nsys.exit(0)\n# rule\n",
-            encoding="utf-8",
-        )
-        commit_all(self.repo, "fix: update the checker")
-        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        git(self.repo, "checkout", "main")
-        self._write_plan("12", sha, "update-rule | same-layer | check.py")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("allowed", result.stdout)
         self.assertIn("review: local", board)
-        self.assertNotIn("merge:", board)
-        self.assertEqual(board.count("review:"), 1)
-
-    def test_rule_update_on_the_linked_card_covers_the_next_card(self) -> None:
-        self._topic_cards(["13"])
-        git(self.repo, "checkout", "card-12")
-        git(self.repo, "merge", "main")
-        (self.repo / "check.py").write_text(
-            "import sys\nsys.exit(0)\n# rule\n",
-            encoding="utf-8",
-        )
-        commit_all(self.repo, "fix: update the checker")
-        git(self.repo, "checkout", "main")
-        git(self.repo, "branch", "card-13")
-        git(self.repo, "checkout", "card-13")
-        (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
-        commit_all(self.repo, "fix: patch the second card")
-        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        git(self.repo, "checkout", "main")
-        self._write_plan("13", sha, "update-rule | same-layer | check.py")
-        result = run_gate(self.repo, "reach-review", "--id", "13", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("**13** two (fix) review: local", board)
-        self.assertNotIn("**12** one (fix) review:", board)
         self.assertNotIn("merge:", board)
 
     def test_a_single_topic_can_patch_code_without_a_rule_row(self) -> None:
@@ -1065,7 +984,6 @@ class ReachReviewGitTests(unittest.TestCase):
         board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("review: local", board)
-        self.assertNotIn("update-rule", board)
 
     def test_multi_port_screen_check(self) -> None:
         port1 = free_port()
@@ -1819,7 +1737,7 @@ class GateSourceTests(unittest.TestCase):
         self.assertNotIn("REPO_SKILLS", source)
         self.assertNotIn("TEK_SKILLS", source)
         self.assertIn("one-off-checker", source)
-        self.assertIn("repeat-patch", source)
+        self.assertNotIn("repeat-patch", source)
         self.assertIn('reason="related"', source)
         self.assertIn("pr-missing", source)
         self.assertNotIn("pr create", source)

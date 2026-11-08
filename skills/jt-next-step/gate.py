@@ -65,7 +65,6 @@ NEXT_FOR = {
     "one-off-checker": "retry",
     "card-branch-missing": "retry",
     "merge-refused": "retry",
-    "repeat-patch": "retry",
     "related": "ask",
     "browser-empty": "ask",
     "browser-missing": "ask",
@@ -1523,25 +1522,6 @@ def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) 
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def _is_rule_path(path: str) -> bool:
-    name = path.rsplit("/", 1)[-1]
-    folded = f"/{path.strip('/')}"
-    if name in {"SKILL.md", "gate.py"}:
-        return True
-    if "/skills/" in folded or "/rules/" in folded:
-        return True
-    return _CHECKER_BASENAME.match(name) is not None
-
-
-def _cited(path: str, section: str) -> bool:
-    if path in section:
-        return True
-    name = path.rsplit("/", 1)[-1]
-    if "/" in path and name in {"SKILL.md", "gate.py"}:
-        return False
-    return name in section
-
-
 def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
     added = _diff_names(root, queue, card_id, added_only=True)
     if not added:
@@ -1555,29 +1535,6 @@ def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> boo
             continue
         return True
     return False
-
-
-def repeat_patch_missing(root: Path, queue: str, card_id: str, cards: list[Card]) -> str:
-    current = next((card for card in cards if card.id == card_id), None)
-    if current is None:
-        return ""
-    siblings = _same_topic(current, cards)
-    if not siblings:
-        return ""
-    plan = ""
-    if _branch_exists(root, f"card-{card_id}"):
-        plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
-    section = _section_h2(plan, "decisions")
-    if "update-rule" not in section:
-        return "no-row"
-    names: list[str] = []
-    for item in (current, *siblings):
-        found = _diff_names(root, queue, item.id)
-        if found:
-            names.extend(found)
-    if any(_is_rule_path(path) and _cited(path, section) for path in names):
-        return ""
-    return "prose-only"
 
 
 def _has_remote(root: Path) -> bool:
@@ -1672,9 +1629,6 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             review_state = "open"
         if one_off_checker(root, queue, card_id, card_text):
             return _refuse("one-off-checker")
-        repeat = repeat_patch_missing(root, queue, card_id, cards)
-        if repeat:
-            return _refuse("repeat-patch", detail=repeat)
     try:
         need_screen = sees_screen(card_text)
         need_test = (test_cmd.strip() != NO_SUITE)

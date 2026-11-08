@@ -83,7 +83,6 @@ Then, on `card-<id>`:
 - For irreversible work, follow **Irreversible work** in `loop.md`, then **Write ask**.
 - If the whole evidence set fails, follow **Three rounds** in `loop.md`.
 - Each time you choose a path, write `ask:`, or the evidence passes, add one row to `decisions`.
-- If this card and another open card share `layer:`, change the skill rule, the gate, or the lint or check script, then add an `update-rule` row in `decisions`. The evidence cell is that path. Do not patch only this card's code. A row alone, with no such file in the diff, cannot open review.
 
 Before you open review, run the existing check commands on the board. Run `<TEST_CMD>`, `<TYPECHECK_CMD>`, and `<LINT_CMD>` when the field has a command and the touched files are in scope. For `feat` or `fix`, run `<TEST_CMD>` unless the value is `no-suite`. For any other kind whose value is `no-suite`, write in the review notes that there is no test suite. Do not create a new check script for this round unless `do` says to create that file. Screen work, before `review:`, uses JTek `python3 <jt-next-step skill folder>/gate.py screen-check` or another existing check command on the board. With `<BROWSER_TOOL>` set, start from `start:` and `port:`, and set `click:` to `python3 <jt-next-step skill folder>/gate.py screen-check --root . --no-start`, including other pages that read the same state. With `<BROWSER_TOOL>` empty on screen work, follow **Write ask**. When the work is not on screen and `<BROWSER_TOOL>` is empty, write which surface could not be checked.
 
@@ -122,7 +121,7 @@ For any other `refused:`, follow `next:` (`next: retry` → **Three rounds**, `n
 | Output | Action |
 |---|---|
 | `next: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch` | Follow **Write ask**. Do not set `review:`. |
-| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch` | Follow **Three rounds** on this card. Do not set `review:`. |
+| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker` | Follow **Three rounds** on this card. Do not set `review:`. |
 | `next: stop` or any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
 
 When the script passes, the line is `review:` followed by that draft URL. Set `round-status` in the plan to `review`. Commit only the plan file on `card-<id>`. Check out the queue branch and commit only `card-loop/board.md`. The item stays `- [ ]`.
