@@ -686,10 +686,127 @@ class ReachReviewGitTests(unittest.TestCase):
         skipped_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
         self.assertEqual(skipped.returncode, 0, skipped.stdout + skipped.stderr)
+        self.assertIn("tier: quick", skipped.stdout)
         self.assertIn("repo-review: skip", skipped.stdout)
         self.assertNotIn("repo-review: open", skipped.stdout)
         self.assertIn("review: local", skipped_board)
         self.assertIn("a note in the plan, then continue", noted.stdout)
+
+    def test_quick_tier_docs_and_style_pass_without_plan(self) -> None:
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** readme (docs)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: set docs card")
+        self._advance_card()
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "README.md").write_text("# Docs\n", encoding="utf-8")
+        commit_all(self.repo, "docs: add readme")
+        git(self.repo, "checkout", "main")
+        res_docs = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(res_docs.returncode, 0, res_docs.stdout + res_docs.stderr)
+        self.assertIn("tier: quick", res_docs.stdout)
+        self.assertIn("repo-review: skip", res_docs.stdout)
+
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** format (style)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: set style card")
+        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        commit_all(self.repo, "style: format app")
+        git(self.repo, "checkout", "main")
+        res_style = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(res_style.returncode, 0, res_style.stdout + res_style.stderr)
+        self.assertIn("tier: quick", res_style.stdout)
+        self.assertIn("repo-review: skip", res_style.stdout)
+
+    def test_adaptive_gate_escalates_to_standard_tier(self) -> None:
+        for path in ("requirements.txt", "docs/conf.py"):
+            (self.repo / "card-loop" / "board.md").write_text(
+                board_text(f"- [ ] **12** note {path} (docs)", test=gate.NO_SUITE),
+                encoding="utf-8",
+            )
+            commit_all(self.repo, f"docs: board for {path}")
+            git(self.repo, "branch", "-D", "card-12")
+            git(self.repo, "branch", "card-12")
+            git(self.repo, "checkout", "card-12")
+            target = self.repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("x = 1\n", encoding="utf-8")
+            commit_all(self.repo, f"docs: touch {path}")
+            git(self.repo, "checkout", "main")
+            res = run_gate(self.repo, "reach-review", "--id", "12")
+            self.assertNotEqual(res.returncode, 0, path)
+            self.assertIn("refused: review-diff", res.stdout, path)
+
+        # feat card with docs: commit -> Standard and refused: review-diff without review
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** feature (feat)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: set feat card")
+        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "README.md").write_text("# Sneaky\n", encoding="utf-8")
+        commit_all(self.repo, "docs: sneaky commit on feat card")
+        git(self.repo, "checkout", "main")
+        res_feat_docs = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertNotEqual(res_feat_docs.returncode, 0)
+        self.assertIn("refused: review-diff", res_feat_docs.stdout)
+
+        # feat card modified to (style) after branching -> still Standard
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** feature two (feat)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: feat at branch point")
+        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("X = 2\n", encoding="utf-8")
+        commit_all(self.repo, "style: try to downgrade tier")
+        git(self.repo, "checkout", "main")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** feature two (style)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        res_mutated = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertNotEqual(res_mutated.returncode, 0)
+        self.assertIn("refused: review-diff", res_mutated.stdout)
+
+        # docs card with screen: yes -> Standard
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** docs screen (docs)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["README.md"], kind="docs", screen=True),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: docs card with screen")
+        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "README.md").write_text("# Screen Docs\n", encoding="utf-8")
+        commit_all(self.repo, "docs: update readme")
+        git(self.repo, "checkout", "main")
+        self.assertEqual(
+            gate.card_tier(
+                self.repo,
+                "main",
+                "12",
+                (self.repo / "card-loop" / "backlog" / "12.md").read_text(encoding="utf-8"),
+            ),
+            "standard",
+        )
+        res_screen_docs = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertNotEqual(res_screen_docs.returncode, 0)
+        self.assertIn("refused: review-diff", res_screen_docs.stdout)
 
     def test_plan_note_on_a_code_commit_cannot_reach_review(self) -> None:
         (self.repo / "card-loop" / "board.md").write_text(

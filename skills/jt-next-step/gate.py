@@ -108,9 +108,30 @@ UNKNOWN_STATUS = "unknown:"
 _STATUS_SET = frozenset(STATUS_TOKENS)
 _COLON_TOKEN = re.compile(r"(?<!\S)([^\s:]+):")
 _KIND_TAIL = re.compile(r"\([a-z]+\)\s*(.*)$")
+_KIND_PAREN = re.compile(r"\(([a-z]+)\)\s*(.*)$")
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
+_DOC_EXTS = (".md", ".rst", ".adoc")
+_DOC_PREFIXES = (
+    "README",
+    "LICENSE",
+    "CHANGELOG",
+    "NOTICE",
+    "AUTHORS",
+    "CONTRIBUTING",
+)
+
+
+def is_doc_file(path: str) -> bool:
+    name = path.strip().rsplit("/", 1)[-1]
+    if not name:
+        return False
+    if name.lower().endswith(_DOC_EXTS):
+        return True
+    if "." not in name and name.upper().startswith(_DOC_PREFIXES):
+        return True
+    return False
 
 
 def valid_card_id(card_id: str) -> bool:
@@ -1012,6 +1033,86 @@ def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
     return kinds
 
 
+def _commit_kinds_outside_card_loop(
+    root: Path, queue: str, card_id: str
+) -> list[str] | None:
+    if not queue:
+        return None
+    proc = _run_git(
+        root,
+        [
+            "log",
+            "--no-merges",
+            "--format=%s",
+            f"{queue}..card-{card_id}",
+            "--",
+            ".",
+            ":(exclude)card-loop",
+        ],
+    )
+    if proc.returncode != 0:
+        return None
+    kinds: list[str] = []
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = KIND_RE.match(stripped)
+        kinds.append(match.group(1) if match else "")
+    return kinds
+
+
+def card_kind_in_board(board_text: str, card_id: str) -> str:
+    if not valid_card_id(card_id):
+        return ""
+    pattern = re.compile(
+        rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*\s*(.*)$",
+        re.M,
+    )
+    found = list(pattern.finditer(board_text))
+    if len(found) != 1:
+        return ""
+    rest = _cut_known_status(found[0].group(1))
+    match = _KIND_PAREN.search(rest)
+    return match.group(1) if match else ""
+
+
+def card_kind_at_merge_base(root: Path, queue: str, card_id: str) -> str:
+    if not queue or not valid_card_id(card_id) or not _branch_exists(root, f"card-{card_id}"):
+        return ""
+    proc = _run_git(root, ["merge-base", queue, f"card-{card_id}"])
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return ""
+    base = proc.stdout.strip()
+    base_board = _git_show(root, f"{base}:card-loop/board.md")
+    if base_board is None:
+        return ""
+    return card_kind_in_board(base_board, card_id)
+
+
+def card_tier(
+    root: Path, queue: str, card_id: str, card_text: str, board_text: str = ""
+) -> str:
+    base_kind = card_kind_at_merge_base(root, queue, card_id)
+    if base_kind not in {"docs", "style"}:
+        return "standard"
+    if board_text and card_kind_in_board(board_text, card_id) != base_kind:
+        return "standard"
+    if sees_screen(card_text):
+        return "standard"
+    outside_kinds = _commit_kinds_outside_card_loop(root, queue, card_id)
+    if outside_kinds is None or any(k != base_kind for k in outside_kinds):
+        return "standard"
+    all_kinds = _commit_kinds(root, queue, card_id)
+    if all_kinds is None or any(k not in {base_kind, "docs"} for k in all_kinds):
+        return "standard"
+    if base_kind == "docs":
+        changed = _diff_names(root, queue, card_id)
+        if changed is None or any(not is_doc_file(path) for path in changed):
+            return "standard"
+    return "quick"
+
+
 def _code_diff_reviewable(root: Path, queue: str, card_id: str) -> bool:
     proc = _run_git(
         root,
@@ -1680,11 +1781,15 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
         return _refuse("related")
+    tier = card_tier(root, queue, card_id, card_text, text)
     if _branch_exists(root, f"card-{card_id}"):
         kinds = _commit_kinds(root, queue, card_id)
         if kinds is None:
             return _refuse("review-diff")
-        if any(opens_repo_review(kind) for kind in kinds):
+        if tier == "standard" and (
+            _code_diff_reviewable(root, queue, card_id)
+            or any(opens_repo_review(kind) for kind in kinds)
+        ):
             if not _code_diff_reviewable(root, queue, card_id):
                 return _refuse("review-diff")
             review_err = _review_recorded(root, queue, card_id)
@@ -1731,9 +1836,10 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
         return _refuse(err.reason, detail=err.detail, log=err.log)
-    print(f"repo-review: {review_state}")
     print("allowed")
     print("merge: no")
+    print(f"tier: {tier}")
+    print(f"repo-review: {review_state}")
     return 0
 
 
