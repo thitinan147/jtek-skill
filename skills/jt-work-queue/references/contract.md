@@ -18,7 +18,7 @@ This contract belongs to skill `jt-work-queue`. All queue files live under `card
 
 - `<id>` must match `^\d+(\.\d+)*$` with no path traversal.
 - Allowed status tokens: `ask:`, `review:`, `send-back:`, `merge:`, `drop:`. Any other colon token in the status slot stops the queue with `unknown-status`.
-- **Agent permissions:** May add human-approved new card lines, but must update status tokens on existing lines **only** via `gate.py ask` and `gate.py reach-review --write`. Never write `merge:` or `drop:`.
+- **Agent permissions:** May add human-approved new card lines, but must update status tokens on existing lines **only** via `gate.py ask` and `gate.py reach-review --write`. Never write `merge:` or `drop:`. Never run `gate.py approve-commands` and never change `<TEST_CMD>`, `<SETUP_CMD>`, or a card's screen-check commands to make a refusal pass; the human approves those commands (stored in `.git`, outside every branch).
 - **Human permissions (`/jt-review-work`):** Writes `merge:`, `send-back:`, and `drop:`. Answers `ask:` by updating `card-loop/backlog/<id>.md` until intent is closed and clearing the `ask:` heading; on the next run, `gate.py next` resumes the card (`question-cleared`) and `reach-review --write` replaces `ask:` with `review:`.
 - Same-topic cards sharing `layer:` must link each other under `refs:`. Do not split into parallel agents without a link.
 

@@ -1,0 +1,37 @@
+version: 2
+
+# Scoped suppressions for reviewed false positives only.
+# Deliberately NOT suppressed here (real attack surface, documented in SECURITY.md):
+#   AST4 (subprocess use) and TT2 (env-set timeout, now capped at 3600 s).
+# NOTE: TM1 (shell=True) is not listed either, but SkillSpector v2.12.0 stops reporting it when a
+# comment stating the intent sits right above the call (verified: removing those comments in
+# gate.py brings back 3 x TM1 HIGH). So a CAUTION score does NOT mean shell=True is gone.
+# Do not read the score as "no shell execution"; read SECURITY.md.
+# Review with: skillspector scan skills/<name> --baseline .skillspector-baseline.yaml --show-suppressed
+
+rules:
+  - id: "E2"
+    path: "*scripts/landed.py"
+    reason: "os.environ.copy() only builds the env passed to the git/gh child process (adds GIT_TERMINAL_PROMPT=0, drops GIT_DIR). Nothing is read for secrets or sent anywhere."
+  - id: "E2"
+    path: "*scripts/gate.py"
+    reason: "Same as landed.py: _git_env() copies env for git/gh subprocesses only."
+  - id: "EA4"
+    path: "*scripts/gate.py"
+    reason: "Scanner matched timeout=0.2 (a 200 ms grace wait before SIGKILL after SIGTERM) as 'timeout=0'. Not unbounded."
+  - id: "PE1"
+    path: "*references/contract.md"
+    reason: "Matched the heading 'Agent permissions:' in documentation. No permission is requested."
+  - id: "TR2"
+    path: "*SKILL.md"
+    message: "*conflicts with built-in command 'set'*"
+    reason: "Description says 'set up the board'; it does not shadow a shell builtin."
+  - id: "LP3"
+    path: "*SKILL.md"
+    reason: "allowed-tools in the Agent Skills spec PRE-APPROVES tools (fewer prompts); it is not a restriction. Omitted on purpose so the user's own permission prompts stay in force."
+  - id: "PE3"
+    path: "tests/test_gate.py"
+    reason: "Test fixture only: passes '../../etc/passwd' as a card id to prove the gate refuses path traversal. Not shipped in skills/."
+  - id: "AS3"
+    path: "README.md"
+    reason: "Markdown links to this repo's own skills/*/SKILL.md. Does not read other installed skills."

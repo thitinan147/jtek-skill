@@ -112,6 +112,15 @@ class ScreenCheckCliTests(unittest.TestCase):
         os.environ["PATH"] = f"{self.bindir}:{self.old_path}"
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+        if "--id" in args:
+            # Simulate the human who reviewed and approved the card commands.
+            subprocess.run(
+                [sys.executable, str(GATE_PATH), "approve-commands", "--id", args[args.index("--id") + 1], "--root", str(self.root)],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                env=os.environ.copy(),
+            )
         return subprocess.run(
             [sys.executable, str(GATE_PATH), "screen-check", *args],
             cwd=self.root,

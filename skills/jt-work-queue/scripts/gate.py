@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -57,15 +58,20 @@ SETUP_TIMEOUT = 900
 TEST_TIMEOUT = 600
 
 
+MAX_ENV_TIMEOUT = 3600.0
+
+
 def _env_timeout(name: str, default: float) -> float:
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
     try:
         val = float(raw)
-        return val if val > 0 else default
     except ValueError:
         return default
+    if not val > 0:  # also rejects NaN
+        return default
+    return min(val, MAX_ENV_TIMEOUT)
 
 
 NEXT_FOR = {
@@ -91,6 +97,8 @@ NEXT_FOR = {
     "gh-missing": "ask",
     "question-open": "ask",
     "board-missing": "stop",
+    "commands-unapproved": "stop",
+    "commands-changed": "stop",
     "not-on-queue-branch": "stop",
     "test-cmd-empty": "stop",
     "unknown-status": "stop",
@@ -831,6 +839,107 @@ def _git_common_dir(root: Path) -> Path:
     return (root / ".git").resolve()
 
 
+def _digest(parts: dict[str, str]) -> str:
+    blob = json.dumps({k: v.strip() for k, v in parts.items()}, sort_keys=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _board_commands(board_text: str) -> dict[str, str]:
+    return {
+        "TEST_CMD": parse_field(board_text, "TEST_CMD"),
+        "SETUP_CMD": parse_field(board_text, "SETUP_CMD"),
+    }
+
+
+def _card_commands(card_text: str) -> dict[str, str]:
+    return {name: _label(card_text, name) for name in ("start", "port", "wait", "click")}
+
+
+def _board_runs_commands(commands: dict[str, str]) -> bool:
+    test = commands["TEST_CMD"].strip()
+    return bool(commands["SETUP_CMD"].strip()) or (test != "" and test != NO_SUITE)
+
+
+def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
+    return sees_screen(card_text) and bool(commands["start"].strip() or commands["click"].strip())
+
+
+def _approval_path(root: Path) -> Path:
+    # Inside .git: it is never part of a branch, commit, or pull request, so changes
+    # to board.md or a card cannot carry an approval with them.
+    return _git_common_dir(root) / "card-loop" / "approved-commands.json"
+
+
+def _load_approvals(root: Path) -> dict:
+    try:
+        data = json.loads(_approval_path(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _commands_refusal(
+    root: Path, board_text: str, card_id: str, card_text: str, check_board: bool = True
+) -> tuple[str, str] | None:
+    """Refuse to run shell commands that a human has not approved on this machine."""
+    approvals = _load_approvals(root)
+    board_cmds = _board_commands(board_text)
+    if check_board and _board_runs_commands(board_cmds):
+        known = approvals.get("board")
+        if not known:
+            return "commands-unapproved", (
+                "TEST_CMD/SETUP_CMD in card-loop/board.md have not been approved on this machine. "
+                "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
+            )
+        if known != _digest(board_cmds):
+            return "commands-changed", (
+                "TEST_CMD/SETUP_CMD in card-loop/board.md changed since a human approved them. "
+                "Review the change, then run: gate.py approve-commands --root . --id " + card_id
+            )
+    card_cmds = _card_commands(card_text)
+    if _card_runs_commands(card_text, card_cmds):
+        known = (approvals.get("cards") or {}).get(card_id)
+        if not known:
+            return "commands-unapproved", (
+                f"start/click in card-loop/backlog/{card_id}.md have not been approved. "
+                "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
+            )
+        if known != _digest(card_cmds):
+            return "commands-changed", (
+                f"start/click in card-loop/backlog/{card_id}.md changed since a human approved them. "
+                "Review the change, then run: gate.py approve-commands --root . --id " + card_id
+            )
+    return None
+
+
+def cmd_approve_commands(root: Path, card_id: str) -> int:
+    """HUMAN-ONLY: record the commands in the board (and one card) as reviewed."""
+    if card_id and not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    board_path = root / "card-loop" / "board.md"
+    if not board_path.is_file():
+        return _refuse("board-missing")
+    board_text = board_path.read_text(encoding="utf-8")
+    approvals = _load_approvals(root)
+    board_cmds = _board_commands(board_text)
+    approvals["board"] = _digest(board_cmds)
+    print("approved board commands:")
+    for name, value in board_cmds.items():
+        print(f"  {name} = {value.strip() or '(empty)'}")
+    if card_id:
+        card_text = _read_card(root, card_id)
+        card_cmds = _card_commands(card_text)
+        approvals.setdefault("cards", {})[card_id] = _digest(card_cmds)
+        print(f"approved card {card_id} commands:")
+        for name, value in card_cmds.items():
+            print(f"  {name} = {value.strip() or '(empty)'}")
+    path = _approval_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(approvals, indent=2, sort_keys=True), encoding="utf-8")
+    print("merge: no")
+    return 0
+
+
 def _record_command_log(
     root: Path, card_id: str, command_name: str, output: str
 ) -> tuple[str, str]:
@@ -873,7 +982,8 @@ def _run_shell(
 ) -> tuple[int, str, bool]:
     proc = subprocess.Popen(
         command,
-        shell=True,
+        # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+        shell=True,  # nosec B602
         cwd=cwd,
         env=_env_with_bin(cwd),
         start_new_session=True,
@@ -1170,7 +1280,8 @@ def _parse_ports(port_text: str) -> list[int] | None:
 def _run_while_up(work: Path, start: str, ports: list[int], wait_seconds: int, run) -> str | None:
     proc = subprocess.Popen(
         start,
-        shell=True,
+        # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+        shell=True,  # nosec B602
         cwd=work,
         start_new_session=True,
         stdin=subprocess.DEVNULL,
@@ -1203,7 +1314,8 @@ def _click_surface(work: Path, card_text: str) -> str | None:
         try:
             result = subprocess.run(
                 click,
-                shell=True,
+                # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+                shell=True,  # nosec B602
                 cwd=work,
                 capture_output=True,
                 text=True,
@@ -1365,6 +1477,9 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         if not browser:
             browser = parse_field(text, "BROWSER_TOOL")
         if not start:
+            unapproved = _commands_refusal(root, text, args.id, card, check_board=False)
+            if unapproved:
+                return _refuse(unapproved[0], detail=unapproved[1])
             start = _label(card, "start")
         if not ports:
             ports = _label(card, "port")
@@ -1846,6 +1961,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         review_state = "open"
     if one_off_checker(root, queue, card_id, card_text):
         return _refuse("one-off-checker")
+    unapproved = _commands_refusal(root, text, card_id, card_text)
+    if unapproved:
+        return _refuse(unapproved[0], detail=unapproved[1])
     try:
         need_screen = sees_screen(card_text)
         need_test = (test_cmd.strip() != NO_SUITE)
@@ -1933,6 +2051,8 @@ def main(argv: list[str] | None = None) -> int:
     screen.add_argument("--wait", default="")
     screen.add_argument("--browser", default="")
     screen.add_argument("--no-start", action="store_true")
+    approve = sub.add_parser("approve-commands", parents=[common])
+    approve.add_argument("--id", default="")
     landed = sub.add_parser("landed", parents=[common])
     landed.add_argument("--id", required=True)
 
@@ -1944,6 +2064,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ask(root, parsed.id, parsed.question, parsed.refused)
     if parsed.cmd == "reach-review":
         return cmd_reach_review(root, parsed.id, parsed.write, parsed.link)
+    if parsed.cmd == "approve-commands":
+        return cmd_approve_commands(root, parsed.id)
     if parsed.cmd == "landed":
         return cmd_landed(root, parsed.id)
     return _refuse("merge")

@@ -21,7 +21,9 @@ def _env_timeout(name: str, default: float) -> float:
         val = float(raw)
     except ValueError:
         return default
-    return val if val > 0 else default
+    if not val > 0:  # also rejects NaN
+        return default
+    return min(val, 3600.0)
 
 
 def _git_env() -> dict[str, str]:

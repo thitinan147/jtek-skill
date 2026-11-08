@@ -323,9 +323,30 @@ def commit_all(repo: Path, message: str) -> None:
     git(repo, "commit", "-m", message)
 
 
+def run_gate_raw(
+    repo: Path, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run the gate exactly as given, with no simulated human approval."""
+    return subprocess.run(
+        [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def _simulate_human_approval(repo: Path, args: tuple[str, ...], env: dict[str, str] | None) -> None:
+    """Most tests are not about approval: act like a human who reviewed the commands."""
+    if args and args[0] in ("reach-review", "screen-check") and "--id" in args:
+        card_id = args[args.index("--id") + 1]
+        run_gate_raw(repo, "approve-commands", "--id", card_id, env=env)
+
+
 def run_gate(
     repo: Path, *args: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
+    _simulate_human_approval(repo, args, env)
     return subprocess.run(
         [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
         cwd=repo,
@@ -338,6 +359,7 @@ def run_gate(
 def run_gate_env(
     repo: Path, env: dict[str, str], *args: str
 ) -> subprocess.CompletedProcess[str]:
+    _simulate_human_approval(repo, args, env)
     return subprocess.run(
         [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
         cwd=repo,
@@ -2030,6 +2052,96 @@ class StatusBoundaryTests(unittest.TestCase):
             root = Path(tmp)
             (root / "go.mod").write_text("module example.com/a\n\ngo 1.22\n", encoding="utf-8")
             self.assertEqual(gate.repo_setup_cmd(root), "go mod download")
+
+
+class CommandApprovalTests(unittest.TestCase):
+    """A human must approve board/card shell commands; later edits must not run silently."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        self.marker = self.repo.parent / f"{self.repo.name}-marker"
+        init_repo(self.repo)
+        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "README.md").write_text("hello\n", encoding="utf-8")
+        self.board = self.repo / "card-loop" / "board.md"
+        self.board.write_text(
+            board_text("- [ ] **12** doc (docs)", test="python3 -c pass"), encoding="utf-8"
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["README.md"], kind="docs"), encoding="utf-8"
+        )
+        commit_all(self.repo, "docs: board")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "README.md").write_text("hello world\n", encoding="utf-8")
+        commit_all(self.repo, "docs: card")
+        git(self.repo, "checkout", "main")
+
+    def tearDown(self) -> None:
+        self.marker.unlink(missing_ok=True)
+        self.tmp.cleanup()
+
+    def _tamper(self, commit: bool) -> None:
+        self.board.write_text(
+            self.board.read_text(encoding="utf-8").replace(
+                "python3 -c pass", f"touch {self.marker}"
+            ),
+            encoding="utf-8",
+        )
+        if commit:
+            commit_all(self.repo, "docs: sneaky board edit")
+
+    def test_unapproved_commands_are_refused_and_not_run(self) -> None:
+        self._tamper(commit=False)
+        result = run_gate_raw(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-unapproved", result.stdout)
+        self.assertIn("next: stop", result.stdout)
+        self.assertFalse(self.marker.exists())
+
+    def test_approved_commands_run(self) -> None:
+        self.assertEqual(run_gate_raw(self.repo, "approve-commands", "--id", "12").returncode, 0)
+        result = run_gate_raw(self.repo, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+
+    def test_edit_after_approval_is_refused_whether_committed_or_not(self) -> None:
+        for commit in (False, True):
+            with self.subTest(committed=commit):
+                git(self.repo, "checkout", "-q", "--", ".")
+                run_gate_raw(self.repo, "approve-commands", "--id", "12")
+                self._tamper(commit=commit)
+                result = run_gate_raw(self.repo, "reach-review", "--id", "12")
+                self.assertIn("refused: commands-changed", result.stdout)
+                self.assertFalse(self.marker.exists())
+                if commit:
+                    git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+
+    def test_approval_is_stored_in_git_dir_not_in_the_tree(self) -> None:
+        run_gate_raw(self.repo, "approve-commands", "--id", "12")
+        self.assertTrue((self.repo / ".git" / "card-loop" / "approved-commands.json").is_file())
+        tracked = git(self.repo, "ls-files").stdout
+        self.assertNotIn("approved-commands", tracked)
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout.strip(), "")
+
+    def test_changed_card_screen_commands_are_refused(self) -> None:
+        card = self.repo / "card-loop" / "backlog" / "12.md"
+        card.write_text(
+            card_body(["README.md"], kind="docs", screen=True, start="true", port="1", click="true"),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: screen card")
+        run_gate_raw(self.repo, "approve-commands", "--id", "12")
+        card.write_text(
+            card.read_text(encoding="utf-8").replace("start: true", f"start: touch {self.marker}"),
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "screen-check", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+        self.assertFalse(self.marker.exists())
+
+    def test_invalid_card_id_is_refused_by_approve(self) -> None:
+        result = run_gate_raw(self.repo, "approve-commands", "--id", "../x")
+        self.assertIn("refused: invalid-id", result.stdout)
 
 
 class GateSourceTests(unittest.TestCase):

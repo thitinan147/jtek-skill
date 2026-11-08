@@ -21,6 +21,10 @@ npx skills add thitinan147/jtek-skill -g
 
 *(In Codex, use `$jt-work-queue` and `$jt-review-work`.)*
 
+## Security
+
+`jt-skill` runs shell commands (your test command and any card `start`/`click`) on your machine; it is not a sandbox. Before the gate runs them, a human must review and approve them with `gate.py approve-commands --id <id>`, and the gate refuses if they change afterwards. Read [SECURITY.md](SECURITY.md) for the full trust model, what leaves your machine (a draft PR push when a remote exists), and how to report a vulnerability.
+
 ## Migrating from v20 to v21
 
 ### 1. Command Mapping (13 v20 skills → 2 v21 skills)

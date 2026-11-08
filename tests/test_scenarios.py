@@ -19,6 +19,14 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _run_gate(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    if args and args[0] in ("reach-review", "screen-check") and "--id" in args:
+        # Simulate the human who reviewed and approved the board and card commands.
+        subprocess.run(
+            [sys.executable, str(GATE_PATH), "approve-commands", "--id", args[args.index("--id") + 1], "--root", str(repo)],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
     return subprocess.run(
         [sys.executable, str(GATE_PATH), *args, "--root", str(repo)],
         cwd=repo,
