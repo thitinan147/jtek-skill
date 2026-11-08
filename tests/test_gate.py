@@ -158,8 +158,10 @@ class DecideTests(unittest.TestCase):
             text,
             {"12": card_body(["src/a.py"]), "13": card_body(["src/b.py"])},
         )
-        self.assertEqual(decision.action, "open-review")
+        self.assertEqual(decision.action, "wait")
+        self.assertEqual(decision.reason, "review")
         self.assertEqual(decision.id, "12")
+        self.assertEqual(decision.ids, ("12",))
 
     def test_overlap_with_review_does_not_start_work(self) -> None:
         text = board_text(
@@ -169,10 +171,12 @@ class DecideTests(unittest.TestCase):
             text,
             {"12": card_body(["src/a.py"]), "13": card_body(["src/a.py"])},
         )
-        self.assertEqual(decision.action, "open-review")
+        self.assertEqual(decision.action, "wait")
+        self.assertEqual(decision.reason, "review")
         self.assertEqual(decision.id, "12")
+        self.assertEqual(decision.ids, ("12",))
 
-    def test_two_reviews_ask_for_an_id(self) -> None:
+    def test_two_reviews_wait_with_ids(self) -> None:
         text = board_text(
             "- [ ] **12** one (feat) review: local\n- [ ] **13** two (fix) review: local"
         )
@@ -180,7 +184,8 @@ class DecideTests(unittest.TestCase):
             text,
             {"12": card_body(["src/a.py"]), "13": card_body(["src/b.py"])},
         )
-        self.assertEqual(decision.reason, "need-id")
+        self.assertEqual(decision.action, "wait")
+        self.assertEqual(decision.reason, "review")
         self.assertEqual(decision.id, "")
         self.assertEqual(decision.ids, ("12", "13"))
         self.assertEqual(decision.command, "")
@@ -280,7 +285,7 @@ class ApplyReviewTests(unittest.TestCase):
             gate.apply_waiting_review(text, "12", 0)
         self.assertEqual(caught.exception.reason, "card-closed")
         self.assertIn("/jt-work-queue", gate.COMMAND_FOR.values())
-        self.assertIn("/jt-review-work", gate.COMMAND_FOR.values())
+        self.assertNotIn("open-review", gate.ALLOWED_ACTIONS)
         self.assertNotIn("/jt-do-card", gate.COMMAND_FOR.values())
         self.assertIn("/jt-merge", gate.MERGE_ARGV)
 
@@ -488,6 +493,17 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("review: local", updated)
 
+    def test_no_suite_without_card_branch_refuses_card_branch_missing(self) -> None:
+        board = board_text("- [ ] **12** note (docs)", test=gate.NO_SUITE)
+        (self.repo / "card-loop" / "board.md").write_text(board, encoding="utf-8")
+        commit_all(self.repo, "docs: clear the test command")
+        git(self.repo, "branch", "-D", "card-12")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        updated = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: card-branch-missing", result.stdout)
+        self.assertNotIn("review:", updated)
+
     def test_write_off_the_queue_branch_is_refused(self) -> None:
         self._set_card_check("0")
         git(self.repo, "checkout", "card-12")
@@ -568,7 +584,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: merge", result.stdout)
         self.assertEqual(after, before)
 
-    def test_next_on_review_compares_the_header_with_the_diff(self) -> None:
+    def test_next_on_review_waits_with_review_reason_and_ids(self) -> None:
         git(self.repo, "checkout", "card-12")
         (self.repo / "check.py").write_text("CARD_ONLY = True\n", encoding="utf-8")
         plan = self.repo / "card-loop" / "plan"
@@ -587,12 +603,12 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "next")
         after = (self.repo / "card-loop" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("action: open-review", result.stdout)
-        self.assertIn("command: /jt-review-work", result.stdout)
-        self.assertIn("HEADER_TOKEN", result.stdout)
-        self.assertIn("DECIDE_TOKEN", result.stdout)
-        self.assertIn("CARD_ONLY", result.stdout)
-        self.assertIn("compared: pass diff", result.stdout)
+        self.assertIn("action: wait", result.stdout)
+        self.assertIn("reason: review", result.stdout)
+        self.assertIn("id: 12", result.stdout)
+        self.assertIn("ids: 12", result.stdout)
+        self.assertNotIn("action: open-review", result.stdout)
+        self.assertNotIn("CARD_ONLY", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertNotIn("action: merge", result.stdout)
         self.assertEqual(after, before)
@@ -1028,6 +1044,35 @@ class ReachReviewGitTests(unittest.TestCase):
                 break
             time.sleep(0.05)
         self.assertFalse(alive, f"child process {child_pid} still running")
+
+    def test_test_cmd_timeout_does_not_duplicate_output_and_invalid_timeout_env_falls_back(self) -> None:
+        test_cmd = "python3 -c 'import sys, time; print(\"START\", flush=True); time.sleep(60)'"
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test=test_cmd),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add printing timeout cmd")
+        self._set_card_check("0")
+        env = os.environ.copy()
+        env["JT_TEST_TIMEOUT"] = "0.2"
+        result = run_gate(self.repo, "reach-review", "--id", "12", env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: test-timeout", result.stdout)
+        log_lines = [
+            line.split(":", 1)[1].strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("log:")
+        ]
+        self.assertEqual(len(log_lines), 1)
+        log_content = Path(log_lines[0]).read_text(encoding="utf-8")
+        self.assertEqual(log_content, "START\n")
+
+        # Invalid JT_TEST_TIMEOUT falls back to default instead of raising ValueError
+        os.environ["JT_TEST_TIMEOUT"] = "not-a-number"
+        try:
+            self.assertEqual(gate._env_timeout("JT_TEST_TIMEOUT", 300.0), 300.0)
+        finally:
+            os.environ.pop("JT_TEST_TIMEOUT", None)
 
     def test_setup_command_creates_prerequisite_in_worktree(self) -> None:
         (self.repo / "card-loop" / "board.md").write_text(
@@ -1690,7 +1735,8 @@ exit 0
         hang_env["JT_GH_TIMEOUT"] = "0.2"
         hung = run_gate_env(self.repo, hang_env, "next")
         self.assertEqual(hung.returncode, 0, hung.stdout + hung.stderr)
-        self.assertIn("action: open-review", hung.stdout)
+        self.assertIn("action: wait", hung.stdout)
+        self.assertIn("reason: review", hung.stdout)
         self.assertNotIn("landed-waiting:", hung.stdout)
 
         # 3. Ancestor merged -> next prints landed-waiting: 12 and does not modify board.md
@@ -1911,8 +1957,9 @@ class StatusBoundaryTests(unittest.TestCase):
             "- [ ] **1** parent (feat) review: local\n- [x] **1.1** child (feat) merge:"
         )
         decision = decide_board(review, bodies)
-        self.assertEqual(decision.action, "open-review")
+        self.assertEqual(decision.action, "wait")
         self.assertEqual(decision.id, "1")
+        self.assertEqual(decision.ids, ("1",))
         self.assertEqual(decision.reason, "review")
 
         asked = board_text(

@@ -1,6 +1,6 @@
 ---
 name: jt-work-queue
-description: Work the card queue in card-loop/board.md: set up the board, capture a brief, draft and add cards, pick the next card, implement with adaptive verification, and hand off to review. This command cannot merge.
+description: Works the card queue in card-loop/board.md by setting up the board, capturing a brief, drafting and adding cards, implementing ready cards with adaptive verification, and handing off to review without merging. Use when the user invokes /jt-work-queue or asks to set up the board, add cards, or work the next card in the queue.
 license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo.
 metadata:
@@ -32,12 +32,12 @@ python3 <this-skill-dir>/scripts/gate.py screen-check --root . --id <id>
 
 Choose your own implementation method (TDD, planning, subagents, worktrees are optional). The gate enforces only minimum outcome evidence by tier:
 
-| Mode / Tier | When to Use | Minimum Evidence Checked by `gate.py` |
+| Mode (Gate Tier) | When to Use | Minimum Evidence Checked by `gate.py` |
 |---|---|---|
-| **1. Direct Execution (`Quick`)** | `docs` (doc files only) or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. Skip `plan/<id>.md` and `diff-check`. |
-| **2. Investigate & Debug (`Standard`)** | `fix` cards | `card-loop/plan/<id>.md` (from [assets/plan.template.md](assets/plan.template.md)), `<TEST_CMD>` green, `## review-diff` with latest code SHA (`gate.py diff-check`), plus JTek `gate.py screen-check` when `screen: yes`. |
-| **3. Plan & Implement (`Standard`)** | `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` | Same as Standard above; review this card's diff via `<REPO_SKILLS>` or yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review. |
-| **4. Decompose / Ask (`Critical`)** | Ambiguous intent, breaking contract, irreversible action, or oversized task | Do not guess. Run `gate.py ask` with options or a decomposition proposal, commit on `<queue>`, and move to the next card. |
+| **1. Direct Execution (`tier: quick`)** | `docs` (doc files only) or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. Skip `plan/<id>.md` and `diff-check`. |
+| **2. Investigate & Debug (`tier: standard`)** | `fix` cards | `card-loop/plan/<id>.md` (from [assets/plan.template.md](assets/plan.template.md)), `<TEST_CMD>` green, diff review via `<REPO_SKILLS>` or self recorded in `## review-diff` with latest code SHA (`gate.py diff-check`), plus JTek `gate.py screen-check` when `screen: yes`. |
+| **3. Plan & Implement (`tier: standard`)** | `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` | Same as Standard above; review this card's diff via `<REPO_SKILLS>` or yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review. |
+| **4. Decompose / Ask (`mode only`)** | Ambiguous intent, breaking contract, irreversible action, or oversized task | Do not guess. Run `gate.py ask` with options or a decomposition proposal, commit on `<queue>`, and move to the next card. |
 
 ## 3. Scope, Failure & Recovery, and Handoff
 

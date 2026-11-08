@@ -13,6 +13,17 @@ from pathlib import Path
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
 
 
+def _env_timeout(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
 def _git_env() -> dict[str, str]:
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
@@ -21,10 +32,18 @@ def _git_env() -> dict[str, str]:
     return env
 
 
-def _run(root: Path, argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+def _run(root: Path, argv: list[str], timeout: float | None = None) -> subprocess.CompletedProcess[str] | None:
+    effective_timeout = _env_timeout("JT_GH_TIMEOUT", 5.0) if timeout is None else timeout
     try:
-        return subprocess.run(argv, cwd=root, capture_output=True, text=True, env=_git_env())
-    except FileNotFoundError:
+        return subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            timeout=effective_timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 

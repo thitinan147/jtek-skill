@@ -1,6 +1,6 @@
 ---
 name: jt-review-work
-description: HUMAN-ONLY COMMAND. Never invoke or execute this skill autonomously. Read card-loop/board.md, inspect review: cards, and record human decisions (merge:, send-back:, drop:, or move lines) only when explicitly invoked by the user.
+description: HUMAN-ONLY COMMAND. Never invoke or execute this skill autonomously. Reads card-loop/board.md, inspects review: cards, checks landed status, and records human decisions (merge:, send-back:, drop:, or moving lines). Use when the human explicitly invokes /jt-review-work to inspect or close reviewed cards.
 disable-model-invocation: true
 license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo.
@@ -27,8 +27,10 @@ metadata:
 ## 2. Open a Card for Review
 
 When inspecting a `review:` card `<id>`, present:
-1. Card `pass:`, `do:`, `out:`, and `files:` from `card-loop/backlog/<id>.md`.
-2. Gate summary signals: `tier: quick | standard`, `outside-files:` (files touched outside `files:`), and `style-changes:` (non-whitespace diffs on `style` cards).
+1. Card `(<kind>)` from `card-loop/board.md`, plus `pass:`, `do:`, `out:`, and `files:` from `card-loop/backlog/<id>.md`.
+2. Scope & style checks on `card-<id>` vs `<queue>`:
+   - Run `git diff --name-only <queue>...card-<id> -- . ':(exclude)card-loop'` and compare against `files:` to report any files touched outside `files:`.
+   - When the card kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...card-<id> -- . ':(exclude)card-loop'` to report non-whitespace changes.
 3. Plan `## decisions`, `## review-diff`, and `## Done when` from `card-<id>:card-loop/plan/<id>.md` (when present).
 4. `git diff <queue>...card-<id>` and test/screen evidence.
 

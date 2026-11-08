@@ -40,7 +40,6 @@ ALLOWED_ACTIONS = frozenset(
         "brief",
         "add-card",
         "do-card",
-        "open-review",
         "wait",
         "stop",
     }
@@ -50,13 +49,23 @@ COMMAND_FOR = {
     "brief": "/jt-work-queue",
     "add-card": "/jt-work-queue",
     "do-card": "/jt-work-queue",
-    "open-review": "/jt-review-work",
     "wait": "",
     "stop": "",
 }
 STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:")
 SETUP_TIMEOUT = 900
 TEST_TIMEOUT = 600
+
+
+def _env_timeout(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+        return val if val > 0 else default
+    except ValueError:
+        return default
 NEXT_FOR = {
     "test-failed": "retry",
     "test-timeout": "retry",
@@ -484,19 +493,12 @@ def decide(
         for card in _ordered(board.cards)
         if not card.checked and card.status == "review:" and card.section in SECTION_RANK
     ]
-    if len(reviews) == 1:
+    if reviews:
         return Decision(
-            "open-review",
-            id=reviews[0].id,
-            reason="review",
-            command=COMMAND_FOR["open-review"],
-            line=reviews[0].line,
-        )
-    if len(reviews) > 1:
-        return Decision(
-            "open-review",
+            "wait",
+            id=reviews[0].id if len(reviews) == 1 else "",
             ids=tuple(card.id for card in reviews),
-            reason="need-id",
+            reason="review",
             line=reviews[0].line,
         )
 
@@ -819,32 +821,6 @@ def _section_h2(text: str, title: str) -> str:
     return "\n".join(body).strip()
 
 
-def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]:
-    card = ""
-    if valid_card_id(card_id) and queue:
-        card = _git_show(root, f"{queue}:card-loop/backlog/{card_id}.md") or ""
-    if not card:
-        card = _read_card(root, card_id)
-    plan = _git_show(root, f"card-{card_id}:card-loop/plan/{card_id}.md") or ""
-    header = _section_label(card, "pass:")
-    diff_ok = False
-    diff = ""
-    if queue and _branch_exists(root, f"card-{card_id}"):
-        proc = _run_git(root, ["diff", f"{queue}...card-{card_id}"])
-        diff_ok = proc.returncode == 0
-        diff = proc.stdout if diff_ok else ""
-    compared = "pass diff" if header and diff_ok else "incomplete"
-    return {
-        "header": header,
-        "decisions": _section_h2(plan, "decisions"),
-        "review_diff": _section_h2(plan, "review-diff"),
-        "evidence": _section_h2(plan, "evidence"),
-        "diff": diff,
-        "diff_ok": diff_ok,
-        "compared": compared,
-    }
-
-
 def _git_common_dir(root: Path) -> Path:
     proc = _run_git(root, ["rev-parse", "--git-common-dir"])
     if proc.returncode == 0 and proc.stdout.strip():
@@ -874,7 +850,7 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "
     if command == NO_SUITE:
         return 0
     with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
-        limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
+        limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
         code, out, timed_out = _run_shell(command, work, timeout=limit)
         if timed_out:
             detail, log_path = _record_command_log(root, card_id, "test", out)
@@ -921,10 +897,11 @@ def _run_shell(
             except ProcessLookupError:
                 pass
             out, _ = proc.communicate()
-        partial = exc.output
-        if isinstance(partial, bytes):
-            partial = partial.decode("utf-8", errors="replace")
-        out = (partial or "") + (out or "")
+        if not out:
+            partial = exc.output
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", errors="replace")
+            out = partial or ""
     return (proc.returncode if not timed_out else -1, out or "", timed_out)
 
 
@@ -946,23 +923,6 @@ def emit(decision: Decision, extra: list[str] | None = None) -> None:
         print("\n".join(extra))
 
 
-def format_packet(packet: dict[str, str | bool]) -> list[str]:
-    diff = packet["diff"] if packet["diff_ok"] else "unreadable"
-    return [
-        f"compared: {packet['compared']}",
-        "pass:",
-        str(packet["header"] or "empty"),
-        "decisions:",
-        str(packet["decisions"] or "empty"),
-        "review-diff:",
-        str(packet.get("review_diff") or "empty"),
-        "diff:",
-        str(diff if str(diff).strip() else "empty"),
-        "evidence:",
-        str(packet["evidence"] or "empty"),
-    ]
-
-
 def cmd_next(root: Path) -> int:
     board, brief_exists = load_board(root)
     has_git = _is_git(root) or (root / ".git").exists()
@@ -975,6 +935,7 @@ def cmd_next(root: Path) -> int:
     extra: list[str] = []
     if board is not None and has_git and board.queue_branch:
         landed_ids: list[str] = []
+        pending_gh: list[str] = []
         for card in _ordered(board.cards):
             if (
                 not card.checked
@@ -982,15 +943,22 @@ def cmd_next(root: Path) -> int:
                 and card.status == "review:"
                 and valid_card_id(card.id)
             ):
-                via, _ = landed_via(
-                    root, card.id, board.queue_branch, require_remote_for_gh=True
-                )
-                if via:
+                if _is_ancestor(root, f"card-{card.id}", board.queue_branch):
                     landed_ids.append(card.id)
+                else:
+                    pending_gh.append(card.id)
+        if pending_gh and _has_remote(root) and shutil.which("gh") is not None:
+            listed = _gh(
+                root,
+                ["pr", "list", "--state", "all", "--json", "state,headRefName"],
+                timeout=_env_timeout("JT_GH_TIMEOUT", 2.0),
+            )
+            if listed is not None and listed.returncode == 0:
+                for cid in pending_gh:
+                    if _payload_mark(listed.stdout, f"card-{cid}") == "merged":
+                        landed_ids.append(cid)
         if landed_ids:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
-    if decision.action == "open-review" and decision.id and board is not None:
-        extra.extend(format_packet(review_packet(root, board.queue_branch, decision.id)))
     emit(decision, extra or None)
     return 0
 
@@ -1364,7 +1332,7 @@ def run_screen_check(
 
 def screen_check_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="jt-screen-check",
+        prog="gate.py screen-check",
         description=(
             "JTek screen check. Start the app when start is set, "
             "then run the playwright or cypress command that already exists. Exit non-zero on failure"
@@ -1415,7 +1383,7 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
     if _current_branch(root) == branch:
         yield root
         return
-    parent = Path(tempfile.mkdtemp(prefix="jt-next-step-"))
+    parent = Path(tempfile.mkdtemp(prefix="jt-work-queue-"))
     worktree = parent / "card"
     try:
         added = _run_git(root, ["worktree", "add", "--detach", str(worktree), branch])
@@ -1521,7 +1489,7 @@ def _gh(
     limit = (
         timeout
         if timeout is not None
-        else float(os.environ.get("JT_GH_TIMEOUT", 5.0))
+        else _env_timeout("JT_GH_TIMEOUT", 5.0)
     )
     try:
         return subprocess.run(
@@ -1668,7 +1636,7 @@ def diff_review_detail(root: Path, card_id: str) -> str:
 
 
 def diff_check_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="jt-diff-check")
+    parser = argparse.ArgumentParser(prog="gate.py diff-check")
     parser.add_argument("--root", default=".")
     parser.add_argument("--id", required=True)
     args = parser.parse_args(argv)
@@ -1808,9 +1776,9 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
         return ("local", "local")
     if shutil.which("gh") is None:
         return ("ask", "gh-missing")
-    proc = subprocess.run(
+    proc = _gh(
+        root,
         [
-            "gh",
             "pr",
             "list",
             "--head",
@@ -1820,12 +1788,8 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
             "--json",
             "url,isDraft,headRefName,baseRefName",
         ],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
     )
-    if proc.returncode != 0:
+    if proc is None or proc.returncode != 0:
         return ("ask", "pr-failed")
     try:
         data = json.loads(proc.stdout or "[]")
@@ -1859,23 +1823,24 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
         return _refuse("related")
+    if not _branch_exists(root, f"card-{card_id}"):
+        return _refuse("card-branch-missing")
     tier = card_tier(root, queue, card_id, card_text, text)
-    if _branch_exists(root, f"card-{card_id}"):
-        kinds = _commit_kinds(root, queue, card_id)
-        if kinds is None:
+    kinds = _commit_kinds(root, queue, card_id)
+    if kinds is None:
+        return _refuse("review-diff")
+    if tier == "standard" and (
+        _code_diff_reviewable(root, queue, card_id)
+        or any(opens_repo_review(kind) for kind in kinds)
+    ):
+        if not _code_diff_reviewable(root, queue, card_id):
             return _refuse("review-diff")
-        if tier == "standard" and (
-            _code_diff_reviewable(root, queue, card_id)
-            or any(opens_repo_review(kind) for kind in kinds)
-        ):
-            if not _code_diff_reviewable(root, queue, card_id):
-                return _refuse("review-diff")
-            review_err = _review_recorded(root, queue, card_id)
-            if review_err:
-                return _refuse("review-diff", detail=review_err)
-            review_state = "open"
-        if one_off_checker(root, queue, card_id, card_text):
-            return _refuse("one-off-checker")
+        review_err = _review_recorded(root, queue, card_id)
+        if review_err:
+            return _refuse("review-diff", detail=review_err)
+        review_state = "open"
+    if one_off_checker(root, queue, card_id, card_text):
+        return _refuse("one-off-checker")
     try:
         need_screen = sees_screen(card_text)
         need_test = (test_cmd.strip() != NO_SUITE)
@@ -1890,7 +1855,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                     if reason:
                         return _refuse(reason)
                 if need_test:
-                    limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
+                    limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
                     code, out, timed_out = _run_shell(test_cmd, work, timeout=limit)
                     if timed_out:
                         detail, log_path = _record_command_log(root, card_id, "test", out)
@@ -1939,7 +1904,7 @@ def main(argv: list[str] | None = None) -> int:
         return diff_check_main(args[1:])
     if args and args[0] == "screen-check":
         return screen_check_main(args[1:])
-    parser = argparse.ArgumentParser(prog="jt-next-step")
+    parser = argparse.ArgumentParser(prog="gate.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     common = argparse.ArgumentParser(add_help=False)

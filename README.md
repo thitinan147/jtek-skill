@@ -4,7 +4,7 @@
 
 `jtek-skill` is an outcome-gated work queue for coding agents in a single Git repository. Instead of scripting every step the agent must follow, a deterministic Python gate ([`skills/jt-work-queue/scripts/gate.py`](skills/jt-work-queue/scripts/gate.py)) verifies the resulting diff, test execution, and review evidence before work can enter `review:`.
 
-Tested with **Claude Code**, **Codex**, **Cursor**, and **Antigravity** (see [`docs/benchmark-v21.md`](docs/benchmark-v21.md)).
+Designed for **Claude Code**, **Codex**, **Cursor**, and **Antigravity**.
 
 ## Install
 
@@ -17,7 +17,7 @@ npx skills add thitinan147/jtek-skill -g
 | Command | Who Invokes It | Purpose |
 |---|---|---|
 | [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or Agent | Set up `card-loop/board.md`, capture a round brief, draft and add cards, pick the next ready card, implement with adaptive verification (`Quick` / `Standard`), and hand off to `review:`. Cannot merge. |
-| [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Read the queue, surface cards whose branches have already landed via [`skills/jt-review-work/scripts/landed.py`](skills/jt-review-work/scripts/landed.py), inspect `review:` evidence (`tier:`, `outside-files:`, `style-changes:`), and mark `merge:`, `send-back:`, `drop:`, or move board lines. |
+| [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Read the queue, surface cards whose branches have already landed via [`skills/jt-review-work/scripts/landed.py`](skills/jt-review-work/scripts/landed.py), inspect `review:` evidence (`(<kind>)`, files touched outside `files:`, non-whitespace diffs on `style` cards), and mark `merge:`, `send-back:`, `drop:`, or move board lines. |
 
 *(In Codex, use `$jt-work-queue` and `$jt-review-work`.)*
 

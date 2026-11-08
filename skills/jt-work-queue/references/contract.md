@@ -41,11 +41,11 @@ The gate computes the card's tier from `(<kind>)` on `card-loop/board.md` at `gi
 | `<TEST_CMD>` passes (or `no-suite`) | ✓ | ✓ |
 | `gate.py diff-check` (`## review-diff` cites latest code commit SHA) | — | ✓ |
 | JTek `gate.py screen-check` when `screen: yes` | — | ✓ |
-| Report `outside-files:` and `style-changes:` | ✓ | ✓ (`outside-files:`) |
+| Report `outside-files:` and `style-changes:` | ✓ (both) | ✓ (`outside-files:` only) |
 
 ## 4. Plan, Three Rounds, and `<REPO_SKILLS>` Diff Review
 
-- **Plan (`Standard` tier):** A `Done when` line is a command to run, or an artifact to open. If `Done when` has no command and no artifact, write `ask:`. If `Escape` is empty, or an `Escape` line is true, write `ask:` and do not set `review:`.
-- **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. Write `ask:`.
+- **Plan (`Standard` tier):** A `Done when` line is a command to run, or an artifact to open. If `Done when` has no command and no artifact, run `gate.py ask`. If `Escape` is empty, or an `Escape` line is true, run `gate.py ask` and do not set `review:`.
+- **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. After 3 failed rounds, run `gate.py ask`.
 - **`<REPO_SKILLS>` diff review:** On `Standard` tier cards touching code, open `<REPO_SKILLS>` before `review:`. `docs` does not open. If no repo skill is on this machine, review this card's diff yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
-- **Draft PR handoff:** When a git remote exists, push `card-<id>` and open a draft PR with `gh pr create --draft --base <queue> --head card-<id>`. If the draft PR cannot be opened, write `ask:`. The line must not be `review:`. The gate refuses.
+- **Draft PR handoff:** When a git remote exists, push `card-<id>` and open a draft PR with `gh pr create --draft --base <queue> --head card-<id>`. If the draft PR cannot be opened, run `gate.py ask`. The line must not be `review:`. The gate refuses.

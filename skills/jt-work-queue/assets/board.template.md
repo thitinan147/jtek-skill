@@ -30,7 +30,7 @@ Pick **first**, then **main**, then **later**.
 
 ## closed
 
-- (moved from below)
+no items
 
 ## first
 
