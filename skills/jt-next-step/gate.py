@@ -1684,6 +1684,56 @@ def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) 
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
+def outside_card_files(
+    root: Path, queue: str, card_id: str, card_text: str
+) -> list[str]:
+    declared = [f.strip().rstrip("/") for f in parse_files(card_text) if f.strip()]
+    if not declared:
+        return []
+    changed = _diff_names(root, queue, card_id)
+    if not changed:
+        return []
+    outside: list[str] = []
+    for path in changed:
+        norm = path.strip().rstrip("/")
+        if not any(norm == d or norm.startswith(d + "/") for d in declared):
+            outside.append(path)
+    return outside
+
+
+def style_changes(
+    root: Path, queue: str, card_id: str, board_text: str = ""
+) -> list[str]:
+    if not queue or not _branch_exists(root, f"card-{card_id}"):
+        return []
+    kind = card_kind_at_merge_base(root, queue, card_id) or card_kind_in_board(
+        board_text, card_id
+    )
+    if kind != "style":
+        return []
+    proc = _run_git(
+        root,
+        [
+            "diff",
+            "-w",
+            "--ignore-blank-lines",
+            "--numstat",
+            f"{queue}...card-{card_id}",
+            "--",
+            ".",
+            ":(exclude)card-loop",
+        ],
+    )
+    if proc.returncode != 0:
+        return []
+    changed: list[str] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3 and (parts[0] != "0" or parts[1] != "0"):
+            changed.append(parts[2].strip())
+    return changed
+
+
 def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
     added = _diff_names(root, queue, card_id, added_only=True)
     if not added:
@@ -1840,6 +1890,12 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("merge: no")
     print(f"tier: {tier}")
     print(f"repo-review: {review_state}")
+    outside = outside_card_files(root, queue, card_id, card_text)
+    if outside:
+        print("outside-files: " + ", ".join(outside))
+    style_diff = style_changes(root, queue, card_id, text)
+    if style_diff:
+        print("style-changes: " + ", ".join(style_diff))
     return 0
 
 

@@ -808,6 +808,52 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotEqual(res_screen_docs.returncode, 0)
         self.assertIn("refused: review-diff", res_screen_docs.stdout)
 
+    def test_outside_files_and_style_changes_are_reported_without_refusal(self) -> None:
+        # 1. Card touching file outside files: still passes and prints outside-files:
+        (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** format (style)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body(["app.py"], kind="style"),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: setup style card")
+        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "card-12")
+        git(self.repo, "checkout", "card-12")
+        # Change only whitespace in app.py
+        (self.repo / "app.py").write_text("VALUE = 1   \n\n", encoding="utf-8")
+        commit_all(self.repo, "style: whitespace only")
+        git(self.repo, "checkout", "main")
+        res_ws = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(res_ws.returncode, 0, res_ws.stdout + res_ws.stderr)
+        self.assertIn("allowed", res_ws.stdout)
+        self.assertNotIn("outside-files:", res_ws.stdout)
+        self.assertNotIn("style-changes:", res_ws.stdout)
+
+        # 2. Style card changing logic and touching extra.py outside files:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        (self.repo / "extra.py").write_text("EXTRA = True\n", encoding="utf-8")
+        commit_all(self.repo, "style: touch logic and extra")
+        git(self.repo, "checkout", "main")
+        res_logic = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(res_logic.returncode, 0, res_logic.stdout + res_logic.stderr)
+        self.assertIn("allowed", res_logic.stdout)
+        self.assertIn("outside-files: extra.py", res_logic.stdout)
+        self.assertIn("style-changes: app.py, extra.py", res_logic.stdout)
+
+        # 3. Empty files: does not print outside-files:
+        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+            card_body([], kind="style"),
+            encoding="utf-8",
+        )
+        res_empty = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(res_empty.returncode, 0, res_empty.stdout + res_empty.stderr)
+        self.assertNotIn("outside-files:", res_empty.stdout)
+
     def test_plan_note_on_a_code_commit_cannot_reach_review(self) -> None:
         (self.repo / "card-loop" / "board.md").write_text(
             board_text("- [ ] **12** note (chore)", test=gate.NO_SUITE),
