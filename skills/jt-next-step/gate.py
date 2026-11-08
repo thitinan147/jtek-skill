@@ -54,7 +54,7 @@ COMMAND_FOR = {
     "wait": "",
     "stop": "",
 }
-STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:")
+STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:")
 SETUP_TIMEOUT = 900
 TEST_TIMEOUT = 600
 NEXT_FOR = {
@@ -103,7 +103,7 @@ _CHECKER_BASENAME = re.compile(
     r"^(?:check|lint|verify)(?:[-_.].+)?\.(?:py|sh)$",
     re.IGNORECASE,
 )
-_CLOSED = frozenset({"merge:", "drop:", "complete:"})
+_CLOSED = frozenset({"merge:", "drop:"})
 UNKNOWN_STATUS = "unknown:"
 _STATUS_SET = frozenset(STATUS_TOKENS)
 _COLON_TOKEN = re.compile(r"(?<!\S)([^\s:]+):")
@@ -342,11 +342,6 @@ def _related_stop(card: Card, cards: list[Card]) -> Decision | None:
     )
 
 
-def _is_parent(card: Card, cards: list[Card]) -> bool:
-    prefix = card.id + "."
-    return any(other.id.startswith(prefix) for other in cards)
-
-
 def _path_overlaps(p1: str, p2: str) -> bool:
     p1 = p1.strip().rstrip("/")
     p2 = p2.strip().rstrip("/")
@@ -388,22 +383,10 @@ def _pool(cards: list[Card]) -> list[Card]:
             continue
         if card.section == "later" and higher_open:
             continue
-        if _is_parent(card, cards) or _blocked(card, cards):
+        if _blocked(card, cards):
             continue
         chosen.append(card)
     return _ordered(chosen)
-
-
-def _parent_ready(cards: list[Card]) -> Card | None:
-    for card in _ordered(cards):
-        if card.checked or card.section not in SECTION_RANK or not _is_parent(card, cards):
-            continue
-        if card.status is not None:
-            continue
-        children = [other for other in cards if other.id.startswith(card.id + ".")]
-        if children and all(child.checked for child in children):
-            return card
-    return None
 
 
 def _work(pool: list[Card], pred) -> Card | None:
@@ -474,9 +457,6 @@ def decide(
     ready = _work(pool, lambda card: card.status is None and card.has_card_file)
     if ready:
         return _take(board, ready, "ready")
-    parent = _parent_ready(board.cards)
-    if parent:
-        return _take(board, parent, "subcards-complete")
 
     reviews = [
         card
@@ -519,11 +499,7 @@ def decide(
     unchecked = [
         card for card in board.cards if not card.checked and card.section in SECTION_RANK
     ]
-    orphans = [
-        card
-        for card in unchecked
-        if not card.has_card_file and not _is_parent(card, board.cards)
-    ]
+    orphans = [card for card in unchecked if not card.has_card_file]
     if orphans:
         return Decision("stop", id=orphans[0].id, reason="no-card-file", line=orphans[0].line)
     if any(card.has_card_file and _blocked(card, board.cards) for card in unchecked):

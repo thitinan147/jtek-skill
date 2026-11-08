@@ -54,3 +54,5 @@ With a remote, push `card-<id>` and open that draft into the queue branch after 
 In Codex, use `$` instead of `/`. You can type only the command name.
 
 You can append a card id to `/jt-new-card`, `/jt-open-work`, `/jt-send-back`, `/jt-merge`, `/jt-drop-card`, and `/jt-move-card`. `/jt-do-work` does not take an id, because it works every card the line allows. `/jt-drop-card` takes a reason after the id.
+
+To migrate an existing board that still has `complete:` parent lines, change `complete:` to `- [x] ... merge:` or remove the parent card lines.

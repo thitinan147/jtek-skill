@@ -1320,25 +1320,32 @@ class V20FeatureTests(unittest.TestCase):
         self.assertTrue(gate._overlaps(("src/app",), ("src/app/sub.py",)))
         self.assertFalse(gate._overlaps(("src/app",), ("src/other.py",)))
 
-    def test_parent_card_completed_token_is_closed(self) -> None:
-        text = board_text("- [x] **1** parent (feat) complete:\n- [x] **1.1** child (feat) merge:")
-        parsed = gate.parse_board(text)
-        self.assertEqual(len(parsed.cards), 2)
-        self.assertEqual(parsed.cards[0].status, "complete:")
-        self.assertTrue(parsed.cards[0].checked)
-        with self.assertRaises(gate.GateError) as caught:
-            gate.apply_waiting_review(text, "1", 0)
-        self.assertEqual(caught.exception.reason, "card-closed")
+    def test_complete_token_stops_as_unknown_status(self) -> None:
+        text = board_text("- [ ] **1** legacy (feat) complete:")
+        decision = decide_board(text, {"1": card_body(["src/a.py"])})
+        self.assertEqual(decision.action, "stop")
+        self.assertEqual(decision.reason, "unknown-status")
+        self.assertEqual(decision.id, "1")
+
+    def test_dotted_card_ids_work_as_normal_cards_without_parent(self) -> None:
+        text = board_text("- [ ] **1.1** first (feat)\n- [ ] **1.2** second (feat)")
+        decision = decide_board(
+            text,
+            {"1.1": card_body(["src/a.py"]), "1.2": card_body(["src/b.py"])},
+        )
+        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.id, "1.1")
+        self.assertEqual(decision.reason, "ready")
 
     def test_status_token_parsed_after_kind_suffix(self) -> None:
         text = board_text(
-            "- [ ] **1** item (feat) complete:\n"
+            "- [ ] **1** item (feat) merge:\n"
             "- [ ] **2** item (fix) send-back:\n"
             "- [ ] **3** item (chore) ask:\n"
             "- [ ] **4** item (feat) review: local"
         )
         parsed = gate.parse_board(text)
-        self.assertEqual(parsed.cards[0].status, "complete:")
+        self.assertEqual(parsed.cards[0].status, "merge:")
         self.assertEqual(parsed.cards[1].status, "send-back:")
         self.assertEqual(parsed.cards[2].status, "ask:")
         self.assertEqual(parsed.cards[3].status, "review:")
@@ -1685,16 +1692,8 @@ class StatusBoundaryTests(unittest.TestCase):
         )
         decision = decide_board(done, bodies)
         self.assertEqual(decision.action, "stop")
-        self.assertNotEqual(decision.reason, "subcards-complete")
+        self.assertEqual(decision.reason, "unknown-status")
         self.assertNotEqual(decision.action, "do-card")
-
-        open_parent = board_text(
-            "- [ ] **1** parent (feat)\n- [x] **1.1** child (feat) merge:"
-        )
-        decision = decide_board(open_parent, bodies)
-        self.assertEqual(decision.action, "do-card")
-        self.assertEqual(decision.id, "1")
-        self.assertEqual(decision.reason, "subcards-complete")
 
     def test_review_link_may_contain_merge_colon(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)")

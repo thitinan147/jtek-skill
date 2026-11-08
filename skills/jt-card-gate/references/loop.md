@@ -43,7 +43,7 @@ The board line is the whole queue, so it lives on a different branch from each i
 - `queue` is the name on the `queue:` line in `card-loop/board.md`. Read the board from that branch.
 - Commit `card-loop/board.md`, `card-loop/brief.md`, and `card-loop/backlog/` on the queue branch.
 - Commit the item's code and `card-loop/plan/<id>.md` on branch `card-<id>`.
-- An item line is `- [ ] **<id>** <short name> (<kind>)`, followed by `ask:`, `review:`, or `send-back:` when it has a status. A closed item is `- [x]` followed by `merge:`, `drop:`, or `complete:`.
+- An item line is `- [ ] **<id>** <short name> (<kind>)`, followed by `ask:`, `review:`, or `send-back:` when it has a status. A closed item is `- [x]` followed by `merge:` or `drop:`.
 - `/jt-do-work` pushes only `card-<id>`, then opens a draft PR into the queue branch when `git remote` has a name and `gh` is available. When no open PR exists for that head, use `gh pr create --draft --base <queue> --head card-<id>`. If one is already open, do not open another.
 - With no remote, write the link `local` and go to the next card. If the draft PR cannot be opened, write `ask:`. The line must not be `review:`. The gate refuses.
 - `/jt-merge` changes only the `merge:` mark on the line. It does not open a PR, does not merge a PR, and does not run git merge. The human merges on GitHub until the `card-<id>` commit is on the queue branch (`git merge-base --is-ancestor`), including a merge through a pull request, and then calls `/jt-merge`. Push the queue branch with a normal push when that branch has a remote.
@@ -52,7 +52,7 @@ The board line is the whole queue, so it lives on a different branch from each i
 
 Each time you choose a path, stop for `ask:`, or the evidence passes, add one row to the plan's `decisions` table. Record what you decided, why, and evidence as a path, a test command, or a commit.
 
-The only statuses to trust are the words on the line. They are `ask:`, `review:`, `send-back:`, `merge:`, `drop:`, and `complete:`. A colon word in the short name is not a status. Any other colon word in the status slot stops the queue. `closed:` is not a status.
+The only statuses to trust are the words on the line. They are `ask:`, `review:`, `send-back:`, `merge:`, and `drop:`. A colon word in the short name is not a status. Any other colon word in the status slot stops the queue. `closed:` is not a status.
 
 ```text
 human accepts the draft from /jt-new-card

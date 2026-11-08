@@ -27,13 +27,11 @@ queue:
 
 **Pick now.** Read the words on the line. Do not look at the host review button.
 
-`- [ ]` is open. `- [x]` is closed here (`merge:` or `drop:`). A parent whose children are all done is `- [x]` followed by `complete:`.
+`- [ ]` is open. `- [x]` is closed here (`merge:` or `drop:`).
 
 Ticket kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 
-Item numbers. **1, 2, 3** are parents. **1.1, 1.2** are children. Check a parent only when every child is done.
-
-Pick **first**, then **main**, then **later**. A line that has children under it is not picked, and it has no card of its own.
+Pick **first**, then **main**, then **later**.
 
 | Rank | Block | Why it comes first |
 |---|---|---|
