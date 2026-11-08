@@ -106,7 +106,7 @@ class SkillContractTests(unittest.TestCase):
             fm.get("description", "").startswith("HUMAN-ONLY COMMAND.")
         )
 
-    def test_readme_links_exist(self) -> None:
+    def test_readme_links_and_skill_paths_exist(self) -> None:
         readme_path = REPO / "README.md"
         self.assertTrue(readme_path.is_file())
         readme = readme_path.read_text(encoding="utf-8")
@@ -116,6 +116,9 @@ class SkillContractTests(unittest.TestCase):
             clean = target.split("#", 1)[0]
             resolved = (REPO / clean).resolve()
             self.assertTrue(resolved.exists(), f"README link missing: {target}")
+        for match in re.findall(r"\bskills/([a-z0-9-]+(?:/[a-zA-Z0-9._-]+)*)", readme):
+            candidate = REPO / "skills" / match
+            self.assertTrue(candidate.exists(), f"README path missing: skills/{match}")
 
 
 if __name__ == "__main__":

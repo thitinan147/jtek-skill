@@ -1,58 +1,54 @@
-# jt-card-gate
+# jtek-skill (v21)
 
-This is the loop for the open repo, not a catalog of dozens of skills. You do not pick a skill. The agent calls the next step through `/jt-next-step`. The queue and the status live on this repo's board. You change the words on the line. The agent works only the cards that line allows. You call `/jt-send-back`, `/jt-merge`, and `/jt-drop-card` yourself. The agent does not call those three commands. `/jt-next-step` cannot merge. The rules belong to this skill. They are not copied into the open repo.
+***Constrain the outcome, not the agent.***
+
+`jtek-skill` is an outcome-gated work queue for coding agents in a single Git repository. Instead of scripting every step the agent must follow, a deterministic Python gate ([`skills/jt-work-queue/scripts/gate.py`](skills/jt-work-queue/scripts/gate.py)) verifies the resulting diff, test execution, and review evidence before work can enter `review:`.
+
+Tested with **Claude Code** and **Codex**.
 
 ## Install
-
-Once per machine.
 
 ```bash
 npx skills add thitinan147/jtek-skill -g
 ```
 
-## Start
+## Two Commands
 
-Open the git repo you will work in. Stay on the branch that will hold the queue. Leave no dirty files outside `card-loop/`. Then run `/jt-next-step`.
+| Command | Who Invokes It | Purpose |
+|---|---|---|
+| [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or Agent | Set up `card-loop/board.md`, capture a round brief, draft and add cards, pick the next ready card, implement with adaptive verification (`Quick` / `Standard`), and hand off to `review:`. Cannot merge. |
+| [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Read the queue, surface cards whose branches have already landed via [`skills/jt-review-work/scripts/landed.py`](skills/jt-review-work/scripts/landed.py), inspect `review:` evidence (`tier:`, `outside-files:`, `style-changes:`), and mark `merge:`, `send-back:`, `drop:`, or move board lines. |
 
-You do not pick a skill. The agent runs the next step the rules allow. You answer until you accept a draft when that step asks. This command cannot merge.
+*(In Codex, use `$jt-work-queue` and `$jt-review-work`.)*
 
-## Before `review:`
+## Migrating from v20 to v21
 
-Shared policy is `skills/jt-card-gate/references/loop.md`. `skills/jt-next-step/gate.py` enforces it. `/jt-do-work` runs `gate.py reach-review` and trusts that output. Read those files for the rules. This page does not restate them.
+### 1. Command Mapping (13 v20 skills → 2 v21 skills)
 
-When the gate fails, the only moves are `ask:` or a human `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`. Do not skip the gate. Do not write `review:` yourself. Do not invent a one-off checker.
+| v20 Command / Skill | v21 Replacement |
+|---|---|
+| `/jt-new-board` | `/jt-work-queue` (auto-detects when `card-loop/board.md` is missing) |
+| `/jt-find-skills` | `/jt-work-queue` (proposes `<REPO_SKILLS>` during board setup) |
+| `/jt-ask-brief` | `/jt-work-queue` (runs when queue is empty and no brief exists) |
+| `/jt-new-card` | `/jt-work-queue <task>` |
+| `/jt-next-step` | `/jt-work-queue` |
+| `/jt-do-work` | `/jt-work-queue` |
+| `jt-card-gate` | Merged into [`skills/jt-work-queue/references/contract.md`](skills/jt-work-queue/references/contract.md) |
+| `/jt-read-board` | `/jt-review-work` |
+| `/jt-open-work` | `/jt-review-work <id>` |
+| `/jt-send-back` | `/jt-review-work` (`send-back:`) |
+| `/jt-merge` | `/jt-review-work` (`merge:`) |
+| `/jt-drop-card` | `/jt-review-work` (`drop: <reason>`) |
+| `/jt-move-card` | `/jt-review-work` (move line between `first`, `main`, `later`, `closed`) |
 
-Use the existing check commands on the board, including JTek `python3 <jt-next-step skill folder>/gate.py screen-check` for screen work. A new check script that the card did not order cannot reach `review:`. Do not split into parallel agents while `refs` is unlinked.
+### 2. Migrating `card-loop/board.md`
 
-The line must not be `review:` until the gate allows it. If a draft pull request cannot be opened, write `ask:`.
+- **`complete:` status (parent-child cards removed):** v21 stops the queue with `unknown-status` if a line uses `complete:`. Replace `- [ ] **<id>** ... complete:` with `- [x] **<id>** ... merge:` or remove the parent summary line. Dotted IDs (`1.1`, `1.2`) still work as normal independent cards.
+- **`pair:` line (paired-repo support removed):** Ignored by the v21 gate; you may delete the `pair:` line from `card-loop/board.md`.
+- **`<TEK_SKILLS>` row:** Removed from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). Only `<REPO_SKILLS>` is used for `Standard` tier diff reviews; existing boards with a `<TEK_SKILLS>` row continue to work without error.
+
+## Running Tests
 
 ```bash
-gh pr create --draft --base <queue> --head card-<id> --title "<id>" --body "card <id>"
+python3 -m unittest discover -s tests
 ```
-
-With a remote, push `card-<id>` and open that draft into the queue branch after the other gates pass. `gh` must be available, and no open pull request may already exist for that head. With no remote, the line is `review: local`. The human merges that pull request on GitHub.
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `/jt-new-board` | Create `card-loop/board.md` and fill the table from the repo and skill names from **Search**. |
-| `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. Do not create a card. |
-| `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards and their board lines. |
-| `/jt-read-board` | Read the queue. Do not start work. |
-| `/jt-find-skills` | Offer `<REPO_SKILLS>` names for the open repo and `<TEK_SKILLS>` names for the current loop moment. The human chooses. Do not install. Do not write the board until the human accepts. |
-| `/jt-do-work` | Work every card the line allows. Skip `review:`. Run `gate.py reach-review` and trust it. Do not write `review:` yourself. |
-| `/jt-open-work` | Open a card that is `review:` and compare `pass`. Do not change the line. |
-| `/jt-send-back` | Change `review:` to `send-back:`. |
-| `/jt-merge` | Set the line mark to `merge:` when `landed: ancestor` or `landed: squash`, including a merge through a pull request. Do not open a PR, merge a PR, or run git merge. |
-| `/jt-drop-card` | Change `- [ ]` to `- [x]`, append `drop:` plus the reason, and do not delete other lines. |
-| `/jt-move-card` | Move a board line only. Do not change that line's status, touch code, or merge. |
-| `/jt-next-step` | Read the board line and do the next step the rules allow. Do not merge. Stop when same-`layer:` cards are still unlinked. |
-
-`/jt-merge` runs `python3 <jt-next-step skill folder>/gate.py landed --root . --id <id>` and changes only the line mark. `landed: ancestor` means the `card-<id>` commit is on the queue branch. `landed: squash` means the pull request whose head is `card-<id>` has status `MERGED`, including a squash that makes `git merge-base --is-ancestor` fail. The script does not run git merge. On `refused: not-landed`, the human has not landed the code yet.
-
-In Codex, use `$` instead of `/`. You can type only the command name.
-
-You can append a card id to `/jt-new-card`, `/jt-open-work`, `/jt-send-back`, `/jt-merge`, `/jt-drop-card`, and `/jt-move-card`. `/jt-do-work` does not take an id, because it works every card the line allows. `/jt-drop-card` takes a reason after the id.
-
-To migrate an existing board that still has `complete:` parent lines, change `complete:` to `- [x] ... merge:` or remove the parent card lines.
