@@ -1,5 +1,0 @@
-interface:
-  display_name: "jt-drop-card"
-  short_description: "Mark a card dropped with drop on the board line"
-policy:
-  allow_implicit_invocation: false
