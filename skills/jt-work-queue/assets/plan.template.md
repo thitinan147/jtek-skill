@@ -39,21 +39,21 @@ Each line is a command to run, or an artifact to open. Do not use a line that ha
 
 ## Escape
 
-Stop when a line here is true. Write `ask:`. Do not set `review:`.
+Stop when a line here is true. Run `gate.py ask`. Do not set `review:`.
 
 -
 
 ## evidence
 
-## open-review
+## before review
 
 - Every Done when line was run. The command exited 0, or the artifact is the one the line names.
 - No Escape line is true.
 - The card heading `pass` passes in the work commit
 - `feat` or `fix` runs `<TEST_CMD>` when the value is not `no-suite`
 - `<TYPECHECK_CMD>` and `<LINT_CMD>` run when that cell has a command and the touched files are in scope
-- Work that touches code has a `review-diff` heading that cites the latest code commit, and `python3 <jt-next-step skill folder>/gate.py diff-check` exits 0
-- Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-next-step skill folder>/gate.py screen-check` or a check command already on the board
+- Work that touches code has a `review-diff` heading that cites the latest code commit, and `python3 <jt-work-queue skill folder>/scripts/gate.py diff-check` exits 0
+- Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-work-queue skill folder>/scripts/gate.py screen-check` or a check command already on the board
 - Use the check commands already on the board. Do not create a new check script unless `do` says to create it
 
 ## review-diff

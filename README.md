@@ -4,7 +4,7 @@
 
 `jtek-skill` is an outcome-gated work queue for coding agents in a single Git repository. Instead of scripting every step the agent must follow, a deterministic Python gate ([`skills/jt-work-queue/scripts/gate.py`](skills/jt-work-queue/scripts/gate.py)) verifies the resulting diff, test execution, and review evidence before work can enter `review:`.
 
-Designed for **Claude Code**, **Codex**, **Cursor**, and **Antigravity**.
+Designed for **Claude Code**, **Codex**, **Cursor**, **Grok Build**, and **Antigravity**.
 
 ## Install
 

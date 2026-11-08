@@ -1748,6 +1748,22 @@ exit 0
         self.assertIn("landed-waiting: 12", merged.stdout)
         self.assertEqual(after, before)
 
+    def test_next_reports_landed_waiting_for_squash_merged_pr(self) -> None:
+        self._diverge()
+        git(self.repo, "remote", "add", "origin", "https://example.com/repo.git")
+        script = """#!/bin/sh
+case "$*" in
+  *"--state merged"*"--limit"*)
+    printf '%s\\n' '[{"state":"MERGED","headRefName":"card-12"}]' ;;
+  *) printf '%s\\n' '[]' ;;
+esac
+exit 0
+"""
+        env = _git_bin_env(self.repo, "card-loop/bin-squash", script)
+        result = run_gate_env(self.repo, env, "next")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("landed-waiting: 12", result.stdout)
+
 
 class DiffCheckTests(unittest.TestCase):
     def setUp(self) -> None:

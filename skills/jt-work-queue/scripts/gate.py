@@ -66,6 +66,8 @@ def _env_timeout(name: str, default: float) -> float:
         return val if val > 0 else default
     except ValueError:
         return default
+
+
 NEXT_FOR = {
     "test-failed": "retry",
     "test-timeout": "retry",
@@ -950,7 +952,10 @@ def cmd_next(root: Path) -> int:
         if pending_gh and _has_remote(root) and shutil.which("gh") is not None:
             listed = _gh(
                 root,
-                ["pr", "list", "--state", "all", "--json", "state,headRefName"],
+                [
+                    "pr", "list", "--state", "merged", "--limit", "200",
+                    "--json", "state,headRefName",
+                ],
                 timeout=_env_timeout("JT_GH_TIMEOUT", 2.0),
             )
             if listed is not None and listed.returncode == 0:

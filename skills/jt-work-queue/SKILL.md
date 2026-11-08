@@ -24,7 +24,7 @@ python3 <this-skill-dir>/scripts/gate.py screen-check --root . --id <id>
 ## 1. Intake & Setup (`gate.py next`)
 
 1. Run `gate.py next --root .` and follow `action:` (`setup-board`, `brief`, `add-card`, `do-card`, `wait`, `stop`).
-2. If `landed-waiting: <ids>` appears, tell the human to run `/jt-review-work` to close those cards. Never mark `merge:` or invoke `/jt-review-work` yourself.
+2. On `wait`, report `id:`/`ids:` and stop; for `reason: review`, tell the human those cards await `/jt-review-work`. If `landed-waiting: <ids>` appears, tell the human to run `/jt-review-work` to close those cards. Never mark `merge:` or invoke `/jt-review-work` yourself.
 3. **Setup board (`setup-board`):** Inspect the repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`) to detect `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`. Show the table with the source of each value (e.g. `TEST_CMD = npm test` from `package.json`) and **wait for human confirmation** before writing `card-loop/board.md` from [assets/board.template.md](assets/board.template.md).
 4. **Brief & Add cards (`brief` / `add-card`):** Interview until intent, `do:`, `out:`, `files:`, and `pass:` are unambiguous. Wait for human approval before writing `card-loop/brief.md` or `card-loop/backlog/<id>.md` (from [assets/card.template.md](assets/card.template.md)) and adding `- [ ] **<id>** <name> (<kind>)` to `card-loop/board.md` on `<queue>`.
 
