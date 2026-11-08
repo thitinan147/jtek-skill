@@ -4,10 +4,6 @@ The rules live in skill `jt-card-gate` version 20. The brief is `brief.md`. A ca
 
 queue:
 
-pair:
-
-The name on the `pair:` line is the one answer from `/jt-new-board`, or the word `none`. Do not invent a name.
-
 `/jt-new-board` fills this table from the open repo. The human does not fill it.
 
 `<STACK_LOCK>` must include at least a language, a framework, the test command or the check kind, and what this repo must not use.

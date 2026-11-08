@@ -17,7 +17,7 @@ The human calls these commands. The human does not call `/jt-card-gate` to start
 
 | Command | Work |
 |---|---|
-| `/jt-new-board` | Create the board, fill the table and the skill names, and ask once for the paired repo. |
+| `/jt-new-board` | Create the board and fill the table and the skill names. |
 | `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. |
 | `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards. |
 | `/jt-read-board` | Read the queue. |

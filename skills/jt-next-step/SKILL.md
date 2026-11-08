@@ -59,7 +59,7 @@ When the gate prints `refused:`, follow `next:`:
 | Output | Action |
 |---|---|
 | `next: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch`, `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, `refused: pr-failed` | Write `ask:`. Do not set `review:`. |
-| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** in `loop.md` on the same card. Use the existing check commands on the board. Do not set `review:`. |
+| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch` | Follow **Three rounds** in `loop.md` on the same card. Use the existing check commands on the board. Do not set `review:`. |
 | `next: stop` or any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
 
 Done when you have run the printed command, or the script told you to stop, and the line is not marked `merge:`.

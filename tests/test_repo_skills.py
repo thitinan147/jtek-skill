@@ -181,58 +181,6 @@ class RenamedCommandTests(unittest.TestCase):
         self.assertEqual(dirs, sorted([name[1:] for name in COMMANDS] + ["jt-card-gate"]))
 
 
-class PairedRepoRuleTests(unittest.TestCase):
-    def test_pair_rules_live_in_the_skills_and_the_gate(self) -> None:
-        new_board = (REPO / "skills" / "jt-new-board" / "SKILL.md").read_text(encoding="utf-8")
-        new_card = (REPO / "skills" / "jt-new-card" / "SKILL.md").read_text(encoding="utf-8")
-        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
-            encoding="utf-8"
-        )
-        merge = (REPO / "skills" / "jt-merge" / "SKILL.md").read_text(encoding="utf-8")
-        gate = (REPO / "skills" / "jt-next-step" / "gate.py").read_text(encoding="utf-8")
-        template = (REPO / "skills" / "jt-card-gate" / "assets" / "board.template.md").read_text(
-            encoding="utf-8"
-        )
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.assertIn("Ask once", new_board)
-        self.assertIn("`none`", new_board)
-        self.assertIn("Do not invent a repo name", new_board)
-        self.assertIn("Do not ask again", new_board)
-        self.assertIn("card-loop/paired.md", new_board)
-        self.assertIn("Do not ask where the paired repo is", new_card)
-        self.assertIn("is one card", new_card)
-        self.assertIn("does not include that name", new_card)
-        self.assertIn("Do not create it because the board has the name", new_card)
-        self.assertIn("Do not set status in the paired repo", work)
-        self.assertIn("Do not create `card-loop/board.md`", work)
-        self.assertIn("Do not move the whole queue off the primary repo", work)
-        self.assertIn("card-loop/paired.md", work)
-        self.assertIn("point back", work)
-        self.assertIn("Do not create this file only because the board recorded the name", work)
-        self.assertIn("The human merges both repos", work)
-        self.assertNotIn(OLD_SCREEN, work)
-        self.assertIn("**Three rounds**", work)
-        self.assertIn("pair-not-passed", gate)
-        self.assertNotIn("jtekth", gate)
-        self.assertNotIn("git merge", gate)
-        self.assertIn("pair-not-passed", work)
-        self.assertIn("Ask once", loop)
-        self.assertIn("Do not move the whole queue off the primary repo", loop)
-        self.assertIn("Do not create this file only because the board recorded the name", loop)
-        self.assertIn("The human merges both repos", loop)
-        self.assertIn("does not run git merge", loop)
-        self.assertIn("The agent does not call those three commands", loop)
-        self.assertIn("`/jt-send-back` `/jt-merge` `/jt-drop-card`", loop)
-        self.assertIn("does not run git merge", merge)
-        self.assertIn("The human merges both repos", merge)
-        self.assertEqual(template.count("\npair:"), 1)
-        self.assertEqual(readme.count("\n## "), 4)
-        self.assertIn("/jt-new-board", readme)
-        self.assertFalse(list(REPO.glob("*playbook*")))
-        self.assertFalse(list((REPO / "skills").glob("**/*playbook*")))
-
-
 class RepeatRuleTests(unittest.TestCase):
     def test_the_three_rules_agree_across_the_skills_and_the_readme(self) -> None:
         readme = (REPO / "README.md").read_text(encoding="utf-8")

@@ -31,6 +31,6 @@ python3 <jt-next-step skill folder>/gate.py landed --root . --id <id>
 
 When the evidence is complete and the commit is on the queue branch, stay on the queue branch. This command changes only the mark on that line, to `- [x]` followed by `merge:`, then commits only `card-loop/board.md` on the queue branch.
 
-This command changes only the mark on the line. It does not run git merge, does not open a PR, does not merge a PR, does not move the line, and does not touch code. The human merges on GitHub. The human merges both repos when the card heading names the paired repo. This command still changes only the mark on the primary board line.
+This command changes only the mark on the line. It does not run git merge, does not open a PR, does not merge a PR, does not move the line, and does not touch code. The human merges on GitHub. This command still changes only the mark on the board line.
 
 Done when the queue-branch line is `merge:`, and this command did not run git merge and did not open or merge a PR.

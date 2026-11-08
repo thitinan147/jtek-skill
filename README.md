@@ -36,7 +36,7 @@ With a remote, push `card-<id>` and open that draft into the queue branch after 
 
 | Command | What it does |
 |---|---|
-| `/jt-new-board` | Create `card-loop/board.md`, fill the table from the repo and skill names from **Search**, and ask once for the paired repo name. |
+| `/jt-new-board` | Create `card-loop/board.md` and fill the table from the repo and skill names from **Search**. |
 | `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. Do not create a card. |
 | `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards and their board lines. |
 | `/jt-read-board` | Read the queue. Do not start work. |

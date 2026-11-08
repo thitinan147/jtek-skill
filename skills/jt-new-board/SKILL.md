@@ -30,8 +30,7 @@ Use the package manager from the lockfile that exists. `pnpm-lock.yaml` means `p
 
 7. Find skill names under **Search** in `skills/jt-find-skills/SKILL.md`. Write the names that heading produces into the cells, at most three names per group. Write `<TEK_SKILLS>` and `<REPO_SKILLS>` separated by `, `. If a group has no names, leave that cell empty.
 8. Show the status table from **Search** in the reply. The install command appears only on an `install this` row. Do not run that command.
-9. Ask once what the paired repo is named. Write the answer on the `pair:` line that already exists on this repo's board. That line is the name the human answered, or the word `none`. Use only the words the human answered. Do not invent a repo name. Do not ask again when a later card opens. Do not create `card-loop/paired.md` because of this line, and do not create a board in another repo.
 
 Do not call `/jt-do-work`.
 
-Done when `queue:` is a real branch name, the `pair:` line is the name the human answered or the word `none`, the `<TEST_CMD>` and `<STACK_LOCK>` cells are non-empty, and both skill cells have names from **Search**.
+Done when `queue:` is a real branch name, the `<TEST_CMD>` and `<STACK_LOCK>` cells are non-empty, and both skill cells have names from **Search**.

@@ -1393,157 +1393,6 @@ class RepoReviewTests(unittest.TestCase):
         self.assertNotIn("TEK_SKILLS", GATE_PATH.read_text(encoding="utf-8"))
 
 
-class PairHeadingTests(unittest.TestCase):
-    def test_only_a_heading_that_names_the_answered_repo_is_two_sided(self) -> None:
-        named = board_text("- [ ] **12** fresh · side-repo (feat)", pair="side-repo")
-        self.assertTrue(gate.card_names_pair(named, "12", ""))
-        plain = board_text("- [ ] **12** fresh (feat)", pair="side-repo")
-        body = "# 12 - fresh\n\ndo:\n- · side-repo\n"
-        self.assertFalse(gate.card_names_pair(plain, "12", body))
-        titled = board_text("- [ ] **12** fresh (feat)", pair="side-repo")
-        self.assertTrue(gate.card_names_pair(titled, "12", "# 12 - fresh · side-repo\n"))
-        absent = board_text("- [ ] **12** fresh · side-repo (feat)", pair="none")
-        self.assertFalse(gate.card_names_pair(absent, "12", "# 12 - fresh · side-repo\n"))
-        self.assertEqual(gate.pair_name(absent), "none")
-        self.assertNotIn("jtekth", GATE_PATH.read_text(encoding="utf-8"))
-        self.assertIn("pair-not-passed", GATE_PATH.read_text(encoding="utf-8"))
-
-
-def _tree_text(root: Path) -> str:
-    parts: list[str] = []
-    for path in root.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
-            continue
-        parts.append(path.read_text(encoding="utf-8", errors="ignore"))
-    return "\n".join(parts)
-
-
-class PairedRepoGateTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.repo = self.root / "primary"
-        self.repo.mkdir()
-        init_repo(self.repo)
-
-    def tearDown(self) -> None:
-        self.tmp.cleanup()
-
-    def _primary(self, cards: str, pair: str, title: str) -> None:
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
-        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
-            board_text(cards, pair=pair),
-            encoding="utf-8",
-        )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
-            card_body(["check.py"], title=title),
-            encoding="utf-8",
-        )
-        commit_all(self.repo, "docs: add the board")
-        git(self.repo, "branch", "card-12")
-
-    def _sibling(self, name: str, code: str) -> Path:
-        other = self.root / name
-        other.mkdir()
-        init_repo(other)
-        (other / "check.py").write_text(f"import sys\nsys.exit({code})\n", encoding="utf-8")
-        (other / "package.json").write_text(
-            '{"scripts":{"test":"python3 check.py"}}\n',
-            encoding="utf-8",
-        )
-        commit_all(other, "test: add the pair check")
-        git(other, "branch", "card-12")
-        return other
-
-    def _reach(self) -> subprocess.CompletedProcess[str]:
-        return run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-
-    def test_two_sided_card_refuses_review_until_both_sides_pass(self) -> None:
-        self._primary("- [ ] **12** fresh · side-repo (feat)", "side-repo", "fresh · side-repo")
-        pair = self._sibling("side-repo", "1")
-        decoy = self._sibling("decoy", "0")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        refused = self._reach()
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertNotEqual(refused.returncode, 0)
-        self.assertIn("refused: pair-not-passed", refused.stdout)
-        self.assertIn("merge: no", refused.stdout)
-        self.assertNotIn("refused: test-failed", refused.stdout)
-        self.assertEqual(after, before)
-        self.assertNotIn("review:", after)
-        self.assertNotIn("review", _tree_text(pair))
-        self.assertNotIn("review", _tree_text(decoy))
-        self.assertFalse((pair / "card-loop" / "board.md").exists())
-        self.assertFalse((pair / "card-loop" / "paired.md").exists())
-        (pair / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        commit_all(pair, "test: the pair passes")
-        git(pair, "branch", "-f", "card-12", "HEAD")
-        allowed = self._reach()
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
-        self.assertIn("allowed", allowed.stdout)
-        self.assertEqual(board.count("review:"), 1)
-        self.assertIn("review: local", board)
-        self.assertNotIn("merge:", board)
-        self.assertNotIn("review", _tree_text(pair))
-        self.assertFalse((pair / "card-loop" / "board.md").exists())
-        self.assertFalse((pair / "card-loop" / "paired.md").exists())
-
-    def test_none_keeps_the_single_repo_path(self) -> None:
-        self._primary("- [ ] **12** fresh · side-repo (feat)", "none", "fresh · side-repo")
-        pair = self._sibling("side-repo", "1")
-        result = self._reach()
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(board.count("review:"), 1)
-        self.assertFalse((pair / "card-loop" / "paired.md").exists())
-        self.assertFalse((pair / "card-loop" / "board.md").exists())
-
-    def test_card_that_does_not_name_the_pair_does_not_wait(self) -> None:
-        self._primary("- [ ] **12** fresh (feat)", "side-repo", "fresh")
-        pair = self._sibling("side-repo", "1")
-        result = self._reach()
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(board.count("review:"), 1)
-        self.assertNotIn("· side-repo", board.split("fresh", 1)[1])
-        self.assertFalse((pair / "card-loop" / "board.md").exists())
-
-    def test_red_primary_test_still_cannot_reach_review(self) -> None:
-        self._primary("- [ ] **12** fresh · side-repo (feat)", "side-repo", "fresh · side-repo")
-        self._sibling("side-repo", "0")
-        git(self.repo, "checkout", "card-12")
-        (self.repo / "check.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
-        commit_all(self.repo, "test: the primary is red")
-        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        plan_dir = self.repo / "card-loop" / "plan"
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / "12.md").write_text(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
-            encoding="utf-8",
-        )
-        commit_all(self.repo, "docs: record review")
-        git(self.repo, "checkout", "main")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        result = self._reach()
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("refused: test-failed", result.stdout)
-        self.assertNotIn("pair-not-passed", result.stdout)
-        self.assertEqual(after, before)
-        self.assertNotIn("review:", after)
-
-    def test_missing_pair_repo_cannot_reach_review(self) -> None:
-        self._primary("- [ ] **12** fresh · side-repo (feat)", "side-repo", "fresh · side-repo")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        result = self._reach()
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        self.assertIn("refused: pair-not-passed", result.stdout)
-        self.assertEqual(after, before)
-        self.assertEqual(gate.COMMAND_FOR["setup-board"], "/jt-new-board")
-
-
 class V20FeatureTests(unittest.TestCase):
     def test_path_overlaps_containment(self) -> None:
         self.assertTrue(gate._path_overlaps("src/app", "src/app/utils.py"))
@@ -1942,9 +1791,11 @@ class StatusBoundaryTests(unittest.TestCase):
         self.assertEqual(decision.id, "12")
         self.assertEqual(decision.reason, "ready")
 
-    def test_title_colon_does_not_hide_the_paired_repo(self) -> None:
+    def test_legacy_board_with_pair_line_is_ignored(self) -> None:
         text = board_text("- [ ] **12** mask: login · side-repo (feat)", pair="side-repo")
-        self.assertTrue(gate.card_names_pair(text, "12", ""))
+        decision = decide_board(text, {"12": card_body(["src/a.py"])})
+        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.id, "12")
 
     def test_cargo_and_go_repos_have_setup_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

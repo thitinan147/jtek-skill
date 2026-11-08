@@ -87,20 +87,6 @@ Then, on `card-<id>`:
 
 Before you open review, run the existing check commands on the board. Run `<TEST_CMD>`, `<TYPECHECK_CMD>`, and `<LINT_CMD>` when the field has a command and the touched files are in scope. For `feat` or `fix`, run `<TEST_CMD>` unless the value is `no-suite`. For any other kind whose value is `no-suite`, write in the review notes that there is no test suite. Do not create a new check script for this round unless `do` says to create that file. Screen work, before `review:`, uses JTek `python3 <jt-next-step skill folder>/gate.py screen-check` or another existing check command on the board. With `<BROWSER_TOOL>` set, start from `start:` and `port:`, and set `click:` to `python3 <jt-next-step skill folder>/gate.py screen-check --root . --no-start`, including other pages that read the same state. With `<BROWSER_TOOL>` empty on screen work, follow **Write ask**. When the work is not on screen and `<BROWSER_TOOL>` is empty, write which surface could not be checked.
 
-## Paired repo
-
-Read the name from the `pair:` line on the primary repo's board. Do not ask again where the paired repo is. That name is the folder beside the primary repo. Do not invent a repo name.
-
-If the line is `none` or empty, follow the single-repo path. Do not wait for a second side. Do not create files in another repo.
-
-A card that touches both sides is one card. The card heading and the board line contain `·` plus the name on the `pair:` line. A card that does not touch the pair does not include that name.
-
-The card's work may happen in the paired repo, on branch `card-<id>`. The queue and every status stay on the primary repo's board only. Do not set status in the paired repo. Do not create `card-loop/board.md` there. Do not move the whole queue off the primary repo.
-
-Create `card-loop/paired.md` in the paired repo only when this card touches that repo. The contents point back at the primary repo's folder name and `card-loop/board.md`. Under `card-loop/` in the paired repo, this file is the only one allowed. Do not create this file only because the board recorded the name.
-
-The human merges both repos.
-
 ## Open for review
 
 Read **Rules** and **Summary** in `loop.md` first. If those rules block review, follow **Three rounds** on this card. Do not set `review:`.
@@ -136,7 +122,7 @@ For any other `refused:`, follow `next:` (`next: retry` → **Three rounds**, `n
 | Output | Action |
 |---|---|
 | `next: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch` | Follow **Write ask**. Do not set `review:`. |
-| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** on this card. Do not set `review:`. |
+| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch` | Follow **Three rounds** on this card. Do not set `review:`. |
 | `next: stop` or any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
 
 When the script passes, the line is `review:` followed by that draft URL. Set `round-status` in the plan to `review`. Commit only the plan file on `card-<id>`. Check out the queue branch and commit only `card-loop/board.md`. The item stays `- [ ]`.

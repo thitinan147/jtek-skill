@@ -2,7 +2,7 @@
 
 These rules belong to skill `jt-card-gate`. They are not copied into the open repo.
 
-The queue lives in the open repo. Work for a card whose heading names the paired repo may happen in that repo, and status does not live there.
+The queue lives in the open repo.
 
 The human answers `/jt-ask-brief` until they accept the draft. The agent then writes `card-loop/brief.md`. The human answers `/jt-new-card` until they accept the draft. The agent then creates the card files. The human changes the words on the line. The human calls `/jt-send-back` `/jt-merge` `/jt-drop-card`. The agent does not call those three commands.
 
@@ -10,7 +10,7 @@ The human answers `/jt-ask-brief` until they accept the draft. The agent then wr
 
 | Command | What it does |
 |---|---|
-| `/jt-new-board` | Create `card-loop/board.md`, fill the table from the repo and skill names from **Search**, and ask once for the paired repo name. |
+| `/jt-new-board` | Create `card-loop/board.md` and fill the table from the repo and skill names from **Search**. |
 | `/jt-ask-brief` | Ask what to do, then write `card-loop/brief.md`. Do not create a card. |
 | `/jt-new-card` | Ask until the human accepts the draft. One call can create several cards, then create the cards and their board lines. |
 | `/jt-read-board` | Read the queue. Do not start work. |
@@ -33,25 +33,8 @@ You can append an item id to `/jt-new-card`, `/jt-open-work`, `/jt-send-back`, `
 - `card-loop/brief.md` is the work the human wants this round, after they accept the draft.
 - `card-loop/backlog/<id>.md` is a card the human accepted.
 - `card-loop/plan/<id>.md` is the agent's working notes, and the `decisions` table the human reads during `/jt-open-work`.
-- The paired repo may contain only `card-loop/paired.md`, and only when a card touches that repo. That file points back at the primary repo. It has no board and no status.
 
 Read the table in `card-loop/board.md` before work. An empty `<STACK_LOCK>` cell or an empty `<TEST_CMD>` cell means the board is not ready. Stop the whole queue before you pick a card. A filled `<STACK_LOCK>` has at least a language, a framework, the test command or the check kind, and what this repo must not use. The value `no-suite` means there is no suite to run. When `<SETUP_CMD>` has a command, the gate runs it in the card worktree before tests and before start. The only skills a card may open are the names in `<TEK_SKILLS>` and `<REPO_SKILLS>`, per [skills.md](skills.md).
-
-## Paired repo
-
-Ask once. `/jt-new-board` asks what the paired repo is named, then writes one `pair:` line on the primary repo's board. The line is the name the human answered, or the word `none`. Do not ask again after that. Do not invent a repo name. That name is the folder beside the primary repo.
-
-The queue and every status live only on the primary repo's board. Work may happen in the paired repo, but do not set status there. Do not create a second board. Do not move the whole queue off the primary repo.
-
-A card that touches both sides is one card. The heading contains `·` plus the name on the `pair:` line. A card that does not touch the pair does not include that name.
-
-If the heading names the paired repo, the gate does not set `review:` until both sides have passed, and it sets that status once on the primary repo's board. When the `pair:` line is `none`, follow the single-repo path. Do not wait for a second side. The gate refuses.
-
-The paired repo may contain only `card-loop/paired.md`, and only when a card touches that repo. That file points back at the primary repo. Do not create this file only because the board recorded the name.
-
-The human merges both repos. The agent does not call `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`. The human merges both repos into the queue branch first, then calls `/jt-merge`. That command changes only the mark on the primary board line. It does not run git merge, does not open a PR, and does not merge a PR.
-
-Both sides have passed when each repo has branch `card-<id>` and that repo's test command exits 0. The primary repo's command is `<TEST_CMD>`. The paired repo's command is that repo's test script. A repo with no test suite can pass that side.
 
 ## Where commits go
 

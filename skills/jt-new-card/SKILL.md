@@ -21,7 +21,6 @@ Do not create `card-loop/backlog/<id>.md` and do not edit the board while asking
 3. An id after the command is the first card's id. If there is no id, propose an id that has no file yet.
 4. If `card-loop/backlog/<id>.md` already exists, do not use that id.
 5. For facts in the open repo, open the file yourself. Do not ask something you can see.
-6. Do not ask where the paired repo is. Read the `pair:` line on the board.
 
 ## Ask
 
@@ -62,18 +61,8 @@ Ask which cards to accept, which to cut, and which to edit. If the human edits, 
 
 1. If the `queue:` line is empty, stop. If edited files are dirty outside `card-loop/`, stop.
 2. Check out the queue branch. Include an uncommitted `card-loop/board.md` in this command's commit.
-3. Write `card-loop/backlog/<id>.md` for every accepted card. The file heading is `# <id> - <short name>`. A card that touches the paired repo appends `·` and the name on the `pair:` line. A card that does not touch the pair does not include that name.
-4. Add the line `- [ ] **<id>** <short name> (<kind>)` for every card under the agreed section. A card that touches the paired repo puts `·` and that name before `(<kind>)`. Remove the `no items` line under that section when the first card enters it.
+3. Write `card-loop/backlog/<id>.md` for every accepted card. The file heading is `# <id> - <short name>`.
+4. Add the line `- [ ] **<id>** <short name> (<kind>)` for every card under the agreed section. Remove the `no items` line under that section when the first card enters it.
 5. Commit the accepted card files and `card-loop/board.md` on the queue branch in one commit. One card uses `docs(<id>):` per **Commit standard** in `references/loop.md`. Several cards use `docs: add accepted cards`.
-
-## Paired repo
-
-Do not ask where the paired repo is. Read the `pair:` line on the board. Use only the name on that line.
-
-If the line is `none` or empty, the card heading does not include a repo name.
-
-A card that touches that repo is one card. The file heading and the board line contain `·` followed by the name on the `pair:` line. A card that does not touch the pair does not include that name.
-
-Do not create `card-loop/paired.md` while creating the card. Do not create it because the board has the name.
 
 Done when every card file and board line matches a card the human accepted, and every card's `ask` heading is still empty.

@@ -66,7 +66,6 @@ NEXT_FOR = {
     "card-branch-missing": "retry",
     "merge-refused": "retry",
     "repeat-patch": "retry",
-    "pair-not-passed": "retry",
     "related": "ask",
     "browser-empty": "ask",
     "browser-missing": "ask",
@@ -1267,48 +1266,6 @@ def surface_refusal(
         return _click_surface(work, card_text)
 
 
-def pair_name(text: str) -> str:
-    for line in text.splitlines():
-        if line.startswith("pair:"):
-            return line.split(":", 1)[1].strip()
-    return ""
-
-
-def _heading_has_pair(heading: str, pair: str) -> bool:
-    if not pair or pair == "none":
-        return False
-    cut = _cut_known_status(heading)
-    return re.search(rf"· {re.escape(pair)}(?=\s|\(|$)", cut) is not None
-
-
-def card_names_pair(board_text: str, card_id: str, card_text: str = "") -> bool:
-    pair = pair_name(board_text)
-    line = ""
-    found = re.findall(
-        rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*.*$",
-        board_text,
-        re.M,
-    )
-    if len(found) == 1:
-        line = found[0]
-    title = next((row for row in card_text.splitlines() if row.startswith("# ")), "")
-    return _heading_has_pair(line, pair) or _heading_has_pair(title, pair)
-
-
-def locate_pair(primary: Path, name: str) -> Path | None:
-    if not name or name == "none" or any(mark in name for mark in ("/", "\\", "\x00")):
-        return None
-    if name.strip() in {".", ".."}:
-        return None
-    parent = primary.resolve().parent
-    other = (parent / name).resolve()
-    if other.parent != parent or other == primary.resolve() or not other.is_dir():
-        return None
-    if not _is_git(other):
-        return None
-    return other
-
-
 def repo_setup_cmd(root: Path) -> str:
     package = root / "package.json"
     if package.is_file():
@@ -1358,20 +1315,6 @@ def repo_test_cmd(root: Path) -> str:
     if pyproject.is_file() and "pytest" in pyproject.read_text(encoding="utf-8"):
         return "pytest"
     return NO_SUITE
-
-
-def pair_passed(primary: Path, name: str, card_id: str) -> bool:
-    other = locate_pair(primary, name)
-    if other is None:
-        return False
-    command = repo_test_cmd(other)
-    if command == "":
-        return False
-    setup = repo_setup_cmd(other)
-    try:
-        return execute_test_cmd(other, card_id, command, setup_cmd=setup) == 0
-    except GateError:
-        return False
 
 
 def _read_card(root: Path, card_id: str) -> str:
@@ -1758,10 +1701,6 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                     code = 0
         else:
             code = 0
-        if card_names_pair(text, card_id, card_text) and not pair_passed(
-            root, pair_name(text), card_id
-        ):
-            return _refuse("pair-not-passed")
         if write:
             kind, value = lookup_draft_pr(root, f"card-{card_id}", queue)
             if kind == "ask":
