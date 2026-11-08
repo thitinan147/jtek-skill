@@ -1420,28 +1420,11 @@ def diff_check_main(argv: list[str] | None = None) -> int:
     return 0 if status in {"ok", "skip"} else 1
 
 
-def _diff_check_script() -> Path:
-    return Path(__file__).resolve().parents[2] / "scripts" / "jt-diff-check"
-
-
 def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
     if not queue:
         return "no-review"
-    script = _diff_check_script()
-    if not script.is_file():
-        return "no-review"
-    proc = subprocess.run(
-        [sys.executable, str(script), "--root", str(root), "--id", card_id],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    )
-    detail = ""
-    for line in proc.stdout.splitlines():
-        if line.startswith("diff-check:"):
-            detail = line.split(":", 1)[1].strip()
-    if proc.returncode == 0 and detail == "ok":
+    detail = diff_review_detail(root, card_id)
+    if detail == "ok":
         return None
     if detail in {"no-review", "no-sha", "stale-review"}:
         return detail
@@ -1668,6 +1651,10 @@ def main(argv: list[str] | None = None) -> int:
         print("refused: merge")
         print("merge: no")
         return 2
+    if args and args[0] == "diff-check":
+        return diff_check_main(args[1:])
+    if args and args[0] == "screen-check":
+        return screen_check_main(args[1:])
     parser = argparse.ArgumentParser(prog="jt-next-step")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -1679,6 +1666,15 @@ def main(argv: list[str] | None = None) -> int:
     reach.add_argument("--id", required=True)
     reach.add_argument("--write", action="store_true")
     reach.add_argument("--link", default="")
+    diff = sub.add_parser("diff-check", parents=[common])
+    diff.add_argument("--id", required=True)
+    screen = sub.add_parser("screen-check", parents=[common])
+    screen.add_argument("--id", default="")
+    screen.add_argument("--start", default="")
+    screen.add_argument("--port", default="")
+    screen.add_argument("--wait", default="")
+    screen.add_argument("--browser", default="")
+    screen.add_argument("--no-start", action="store_true")
     landed = sub.add_parser("landed", parents=[common])
     landed.add_argument("--id", required=True)
 

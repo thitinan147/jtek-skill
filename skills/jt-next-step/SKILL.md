@@ -49,10 +49,10 @@ Then run with `--write`. If the script prints `refused: pr-missing`, `refused: g
 Screen work, before `review:`, uses the JTek screen command or an existing check command on the board. Do not add a new check script.
 
 ```bash
-python3 <jtek-skill folder>/scripts/jt-screen-check --root . --id <id>
+python3 <jt-next-step skill folder>/gate.py screen-check --root . --id <id>
 ```
 
-Code-touching commits use `scripts/jt-diff-check`. A plan note is not that review. A name from `<TEK_SKILLS>` does not do this review.
+Code-touching commits use `python3 <jt-next-step skill folder>/gate.py diff-check --root . --id <id>`. A plan note is not that review. A name from `<TEK_SKILLS>` does not do this review.
 
 When the gate prints `refused:`, use this map. Do not restate the condition.
 

@@ -30,6 +30,6 @@ The human calls these commands. The human does not call `/jt-card-gate` to start
 | `/jt-move-card` | Move a line on the board. Do not change its status. |
 | `/jt-next-step` | Read the line and do the next step the rules allow. Do not merge. |
 
-Screen work, before `review:`, uses the JTek screen command at `scripts/jt-screen-check` or a check command already on the board. Do not create a new check script. On a card that touches code, `scripts/jt-diff-check` must exit 0 before `review:`. A review heading in the plan is not enough. The detail is in [references/loop.md](references/loop.md). Use the existing check commands on the board.
+Screen work, before `review:`, uses the JTek screen command at `python3 <jt-next-step skill folder>/gate.py screen-check` or a check command already on the board. Do not create a new check script. On a card that touches code, `python3 <jt-next-step skill folder>/gate.py diff-check` must exit 0 before `review:`. A review heading in the plan is not enough. The detail is in [references/loop.md](references/loop.md). Use the existing check commands on the board.
 
 If the human calls this skill directly, name the command and stop. Do not pick a card.

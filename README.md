@@ -22,7 +22,7 @@ Shared policy is `skills/jt-card-gate/references/loop.md`. `skills/jt-next-step/
 
 When the gate fails, the only moves are `ask:` or a human `/jt-send-back`, `/jt-merge`, or `/jt-drop-card`. Do not skip the gate. Do not write `review:` yourself. Do not invent a one-off checker.
 
-Use the existing check commands on the board, including JTek `scripts/jt-screen-check` for screen work. A new check script that the card did not order cannot reach `review:`. A repeated fault on the same `layer:` needs an `update-rule` row after the rule or the check script changes. A row with no such file change is not enough. Do not split into parallel agents while `refs` is unlinked.
+Use the existing check commands on the board, including JTek `python3 <jt-next-step skill folder>/gate.py screen-check` for screen work. A new check script that the card did not order cannot reach `review:`. A repeated fault on the same `layer:` needs an `update-rule` row after the rule or the check script changes. A row with no such file change is not enough. Do not split into parallel agents while `refs` is unlinked.
 
 The line must not be `review:` until the gate allows it. If a draft pull request cannot be opened, write `ask:`.
 

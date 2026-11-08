@@ -165,13 +165,13 @@ One value from the set Conventional Commits allows, and the set `@commitlint/con
 | `chore` | Other work that does not change source or tests | The existing suite passes |
 | `revert` | Revert an earlier commit | After the revert, the existing suite passes |
 
-After a commit whose kind touches code, open `<REPO_SKILLS>` per [skills.md](skills.md). `docs` does not open. If you cannot review the diff, the line must not be `review:`. The gate refuses. A note in the plan does not count. The review counts when `scripts/jt-diff-check` exits 0 and the plan heading `review-diff` cites the latest code commit. A name from `<TEK_SKILLS>` does not do this review.
+After a commit whose kind touches code, open `<REPO_SKILLS>` per [skills.md](skills.md). `docs` does not open. If you cannot review the diff, the line must not be `review:`. The gate refuses. A note in the plan does not count. The review counts when `python3 <jt-next-step skill folder>/gate.py diff-check` exits 0 and the plan heading `review-diff` cites the latest code commit. A name from `<TEK_SKILLS>` does not do this review.
 
 Screen work of every kind, not only `fix`, must start the real frontend and the real backend, then click what the `pass` heading names. How to start, which ports, and the click steps live in that repo.
 
 If `<BROWSER_TOOL>` is empty, start does not come up, or the click misses the `pass` heading, write `ask:`. The line must not be `review:`. The gate refuses.
 
-Before the line is `review:`, screen work uses the JTek screen command at `scripts/jt-screen-check` or a check command already on the board. Do not create a new check script for this round.
+Before the line is `review:`, screen work uses the JTek screen command at `python3 <jt-next-step skill folder>/gate.py screen-check` or a check command already on the board. Do not create a new check script for this round.
 
 For a screen `fix`, make the bug appear on the same screen before the fix, then repeat the same steps after the fix until it does not appear. Green tests with the bug still on screen cannot open review.
 

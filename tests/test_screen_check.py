@@ -11,7 +11,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 GATE_PATH = REPO / "skills" / "jt-next-step" / "gate.py"
-CLI = REPO / "scripts" / "jt-screen-check"
 
 
 def load_gate():
@@ -114,7 +113,7 @@ class ScreenCheckCliTests(unittest.TestCase):
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(CLI), *args],
+            [sys.executable, str(GATE_PATH), "screen-check", *args],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -225,7 +224,7 @@ class ScreenCheckDocTests(unittest.TestCase):
         rule = (REPO / "skills" / "jt-card-gate" / "SKILL.md").read_text(encoding="utf-8")
         nxt = (REPO / "skills" / "jt-next-step" / "SKILL.md").read_text(encoding="utf-8")
         for text in (readme, work, loop, rule, nxt):
-            self.assertIn("scripts/jt-screen-check", text)
+            self.assertIn("gate.py screen-check", text)
             self.assertIn("JTek", text)
         for text in (loop, rule):
             self.assertIn("existing check commands", text)
@@ -240,4 +239,4 @@ class ScreenCheckDocTests(unittest.TestCase):
         self.assertNotIn("click:", loop)
         self.assertNotIn("one-off-checker", loop)
         self.assertEqual(readme.count("\n## "), 4)
-        self.assertTrue(os.access(CLI, os.X_OK))
+        self.assertTrue(GATE_PATH.is_file())

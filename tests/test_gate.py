@@ -11,7 +11,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 GATE_PATH = REPO / "skills" / "jt-next-step" / "gate.py"
-DIFF_CHECK = REPO / "scripts" / "jt-diff-check"
 
 
 def load_gate():
@@ -338,7 +337,7 @@ def run_gate_env(
 
 def run_diff_check(repo: Path, card_id: str = "12") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(DIFF_CHECK), "--root", str(repo), "--id", card_id],
+        [sys.executable, str(GATE_PATH), "diff-check", "--root", str(repo), "--id", card_id],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -1697,6 +1696,37 @@ class DiffCheckTests(unittest.TestCase):
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
+
+    def test_copied_skill_folder_without_root_scripts_passes_reach_review(self) -> None:
+        sha = self._commit_code()
+        self._write_plan(
+            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
+        )
+        with tempfile.TemporaryDirectory() as isolated_tmp:
+            copied_skill = Path(isolated_tmp) / "skills" / GATE_PATH.parent.name
+            shutil.copytree(GATE_PATH.parent, copied_skill)
+            copied_gate = copied_skill / GATE_PATH.name
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(copied_gate),
+                    "reach-review",
+                    "--root",
+                    str(self.repo),
+                    "--id",
+                    "12",
+                    "--write",
+                    "--link",
+                    "local",
+                ],
+                cwd=self.repo,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("allowed", result.stdout)
+            board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+            self.assertIn("review: local", board)
 
 
 class StatusBoundaryTests(unittest.TestCase):
