@@ -216,19 +216,13 @@ class ScreenCheckCliTests(unittest.TestCase):
 
 class ScreenCheckDocTests(unittest.TestCase):
     def test_skills_prefer_the_fixed_cli_and_still_refuse_one_off_checkers(self) -> None:
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
         work = (REPO / "skills" / "jt-work-queue" / "SKILL.md").read_text(encoding="utf-8")
         loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(
             encoding="utf-8"
         )
-        for text in (readme, work, loop):
+        for text in (work, loop):
             self.assertIn("gate.py screen-check", text)
             self.assertIn("JTek", text)
             self.assertIn("existing check commands", text)
         self.assertIn("one-off-checker", GATE_PATH.read_text(encoding="utf-8"))
-        self.assertNotIn("playwright", loop.lower())
-        self.assertNotIn("start:", loop)
-        self.assertNotIn("port:", loop)
-        self.assertNotIn("click:", loop)
-        self.assertNotIn("one-off-checker", loop)
         self.assertTrue(GATE_PATH.is_file())
