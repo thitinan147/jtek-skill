@@ -34,7 +34,7 @@ When inspecting a `review:` card `<id>`, present:
 
 ## 3. Record the Human's Decision (on `<queue>` branch, clean tree)
 
-- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash` (on `refused: not-landed`, tell the human to merge on GitHub/locally first). Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`, then commit `card-loop/board.md`.
+- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash` (if not landed yet, tell the human to merge on GitHub/locally first). Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`, then commit `card-loop/board.md`.
 - **Send back (`send-back:`):** Change `review:` to `send-back: <reason>` on `card-loop/board.md` (stays `- [ ]`) and commit on `<queue>`.
 - **Drop (`drop:`):** Require a `<reason>`. Change `- [ ]` to `- [x]` and append `drop: <reason>` on `card-loop/board.md`, commit on `<queue>`, and close any open PR without merging.
 - **Move (`first` | `main` | `later` | `closed`):** Move only that line on `card-loop/board.md` without changing its status or touching code, then commit on `<queue>`.

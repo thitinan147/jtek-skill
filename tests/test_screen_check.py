@@ -225,7 +225,6 @@ class ScreenCheckDocTests(unittest.TestCase):
             self.assertIn("gate.py screen-check", text)
             self.assertIn("JTek", text)
             self.assertIn("existing check commands", text)
-        self.assertIn("refused: one-off-checker", work)
         self.assertIn("one-off-checker", GATE_PATH.read_text(encoding="utf-8"))
         self.assertNotIn("playwright", loop.lower())
         self.assertNotIn("start:", loop)

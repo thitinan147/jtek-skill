@@ -1,6 +1,6 @@
 ---
 name: jt-work-queue
-description: Work the card queue in card-loop/board.md: set up the board, capture the brief, draft and add cards, pick the next card, implement with adaptive verification, and hand off to review. This command cannot merge.
+description: Work the card queue in card-loop/board.md: set up the board, capture a brief, draft and add cards, pick the next card, implement with adaptive verification, and hand off to review. This command cannot merge.
 license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo.
 metadata:
@@ -11,47 +11,40 @@ metadata:
 
 # jt-work-queue
 
-Read [references/contract.md](references/contract.md) for the full loop contract, board/card/plan formats, and skill rules. Templates live in `assets/` and the gate CLI lives at `scripts/gate.py` in this skill folder.
-
-Run from the open repo root:
+*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for board, card, plan, and tiered gate contracts. Templates live in [assets/board.template.md](assets/board.template.md), [assets/card.template.md](assets/card.template.md), and [assets/plan.template.md](assets/plan.template.md). The unified JTek gate CLI is [scripts/gate.py](scripts/gate.py).
 
 ```bash
 python3 <this-skill-dir>/scripts/gate.py next --root .
-python3 <this-skill-dir>/scripts/gate.py ask --root . --id <id> --question "<question, blocker, and options>" [--refused <token>]
+python3 <this-skill-dir>/scripts/gate.py ask --root . --id <id> --question "<question, options, tried>" [--refused <token>]
 python3 <this-skill-dir>/scripts/gate.py reach-review --root . --id <id> [--write] [--link <url|local>]
 python3 <this-skill-dir>/scripts/gate.py diff-check --root . --id <id>
 python3 <this-skill-dir>/scripts/gate.py screen-check --root . --id <id>
-python3 <this-skill-dir>/scripts/gate.py landed --root . --id <id>
 ```
 
-## 1. Set up board (`action: setup-board`)
+## 1. Intake & Setup (`gate.py next`)
 
-1. If the open repo is not a git repo, stop and say to run `git init` first.
-2. If HEAD is not on a branch, stop and say to check out the branch that will hold the queue.
-3. Copy `assets/board.template.md` from this skill to `card-loop/board.md`.
-4. Write the current branch name after `queue:`, and replace `<REPO_NAME>` with the repo folder name.
-5. Fill `<SETUP_CMD>`, `<TEST_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>` from the open repo (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`). If `playwright` is in `package.json` or a `playwright` command is on PATH, write `playwright` (or `cypress`); do not put a session or MCP browser name.
-6. Propose discovered skills with `on this machine` or `install this` (`npx skills add <source>@<skillId> -g -y`, following symlinks from home dot-folders to the real file so the same real path counts as one skill, and `https://skills.sh/api/search?q=<words>&limit=5`). Do not run an install command. Do not write `card-loop/board.md` until the human accepts.
+1. Run `gate.py next --root .` and follow `action:` (`setup-board`, `brief`, `add-card`, `do-card`, `wait`, `stop`).
+2. If `landed-waiting: <ids>` appears, tell the human to run `/jt-review-work` to close those cards. Never mark `merge:` or invoke `/jt-review-work` yourself.
+3. **Setup board (`setup-board`):** Inspect the repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`) to detect `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`. Show the table with the source of each value (e.g. `TEST_CMD = npm test` from `package.json`) and **wait for human confirmation** before writing `card-loop/board.md` from [assets/board.template.md](assets/board.template.md).
+4. **Brief & Add cards (`brief` / `add-card`):** Interview until intent, `do:`, `out:`, `files:`, and `pass:` are unambiguous. Wait for human approval before writing `card-loop/brief.md` or `card-loop/backlog/<id>.md` (from [assets/card.template.md](assets/card.template.md)) and adding `- [ ] **<id>** <name> (<kind>)` to `card-loop/board.md` on `<queue>`.
 
-## 2. Brief & Add cards (`action: brief` / `action: add-card`)
+## 2. Select Execution Strategy & Minimum Evidence (`do-card`)
 
-- **Brief:** Interview one round at a time until `want:`, `out:`, and `split:` are clear. Wait for the human to accept the draft before writing `card-loop/brief.md` on the queue branch.
-- **Add cards:** Interview until each card has one ticket kind, one path, `do:`, `out:`, `files:`, `pass:`, `screen:`, and one Escape stop for **Plan**. Cards sharing `layer:` link each other under `refs:`. Do not split into parallel agents. Wait for the human to accept the draft from `assets/card.template.md`, then write `card-loop/backlog/<id>.md` and add `- [ ] **<id>** <short name> (<kind>)` to `card-loop/board.md` on the queue branch.
+Choose your own implementation method (TDD, planning, subagents, worktrees are optional). The gate enforces only minimum outcome evidence by tier:
 
-## 3. Pick and do work (`action: do-card`)
+| Mode / Tier | When to Use | Minimum Evidence Checked by `gate.py` |
+|---|---|---|
+| **1. Direct Execution (`Quick`)** | `docs` (doc files only) or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. Skip `plan/<id>.md` and `diff-check`. |
+| **2. Investigate & Debug (`Standard`)** | `fix` cards | `card-loop/plan/<id>.md` (from [assets/plan.template.md](assets/plan.template.md)), `<TEST_CMD>` green, `## review-diff` with latest code SHA (`gate.py diff-check`), plus JTek `gate.py screen-check` when `screen: yes`. |
+| **3. Plan & Implement (`Standard`)** | `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` | Same as Standard above; review this card's diff via `<REPO_SKILLS>` or yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review. |
+| **4. Decompose / Ask (`Critical`)** | Ambiguous intent, breaking contract, irreversible action, or oversized task | Do not guess. Run `gate.py ask` with options or a decomposition proposal, commit on `<queue>`, and move to the next card. |
 
-1. Run `gate.py next --root .`. If `landed-waiting:` is printed, tell the human to run `/jt-review-work` to close those cards; never mark `merge:` yourself.
-2. If `reason` is `related`, report `ids` and stop or write `ask:`. Do not split into parallel agents.
-3. On `card-<id>` (branched from `<queue>`):
-   - For Standard tier cards, create `card-loop/plan/<id>.md` from `assets/plan.template.md` and follow **Plan** in `references/contract.md`. Quick tier (`docs` / `style`) does not require `plan/<id>.md`.
-   - Use the existing check commands on the board (`<TEST_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`). Do not create a new check script unless `do:` orders it (`refused: one-off-checker`).
-   - Screen work uses JTek `python3 <this-skill-dir>/scripts/gate.py screen-check --root . --id <id>` or existing check commands on the board.
-   - Before `review:` on Standard tier code changes, review this card's diff (via `<REPO_SKILLS>` or yourself if not installed). Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review. Record `## review-diff` with the latest commit SHA and verify `python3 <this-skill-dir>/scripts/gate.py diff-check --root . --id <id>` exits 0.
+## 3. Scope, Failure & Recovery, and Handoff
 
-## 4. Write ask & Open for review
-
-- **Write ask:** On the queue branch, run `python3 <this-skill-dir>/scripts/gate.py ask --root . --id <id> --question "..." [--refused <token>]`, commit `card-loop/board.md` and `card-loop/backlog/<id>.md`, and pick the next card.
-- **Open for review:** On the queue branch, run `reach-review --root . --id <id>`.
-  - When `allowed` and no remote: run `reach-review --root . --id <id> --write --link local`.
-  - When `allowed` and a remote exists: push `card-<id>` and run `gh pr create --draft --base <queue> --head card-<id> --title "<id>" --body "card <id>"` (if no open draft PR exists; do not open a duplicate, skip `gh pr create` if already open). If the draft PR cannot be opened, write `ask:`. The line must not be `review:`. Then run `reach-review --root . --id <id> --write`.
-  - When `refused:`: if `next: retry`, follow **Three rounds** on this card; if `next: ask` (such as `refused: pr-missing`, `refused: one-off-checker`, `refused: related`), follow **Write ask**; if `next: stop`, stop the queue.
+- **Scope Control:** Stay inside `do:` and never cross `out:`. Use `files:` as your starting point without reading the whole repo. Use the existing check commands on the board; never create a new check script unless `do:` orders it.
+- **Failure & Recovery:** When `gate.py` refuses, obey `next:`:
+  - `next: retry`: Read `detail:` and `log:`, fix the cause, and retry (at most **3 rounds** per card). After 3 failed rounds, run `gate.py ask` recording what was tried in all 3 rounds, commit on `<queue>`, and move to the next card.
+  - `next: ask`: Run `gate.py ask` with the blocker from `detail:`, commit on `<queue>`, and move to the next card.
+  - `next: stop`: Stop the entire queue and report to the human.
+- **Continuous Improvement:** On recurring failures across cards, propose a new `chore` card with evidence for human approval. Never modify rule files (`SKILL.md` or `gate.py`) in the current card's diff.
+- **Handoff:** Commit work on `card-<id>`. On `<queue>`, run `reach-review --root . --id <id>`. When `allowed`: if no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `card-<id>`, open one draft PR (`gh pr create --draft --base <queue> --head card-<id>`), and run `reach-review --root . --id <id> --write`, then commit `card-loop/board.md` on `<queue>` and loop to the next card.
