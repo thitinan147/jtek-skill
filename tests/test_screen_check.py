@@ -14,11 +14,16 @@ GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
 
 
 def load_gate():
-    spec = importlib.util.spec_from_file_location("tek_screen_gate", GATE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["tek_screen_gate"] = module
-    spec.loader.exec_module(module)
-    return module
+    prev = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec = importlib.util.spec_from_file_location("tek_screen_gate", GATE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["tek_screen_gate"] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.dont_write_bytecode = prev
 
 
 gate = load_gate()

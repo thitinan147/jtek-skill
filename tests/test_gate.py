@@ -14,11 +14,16 @@ GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
 
 
 def load_gate():
-    spec = importlib.util.spec_from_file_location("tek_gate", GATE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["tek_gate"] = module
-    spec.loader.exec_module(module)
-    return module
+    prev = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec = importlib.util.spec_from_file_location("tek_gate", GATE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["tek_gate"] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.dont_write_bytecode = prev
 
 
 gate = load_gate()
@@ -2138,6 +2143,23 @@ class CommandApprovalTests(unittest.TestCase):
         result = run_gate_raw(self.repo, "screen-check", "--id", "12")
         self.assertIn("refused: commands-changed", result.stdout)
         self.assertFalse(self.marker.exists())
+
+    def test_screen_check_refuses_unapproved_start_even_without_screen_yes_or_via_cli_override(self) -> None:
+        card = self.repo / "card-loop" / "backlog" / "12.md"
+        card.write_text(
+            card.read_text(encoding="utf-8") + f"\nstart: touch {self.marker}\nport: 1\n",
+            encoding="utf-8",
+        )
+        res_no_screen_yes = run_gate_raw(self.repo, "screen-check", "--id", "12")
+        self.assertIn("refused: commands-unapproved", res_no_screen_yes.stdout)
+        self.assertFalse(self.marker.exists())
+
+        run_gate_raw(self.repo, "approve-commands", "--id", "12")
+        res_cli_override = run_gate_raw(
+            self.repo, "screen-check", "--id", "12", "--start", f"touch {self.marker}.cli"
+        )
+        self.assertIn("refused: commands-changed", res_cli_override.stdout)
+        self.assertFalse((self.marker.parent / f"{self.marker.name}.cli").exists())
 
     def test_invalid_card_id_is_refused_by_approve(self) -> None:
         result = run_gate_raw(self.repo, "approve-commands", "--id", "../x")

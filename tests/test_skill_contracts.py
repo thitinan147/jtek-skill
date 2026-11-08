@@ -26,6 +26,14 @@ class SkillContractTests(unittest.TestCase):
         dirs = sorted(p.name for p in SKILLS_DIR.iterdir() if p.is_dir())
         self.assertEqual(dirs, ["jt-review-work", "jt-work-queue"])
 
+    def test_no_pycache_or_bytecode_in_skills(self) -> None:
+        bad = [
+            str(p.relative_to(REPO))
+            for p in SKILLS_DIR.rglob("*")
+            if p.name == "__pycache__" or p.suffix in {".pyc", ".pyo"}
+        ]
+        self.assertEqual(bad, [], f"Bytecode or __pycache__ found in skills/: {bad}")
+
     def test_agentskills_frontmatter_constraints(self) -> None:
         for skill_dir in SKILLS_DIR.iterdir():
             if not skill_dir.is_dir():

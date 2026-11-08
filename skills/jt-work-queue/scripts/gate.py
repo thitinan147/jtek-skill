@@ -861,7 +861,7 @@ def _board_runs_commands(commands: dict[str, str]) -> bool:
 
 
 def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
-    return sees_screen(card_text) and bool(commands["start"].strip() or commands["click"].strip())
+    return bool(commands["start"].strip() or commands["click"].strip())
 
 
 def _approval_path(root: Path) -> Path:
@@ -1474,13 +1474,16 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         board = root / "card-loop" / "board.md"
         text = board.read_text(encoding="utf-8") if board.is_file() else ""
         card = _read_card(root, args.id)
+        card_start = _label(card, "start")
+        if start and start.strip() != card_start.strip():
+            return _refuse("commands-changed", detail="--start does not match card start")
+        unapproved = _commands_refusal(root, text, args.id, card, check_board=False)
+        if unapproved:
+            return _refuse(unapproved[0], detail=unapproved[1])
         if not browser:
             browser = parse_field(text, "BROWSER_TOOL")
         if not start:
-            unapproved = _commands_refusal(root, text, args.id, card, check_board=False)
-            if unapproved:
-                return _refuse(unapproved[0], detail=unapproved[1])
-            start = _label(card, "start")
+            start = card_start
         if not ports:
             ports = _label(card, "port")
         if not wait:
