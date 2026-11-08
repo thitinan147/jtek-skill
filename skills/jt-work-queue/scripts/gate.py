@@ -46,11 +46,11 @@ ALLOWED_ACTIONS = frozenset(
     }
 )
 COMMAND_FOR = {
-    "setup-board": "/jt-new-board",
-    "brief": "/jt-ask-brief",
-    "add-card": "/jt-new-card",
-    "do-card": "/jt-do-work",
-    "open-review": "/jt-open-work",
+    "setup-board": "/jt-work-queue",
+    "brief": "/jt-work-queue",
+    "add-card": "/jt-work-queue",
+    "do-card": "/jt-work-queue",
+    "open-review": "/jt-review-work",
     "wait": "",
     "stop": "",
 }

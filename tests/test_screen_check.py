@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-next-step" / "gate.py"
+GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
 
 
 def load_gate():
@@ -217,26 +217,19 @@ class ScreenCheckCliTests(unittest.TestCase):
 class ScreenCheckDocTests(unittest.TestCase):
     def test_skills_prefer_the_fixed_cli_and_still_refuse_one_off_checkers(self) -> None:
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        work = (REPO / "skills" / "jt-do-work" / "SKILL.md").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "jt-card-gate" / "references" / "loop.md").read_text(
+        work = (REPO / "skills" / "jt-work-queue" / "SKILL.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(
             encoding="utf-8"
         )
-        rule = (REPO / "skills" / "jt-card-gate" / "SKILL.md").read_text(encoding="utf-8")
-        nxt = (REPO / "skills" / "jt-next-step" / "SKILL.md").read_text(encoding="utf-8")
-        for text in (readme, work, loop, rule, nxt):
+        for text in (readme, work, loop):
             self.assertIn("gate.py screen-check", text)
             self.assertIn("JTek", text)
-        for text in (loop, rule):
-            self.assertIn("existing check commands", text)
-        for text in (readme, work, nxt):
             self.assertIn("existing check commands", text)
         self.assertIn("refused: one-off-checker", work)
-        self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("one-off-checker", GATE_PATH.read_text(encoding="utf-8"))
         self.assertNotIn("playwright", loop.lower())
         self.assertNotIn("start:", loop)
         self.assertNotIn("port:", loop)
         self.assertNotIn("click:", loop)
         self.assertNotIn("one-off-checker", loop)
-        self.assertEqual(readme.count("\n## "), 4)
         self.assertTrue(GATE_PATH.is_file())
