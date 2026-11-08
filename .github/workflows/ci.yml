@@ -43,7 +43,12 @@ jobs:
   skillspector:
     # Report-only for now: jt-work-queue intentionally runs shell commands, so the score stays high.
     # Results go to the Security tab. Tighten to blocking once the baseline is stable.
+    # One job per skill: GitHub rejects two SARIF runs that share a category.
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: [jt-work-queue, jt-review-work]
     permissions:
       contents: read
       security-events: write
@@ -53,15 +58,13 @@ jobs:
         with:
           enable-cache: false
       - run: uv tool install git+https://github.com/NVIDIA/skillspector.git@v2.12.0
-      - name: Scan each skill (static, no LLM)
+      - name: Scan (static, no LLM)
         run: |
           mkdir -p sarif
-          for s in skills/*/; do
-            n=$(basename "$s")
-            skillspector scan "$s" --no-llm --baseline .skillspector-baseline.yaml \
-              --format sarif --output "sarif/$n.sarif" || true
-          done
-      - uses: github/codeql-action/upload-sarif@v3
+          skillspector scan "skills/${{ matrix.skill }}" --no-llm --baseline .skillspector-baseline.yaml \
+            --format sarif --output "sarif/${{ matrix.skill }}.sarif" || true
+      - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: sarif
+          sarif_file: sarif/${{ matrix.skill }}.sarif
+          category: skillspector-${{ matrix.skill }}
