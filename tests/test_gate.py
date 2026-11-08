@@ -413,6 +413,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: test-failed", result.stdout)
         self.assertIn("merge: no", result.stdout)
+        self.assertIn("next: retry", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         ancestor = subprocess.run(
@@ -421,6 +422,34 @@ class ReachReviewGitTests(unittest.TestCase):
             capture_output=True,
         )
         self.assertNotEqual(ancestor.returncode, 0)
+
+    def test_test_failed_prints_detail_tail_and_log_without_dirtying_git(self) -> None:
+        git(self.repo, "checkout", "card-12")
+        (self.repo / "check.py").write_text(
+            "import sys\nfor i in range(25):\n    print(f'ERR_LINE_{i}')\nsys.exit(1)\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "test: failing output")
+        git(self.repo, "checkout", "main")
+        self._record_review("12")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertIn("next: retry", result.stdout)
+        self.assertIn("detail: ERR_LINE_5", result.stdout)
+        self.assertIn("ERR_LINE_24", result.stdout)
+        self.assertNotIn("ERR_LINE_0", result.stdout)
+        log_lines = [
+            line.split(":", 1)[1].strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("log:")
+        ]
+        self.assertEqual(len(log_lines), 1)
+        log_path = Path(log_lines[0])
+        self.assertTrue(log_path.is_file())
+        self.assertIn("ERR_LINE_0", log_path.read_text(encoding="utf-8"))
+        status = git(self.repo, "status", "--porcelain")
+        self.assertEqual(status.stdout.strip(), "")
 
     def test_green_command_on_the_card_branch_writes_review_without_merging(self) -> None:
         (self.repo / "check.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
@@ -656,7 +685,7 @@ class ReachReviewGitTests(unittest.TestCase):
         source = GATE_PATH.read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: browser-empty", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
@@ -681,7 +710,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: start-down", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         self.assertIn("start-down", GATE_PATH.read_text(encoding="utf-8"))
@@ -702,7 +731,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("refused: click-mismatch", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         self.assertIn("click-mismatch", GATE_PATH.read_text(encoding="utf-8"))
@@ -882,7 +911,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: one-off-checker", result.stdout)
         self.assertIn("merge: no", result.stdout)
-        self.assertNotIn("step: ask", result.stdout)
+        self.assertNotIn("next: ask", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
 
@@ -923,7 +952,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: related", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
@@ -944,7 +973,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: repeat-patch", result.stdout)
         self.assertIn("detail: no-row", result.stdout)
         self.assertIn("merge: no", result.stdout)
-        self.assertNotIn("step: ask", result.stdout)
+        self.assertNotIn("next: ask", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
 
@@ -1225,7 +1254,7 @@ class DraftPrReachTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: pr-missing", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(self._board(), before)
         self.assertNotIn("review:", self._board())
@@ -1271,7 +1300,7 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._json_gh(payload),
         )
         self.assertIn("refused: pr-not-draft", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertNotIn("review:", self._board())
 
     def test_two_open_pull_requests_do_not_write_review(self) -> None:
@@ -1292,7 +1321,7 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._json_gh(f"[{one},{one}]"),
         )
         self.assertIn("refused: pr-duplicate", result.stdout)
-        self.assertIn("step: ask", result.stdout)
+        self.assertIn("next: ask", result.stdout)
         self.assertNotIn("review:", self._board())
 
     def test_gh_failure_and_a_missing_binary_ask_instead_of_review(self) -> None:
@@ -1309,7 +1338,7 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._gh("exit 1\n"),
         )
         self.assertIn("refused: pr-failed", failed.stdout)
-        self.assertIn("step: ask", failed.stdout)
+        self.assertIn("next: ask", failed.stdout)
         self.assertNotIn("review:", self._board())
         missing = run_gate(
             self.repo,
@@ -1322,7 +1351,7 @@ class DraftPrReachTests(unittest.TestCase):
             env=self._no_gh(),
         )
         self.assertIn("refused: gh-missing", missing.stdout)
-        self.assertIn("step: ask", missing.stdout)
+        self.assertIn("next: ask", missing.stdout)
         self.assertNotIn("review:", self._board())
 
     def test_a_red_command_still_refuses_before_the_pull_request(self) -> None:
@@ -1943,6 +1972,21 @@ class GateSourceTests(unittest.TestCase):
         self.assertIn('reason="related"', source)
         self.assertIn("pr-missing", source)
         self.assertNotIn("pr create", source)
+
+    def test_every_refusal_token_is_in_next_for(self) -> None:
+        import re as _re
+
+        source = GATE_PATH.read_text(encoding="utf-8")
+        found = set()
+        found.update(_re.findall(r'_refuse\("([a-z0-9-]+)"', source))
+        found.update(_re.findall(r'GateError\("([a-z0-9-]+)"', source))
+        found.update(_re.findall(r'return \("ask", "([a-z0-9-]+)"\)', source))
+        found.update(_re.findall(r'screen-check: ([a-z0-9-]+)', source))
+        found.update(_re.findall(r'return "(start-down|click-mismatch|browser-failed)"', source))
+        excluded = {"not-landed", "ok"}
+        for token in sorted(found - excluded):
+            self.assertIn(token, gate.NEXT_FOR, f"missing NEXT_FOR entry for {token}")
+            self.assertIn(gate.NEXT_FOR[token], {"retry", "ask", "stop"})
 
 
 if __name__ == "__main__":

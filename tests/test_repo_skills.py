@@ -269,7 +269,7 @@ class RepeatRuleTests(unittest.TestCase):
         self.assertIn("`reason` is `related`", nxt)
         self.assertIn("refused: one-off-checker", nxt)
         self.assertIn("refused: repeat-patch", nxt)
-        self.assertIn("step: ask", nxt)
+        self.assertIn("next: ask", nxt)
         self.assertIn("Do not split into parallel agents", new_card)
         self.assertIn("Do not report them as parallel work", reading)
         self.assertIn("does not replace the check commands on the board", skills)
@@ -301,7 +301,7 @@ class DraftPrSkillTests(unittest.TestCase):
             self.assertIn("The line must not be `review:`", text)
         for text in (work, nxt):
             self.assertIn("refused: pr-missing", text)
-            self.assertIn("step: ask", text)
+            self.assertIn("next: ask", text)
         self.assertIn("Do not open a duplicate", work)
         self.assertIn("skip `gh pr create`", nxt)
         self.assertIn("does not open a PR", merge)

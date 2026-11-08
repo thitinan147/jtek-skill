@@ -57,6 +57,40 @@ COMMAND_FOR = {
 STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:")
 SETUP_TIMEOUT = 900
 TEST_TIMEOUT = 600
+NEXT_FOR = {
+    "test-failed": "retry",
+    "test-timeout": "retry",
+    "setup-failed": "retry",
+    "review-diff": "retry",
+    "one-off-checker": "retry",
+    "card-branch-missing": "retry",
+    "merge-refused": "retry",
+    "repeat-patch": "retry",
+    "pair-not-passed": "retry",
+    "related": "ask",
+    "browser-empty": "ask",
+    "browser-missing": "ask",
+    "browser-failed": "ask",
+    "start-down": "ask",
+    "click-mismatch": "ask",
+    "worktree-failed": "ask",
+    "pr-missing": "ask",
+    "pr-duplicate": "ask",
+    "pr-base": "ask",
+    "pr-not-draft": "ask",
+    "pr-failed": "ask",
+    "gh-missing": "ask",
+    "question-open": "ask",
+    "board-missing": "stop",
+    "not-on-queue-branch": "stop",
+    "test-cmd-empty": "stop",
+    "unknown-status": "stop",
+    "card-line-missing": "stop",
+    "card-closed": "stop",
+    "merge": "stop",
+    "git-status-failed": "stop",
+    "invalid-id": "stop",
+}
 MERGE_ARGV = {
     "merge",
     "/merge",
@@ -132,9 +166,10 @@ def _cut_known_status(text: str) -> str:
 
 
 class GateError(Exception):
-    def __init__(self, reason: str, detail: str = "") -> None:
+    def __init__(self, reason: str, detail: str = "", log: str = "") -> None:
         self.reason = reason
         self.detail = detail
+        self.log = log
         super().__init__(reason if not detail else f"{reason}: {detail}")
 
 
@@ -730,6 +765,26 @@ def review_packet(root: Path, queue: str, card_id: str) -> dict[str, str | bool]
     }
 
 
+def _git_common_dir(root: Path) -> Path:
+    proc = _run_git(root, ["rev-parse", "--git-common-dir"])
+    if proc.returncode == 0 and proc.stdout.strip():
+        raw = Path(proc.stdout.strip())
+        return raw if raw.is_absolute() else (root / raw).resolve()
+    return (root / ".git").resolve()
+
+
+def _record_command_log(
+    root: Path, card_id: str, command_name: str, output: str
+) -> tuple[str, str]:
+    log_dir = _git_common_dir(root) / "card-loop" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{card_id}-{command_name}.log"
+    log_path.write_text(output, encoding="utf-8")
+    tail_lines = [line for line in output.splitlines() if line.strip()][-20:]
+    detail = "\n".join(tail_lines) if tail_lines else f"{command_name}-failed"
+    return detail, str(log_path)
+
+
 def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "") -> int:
     command = test_cmd.strip()
     if command == "":
@@ -740,9 +795,10 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "
         return 0
     with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
         limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
-        code, _out, timed_out = _run_shell(command, work, timeout=limit)
+        code, out, timed_out = _run_shell(command, work, timeout=limit)
         if timed_out:
-            raise GateError("test-timeout")
+            detail, log_path = _record_command_log(root, card_id, "test", out)
+            raise GateError("test-timeout", detail=detail, log=log_path)
         return code
 
 
@@ -843,13 +899,16 @@ def cmd_next(root: Path) -> int:
     return 0
 
 
-def _refuse(reason: str, step: str = "", detail: str = "") -> int:
+def _refuse(reason: str, detail: str = "", log: str = "") -> int:
     print(f"refused: {reason}")
     print("merge: no")
-    if step:
-        print(f"step: {step}")
+    nxt = NEXT_FOR.get(reason)
+    if nxt:
+        print(f"next: {nxt}")
     if detail:
         print(f"detail: {detail}")
+    if log:
+        print(f"log: {log}")
     return 1
 
 
@@ -1187,9 +1246,10 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
         if added.returncode != 0:
             raise GateError("worktree-failed", added.stderr.strip())
         if setup_cmd.strip():
-            code, _out, _timed_out = _run_shell(setup_cmd.strip(), worktree, timeout=SETUP_TIMEOUT)
+            code, out, _timed_out = _run_shell(setup_cmd.strip(), worktree, timeout=SETUP_TIMEOUT)
             if code != 0:
-                raise GateError("setup-failed")
+                detail, log_path = _record_command_log(root, card_id, "setup", out)
+                raise GateError("setup-failed", detail=detail, log=log_path)
         yield worktree
     finally:
         _run_git(root, ["worktree", "remove", "--force", str(worktree)])
@@ -1655,7 +1715,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     cards = _cards_from_text(root, text)
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
-        return _refuse("related", "ask")
+        return _refuse("related")
     if _branch_exists(root, f"card-{card_id}"):
         kinds = _commit_kinds(root, queue, card_id)
         if kinds is None:
@@ -1678,20 +1738,22 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if need_screen:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
-                return _refuse("browser-empty", "ask")
+                return _refuse("browser-empty")
         if need_screen or need_test:
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 if need_screen:
                     reason = _click_surface(work, card_text)
                     if reason:
-                        return _refuse(reason, "ask")
+                        return _refuse(reason)
                 if need_test:
                     limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
-                    code, _out, timed_out = _run_shell(test_cmd, work, timeout=limit)
+                    code, out, timed_out = _run_shell(test_cmd, work, timeout=limit)
                     if timed_out:
-                        return _refuse("test-timeout")
+                        detail, log_path = _record_command_log(root, card_id, "test", out)
+                        return _refuse("test-timeout", detail=detail, log=log_path)
                     if code != 0:
-                        return _refuse("test-failed")
+                        detail, log_path = _record_command_log(root, card_id, "test", out)
+                        return _refuse("test-failed", detail=detail, log=log_path)
                 else:
                     code = 0
         else:
@@ -1703,13 +1765,13 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if write:
             kind, value = lookup_draft_pr(root, f"card-{card_id}", queue)
             if kind == "ask":
-                return _refuse(value, "ask")
+                return _refuse(value)
             if kind == "ok":
                 link = value
             updated = apply_waiting_review(text, card_id, code, link)
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
-        return _refuse(err.reason, detail=err.detail)
+        return _refuse(err.reason, detail=err.detail, log=err.log)
     print(f"repo-review: {review_state}")
     print("allowed")
     print("merge: no")
@@ -1722,6 +1784,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("this gate cannot merge\n")
         print("refused: merge")
         print("merge: no")
+        print(f"next: {NEXT_FOR['merge']}")
         return 2
     if args and args[0] == "diff-check":
         return diff_check_main(args[1:])

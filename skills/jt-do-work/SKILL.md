@@ -129,15 +129,15 @@ gh pr create --draft --base <queue> --head card-<id> --title "<id>" --body "card
 
 If `gh pr list` already has an item whose `isDraft` is true and whose `baseRefName` is the queue branch, skip `gh pr create`. If `gh` is not on PATH, push fails, create fails, there is no open PR, the open PR is not a draft, or the base is not the queue branch, follow **Write ask**. Do not pass `--write`. The line must not be `review:`.
 
-When the draft exists, run reach-review with `--write`. The script checks the pull request. If it prints `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, or `refused: pr-failed` with `step: ask`, follow **Write ask**. Do not set `review:`.
+When the draft exists, run reach-review with `--write`. The script checks the pull request. If it prints `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, or `refused: pr-failed` with `next: ask`, follow **Write ask**. Do not set `review:`.
 
-For any other `refused:`, use this map. Do not restate the gate condition.
+For any other `refused:`, follow `next:` (`next: retry` → **Three rounds**, `next: ask` → **Write ask**, `next: stop` → stop):
 
 | Output | Action |
 |---|---|
-| `step: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch` | Follow **Write ask**. Do not set `review:`. |
-| `refused: setup-failed`, `refused: test-failed`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** on this card. Do not set `review:`. |
-| any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
+| `next: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch` | Follow **Write ask**. Do not set `review:`. |
+| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** on this card. Do not set `review:`. |
+| `next: stop` or any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
 
 When the script passes, the line is `review:` followed by that draft URL. Set `round-status` in the plan to `review`. Commit only the plan file on `card-<id>`. Check out the queue branch and commit only `card-loop/board.md`. The item stays `- [ ]`.
 

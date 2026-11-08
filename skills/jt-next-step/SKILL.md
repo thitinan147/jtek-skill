@@ -44,7 +44,7 @@ gh pr create --draft --base <queue> --head card-<id> --title "<id>" --body "card
 
 If `gh pr list` already has a draft whose `baseRefName` is the queue branch, skip `gh pr create`. If push fails, `gh` is not on PATH, create fails, there is no open PR, the open PR is not a draft, or the base is not the queue branch, write `ask:`. Do not pass `--write`. The line must not be `review:`. The gate refuses the line.
 
-Then run with `--write`. If the script prints `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, or `refused: pr-failed` with `step: ask`, write `ask:`. Do not set `review:`.
+Then run with `--write`. If the script prints `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, or `refused: pr-failed` with `next: ask`, write `ask:`. Do not set `review:`.
 
 Screen work, before `review:`, uses the JTek screen command or an existing check command on the board. Do not add a new check script.
 
@@ -54,12 +54,12 @@ python3 <jt-next-step skill folder>/gate.py screen-check --root . --id <id>
 
 Code-touching commits use `python3 <jt-next-step skill folder>/gate.py diff-check --root . --id <id>`. A plan note is not that review. A name from `<TEK_SKILLS>` does not do this review.
 
-When the gate prints `refused:`, use this map. Do not restate the condition.
+When the gate prints `refused:`, follow `next:`:
 
 | Output | Action |
 |---|---|
-| `step: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch`, `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, `refused: pr-failed` | Write `ask:`. Do not set `review:`. |
-| `refused: setup-failed`, `refused: test-failed`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** in `loop.md` on the same card. Use the existing check commands on the board. Do not set `review:`. |
-| any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
+| `next: ask`, `refused: related`, `refused: browser-empty`, `refused: start-down`, `refused: click-mismatch`, `refused: pr-missing`, `refused: gh-missing`, `refused: pr-not-draft`, `refused: pr-base`, `refused: pr-duplicate`, `refused: pr-failed` | Write `ask:`. Do not set `review:`. |
+| `next: retry`, `refused: setup-failed`, `refused: test-failed`, `refused: test-timeout`, `refused: review-diff`, `refused: one-off-checker`, `refused: repeat-patch`, `refused: pair-not-passed` | Follow **Three rounds** in `loop.md` on the same card. Use the existing check commands on the board. Do not set `review:`. |
+| `next: stop` or any other `refused:` | Stop. Do not set `review:`. Do not add a new check script. |
 
 Done when you have run the printed command, or the script told you to stop, and the line is not marked `merge:`.
