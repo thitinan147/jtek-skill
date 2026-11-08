@@ -1684,6 +1684,35 @@ exit 0
         self.assertIn("landed: squash", result.stdout)
         self.assertIn("merge: no", result.stdout)
 
+    def test_next_reports_landed_waiting_for_merged_review_cards(self) -> None:
+        self._diverge()
+        # 1. Unmerged review: card -> no landed-waiting:
+        unmerged = run_gate(self.repo, "next")
+        self.assertEqual(unmerged.returncode, 0, unmerged.stdout + unmerged.stderr)
+        self.assertNotIn("landed-waiting:", unmerged.stdout)
+
+        # 2. Hanging gh with remote -> next still succeeds without failing
+        git(self.repo, "remote", "add", "origin", "https://example.com/repo.git")
+        hang_env = _git_bin_env(
+            self.repo,
+            "card-loop/bin-hang",
+            "#!/bin/sh\n/bin/sleep 5\n",
+        )
+        hang_env["JT_GH_TIMEOUT"] = "0.2"
+        hung = run_gate_env(self.repo, hang_env, "next")
+        self.assertEqual(hung.returncode, 0, hung.stdout + hung.stderr)
+        self.assertIn("action: open-review", hung.stdout)
+        self.assertNotIn("landed-waiting:", hung.stdout)
+
+        # 3. Ancestor merged -> next prints landed-waiting: 12 and does not modify board.md
+        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card-12")
+        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        merged = run_gate(self.repo, "next")
+        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        self.assertEqual(merged.returncode, 0, merged.stdout + merged.stderr)
+        self.assertIn("landed-waiting: 12", merged.stdout)
+        self.assertEqual(after, before)
+
 
 class DiffCheckTests(unittest.TestCase):
     def setUp(self) -> None:

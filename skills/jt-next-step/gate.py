@@ -972,10 +972,26 @@ def cmd_next(root: Path) -> int:
         dirty=_dirty(root) if board is not None and has_git else "clean",
         is_git=True if board is None else has_git,
     )
-    extra = None
+    extra: list[str] = []
+    if board is not None and has_git and board.queue_branch:
+        landed_ids: list[str] = []
+        for card in _ordered(board.cards):
+            if (
+                not card.checked
+                and card.section in SECTION_RANK
+                and card.status == "review:"
+                and valid_card_id(card.id)
+            ):
+                via, _ = landed_via(
+                    root, card.id, board.queue_branch, require_remote_for_gh=True
+                )
+                if via:
+                    landed_ids.append(card.id)
+        if landed_ids:
+            extra.append("landed-waiting: " + ", ".join(landed_ids))
     if decision.action == "open-review" and decision.id and board is not None:
-        extra = format_packet(review_packet(root, board.queue_branch, decision.id))
-    emit(decision, extra)
+        extra.extend(format_packet(review_packet(root, board.queue_branch, decision.id)))
+    emit(decision, extra or None)
     return 0
 
 
@@ -1499,7 +1515,14 @@ def _is_ancestor(root: Path, child: str, parent: str) -> bool:
     return proc.returncode == 0
 
 
-def _gh(root: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+def _gh(
+    root: Path, args: list[str], timeout: float | None = None
+) -> subprocess.CompletedProcess[str] | None:
+    limit = (
+        timeout
+        if timeout is not None
+        else float(os.environ.get("JT_GH_TIMEOUT", 5.0))
+    )
     try:
         return subprocess.run(
             ["gh", *args],
@@ -1507,8 +1530,9 @@ def _gh(root: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
             capture_output=True,
             text=True,
             env=_git_env(),
+            timeout=limit,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -1554,9 +1578,13 @@ def _github_mark(root: Path, card_id: str) -> str:
     return _payload_mark(listed.stdout, head)
 
 
-def landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
+def landed_via(
+    root: Path, card_id: str, queue: str, require_remote_for_gh: bool = False
+) -> tuple[str, str]:
     if _is_ancestor(root, f"card-{card_id}", queue):
         return "ancestor", ""
+    if require_remote_for_gh and not _has_remote(root):
+        return "", "pr-missing"
     mark = _github_mark(root, card_id)
     if mark == "merged":
         return "squash", ""
