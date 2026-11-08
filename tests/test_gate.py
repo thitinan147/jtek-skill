@@ -745,6 +745,38 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: setup-failed", result.stdout)
 
+    def test_test_cmd_timeout_refuses_and_kills_spawned_child_processes(self) -> None:
+        pid_file = self.repo / "child.pid"
+        test_cmd = (
+            f"python3 -c \"import os, signal, subprocess, time; "
+            f"p = subprocess.Popen(['python3', '-c', 'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)']); "
+            f"open('{pid_file}', 'w').write(str(p.pid)); "
+            f"time.sleep(60)\""
+        )
+        (self.repo / "card-loop" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test=test_cmd),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add hanging test cmd")
+        self._set_card_check("0")
+        env = os.environ.copy()
+        env["JT_TEST_TIMEOUT"] = "0.3"
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local", env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: test-timeout", result.stdout)
+        self.assertTrue(pid_file.is_file())
+        child_pid = int(pid_file.read_text(encoding="utf-8").strip())
+        deadline = time.monotonic() + 2.0
+        alive = True
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                alive = False
+                break
+            time.sleep(0.05)
+        self.assertFalse(alive, f"child process {child_pid} still running")
+
     def test_setup_command_creates_prerequisite_in_worktree(self) -> None:
         (self.repo / "card-loop" / "board.md").write_text(
             board_text(

@@ -56,6 +56,7 @@ COMMAND_FOR = {
 }
 STATUS_TOKENS = ("review:", "send-back:", "ask:", "merge:", "drop:", "complete:")
 SETUP_TIMEOUT = 900
+TEST_TIMEOUT = 600
 MERGE_ARGV = {
     "merge",
     "/merge",
@@ -738,7 +739,11 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "
     if command == NO_SUITE:
         return 0
     with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
-        return _run_shell(command, work)
+        limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
+        code, _out, timed_out = _run_shell(command, work, timeout=limit)
+        if timed_out:
+            raise GateError("test-timeout")
+        return code
 
 
 def _env_with_bin(cwd: Path) -> dict[str, str]:
@@ -749,20 +754,42 @@ def _env_with_bin(cwd: Path) -> dict[str, str]:
     return env
 
 
-def _run_shell(command: str, cwd: Path, timeout: int | None = None) -> int:
+def _run_shell(
+    command: str, cwd: Path, timeout: float | None = None
+) -> tuple[int, str, bool]:
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        cwd=cwd,
+        env=_env_with_bin(cwd),
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    timed_out = False
     try:
-        proc = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            env=_env_with_bin(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return proc.returncode
-    except subprocess.TimeoutExpired:
-        return 1
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            out, _ = proc.communicate(timeout=0.2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            out, _ = proc.communicate()
+        partial = exc.output
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", errors="replace")
+        out = (partial or "") + (out or "")
+    return (proc.returncode if not timed_out else -1, out or "", timed_out)
 
 
 def emit(decision: Decision, extra: list[str] | None = None) -> None:
@@ -1160,7 +1187,8 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
         if added.returncode != 0:
             raise GateError("worktree-failed", added.stderr.strip())
         if setup_cmd.strip():
-            if _run_shell(setup_cmd.strip(), worktree, timeout=SETUP_TIMEOUT) != 0:
+            code, _out, _timed_out = _run_shell(setup_cmd.strip(), worktree, timeout=SETUP_TIMEOUT)
+            if code != 0:
                 raise GateError("setup-failed")
         yield worktree
     finally:
@@ -1658,7 +1686,10 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                     if reason:
                         return _refuse(reason, "ask")
                 if need_test:
-                    code = _run_shell(test_cmd, work)
+                    limit = float(os.environ.get("JT_TEST_TIMEOUT", TEST_TIMEOUT))
+                    code, _out, timed_out = _run_shell(test_cmd, work, timeout=limit)
+                    if timed_out:
+                        return _refuse("test-timeout")
                     if code != 0:
                         return _refuse("test-failed")
                 else:
