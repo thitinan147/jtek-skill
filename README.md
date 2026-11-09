@@ -1,27 +1,55 @@
-# jtek-skill (v22)
+# jtek-skill
 
-***Constrain the outcome, not the agent.***
+**Let your coding agent work through a task queue, and let a script, not the agent, decide when work is ready for you to review.**
 
-`jtek-skill` is an outcome-gated work queue for coding agents in a single Git repository. Instead of scripting every step the agent must follow, a deterministic Python gate ([`skills/jt-work-queue/scripts/gate.py`](skills/jt-work-queue/scripts/gate.py)) verifies the resulting diff, test execution, and review evidence before work can enter `review:`.
+`jtek-skill` is a pair of [Agent Skills](https://agentskills.io/) for one Git repository. The agent takes tasks from a board, commits its work on a branch, and asks a deterministic Python gate ([`gate.py`](skills/jt-work-queue/scripts/gate.py)) to check the result: the diff, a passing test run, and review notes. Only when the gate agrees does the task move to `review:`. You hold the merge key: the agent can never merge.
 
-Designed for **Claude Code**, **Codex**, **Cursor**, **Grok Build**, and **Antigravity**.
+*Constrain the outcome, not the agent.*
+
+## Why
+
+- Agents say "done" when they are not. Here "done" is something a script checks: tests ran and passed, every acceptance line has evidence, the diff stays inside the files the task named.
+- You do not script every step. The agent chooses how; the gate checks what came out.
+- Everything is plain text under `jt-queue/` in your repo: a board, a brief, and one folder per task. No service, no account, no dependencies beyond `git` and Python.
 
 ## Install
 
 ```bash
-# Recommended: pin a release so later changes cannot reach you unreviewed
-npx skills add thitinan147/jtek-skill#v22.0.0 -g
+# Pin a release so later changes cannot reach you unreviewed (recommended)
+npx skills add thitinan147/jtek-skill#v22.0.0
 
-# Or follow the default branch (latest, unpinned)
-npx skills add thitinan147/jtek-skill -g
+# Or follow the default branch
+npx skills add thitinan147/jtek-skill
 ```
 
-After installing, read [SECURITY.md](SECURITY.md): the gate runs your test command, so a human must approve it first.
+Add `-g` to install for all your projects instead of the current one. Then read [SECURITY.md](SECURITY.md): the gate runs your test command, so a human must approve it first.
 
-## How It Works
+## Quick start
+
+In a Git repository, ask your agent:
 
 ```text
-Human + Agent (/jt-work-queue)                          Human Only (/jt-review-work)
+/jt-work-queue
+```
+
+The agent looks at your repo, proposes a test command, and writes `jt-queue/board.md` once you approve. Then add work:
+
+```text
+/jt-work-queue Add rate limiting to POST /api/login
+```
+
+Run it again to work the next ready task. When a task reaches `review:`, you decide:
+
+```text
+/jt-review-work
+```
+
+(In Codex, use `$jt-work-queue` and `$jt-review-work`.)
+
+## How it works
+
+```text
+Human + Agent (/jt-work-queue)                          Human only (/jt-review-work)
 +----------------------------------------------------+  +------------------------------+
 | 1. setup     Write board.md and gitignore jt-queue |  | Inspect diff, test evidence, |
 | 2. brief     Agree this round in brief.md          |  | scope warnings, and UI shots |
@@ -32,126 +60,45 @@ Human + Agent (/jt-work-queue)                          Human Only (/jt-review-w
 +----------------------------------------------------+  +------------------------------+
 ```
 
-1. **Queue files stay local, code lives on `task-<id>`:** Keep `jt-queue/` gitignored. The gate reads it from the working tree, so the board, brief, and task files are not committed or pushed. Commit implementation on `task-<id>`. Worktrees are optional.
-2. **Deterministic gate before review:** The agent cannot mark a task `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## evidence` covers every `pass:` line and whose `## review-diff` cites the latest code commit with `verdict: pass` and a `checked:` line, and `gate.py screen-check` when `screen: yes`. After three failed test rounds the gate answers `next: ask`.
-3. **Human holds the merge key:** `/jt-work-queue` does not merge into `<queue>` and does not mark `merge:`. Only a human invoking `/jt-review-work` can close or send a task back, and `merge:` is written only after `task-<id>` has landed.
+1. **Queue files stay local; code lives on `task-<id>`.** `jt-queue/` is gitignored, so your board is not committed or pushed.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks also need a `plan.md` whose evidence covers every `pass:` line and whose review cites the latest commit. After three failed rounds the gate tells the agent to ask you.
+3. **You hold the merge key.** Only `/jt-review-work`, run by a human, can close or send back a task, and `merge:` is written only after the branch has landed.
 
-## Two Commands
-
-| Command | Who Invokes It | Purpose |
+| Command | Who | What it does |
 |---|---|---|
-| [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or Agent | Set up `jt-queue/board.md`, capture a round brief, draft and add tasks, pick the next ready task, implement with adaptive verification (`Quick` / `Standard`), and hand off to `review:`. Cannot merge. |
-| [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Read the queue, surface tasks whose branches have already landed via [`skills/jt-review-work/scripts/landed.py`](skills/jt-review-work/scripts/landed.py), inspect `review:` evidence (`(<kind>)`, files touched outside `files:`, non-whitespace diffs on `style` tasks), and mark `merge:`, `send-back:`, `drop:`, or move board lines. |
+| [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or agent | Set up the board, capture a brief, add tasks, work the next ready task, hand off to `review:`. Cannot merge. |
+| [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Inspect `review:` tasks and their evidence, then `merge:`, `send-back:`, or `drop:`. |
 
-*(In Codex, use `$jt-work-queue` and `$jt-review-work`.)*
+## Documentation
 
-## Day-to-Day Usage
+- [Usage guide](docs/usage.md): the full walkthrough, task kinds, priorities, and the `jt-queue/` layout
+- [File and gate contract](skills/jt-work-queue/references/contract.md): every field the gate reads
+- [Security and trust model](SECURITY.md)
+- [Changelog](CHANGELOG.md) and [migrating from v20 or v21](MIGRATING.md)
 
-### 1. Start a project or a new round (`setup` → `brief` → `add-task`)
-Run `/jt-work-queue` in any Git repository:
-
-```text
-/jt-work-queue
-```
-
-- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
-- **Empty board and no `jt-queue/brief.md` (`brief`):** The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-work-queue/assets/brief.template.md`](skills/jt-work-queue/assets/brief.template.md)).
-- **Brief ready (`add-task`):** The agent drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-work-queue/assets/task.template.md`](skills/jt-work-queue/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
-
-### 2. Add one or multiple tasks at once
-Pass your task directly to `/jt-work-queue`:
-
-```text
-# Add a single task
-/jt-work-queue Add rate limiting to POST /api/login
-
-# Break a feature into several tasks
-/jt-work-queue Break user authentication into 3 tasks:
-1. Database migration and User model (first)
-2. POST /api/login and session middleware (main)
-3. Login form UI and E2E check (main, screen: yes)
-```
-
-- **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
-- **Slices:** Cut work into vertical slices that can pass their own `pass:`, not into layers. There is no `depends:`, so put the task that must come first under `## first`.
-- **Frontend and backend in separate repos:** Each repo keeps its own `jt-queue/`. List work in the other repo under `needs:` in `task.md`. The gate prints it but does not check it, and `/jt-review-work` asks you to confirm it has landed before `merge:`.
-- **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
-- **Same topic:** Tasks that share `layer:` link each other under `refs:`.
-- **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
-- **Verification tiers:** See [`skills/jt-work-queue/references/contract.md`](skills/jt-work-queue/references/contract.md).
-  - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
-  - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work-queue/assets/plan.template.md`](skills/jt-work-queue/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
-
-### 3. Work the queue (`do-task`)
-Each invocation of `/jt-work-queue` follows `gate.py next`: a `send-back:` task first, then an `ask:` whose question is cleared, then the first ready task in `first`, then `main`, then `later`.
-
-```text
-/jt-work-queue
-```
-
-Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a human approves the exact command strings:
-
-```bash
-python3 skills/jt-work-queue/scripts/gate.py approve-commands --root . --id 001
-```
-
-Commit code on `task-<id>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push `task-<id>` and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>`). `reach-review --write` refuses with `pr-missing` until that open draft PR has head `task-<id>` and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
-
-### 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
-When one or more tasks reach `review:`, the human runs:
-
-```text
-/jt-review-work
-```
-
-Or to inspect a specific task directly:
-
-```text
-/jt-review-work 001
-```
-
-`/jt-review-work` reads `jt-queue/board.md` from the working tree (from the `<queue>` branch only when that file is tracked). It flags files touched outside `files:` and non-whitespace changes on `style` tasks, checks whether `task-<id>` has landed, and records the decision on the board only:
-- **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`.
-- **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`.
-- **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging.
-
-## Repository Artifacts (`jt-queue/`)
-
-See [`skills/jt-work-queue/references/contract.md`](skills/jt-work-queue/references/contract.md) for the complete file and gate contract:
-
-```text
-jt-queue/
-├── board.md                 # Queue configuration (queue, test, skills) + task list
-├── brief.md                 # Round brief agreed with the human before drafting tasks
-└── tasks/
-    └── 001/
-        ├── task.md          # Approved task: kind, do, out, pass, files
-        └── plan.md          # Standard-tier notes, including review-diff
-```
-
-Add `jt-queue/` to `.gitignore`. The gate reads that folder from the working tree, so a personal queue is not committed or pushed. Log output and command approvals stay under `.git/jt-queue/`.
-
-## Security
-
-`jtek-skill` runs shell commands (your test command and any task `start`/`click`) on your machine; it is not a sandbox. Before the gate runs them, a human must review and approve them with `gate.py approve-commands --root . --id <id>`, and the gate refuses if they change afterwards. Read [SECURITY.md](SECURITY.md) for the full trust model, what leaves your machine (a draft PR push when a remote exists), and how to report a vulnerability.
-
-## Platform Support
+## Platform support
 
 | | Status |
 |---|---|
 | macOS, Linux | Supported. CI runs the tests on Ubuntu with Python 3.10 and 3.13. |
-| Windows | **Not supported yet.** The gate uses POSIX process groups (`os.killpg`) to stop a timed-out test command and `fcntl` for its file lock. Use WSL. |
+| Windows | **Not supported yet.** The gate uses POSIX process groups (`os.killpg`) and `fcntl`. Use WSL. |
 | Claude Code | Tested, including a clean install from a release tag. |
-| Codex, Cursor, Grok Build, Antigravity | Follows the Agent Skills format and should work, but has not been tested by the author. Reports are welcome. |
+| Codex, Cursor, Grok Build, Antigravity | Follows the Agent Skills format and should work, but is not tested by the author. Reports are welcome. |
 
 Needs `git` and Python 3.10 or later (standard library only). The GitHub CLI (`gh`) is optional.
 
-## Migrating from an older version
+## Security
 
-Upgrading from v20 or v21? See [MIGRATING.md](MIGRATING.md).
+`jtek-skill` runs shell commands on your machine (your test command and any task `start`/`click`). It is not a sandbox. A human must approve those exact commands with `gate.py approve-commands` first, and the gate refuses if they change. See [SECURITY.md](SECURITY.md) for the trust model, what leaves your machine, and how to report a vulnerability.
 
-## Running Tests
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Run the tests with:
 
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+## License
+
+[MIT](LICENSE)
