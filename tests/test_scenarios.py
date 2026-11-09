@@ -279,9 +279,9 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             again = _run_gate(repo, "reach-review", "--id", "4")
             self.assertIn("round 1 of 3", again.stdout)
             self.assertIn("next: retry", again.stdout)
-            # Running the same commit again is not a new round.
+            # Retrying the same commit still burns a round, so a flaky test cannot loop forever.
             same = _run_gate(repo, "reach-review", "--id", "4")
-            self.assertIn("round 1 of 3", same.stdout)
+            self.assertIn("round 2 of 3", same.stdout)
 
 
 if __name__ == "__main__":

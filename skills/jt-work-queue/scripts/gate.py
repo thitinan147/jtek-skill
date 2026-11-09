@@ -18,6 +18,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+try:  # POSIX only; without it the round counter is unlocked
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
+
 NO_SUITE = "no-suite"
 QUEUE_DIR = "jt-queue"
 CODE_KINDS = frozenset(
@@ -154,7 +159,7 @@ REVIEW_DETAIL = {
     "no-verdict": "'## review-diff' needs one line 'verdict: pass' or 'verdict: fix-needed'",
     "review-fix-needed": "'## review-diff' says verdict: fix-needed; fix the diff, commit, and review it again",
     "no-checked": "'## review-diff' needs at least one 'checked: <what you checked>' line",
-    "evidence-missing": "every pass: line in task.md needs a row in '## evidence' of plan.md",
+    "evidence-missing": "every pass: line in task.md must be quoted in the first cell of a filled row (pass line | command | result) in '## evidence' of plan.md",
 }
 MERGE_ARGV = {
     "merge",
@@ -1041,8 +1046,6 @@ def _record_command_log(
     return detail, str(log_path)
 
 
-
-
 def _env_with_bin(cwd: Path) -> dict[str, str]:
     env = _git_env()
     bin_dir = cwd / "node_modules" / ".bin"
@@ -1148,6 +1151,8 @@ def cmd_next(root: Path) -> int:
                         landed_ids.append(cid)
         if landed_ids:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
+    if board is not None and has_git:
+        prune_rounds(root, {card.id for card in board.cards if not card.checked})
     emit(decision, extra or None)
     return 0
 
@@ -1167,25 +1172,50 @@ def _load_attempts(root: Path) -> dict:
 def _save_attempts(root: Path, data: dict) -> None:
     path = _attempts_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+@contextmanager
+def _attempts_lock(root: Path):
+    lock = _attempts_path(root).with_suffix(".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+", encoding="utf-8") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def reset_rounds(root: Path, card_id: str) -> None:
-    data = _load_attempts(root)
-    if data.pop(card_id, None) is not None:
-        _save_attempts(root, data)
+    with _attempts_lock(root):
+        data = _load_attempts(root)
+        if data.pop(card_id, None) is not None:
+            _save_attempts(root, data)
+
+
+def prune_rounds(root: Path, open_ids: set[str]) -> None:
+    """Forget counts of tasks that are closed or gone from the board (merge:, drop:)."""
+    with _attempts_lock(root):
+        data = _load_attempts(root)
+        kept = {key: value for key, value in data.items() if key in open_ids}
+        if kept != data:
+            _save_attempts(root, kept)
 
 
 def count_round(root: Path, card_id: str) -> int:
-    """A failed round counts once per new commit on task-<id>; reruns of the same commit do not."""
-    tip = _run_git(root, ["rev-parse", "--verify", "--quiet", f"task-{card_id}"]).stdout.strip()
-    data = _load_attempts(root)
-    entry = data.get(card_id) if isinstance(data.get(card_id), dict) else {"count": 0, "sha": ""}
-    if tip != entry.get("sha"):
-        entry = {"count": int(entry.get("count", 0)) + 1, "sha": tip}
-        data[card_id] = entry
+    """Every failed reach-review run is a round, so retrying an unchanged commit still counts."""
+    with _attempts_lock(root):
+        data = _load_attempts(root)
+        entry = data.get(card_id)
+        count = int(entry.get("count", 0)) + 1 if isinstance(entry, dict) else 1
+        data[card_id] = {"count": count}
         _save_attempts(root, data)
-    return int(entry["count"])
+    return count
 
 
 def _refuse_round(root: Path, card_id: str, reason: str, detail: str = "", log: str = "") -> int:
@@ -1692,8 +1722,6 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
         shutil.rmtree(parent, ignore_errors=True)
 
 
-
-
 def detect_setup_cmd(root: Path) -> tuple[str, str]:
     """Return (command, source file) for the dependency install step, or ("", "")."""
     package = root / "package.json"
@@ -1908,17 +1936,42 @@ def _card_worktree_drift(root: Path, card_id: str) -> bool:
     return bool(proc.stdout.strip())
 
 
+def review_verdicts(section: str) -> list[str]:
+    """Verdict values in a review-diff; a line holding '|' is the unfilled template and is ignored."""
+    return [
+        value.rstrip(".").strip().casefold()
+        for value in _VERDICT_LINE.findall(section)
+        if "|" not in value
+    ]
+
+
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("`", "")).strip().casefold()
 
 
+def _evidence_rows(plan: str) -> list[list[str]]:
+    """Rows of the '## evidence' table that have three filled cells."""
+    rows: list[list[str]] = []
+    for line in _section_h2(plan, "evidence").splitlines():
+        text = line.strip()
+        if not text.startswith("|"):
+            continue
+        text = text[1:]
+        if text.endswith("|") and not text.endswith("\\|"):
+            text = text[:-1]
+        cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", text)]
+        if len(cells) >= 3 and all(cells[:3]):
+            rows.append(cells)
+    return rows
+
+
 def evidence_gaps(root: Path, card_id: str, plan: str) -> list[str]:
-    """pass: lines of the task that no '## evidence' text quotes."""
-    evidence = _norm(_section_h2(plan, "evidence"))
+    """pass: lines of the task that no '## evidence' row quotes in its first cell."""
+    firsts = [_norm(row[0]) for row in _evidence_rows(plan)]
     return [
         bullet
         for bullet in _header_bullets(_read_card(root, card_id))
-        if _norm(bullet) not in evidence
+        if not any(_norm(bullet) in first for first in firsts)
     ]
 
 
@@ -1947,10 +2000,10 @@ def diff_review_detail(root: Path, card_id: str) -> str:
         return "no-sha"
     if sha not in section and sha[:7] not in section:
         return "stale-review"
-    verdicts = _VERDICT_LINE.findall(section)
-    if not verdicts or any(v.casefold() not in {"pass", "fix-needed"} for v in verdicts):
+    verdicts = review_verdicts(section)
+    if not verdicts or any(v not in {"pass", "fix-needed"} for v in verdicts):
         return "no-verdict"
-    if any(v.casefold() == "fix-needed" for v in verdicts):
+    if "fix-needed" in verdicts:
         return "review-fix-needed"
     if _CHECKED_LINE.search(section) is None:
         return "no-checked"
@@ -2171,6 +2224,10 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         review_err = _review_recorded(root, queue, card_id)
         if review_err:
             note = f"{review_err}: {REVIEW_DETAIL.get(review_err, 'review-diff is not recorded')}"
+            if review_err == "no-verdict":
+                plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+                seen = _VERDICT_LINE.findall(_section_h2(plan, "review-diff"))
+                note += " (found: " + (", ".join(repr(v) for v in seen) or "no verdict line") + ")"
             if review_err == "evidence-missing":
                 plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
                 note += ": " + "; ".join(evidence_gaps(root, card_id, plan))

@@ -33,7 +33,7 @@ Human + Agent (/jt-work-queue)                          Human Only (/jt-review-w
 ```
 
 1. **Queue files stay local, code lives on `task-<id>`:** Keep `jt-queue/` gitignored. The gate reads it from the working tree, so the board, brief, and task files are not committed or pushed. Commit implementation on `task-<id>`. Worktrees are optional.
-2. **Deterministic gate before review:** The agent cannot mark a task `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## evidence` covers every `pass:` line and whose `## review-diff` cites the latest code commit with `verdict: pass` and a `checked:` line, and `gate.py screen-check` when `screen: yes`. After three failed test rounds on new commits the gate answers `next: ask`.
+2. **Deterministic gate before review:** The agent cannot mark a task `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## evidence` covers every `pass:` line and whose `## review-diff` cites the latest code commit with `verdict: pass` and a `checked:` line, and `gate.py screen-check` when `screen: yes`. After three failed test rounds the gate answers `next: ask`.
 3. **Human holds the merge key:** `/jt-work-queue` does not merge into `<queue>` and does not mark `merge:`. Only a human invoking `/jt-review-work` can close or send a task back, and `merge:` is written only after `task-<id>` has landed.
 
 ## Two Commands
@@ -54,8 +54,8 @@ Run `/jt-work-queue` in any Git repository:
 /jt-work-queue
 ```
 
-- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
-- **Empty board and no `jt-queue/brief.md` (`brief`):** The agent interviews you to capture the goal and scope of the current round in `jt-queue/brief.md`.
+- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
+- **Empty board and no `jt-queue/brief.md` (`brief`):** The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-work-queue/assets/brief.template.md`](skills/jt-work-queue/assets/brief.template.md)).
 - **Brief ready (`add-task`):** The agent drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-work-queue/assets/task.template.md`](skills/jt-work-queue/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
 
 ### 2. Add one or multiple tasks at once
@@ -73,6 +73,7 @@ Pass your task directly to `/jt-work-queue`:
 ```
 
 - **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
+- **Slices:** Cut work into vertical slices that can pass their own `pass:`, not into layers. There is no `depends:`, so put the task that must come first under `## first`.
 - **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
 - **Same topic:** Tasks that share `layer:` link each other under `refs:`.
 - **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
@@ -132,6 +133,18 @@ Add `jt-queue/` to `.gitignore`. The gate reads that folder from the working tre
 ## Security
 
 `jtek-skill` runs shell commands (your test command and any task `start`/`click`) on your machine; it is not a sandbox. Before the gate runs them, a human must review and approve them with `gate.py approve-commands --root . --id <id>`, and the gate refuses if they change afterwards. Read [SECURITY.md](SECURITY.md) for the full trust model, what leaves your machine (a draft PR push when a remote exists), and how to report a vulnerability.
+
+<details>
+<summary><strong>Migrating from v21 to v22</strong></summary>
+
+- **`plan.md` needs more before `review:` (Standard tier):** copy [`skills/jt-work-queue/assets/plan.template.md`](skills/jt-work-queue/assets/plan.template.md). `## review-diff` needs `sha:` (the latest code commit), `verdict: pass`, and at least one `checked:` line. `## evidence` needs one filled row `| pass line | command | result |` for every `pass:` line of the task. A v21 plan is refused with a `detail:` that says what is missing.
+- **Failed rounds are counted:** each failed `reach-review` (test, timeout, setup) prints `round <n> of 3`. The third answers `next: ask`. `gate.py ask` starts the count again.
+- **Every refusal has a `hint:`**, and a failed `start` or `click` keeps its output under `.git/jt-queue/logs/` (`log:`).
+- **New helper files:** `assets/brief.template.md`, `assets/lessons.template.md` (`jt-queue/lessons.md`), `references/playbooks.md`, `references/red-flags.md`.
+- **`chosen:` is removed from `task.template.md`.** Existing task files that still have it keep working.
+- See [CHANGELOG.md](CHANGELOG.md) for the full list.
+
+</details>
 
 <details>
 <summary><strong>Migrating from v20 to v21</strong></summary>

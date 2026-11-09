@@ -1914,6 +1914,40 @@ class DiffCheckTests(unittest.TestCase):
         self._plan_with(sha, "verdict: pass\nchecked: scope\n", evidence="| `header_token` | run | ok |")
         self.assertEqual(run_diff_check(self.repo).returncode, 0)
 
+    def test_evidence_must_be_a_filled_table_row_quoting_the_pass_line(self) -> None:
+        sha = self._commit_code()
+        review = "verdict: pass\nchecked: scope\n"
+        bad = {
+            "prose only": "HEADER_TOKEN passed, trust me",
+            "empty cells": "| HEADER_TOKEN | | |",
+            "wrong column": "| note | HEADER_TOKEN | ok |",
+        }
+        for name, evidence in bad.items():
+            with self.subTest(name):
+                self._plan_with(sha, review, evidence=evidence)
+                self.assertIn("diff-check: evidence-missing", run_diff_check(self.repo).stdout)
+
+    def test_pass_line_with_a_pipe_matches_when_the_pipe_is_escaped(self) -> None:
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["app.py"], header="a | b works"), encoding="utf-8"
+        )
+        commit_all(self.repo, "docs: a pass line with a pipe")
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: pass\nchecked: scope\n", evidence="| a \\| b works | run | ok |")
+        self.assertEqual(run_diff_check(self.repo).returncode, 0)
+
+    def test_template_verdict_line_is_ignored_next_to_a_real_one(self) -> None:
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: pass | fix-needed\nverdict: pass.\nchecked: scope\n")
+        self.assertEqual(run_diff_check(self.repo).returncode, 0)
+
+    def test_no_verdict_refusal_shows_what_was_found(self) -> None:
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: looks good\nchecked: scope\n")
+        refused = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("no-verdict", refused.stdout)
+        self.assertIn("'looks good'", refused.stdout)
+
     def test_missing_section_exits_nonzero(self) -> None:
         self._commit_code()
         result = run_diff_check(self.repo)
@@ -2128,6 +2162,38 @@ class StatusBoundaryTests(unittest.TestCase):
             root = Path(tmp)
             (root / "go.mod").write_text("module example.com/a\n\ngo 1.22\n", encoding="utf-8")
             self.assertEqual(gate.repo_setup_cmd(root), "go mod download")
+
+
+class RoundCounterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_every_failure_counts_and_reset_starts_over(self) -> None:
+        self.assertEqual([gate.count_round(self.repo, "7") for _ in range(3)], [1, 2, 3])
+        gate.reset_rounds(self.repo, "7")
+        self.assertEqual(gate.count_round(self.repo, "7"), 1)
+
+    def test_next_forgets_tasks_closed_on_the_board(self) -> None:
+        gate.count_round(self.repo, "7")
+        gate.count_round(self.repo, "8")
+        (self.repo / "jt-queue").mkdir(exist_ok=True)
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text("- [x] **7** done (feat) merge:\n- [ ] **8** open (feat)"), encoding="utf-8"
+        )
+        run_gate_raw(self.repo, "next")
+        self.assertEqual(sorted(gate._load_attempts(self.repo)), ["8"])
+
+    def test_parallel_failures_do_not_lose_counts(self) -> None:
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(8) as pool:
+            list(pool.map(lambda _: gate.count_round(self.repo, "7"), range(24)))
+        self.assertEqual(gate._load_attempts(self.repo)["7"]["count"], 24)
 
 
 class DetectTests(unittest.TestCase):
