@@ -118,7 +118,7 @@ HINT_FOR = {
     "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
     "test-timeout": "The test command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
-    "review-diff": "Add a '## review-diff' section to plan.md that cites the latest code commit SHA, then run gate.py diff-check.",
+    "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
     "task-branch-missing": "Commit the work on a branch named task-<id>, then run reach-review again.",
     "merge-refused": "This gate cannot merge. Stop and report to the human.",

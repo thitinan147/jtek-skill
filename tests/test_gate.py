@@ -1912,6 +1912,8 @@ class DiffCheckTests(unittest.TestCase):
         self.assertIn("refused: review-diff", refused.stdout)
         self.assertIn("evidence-missing", refused.stdout)
         self.assertIn("HEADER_TOKEN", refused.stdout)
+        hint = next(line for line in refused.stdout.splitlines() if line.startswith("hint:"))
+        self.assertIn("## evidence", hint)
         self._plan_with(sha, "verdict: pass\nchecked: scope\n", evidence="| `header_token` | run | ok |")
         self.assertEqual(run_diff_check(self.repo).returncode, 0)
 
