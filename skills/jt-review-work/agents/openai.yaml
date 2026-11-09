@@ -1,6 +1,6 @@
 interface:
   display_name: "JT Review Work"
-  short_description: "Human-only review and decision command for card-loop/board.md"
+  short_description: "Human-only review and decision command for jt-queue/board.md"
 
 policy:
   allow_implicit_invocation: false

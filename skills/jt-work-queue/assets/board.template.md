@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skill `jt-work-queue` version 21. The brief is `brief.md`. A card is `backlog/<id>.md`. A plan is `plan/<id>.md`.
+The rules live in skill `jt-work-queue` version 21. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
 
 queue:
 

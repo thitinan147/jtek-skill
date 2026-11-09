@@ -205,13 +205,13 @@ class ScreenCheckCliTests(unittest.TestCase):
 
     def test_id_reads_the_card_and_the_board_tool(self) -> None:
         port = free_port()
-        card_dir = self.root / "card-loop" / "backlog"
+        card_dir = self.root / "jt-queue" / "tasks" / "12"
         card_dir.mkdir(parents=True)
-        (self.root / "card-loop" / "board.md").write_text(
+        (self.root / "jt-queue" / "board.md").write_text(
             "| `<BROWSER_TOOL>` | playwright |\n",
             encoding="utf-8",
         )
-        (card_dir / "12.md").write_text(
+        (card_dir / "task.md").write_text(
             f"screen: yes\nstart: python3 -m http.server {port}\nport: {port}\nwait: 5\nclick:\n",
             encoding="utf-8",
         )

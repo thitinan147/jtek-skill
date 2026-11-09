@@ -28,15 +28,15 @@ class LandedParityTests(unittest.TestCase):
         git(self.repo, "init", "-b", "main")
         git(self.repo, "config", "user.email", "test@example.com")
         git(self.repo, "config", "user.name", "Test")
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
+        (self.repo / "jt-queue" / "board.md").write_text(
             "# Board - app\n\nqueue: main\n\n## first\n\n- [ ] **12** item (feat) review: local\n",
             encoding="utf-8",
         )
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "docs: init board")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "feat: work")
@@ -46,7 +46,7 @@ class LandedParityTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _env_with_gh(self, name: str, script: str | None = None) -> dict[str, str]:
-        bin_dir = self.repo / "card-loop" / name
+        bin_dir = self.repo / "jt-queue" / name
         bin_dir.mkdir(parents=True, exist_ok=True)
         real_git = shutil.which("git")
         assert real_git is not None
@@ -90,7 +90,7 @@ class LandedParityTests(unittest.TestCase):
 
         open_env = self._env_with_gh(
             "bin-open",
-            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"card-12\"}'\n",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"task-12\"}'\n",
         )
         res_open = self._assert_parity(open_env)
         self.assertNotEqual(res_open.returncode, 0)
@@ -100,20 +100,20 @@ class LandedParityTests(unittest.TestCase):
     def test_squash_and_ancestor_parity(self) -> None:
         squash_env = self._env_with_gh(
             "bin-squash",
-            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"card-12\"}'\n",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"task-12\"}'\n",
         )
         res_squash = self._assert_parity(squash_env)
         self.assertEqual(res_squash.returncode, 0)
         self.assertIn("landed: squash", res_squash.stdout)
 
-        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card-12")
+        git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
         anc_env = self._env_with_gh("bin-anc")
         res_anc = self._assert_parity(anc_env)
         self.assertEqual(res_anc.returncode, 0)
         self.assertIn("landed: ancestor", res_anc.stdout)
 
     def test_standalone_review_skill_without_work_queue_runs_landed(self) -> None:
-        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card-12")
+        git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
         with tempfile.TemporaryDirectory() as isolated:
             dest = Path(isolated) / "skills" / "jt-review-work"
             shutil.copytree(REPO / "skills" / "jt-review-work", dest)

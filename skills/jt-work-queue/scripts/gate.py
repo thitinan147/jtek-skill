@@ -16,9 +16,10 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 NO_SUITE = "no-suite"
+QUEUE_DIR = "jt-queue"
 CODE_KINDS = frozenset(
     {
         "feat",
@@ -39,8 +40,8 @@ ALLOWED_ACTIONS = frozenset(
     {
         "setup-board",
         "brief",
-        "add-card",
-        "do-card",
+        "add-task",
+        "do-task",
         "wait",
         "stop",
     }
@@ -48,8 +49,8 @@ ALLOWED_ACTIONS = frozenset(
 COMMAND_FOR = {
     "setup-board": "/jt-work-queue",
     "brief": "/jt-work-queue",
-    "add-card": "/jt-work-queue",
-    "do-card": "/jt-work-queue",
+    "add-task": "/jt-work-queue",
+    "do-task": "/jt-work-queue",
     "wait": "",
     "stop": "",
 }
@@ -80,7 +81,7 @@ NEXT_FOR = {
     "setup-failed": "retry",
     "review-diff": "retry",
     "one-off-checker": "retry",
-    "card-branch-missing": "retry",
+    "task-branch-missing": "retry",
     "merge-refused": "retry",
     "related": "ask",
     "browser-empty": "ask",
@@ -102,8 +103,8 @@ NEXT_FOR = {
     "not-on-queue-branch": "stop",
     "test-cmd-empty": "stop",
     "unknown-status": "stop",
-    "card-line-missing": "stop",
-    "card-closed": "stop",
+    "task-line-missing": "stop",
+    "task-closed": "stop",
     "merge": "stop",
     "git-status-failed": "stop",
     "invalid-id": "stop",
@@ -528,13 +529,13 @@ def decide(
     if not board.cards:
         if not brief_exists:
             return Decision("brief", reason="no-brief", command=COMMAND_FOR["brief"])
-        return Decision("add-card", reason="no-card", command=COMMAND_FOR["add-card"])
+        return Decision("add-task", reason="no-task", command=COMMAND_FOR["add-task"])
     unchecked = [
         card for card in board.cards if not card.checked and card.section in SECTION_RANK
     ]
     orphans = [card for card in unchecked if not card.has_card_file]
     if orphans:
-        return Decision("stop", id=orphans[0].id, reason="no-card-file", line=orphans[0].line)
+        return Decision("stop", id=orphans[0].id, reason="no-task-file", line=orphans[0].line)
     if any(card.has_card_file and _blocked(card, board.cards) for card in unchecked):
         blocked = next(card for card in unchecked if _blocked(card, board.cards))
         return Decision("stop", id=blocked.id, reason="overlap", line=blocked.line)
@@ -543,10 +544,10 @@ def decide(
 
 def _do(card: Card, reason: str) -> Decision:
     return Decision(
-        "do-card",
+        "do-task",
         id=card.id,
         reason=reason,
-        command=COMMAND_FOR["do-card"],
+        command=COMMAND_FOR["do-task"],
         line=card.line,
     )
 
@@ -579,11 +580,11 @@ def apply_waiting_review(
     )
     found = list(pattern.finditer(board_text))
     if len(found) != 1:
-        raise GateError("card-line-missing")
+        raise GateError("task-line-missing")
     line = found[0].group(1)
     token, start, end = _status_span(line)
     if line.startswith("- [x]") or line.startswith("- [X]") or token in _CLOSED:
-        raise GateError("card-closed")
+        raise GateError("task-closed")
     if token == UNKNOWN_STATUS:
         raise GateError("unknown-status")
     suffix = "review:" if not cleaned else f"review: {cleaned}"
@@ -598,7 +599,7 @@ def apply_waiting_review(
     elif token is None:
         new_line = f"{line} {suffix}"
     else:
-        raise GateError("card-closed")
+        raise GateError("task-closed")
     if _has_boundary_token(new_line, "merge:"):
         raise GateError("merge-refused")
     start, end = found[0].start(1), found[0].end(1)
@@ -639,11 +640,11 @@ def apply_board_ask(board_text: str, card_id: str) -> str:
     )
     found = list(pattern.finditer(board_text))
     if len(found) != 1:
-        raise GateError("card-line-missing")
+        raise GateError("task-line-missing")
     line = found[0].group(1)
     token, start, _end = _status_span(line)
     if line.startswith("- [x]") or line.startswith("- [X]") or token in _CLOSED:
-        raise GateError("card-closed")
+        raise GateError("task-closed")
     if token == UNKNOWN_STATUS:
         raise GateError("unknown-status")
     if token == "ask:":
@@ -653,7 +654,7 @@ def apply_board_ask(board_text: str, card_id: str) -> str:
     elif token is None:
         new_line = f"{line} ask:"
     else:
-        raise GateError("card-closed")
+        raise GateError("task-closed")
     if _has_boundary_token(new_line, "merge:"):
         raise GateError("merge-refused")
     s, e = found[0].start(1), found[0].end(1)
@@ -663,17 +664,16 @@ def apply_board_ask(board_text: str, card_id: str) -> str:
 def cmd_ask(root: Path, card_id: str, question: str, refused: str = "") -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
-    board_path = root / "card-loop" / "board.md"
-    if not board_path.is_file():
+    text = read_board_text(root)
+    if text is None:
         return _refuse("board-missing")
-    text = board_path.read_text(encoding="utf-8")
+    board_path = root / QUEUE_DIR / "board.md"
     queue = parse_queue(text)
     if not queue or _current_branch(root) != queue:
         return _refuse("not-on-queue-branch")
-    backlog = (root / "card-loop" / "backlog").resolve()
-    card_path = (backlog / f"{card_id}.md").resolve()
-    if not card_path.is_relative_to(backlog) or not card_path.is_file():
-        return _refuse("card-line-missing")
+    card_path = _task_file(root, card_id)
+    if card_path is None or not card_path.is_file():
+        return _refuse("task-line-missing")
     try:
         updated_board = apply_board_ask(text, card_id)
     except GateError as err:
@@ -727,6 +727,54 @@ def _git_show(root: Path, spec: str) -> str | None:
     return proc.stdout
 
 
+def _queue_rel(*parts: str) -> str:
+    return PurePosixPath(QUEUE_DIR, *parts).as_posix()
+
+
+def _task_file(root: Path, card_id: str) -> Path | None:
+    """The task contract, only if it stays inside jt-queue/tasks/<id>/."""
+    if not valid_card_id(card_id):
+        return None
+    tasks = (root / QUEUE_DIR / "tasks").resolve()
+    path = (tasks / card_id / "task.md").resolve()
+    if not path.is_relative_to(tasks):
+        return None
+    return path
+
+
+def _is_tracked(root: Path, rel: str) -> bool:
+    if not _is_git(root):
+        return False
+    proc = _run_git(root, ["ls-files", "--error-unmatch", "--", rel])
+    return proc.returncode == 0
+
+
+def _read_disk(root: Path, rel: str) -> str | None:
+    path = root / rel
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return None
+
+
+def _read_queue_file(root: Path, branch: str, rel: str) -> str | None:
+    """Ignored queue files stay on disk. Tracked files are read from `branch`."""
+    disk = _read_disk(root, rel)
+    if disk is not None and not _is_tracked(root, rel):
+        return disk
+    if not _is_git(root):
+        return disk
+    head = _current_branch(root)
+    if branch and head == branch:
+        if disk is not None:
+            return disk
+        return _git_show(root, f"HEAD:{rel}")
+    if branch:
+        shown = _git_show(root, f"{branch}:{rel}")
+        if shown is not None:
+            return shown
+    return disk
+
+
 def _dirty(root: Path) -> str:
     proc = _run_git(root, ["status", "--porcelain", "-z"])
     if proc.returncode != 0:
@@ -740,43 +788,37 @@ def _dirty(root: Path) -> str:
             continue
         status = entry[:2]
         path = entry[3:]
-        if not path.startswith("card-loop/"):
+        if not path.startswith(QUEUE_DIR + "/"):
             return "dirty"
         if ("R" in status or "C" in status) and i + 1 < len(parts):
             i += 1
             orig_path = parts[i]
-            if not orig_path.startswith("card-loop/"):
+            if not orig_path.startswith(QUEUE_DIR + "/"):
                 return "dirty"
         i += 1
     return "clean"
 
 
 def read_board_text(root: Path) -> str | None:
-    path = root / "card-loop" / "board.md"
-    work = path.read_text(encoding="utf-8") if path.is_file() else None
+    rel = _queue_rel("board.md")
+    disk = _read_disk(root, rel)
     if not _is_git(root):
-        return work
-    queue = parse_queue(work) if work else ""
+        return disk
+    if disk is not None and not _is_tracked(root, rel):
+        return disk
+    queue = parse_queue(disk) if disk else ""
     head = _current_branch(root)
     if queue and head != queue:
-        shown = _git_show(root, f"{queue}:card-loop/board.md")
+        shown = _git_show(root, f"{queue}:{rel}")
         if shown is not None:
             return shown
-    if work is None:
-        return _git_show(root, "HEAD:card-loop/board.md")
-    return work
+    if disk is None:
+        return _git_show(root, f"HEAD:{rel}")
+    return disk
 
 
 def _read_repo_file(root: Path, queue: str, rel: str) -> str | None:
-    head = _current_branch(root) if _is_git(root) else ""
-    if queue and head and head != queue:
-        return _git_show(root, f"{queue}:{rel}")
-    path = root / rel
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    if queue and _is_git(root):
-        return _git_show(root, f"{queue}:{rel}")
-    return None
+    return _read_queue_file(root, queue, rel)
 
 
 def load_board(root: Path) -> tuple[Board | None, bool]:
@@ -786,13 +828,13 @@ def load_board(root: Path) -> tuple[Board | None, bool]:
     board = parse_board(text)
     bodies = {
         card.id: (
-            _read_repo_file(root, board.queue_branch, f"card-loop/backlog/{card.id}.md")
+            _read_repo_file(root, board.queue_branch, _queue_rel("tasks", card.id, "task.md"))
             if valid_card_id(card.id)
             else None
         )
         for card in board.cards
     }
-    brief = _read_repo_file(root, board.queue_branch, "card-loop/brief.md")
+    brief = _read_repo_file(root, board.queue_branch, _queue_rel("brief.md"))
     return hydrate(board, bodies), brief is not None
 
 
@@ -867,7 +909,7 @@ def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
 def _approval_path(root: Path) -> Path:
     # Inside .git: it is never part of a branch, commit, or pull request, so changes
     # to board.md or a card cannot carry an approval with them.
-    return _git_common_dir(root) / "card-loop" / "approved-commands.json"
+    return _git_common_dir(root) / "jt-queue" / "approved-commands.json"
 
 
 def _load_approvals(root: Path) -> dict:
@@ -888,12 +930,12 @@ def _commands_refusal(
         known = approvals.get("board")
         if not known:
             return "commands-unapproved", (
-                "TEST_CMD/SETUP_CMD in card-loop/board.md have not been approved on this machine. "
+                "TEST_CMD/SETUP_CMD in jt-queue/board.md have not been approved on this machine. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(board_cmds):
             return "commands-changed", (
-                "TEST_CMD/SETUP_CMD in card-loop/board.md changed since a human approved them. "
+                "TEST_CMD/SETUP_CMD in jt-queue/board.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     card_cmds = _card_commands(card_text)
@@ -901,12 +943,12 @@ def _commands_refusal(
         known = (approvals.get("cards") or {}).get(card_id)
         if not known:
             return "commands-unapproved", (
-                f"start/click in card-loop/backlog/{card_id}.md have not been approved. "
+                f"start/click in jt-queue/tasks/{card_id}/task.md have not been approved. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(card_cmds):
             return "commands-changed", (
-                f"start/click in card-loop/backlog/{card_id}.md changed since a human approved them. "
+                f"start/click in jt-queue/tasks/{card_id}/task.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     return None
@@ -916,10 +958,9 @@ def cmd_approve_commands(root: Path, card_id: str) -> int:
     """HUMAN-ONLY: record the commands in the board (and one card) as reviewed."""
     if card_id and not valid_card_id(card_id):
         return _refuse("invalid-id")
-    board_path = root / "card-loop" / "board.md"
-    if not board_path.is_file():
+    board_text = read_board_text(root)
+    if board_text is None:
         return _refuse("board-missing")
-    board_text = board_path.read_text(encoding="utf-8")
     approvals = _load_approvals(root)
     board_cmds = _board_commands(board_text)
     approvals["board"] = _digest(board_cmds)
@@ -943,7 +984,7 @@ def cmd_approve_commands(root: Path, card_id: str) -> int:
 def _record_command_log(
     root: Path, card_id: str, command_name: str, output: str
 ) -> tuple[str, str]:
-    log_dir = _git_common_dir(root) / "card-loop" / "logs"
+    log_dir = _git_common_dir(root) / "jt-queue" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{card_id}-{command_name}.log"
     log_path.write_text(output, encoding="utf-8")
@@ -956,8 +997,8 @@ def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "
     command = test_cmd.strip()
     if command == "":
         raise GateError("test-cmd-empty")
-    if not _branch_exists(root, f"card-{card_id}"):
-        raise GateError("card-branch-missing")
+    if not _branch_exists(root, f"task-{card_id}"):
+        raise GateError("task-branch-missing")
     if command == NO_SUITE:
         return 0
     with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
@@ -1055,7 +1096,7 @@ def cmd_next(root: Path) -> int:
                 and card.status == "review:"
                 and valid_card_id(card.id)
             ):
-                if _is_ancestor(root, f"card-{card.id}", board.queue_branch):
+                if _is_ancestor(root, f"task-{card.id}", board.queue_branch):
                     landed_ids.append(card.id)
                 else:
                     pending_gh.append(card.id)
@@ -1070,7 +1111,7 @@ def cmd_next(root: Path) -> int:
             )
             if listed is not None and listed.returncode == 0:
                 for cid in pending_gh:
-                    if _payload_mark(listed.stdout, f"card-{cid}") == "merged":
+                    if _payload_mark(listed.stdout, f"task-{cid}") == "merged":
                         landed_ids.append(cid)
         if landed_ids:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
@@ -1121,7 +1162,7 @@ def _header_bullets(card_text: str) -> list[str]:
 def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
     if not queue:
         return None
-    proc = _run_git(root, ["log", "--format=%s", f"{queue}..card-{card_id}"])
+    proc = _run_git(root, ["log", "--format=%s", f"{queue}..task-{card_id}"])
     if proc.returncode != 0:
         return None
     kinds: list[str] = []
@@ -1143,10 +1184,10 @@ def _commit_kinds_outside_card_loop(
             "log",
             "--no-merges",
             "--format=%s",
-            f"{queue}..card-{card_id}",
+            f"{queue}..task-{card_id}",
             "--",
             ".",
-            ":(exclude)card-loop",
+            ":(exclude)jt-queue",
         ],
     )
     if proc.returncode != 0:
@@ -1177,13 +1218,17 @@ def card_kind_in_board(board_text: str, card_id: str) -> str:
 
 
 def card_kind_at_merge_base(root: Path, queue: str, card_id: str) -> str:
-    if not queue or not valid_card_id(card_id) or not _branch_exists(root, f"card-{card_id}"):
+    if not queue or not valid_card_id(card_id) or not _branch_exists(root, f"task-{card_id}"):
         return ""
-    proc = _run_git(root, ["merge-base", queue, f"card-{card_id}"])
+    proc = _run_git(root, ["merge-base", queue, f"task-{card_id}"])
     if proc.returncode != 0 or not proc.stdout.strip():
         return ""
+    rel = _queue_rel("board.md")
+    disk = _read_disk(root, rel)
+    if disk is not None and not _is_tracked(root, rel):
+        return card_kind_in_board(disk, card_id)
     base = proc.stdout.strip()
-    base_board = _git_show(root, f"{base}:card-loop/board.md")
+    base_board = _git_show(root, f"{base}:{rel}")
     if base_board is None:
         return ""
     return card_kind_in_board(base_board, card_id)
@@ -1218,10 +1263,10 @@ def _code_diff_reviewable(root: Path, queue: str, card_id: str) -> bool:
         [
             "diff",
             "--name-only",
-            f"{queue}...card-{card_id}",
+            f"{queue}...task-{card_id}",
             "--",
             ".",
-            ":(exclude)card-loop",
+            ":(exclude)jt-queue",
         ],
     )
     if proc.returncode != 0:
@@ -1471,8 +1516,7 @@ def screen_check_main(argv: list[str] | None = None) -> int:
     if args.id:
         if not valid_card_id(args.id):
             return _refuse("invalid-id")
-        board = root / "card-loop" / "board.md"
-        text = board.read_text(encoding="utf-8") if board.is_file() else ""
+        text = read_board_text(root) or ""
         card = _read_card(root, args.id)
         card_start = _label(card, "start")
         if start and start.strip() != card_start.strip():
@@ -1500,9 +1544,9 @@ def screen_check_main(argv: list[str] | None = None) -> int:
 
 @contextmanager
 def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
-    branch = f"card-{card_id}"
+    branch = f"task-{card_id}"
     if not _branch_exists(root, branch):
-        raise GateError("card-branch-missing")
+        raise GateError("task-branch-missing")
     if _current_branch(root) == branch:
         yield root
         return
@@ -1586,15 +1630,10 @@ def repo_test_cmd(root: Path) -> str:
 
 
 def _read_card(root: Path, card_id: str) -> str:
-    if not valid_card_id(card_id):
+    path = _task_file(root, card_id)
+    if path is None or not path.is_file():
         return ""
-    backlog = (root / "card-loop" / "backlog").resolve()
-    path = (backlog / f"{card_id}.md").resolve()
-    if not path.is_relative_to(backlog):
-        return ""
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    return ""
+    return path.read_text(encoding="utf-8")
 
 
 def _is_ancestor(root: Path, child: str, parent: str) -> bool:
@@ -1645,7 +1684,7 @@ def _payload_mark(raw: str, head: str) -> str:
 
 
 def _github_mark(root: Path, card_id: str) -> str:
-    head = f"card-{card_id}"
+    head = f"task-{card_id}"
     view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -1672,7 +1711,7 @@ def _github_mark(root: Path, card_id: str) -> str:
 def landed_via(
     root: Path, card_id: str, queue: str, require_remote_for_gh: bool = False
 ) -> tuple[str, str]:
-    if _is_ancestor(root, f"card-{card_id}", queue):
+    if _is_ancestor(root, f"task-{card_id}", queue):
         return "ancestor", ""
     if require_remote_for_gh and not _has_remote(root):
         return "", "pr-missing"
@@ -1685,10 +1724,10 @@ def landed_via(
 def cmd_landed(root: Path, card_id: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
-    board_path = root / "card-loop" / "board.md"
-    if not board_path.is_file():
+    board_text = read_board_text(root)
+    if board_text is None:
         return _refuse("board-missing")
-    queue = parse_queue(board_path.read_text(encoding="utf-8"))
+    queue = parse_queue(board_text)
     if not queue:
         return _refuse("not-landed", detail="no-queue")
     via, detail = landed_via(root, card_id, queue)
@@ -1707,10 +1746,10 @@ def _code_tip_sha(root: Path, queue: str, card_id: str) -> str | None:
             "-1",
             "--no-merges",
             "--format=%H",
-            f"{queue}..card-{card_id}",
+            f"{queue}..task-{card_id}",
             "--",
             ".",
-            ":(exclude)card-loop",
+            ":(exclude)jt-queue",
         ],
     )
     if proc.returncode != 0:
@@ -1719,11 +1758,11 @@ def _code_tip_sha(root: Path, queue: str, card_id: str) -> str | None:
 
 
 def _card_worktree_drift(root: Path, card_id: str) -> bool:
-    if _current_branch(root) != f"card-{card_id}":
+    if _current_branch(root) != f"task-{card_id}":
         return False
     proc = _run_git(
         root,
-        ["status", "--porcelain", "--", ".", ":(exclude)card-loop"],
+        ["status", "--porcelain", "--", ".", ":(exclude)jt-queue"],
     )
     if proc.returncode != 0:
         return True
@@ -1733,11 +1772,11 @@ def _card_worktree_drift(root: Path, card_id: str) -> bool:
 def diff_review_detail(root: Path, card_id: str) -> str:
     if not valid_card_id(card_id):
         return "no-review"
-    board_path = root / "card-loop" / "board.md"
-    if not board_path.is_file():
+    board_text = read_board_text(root)
+    if board_text is None:
         return "no-review"
-    queue = parse_queue(board_path.read_text(encoding="utf-8"))
-    branch = f"card-{card_id}"
+    queue = parse_queue(board_text)
+    branch = f"task-{card_id}"
     if not queue or not _branch_exists(root, branch):
         return "no-review"
     if not _code_diff_reviewable(root, queue, card_id):
@@ -1747,7 +1786,7 @@ def diff_review_detail(root: Path, card_id: str) -> str:
     sha = _code_tip_sha(root, queue, card_id)
     if not sha:
         return "no-review"
-    plan = _git_show(root, f"{branch}:card-loop/plan/{card_id}.md") or ""
+    plan = _read_queue_file(root, branch, _queue_rel("tasks", card_id, "plan.md")) or ""
     section = _section_h2(plan, "review-diff")
     if not section.strip():
         return "no-review"
@@ -1791,12 +1830,12 @@ def _cards_from_text(root: Path, board_text: str) -> list[Card]:
 
 
 def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) -> list[str] | None:
-    if not queue or not _branch_exists(root, f"card-{card_id}"):
+    if not queue or not _branch_exists(root, f"task-{card_id}"):
         return None
     args = ["diff", "--name-only"]
     if added_only:
         args.append("--diff-filter=A")
-    args.extend([f"{queue}...card-{card_id}", "--", ".", ":(exclude)card-loop"])
+    args.extend([f"{queue}...task-{card_id}", "--", ".", ":(exclude)jt-queue"])
     proc = _run_git(root, args)
     if proc.returncode != 0:
         return None
@@ -1823,7 +1862,7 @@ def outside_card_files(
 def style_changes(
     root: Path, queue: str, card_id: str, board_text: str = ""
 ) -> list[str]:
-    if not queue or not _branch_exists(root, f"card-{card_id}"):
+    if not queue or not _branch_exists(root, f"task-{card_id}"):
         return []
     kind = card_kind_at_merge_base(root, queue, card_id) or card_kind_in_board(
         board_text, card_id
@@ -1837,10 +1876,10 @@ def style_changes(
             "-w",
             "--ignore-blank-lines",
             "--numstat",
-            f"{queue}...card-{card_id}",
+            f"{queue}...task-{card_id}",
             "--",
             ".",
-            ":(exclude)card-loop",
+            ":(exclude)jt-queue",
         ],
     )
     if proc.returncode != 0:
@@ -1926,10 +1965,10 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
-    board_path = root / "card-loop" / "board.md"
-    if not board_path.is_file():
+    text = read_board_text(root)
+    if text is None:
         return _refuse("board-missing")
-    text = board_path.read_text(encoding="utf-8")
+    board_path = root / QUEUE_DIR / "board.md"
     queue = parse_queue(text)
     test_cmd = parse_field(text, "TEST_CMD")
     setup_cmd = parse_field(text, "SETUP_CMD")
@@ -1946,8 +1985,8 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     current = next((card for card in cards if card.id == card_id), None)
     if current is not None and _related_stop(current, cards) is not None:
         return _refuse("related")
-    if not _branch_exists(root, f"card-{card_id}"):
-        return _refuse("card-branch-missing")
+    if not _branch_exists(root, f"task-{card_id}"):
+        return _refuse("task-branch-missing")
     tier = card_tier(root, queue, card_id, card_text, text)
     kinds = _commit_kinds(root, queue, card_id)
     if kinds is None:
@@ -1994,7 +2033,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         else:
             code = 0
         if write:
-            kind, value = lookup_draft_pr(root, f"card-{card_id}", queue)
+            kind, value = lookup_draft_pr(root, f"task-{card_id}", queue)
             if kind == "ask":
                 return _refuse(value)
             if kind == "ok":

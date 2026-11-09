@@ -23,9 +23,9 @@ After installing, read [SECURITY.md](SECURITY.md): the gate runs your test comma
 ```text
   Human + Agent (/jt-work-queue)                        Human Only (/jt-review-work)
 ┌────────────────────────────────────────────────────┐  ┌──────────────────────────────┐
-│ 1. setup     Create card-loop/board.md on <queue>  │  │ Inspect diff, test evidence, │
+│ 1. setup     Create jt-queue/board.md on <queue>  │  │ Inspect diff, test evidence, │
 │ 2. brief     Align on round scope in brief.md      │  │ scope warnings, and UI shots │
-│ 3. add-card  Draft backlog/<id>.md & queue on board│  │                              │
+│ 3. add-task  Draft tasks/<id>/task.md on board   │  │                              │
 │ 4. do-work   Branch work/<id> + git worktree       ├──►  • merge: <sha>  (land work) │
 │              Run Quick / Standard verification     │  │  • send-back:    (fix & redo)│
 │              Verify gate → mark review:            │◄──  • drop: <why>   (cancel)    │
@@ -40,23 +40,23 @@ After installing, read [SECURITY.md](SECURITY.md): the gate runs your test comma
 
 | Command | Who Invokes It | Purpose |
 |---|---|---|
-| [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or Agent | Set up `card-loop/board.md`, capture a round brief, draft and add cards, pick the next ready card, implement with adaptive verification (`Quick` / `Standard`), and hand off to `review:`. Cannot merge. |
+| [`/jt-work-queue`](skills/jt-work-queue/SKILL.md) | Human or Agent | Set up `jt-queue/board.md`, capture a round brief, draft and add cards, pick the next ready card, implement with adaptive verification (`Quick` / `Standard`), and hand off to `review:`. Cannot merge. |
 | [`/jt-review-work`](skills/jt-review-work/SKILL.md) | **Human only** | Read the queue, surface cards whose branches have already landed via [`skills/jt-review-work/scripts/landed.py`](skills/jt-review-work/scripts/landed.py), inspect `review:` evidence (`(<kind>)`, files touched outside `files:`, non-whitespace diffs on `style` cards), and mark `merge:`, `send-back:`, `drop:`, or move board lines. |
 
 *(In Codex, use `$jt-work-queue` and `$jt-review-work`.)*
 
 ## Day-to-Day Usage
 
-### 1. Start a project or a new round (`setup` → `brief` → `add-card`)
+### 1. Start a project or a new round (`setup` → `brief` → `add-task`)
 Run `/jt-work-queue` in any Git repository:
 
 ```text
 /jt-work-queue
 ```
 
-- **No `card-loop/board.md` yet (`setup`):** The agent inspects your repo (`package.json`, `pyproject.toml`, `Makefile`, etc.), proposes `<BASE>`, `<QUEUE>`, `<TEST_CMD>`, and `<REPO_SKILLS>`, waits for your approval, and creates `card-loop/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md).
-- **Empty board and no `card-loop/brief.md` (`brief`):** The agent interviews you to capture the goal and scope of the current round in `card-loop/brief.md`.
-- **Brief ready (`add-card`):** The agent drafts cards from [`skills/jt-work-queue/assets/card.template.md`](skills/jt-work-queue/assets/card.template.md) and adds them to `card-loop/board.md` after your approval.
+- **No `jt-queue/board.md` yet (`setup`):** The agent inspects your repo (`package.json`, `pyproject.toml`, `Makefile`, etc.), proposes `<BASE>`, `<QUEUE>`, `<TEST_CMD>`, and `<REPO_SKILLS>`, waits for your approval, and creates `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md).
+- **Empty board and no `jt-queue/brief.md` (`brief`):** The agent interviews you to capture the goal and scope of the current round in `jt-queue/brief.md`.
+- **Brief ready (`add-task`):** The agent drafts cards from [`skills/jt-work-queue/assets/card.template.md`](skills/jt-work-queue/assets/card.template.md) and adds them to `jt-queue/board.md` after your approval.
 
 ### 2. Add one or multiple cards at once
 Pass your task directly to `/jt-work-queue`:
@@ -73,7 +73,7 @@ Pass your task directly to `/jt-work-queue`:
 ```
 
 - **Priority sections:** Place urgent cards under `## first`, normal work under `## main`, and deferred ideas under `## later`.
-- **Dependencies (`depends:`):** Set `depends: 001` in `card-loop/backlog/002.md` so card `002` waits until `001` is marked `- [x] **001** ... merge:`.
+- **Dependencies (`depends:`):** Set `depends: 001` in `jt-queue/tasks/002/task.md` so task `002` waits until `001` is marked `- [x] **001** ... merge:`.
 - **Card kinds (`<kind>`):** Every card declares `(feature)`, `(bug)`, `(refactor)`, `(perf)`, `(security)`, or `(style)`.
 - **Verification tiers:**
   - **`Quick` tier:** Auto-selected for small changes (≤ 2 files in `files:`, `screen: no`, and kind is `style`/`bug`/`refactor`/`perf`). Requires passing tests + `plan.md`.
@@ -92,7 +92,7 @@ Before the gate runs `<TEST_CMD>` (or any card `start:` / `click:` command) for 
 python3 skills/jt-work-queue/scripts/gate.py approve-commands --id 001
 ```
 
-Once implemented and verified by `gate.py verify --id 001`, the card is marked `review:` on `card-loop/board.md` (and a draft PR is opened if an `origin` remote exists).
+Once implemented and verified by `gate.py verify --id 001`, the card is marked `review:` on `jt-queue/board.md` (and a draft PR is opened if an `origin` remote exists).
 
 ### 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
 When one or more cards reach `review:`, the human runs:
@@ -109,29 +109,24 @@ Or to inspect a specific card directly:
 
 `/jt-review-work` summarizes the board, flags any out-of-scope file edits or `style` cards with non-whitespace changes, checks if any branches have already landed on `<base>`/`<queue>`, and asks whether to:
 - **`merge:`** — Merge `work/<id>` (or squash-merge the PR), record `- [x] **<id>** ... merge: <sha>`, and clean up the worktree.
-- **`send-back:`** — Write the human's feedback to `card-loop/work/<id>/send-back.md` and return the card to the top of the work queue.
+- **`send-back:`** — Write the human's feedback to `jt-queue/work/<id>/send-back.md` and return the card to the top of the work queue.
 - **`drop: <reason>`** — Cancel the card and clean up its worktree.
 
-## Repository Artifacts (`card-loop/`)
+## Repository Artifacts (`jt-queue/`)
 
 See [`skills/jt-work-queue/references/contract.md`](skills/jt-work-queue/references/contract.md) for the complete file and gate contract:
 
 ```text
-card-loop/
+jt-queue/
 ├── board.md                 # Queue configuration (base, queue, test, skills) + card list
 ├── brief.md                 # Round brief agreed with the human before drafting cards
-├── backlog/
-│   └── 001.md               # Card spec: kind, tier, depends, do, out, files, pass, screen
-└── work/
+└── tasks/
     └── 001/
-        ├── plan.md          # Goal, Steps, Files, Pass Mapping (copied from backlog on start)
-        ├── test.log         # Output + exit code + HEAD SHA from gate.py run-tests
-        ├── diff-review.md   # Subagent code review (Standard tier)
-        ├── test-quality.md  # Test oracle & assertion audit (Standard tier)
-        ├── verify.md        # Pass criteria walk (Standard tier)
-        ├── screen.md        # Headless browser & console/pageerror evidence (when screen: yes)
-        └── send-back.md     # Human review feedback when sent back
+        ├── task.md          # Approved task: kind, do, out, pass, files
+        └── plan.md          # Standard-tier notes, including review-diff
 ```
+
+Add `jt-queue/` to `.gitignore`. The gate reads that folder from the working tree, so a personal queue is not committed or pushed. Log output and command approvals stay under `.git/jt-queue/`.
 
 ## Security
 
@@ -144,7 +139,7 @@ card-loop/
 
 | v20 Command / Skill | v21 Replacement |
 |---|---|
-| `/jt-new-board` | `/jt-work-queue` (auto-detects when `card-loop/board.md` is missing) |
+| `/jt-new-board` | `/jt-work-queue` (auto-detects when `jt-queue/board.md` is missing) |
 | `/jt-find-skills` | `/jt-work-queue` (proposes `<REPO_SKILLS>` during board setup) |
 | `/jt-ask-brief` | `/jt-work-queue` (runs when queue is empty and no brief exists) |
 | `/jt-new-card` | `/jt-work-queue <task>` |
@@ -158,10 +153,10 @@ card-loop/
 | `/jt-drop-card` | `/jt-review-work` (`drop: <reason>`) |
 | `/jt-move-card` | `/jt-review-work` (move line between `first`, `main`, `later`, `closed`) |
 
-### 2. Migrating `card-loop/board.md`
+### 2. Migrating `jt-queue/board.md`
 
 - **`complete:` status (parent-child cards removed):** v21 stops the queue with `unknown-status` if a line uses `complete:`. Replace `- [ ] **<id>** ... complete:` with `- [x] **<id>** ... merge:` or remove the parent summary line. Dotted IDs (`1.1`, `1.2`) still work as normal independent cards.
-- **`pair:` line (paired-repo support removed):** Ignored by the v21 gate; you may delete the `pair:` line from `card-loop/board.md`.
+- **`pair:` line (paired-repo support removed):** Ignored by the v21 gate; you may delete the `pair:` line from `jt-queue/board.md`.
 - **`<TEK_SKILLS>` row:** Removed from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). Only `<REPO_SKILLS>` is used for `Standard` tier diff reviews; existing boards with a `<TEK_SKILLS>` row continue to work without error.
 
 </details>

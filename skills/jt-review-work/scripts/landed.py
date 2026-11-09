@@ -72,7 +72,7 @@ def _payload_mark(raw: str, head: str) -> str:
 
 
 def _github_mark(root: Path, card_id: str) -> str:
-    head = f"card-{card_id}"
+    head = f"task-{card_id}"
     view = _run(root, ["gh", "pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     if not _CARD_ID_RE.match(card_id):
         return _refuse("invalid-id", nxt="stop")
     root = Path(parsed.root).resolve()
-    board_path = root / "card-loop" / "board.md"
+    board_path = root / "jt-queue" / "board.md"
     if not board_path.is_file():
         return _refuse("board-missing", nxt="stop")
     queue = ""
@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             break
     if not queue:
         return _refuse("not-landed", detail="no-queue")
-    head = f"card-{card_id}"
+    head = f"task-{card_id}"
     if _branch_exists(root, head) and _branch_exists(root, queue):
         anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
         if anc is not None and anc.returncode == 0:

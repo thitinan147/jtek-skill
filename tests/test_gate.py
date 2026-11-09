@@ -119,7 +119,7 @@ class DecideTests(unittest.TestCase):
             text,
             {"12": card_body(["src/a.py"]), "13": card_body(["src/b.py"])},
         )
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "13")
         self.assertEqual(decision.reason, "send-back")
         self.assertEqual(decision.command, "/jt-work-queue")
@@ -136,7 +136,7 @@ class DecideTests(unittest.TestCase):
                 "13": card_body(["src/b.py"], question=""),
             },
         )
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "13")
         self.assertEqual(decision.reason, "question-cleared")
 
@@ -201,7 +201,8 @@ class DecideTests(unittest.TestCase):
         empty = decide_board(board_text("no items"), {})
         self.assertEqual(empty.action, "brief")
         with_brief = decide_board(board_text("no items"), {}, brief=True)
-        self.assertEqual(with_brief.action, "add-card")
+        self.assertEqual(with_brief.action, "add-task")
+        self.assertEqual(with_brief.reason, "no-task")
 
     def test_empty_test_command_stops_before_work(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)", test="")
@@ -228,7 +229,7 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(decision.reason, "related")
         self.assertEqual(decision.command, "")
         self.assertEqual(decision.ids, ("12", "13"))
-        self.assertNotEqual(decision.action, "do-card")
+        self.assertNotEqual(decision.action, "do-task")
 
     def test_linked_same_topic_does_the_first_card(self) -> None:
         text = board_text("- [ ] **12** one (fix)\n- [ ] **13** two (fix)")
@@ -239,7 +240,7 @@ class DecideTests(unittest.TestCase):
                 "13": card_body(["src/b.py"], topic="login", refs=["12"]),
             },
         )
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "12")
         self.assertEqual(decision.reason, "ready")
 
@@ -288,7 +289,7 @@ class ApplyReviewTests(unittest.TestCase):
         text = board_text("- [x] **12** fresh (feat) drop: dropped")
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "12", 0)
-        self.assertEqual(caught.exception.reason, "card-closed")
+        self.assertEqual(caught.exception.reason, "task-closed")
         self.assertIn("/jt-work-queue", gate.COMMAND_FOR.values())
         self.assertNotIn("open-review", gate.ALLOWED_ACTIONS)
         self.assertNotIn("/jt-do-card", gate.COMMAND_FOR.values())
@@ -404,28 +405,28 @@ class ReachReviewGitTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
         init_repo(self.repo)
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)"),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["check.py"]),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: add the board")
-        git(self.repo, "branch", "card-12")
+        git(self.repo, "branch", "task-12")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
     def _record_review(self, card_id: str = "12") -> None:
-        git(self.repo, "checkout", f"card-{card_id}")
+        git(self.repo, "checkout", f"task-{card_id}")
         head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        plan_dir = self.repo / "card-loop" / "plan"
+        plan_dir = self.repo / "jt-queue" / "tasks" / card_id
         plan_dir.mkdir(parents=True, exist_ok=True)
-        plan_path = plan_dir / f"{card_id}.md"
+        plan_path = plan_dir / "plan.md"
         plan_path.write_text(
             f"# Plan {card_id}\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
             encoding="utf-8",
@@ -434,7 +435,7 @@ class ReachReviewGitTests(unittest.TestCase):
         git(self.repo, "checkout", "main")
 
     def _set_card_check(self, code: str, record_review: bool = True) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text(
             f"import sys\nsys.exit({code})\n# card\n",
             encoding="utf-8",
@@ -446,9 +447,9 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_red_command_on_the_card_branch_does_not_reach_review(self) -> None:
         self._set_card_check("1")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: test-failed", result.stdout)
         self.assertIn("merge: no", result.stdout)
@@ -456,14 +457,14 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "card-12", "main"],
+            ["git", "merge-base", "--is-ancestor", "task-12", "main"],
             cwd=self.repo,
             capture_output=True,
         )
         self.assertNotEqual(ancestor.returncode, 0)
 
     def test_test_failed_prints_detail_tail_and_log_without_dirtying_git(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text(
             "import sys\nfor i in range(25):\n    print(f'ERR_LINE_{i}')\nsys.exit(1)\n",
             encoding="utf-8",
@@ -495,14 +496,14 @@ class ReachReviewGitTests(unittest.TestCase):
         commit_all(self.repo, "test: queue command is red")
         self._set_card_check("0")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("allowed", result.stdout)
         self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
         self.assertIn("sys.exit(1)", (self.repo / "check.py").read_text(encoding="utf-8"))
         ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "card-12", "main"],
+            ["git", "merge-base", "--is-ancestor", "task-12", "main"],
             cwd=self.repo,
             capture_output=True,
         )
@@ -510,33 +511,33 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_no_suite_is_not_executed(self) -> None:
         board = board_text("- [ ] **12** note (docs)", test=gate.NO_SUITE)
-        (self.repo / "card-loop" / "board.md").write_text(board, encoding="utf-8")
+        (self.repo / "jt-queue" / "board.md").write_text(board, encoding="utf-8")
         commit_all(self.repo, "docs: clear the test command")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         git(self.repo, "merge", "main")
         git(self.repo, "checkout", "main")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        updated = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        updated = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("review: local", updated)
 
     def test_no_suite_without_card_branch_refuses_card_branch_missing(self) -> None:
         board = board_text("- [ ] **12** note (docs)", test=gate.NO_SUITE)
-        (self.repo / "card-loop" / "board.md").write_text(board, encoding="utf-8")
+        (self.repo / "jt-queue" / "board.md").write_text(board, encoding="utf-8")
         commit_all(self.repo, "docs: clear the test command")
-        git(self.repo, "branch", "-D", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        updated = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        updated = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("refused: card-branch-missing", result.stdout)
+        self.assertIn("refused: task-branch-missing", result.stdout)
         self.assertNotIn("review:", updated)
 
     def test_write_off_the_queue_branch_is_refused(self) -> None:
         self._set_card_check("0")
-        git(self.repo, "checkout", "card-12")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        git(self.repo, "checkout", "task-12")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: not-on-queue-branch", result.stdout)
         self.assertEqual(after, before)
@@ -572,8 +573,8 @@ class ReachReviewGitTests(unittest.TestCase):
             "test-failed",
         )
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        card = (self.repo / "card-loop" / "backlog" / "12.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        card = (self.repo / "jt-queue" / "tasks" / "12" / "task.md").read_text(encoding="utf-8")
         self.assertEqual(board.count("ask:"), 1)
         self.assertIn("- [ ] **12** fresh (feat) ask:", board)
         self.assertEqual(card.count("\nask:"), 1)
@@ -588,35 +589,35 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: question-open", refused_while_open.stdout)
 
         cleared_card = card.replace("ask: updated question?", "ask:")
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(cleared_card, encoding="utf-8")
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(cleared_card, encoding="utf-8")
         commit_all(self.repo, "docs: human clears ask")
 
         nxt = run_gate(self.repo, "next")
-        self.assertIn("action: do-card", nxt.stdout)
+        self.assertIn("action: do-task", nxt.stdout)
         self.assertIn("reason: question-cleared", nxt.stdout)
 
         self._set_card_check("0")
         reached = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         self.assertEqual(reached.returncode, 0, reached.stdout + reached.stderr)
-        final_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        final_board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertIn("- [ ] **12** fresh (feat) review: local", final_board)
         self.assertNotIn("ask:", final_board)
 
     def test_merge_argument_cannot_merge(self) -> None:
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "merge")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 2)
         self.assertIn("this gate cannot merge", result.stderr)
         self.assertIn("refused: merge", result.stdout)
         self.assertEqual(after, before)
 
     def test_next_on_review_waits_with_review_reason_and_ids(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text("CARD_ONLY = True\n", encoding="utf-8")
-        plan = self.repo / "card-loop" / "plan"
-        plan.mkdir(parents=True)
-        (plan / "12.md").write_text(
+        plan = self.repo / "jt-queue" / "tasks" / "12"
+        plan.mkdir(parents=True, exist_ok=True)
+        (plan / "plan.md").write_text(
             "# Plan 12\n\n## evidence\n\n- python3 check.py\n\n"
             "## decisions\n\n| decision | why | evidence |\n|---|---|---|\n"
             "| DECIDE_TOKEN | because | check.py |\n",
@@ -625,10 +626,10 @@ class ReachReviewGitTests(unittest.TestCase):
         commit_all(self.repo, "feat: change the card")
         git(self.repo, "checkout", "main")
         text = board_text("- [ ] **12** fresh (feat) review: local")
-        (self.repo / "card-loop" / "board.md").write_text(text, encoding="utf-8")
-        before = (self.repo / "card-loop" / "board.md").read_bytes()
+        (self.repo / "jt-queue" / "board.md").write_text(text, encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_bytes()
         result = run_gate(self.repo, "next")
-        after = (self.repo / "card-loop" / "board.md").read_bytes()
+        after = (self.repo / "jt-queue" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("action: wait", result.stdout)
         self.assertIn("reason: review", result.stdout)
@@ -641,11 +642,11 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
 
     def test_next_reads_a_ready_line_as_do_card(self) -> None:
-        before = (self.repo / "card-loop" / "board.md").read_bytes()
+        before = (self.repo / "jt-queue" / "board.md").read_bytes()
         result = run_gate(self.repo, "next")
-        after = (self.repo / "card-loop" / "board.md").read_bytes()
+        after = (self.repo / "jt-queue" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("action: do-card", result.stdout)
+        self.assertIn("action: do-task", result.stdout)
         self.assertIn("command: /jt-work-queue", result.stdout)
         self.assertIn("id: 12", result.stdout)
         self.assertIn("merge: no", result.stdout)
@@ -656,7 +657,7 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "next")
         self.assertIn("action: stop", result.stdout)
         self.assertIn("reason: dirty", result.stdout)
-        self.assertNotIn("action: do-card", result.stdout)
+        self.assertNotIn("action: do-task", result.stdout)
         self.assertIn("merge: no", result.stdout)
 
     def test_broken_git_status_stops_with_git_status_failed(self) -> None:
@@ -665,7 +666,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("action: stop", result.stdout)
         self.assertIn("reason: git-status-failed", result.stdout)
-        self.assertNotIn("action: do-card", result.stdout)
+        self.assertNotIn("action: do-task", result.stdout)
 
     def test_invalid_card_id_from_cli_is_refused(self) -> None:
         for bad_id in ("../../etc/passwd", "1/2", "..", "abc", "../12"):
@@ -675,9 +676,9 @@ class ReachReviewGitTests(unittest.TestCase):
                 self.assertIn("refused: invalid-id", result.stdout, f"{subcmd} {bad_id}")
 
     def test_board_with_invalid_card_id_does_not_read_outside_backlog_and_stops(self) -> None:
-        secret = self.repo / "card-loop" / "secret.md"
+        secret = self.repo / "jt-queue" / "secret.md"
         secret.write_text("ask: LEAKED_SECRET\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **../secret** traversal (feat) ask:"),
             encoding="utf-8",
         )
@@ -689,17 +690,17 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn("LEAKED_SECRET", result.stdout)
 
     def _advance_card(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         git(self.repo, "merge", "main")
         git(self.repo, "checkout", "main")
 
     def _commit_on_card(self, message: str) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         commit_all(self.repo, message)
         git(self.repo, "checkout", "main")
 
     def test_chore_commit_opens_repo_review(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** note (chore)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
@@ -709,26 +710,26 @@ class ReachReviewGitTests(unittest.TestCase):
         self._commit_on_card("chore: touch the script")
         self._record_review("12")
         opened = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        opened_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        opened_board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
         self.assertIn("repo-review: open", opened.stdout)
         self.assertIn("review: local", opened_board)
         self.assertNotIn("merge:", opened_board)
 
     def test_docs_commit_does_not_open_repo_review(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** note (docs)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: mark the note")
         self._advance_card()
-        plan = self.repo / "card-loop" / "plan"
-        plan.mkdir(parents=True)
-        (plan / "12.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
+        plan = self.repo / "jt-queue" / "tasks" / "12"
+        plan.mkdir(parents=True, exist_ok=True)
+        (plan / "plan.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
         self._commit_on_card("docs: note the plan")
         skipped = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        skipped_board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
-        noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
+        skipped_board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        noted = git(self.repo, "show", "task-12:jt-queue/tasks/12/plan.md")
         self.assertEqual(skipped.returncode, 0, skipped.stdout + skipped.stderr)
         self.assertIn("tier: quick", skipped.stdout)
         self.assertIn("repo-review: skip", skipped.stdout)
@@ -737,13 +738,13 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("a note in the plan, then continue", noted.stdout)
 
     def test_quick_tier_docs_and_style_pass_without_plan(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** readme (docs)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: set docs card")
         self._advance_card()
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "README.md").write_text("# Docs\n", encoding="utf-8")
         commit_all(self.repo, "docs: add readme")
         git(self.repo, "checkout", "main")
@@ -752,14 +753,14 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("tier: quick", res_docs.stdout)
         self.assertIn("repo-review: skip", res_docs.stdout)
 
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** format (style)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: set style card")
-        git(self.repo, "branch", "-D", "card-12")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         commit_all(self.repo, "style: format app")
         git(self.repo, "checkout", "main")
@@ -770,14 +771,14 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_adaptive_gate_escalates_to_standard_tier(self) -> None:
         for path in ("requirements.txt", "docs/conf.py"):
-            (self.repo / "card-loop" / "board.md").write_text(
+            (self.repo / "jt-queue" / "board.md").write_text(
                 board_text(f"- [ ] **12** note {path} (docs)", test=gate.NO_SUITE),
                 encoding="utf-8",
             )
             commit_all(self.repo, f"docs: board for {path}")
-            git(self.repo, "branch", "-D", "card-12")
-            git(self.repo, "branch", "card-12")
-            git(self.repo, "checkout", "card-12")
+            git(self.repo, "branch", "-D", "task-12")
+            git(self.repo, "branch", "task-12")
+            git(self.repo, "checkout", "task-12")
             target = self.repo / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("x = 1\n", encoding="utf-8")
@@ -788,14 +789,14 @@ class ReachReviewGitTests(unittest.TestCase):
             self.assertIn("refused: review-diff", res.stdout, path)
 
         # feat card with docs: commit -> Standard and refused: review-diff without review
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** feature (feat)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: set feat card")
-        git(self.repo, "branch", "-D", "card-12")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "README.md").write_text("# Sneaky\n", encoding="utf-8")
         commit_all(self.repo, "docs: sneaky commit on feat card")
         git(self.repo, "checkout", "main")
@@ -804,18 +805,18 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: review-diff", res_feat_docs.stdout)
 
         # feat card modified to (style) after branching -> still Standard
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** feature two (feat)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: feat at branch point")
-        git(self.repo, "branch", "-D", "card-12")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("X = 2\n", encoding="utf-8")
         commit_all(self.repo, "style: try to downgrade tier")
         git(self.repo, "checkout", "main")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** feature two (style)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
@@ -824,18 +825,18 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: review-diff", res_mutated.stdout)
 
         # docs card with screen: yes -> Standard
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** docs screen (docs)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["README.md"], kind="docs", screen=True),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: docs card with screen")
-        git(self.repo, "branch", "-D", "card-12")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "README.md").write_text("# Screen Docs\n", encoding="utf-8")
         commit_all(self.repo, "docs: update readme")
         git(self.repo, "checkout", "main")
@@ -844,7 +845,7 @@ class ReachReviewGitTests(unittest.TestCase):
                 self.repo,
                 "main",
                 "12",
-                (self.repo / "card-loop" / "backlog" / "12.md").read_text(encoding="utf-8"),
+                (self.repo / "jt-queue" / "tasks" / "12" / "task.md").read_text(encoding="utf-8"),
             ),
             "standard",
         )
@@ -855,18 +856,18 @@ class ReachReviewGitTests(unittest.TestCase):
     def test_outside_files_and_style_changes_are_reported_without_refusal(self) -> None:
         # 1. Card touching file outside files: still passes and prints outside-files:
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** format (style)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["app.py"], kind="style"),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: setup style card")
-        git(self.repo, "branch", "-D", "card-12")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "-D", "task-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         # Change only whitespace in app.py
         (self.repo / "app.py").write_text("VALUE = 1   \n\n", encoding="utf-8")
         commit_all(self.repo, "style: whitespace only")
@@ -878,7 +879,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn("style-changes:", res_ws.stdout)
 
         # 2. Style card changing logic and touching extra.py outside files:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
         (self.repo / "extra.py").write_text("EXTRA = True\n", encoding="utf-8")
         commit_all(self.repo, "style: touch logic and extra")
@@ -890,7 +891,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("style-changes: app.py, extra.py", res_logic.stdout)
 
         # 3. Empty files: does not print outside-files:
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body([], kind="style"),
             encoding="utf-8",
         )
@@ -899,33 +900,33 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn("outside-files:", res_empty.stdout)
 
     def test_plan_note_on_a_code_commit_cannot_reach_review(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** note (chore)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: mark the chore")
         self._advance_card()
-        plan = self.repo / "card-loop" / "plan"
-        plan.mkdir(parents=True)
-        (plan / "12.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
+        plan = self.repo / "jt-queue" / "tasks" / "12"
+        plan.mkdir(parents=True, exist_ok=True)
+        (plan / "plan.md").write_text("a note in the plan, then continue\n", encoding="utf-8")
         self._commit_on_card("chore: note the plan")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: review-diff", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
-        noted = git(self.repo, "show", "card-12:card-loop/plan/12.md")
+        noted = git(self.repo, "show", "task-12:jt-queue/tasks/12/plan.md")
         self.assertIn("a note in the plan, then continue", noted.stdout)
 
     def _screen(self, kind: str, browser: str, start: str, port: str, click: str) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text(f"- [ ] **12** screen ({kind})", browser=browser),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(
                 ["app.py"],
                 kind=kind,
@@ -944,9 +945,9 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_screen_work_without_a_browser_cannot_reach_review(self) -> None:
         self._screen("style", "", "python3 -c 'import sys; sys.exit(1)'", "9", "python3 -c 'print(1)'")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(encoding="utf-8")
         source = GATE_PATH.read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
@@ -971,9 +972,9 @@ class ReachReviewGitTests(unittest.TestCase):
             str(free_port()),
             "python3 -c \"print('HEADER_TOKEN')\"",
         )
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: start-down", result.stdout)
         self.assertIn("next: ask", result.stdout)
@@ -992,9 +993,9 @@ class ReachReviewGitTests(unittest.TestCase):
             str(port),
             "python3 -c 'import sys; sys.exit(1)'",
         )
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("refused: click-mismatch", result.stdout)
         self.assertIn("next: ask", result.stdout)
@@ -1018,7 +1019,7 @@ class ReachReviewGitTests(unittest.TestCase):
             "python3 -c \"print('HEADER_TOKEN')\"",
         )
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("repo-review: open", result.stdout)
         self.assertIn("allowed", result.stdout)
@@ -1030,7 +1031,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertFalse(port_open(port))
 
     def test_setup_failure_refuses_reach_review(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)", setup="python3 -c 'import sys; sys.exit(1)'"),
             encoding="utf-8",
         )
@@ -1048,7 +1049,7 @@ class ReachReviewGitTests(unittest.TestCase):
             f"open('{pid_file}', 'w').write(str(p.pid)); "
             f"time.sleep(60)\""
         )
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)", test=test_cmd),
             encoding="utf-8",
         )
@@ -1074,7 +1075,7 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_test_cmd_timeout_does_not_duplicate_output_and_invalid_timeout_env_falls_back(self) -> None:
         test_cmd = "python3 -c 'import sys, time; print(\"START\", flush=True); time.sleep(60)'"
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)", test=test_cmd),
             encoding="utf-8",
         )
@@ -1102,7 +1103,7 @@ class ReachReviewGitTests(unittest.TestCase):
             os.environ.pop("JT_TEST_TIMEOUT", None)
 
     def test_setup_command_creates_prerequisite_in_worktree(self) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text(
                 "- [ ] **12** fresh (feat)",
                 test="python3 -c 'import os, sys; sys.exit(0 if os.path.exists(\"dep.txt\") else 1)'",
@@ -1117,7 +1118,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("allowed", result.stdout)
 
     def test_node_modules_bin_in_path_in_worktree(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         bin_dir = self.repo / "node_modules" / ".bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
         tool = bin_dir / "my-checker"
@@ -1125,7 +1126,7 @@ class ReachReviewGitTests(unittest.TestCase):
         tool.chmod(0o755)
         commit_all(self.repo, "chore: add bin tool")
         git(self.repo, "checkout", "main")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)", test="my-checker"),
             encoding="utf-8",
         )
@@ -1136,7 +1137,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("allowed", result.stdout)
 
     def test_no_review_section_refuses_reach_review(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# new code\n", encoding="utf-8")
         commit_all(self.repo, "feat: implement feature")
         git(self.repo, "checkout", "main")
@@ -1146,12 +1147,12 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("detail: no-review", result.stdout)
 
     def test_stale_review_section_refuses_reach_review(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# first\n", encoding="utf-8")
         commit_all(self.repo, "feat: first change")
         git(self.repo, "checkout", "main")
         self._record_review("12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# second\n", encoding="utf-8")
         commit_all(self.repo, "feat: second change")
         git(self.repo, "checkout", "main")
@@ -1161,8 +1162,8 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("detail: stale-review", result.stdout)
 
     def _write_plan(self, card_id: str, sha: str, decision: str = "") -> None:
-        git(self.repo, "checkout", f"card-{card_id}")
-        plan_dir = self.repo / "card-loop" / "plan"
+        git(self.repo, "checkout", f"task-{card_id}")
+        plan_dir = self.repo / "jt-queue" / "tasks" / card_id
         plan_dir.mkdir(parents=True, exist_ok=True)
         row = ""
         if decision:
@@ -1170,7 +1171,7 @@ class ReachReviewGitTests(unittest.TestCase):
                 "\n## decisions\n\n| decision | why | evidence |\n|---|---|---|\n"
                 f"| {decision} |\n"
             )
-        (plan_dir / f"{card_id}.md").write_text(
+        (plan_dir / "plan.md").write_text(
             f"# Plan {card_id}\n\n## review-diff\n\n- commit: {sha}\n"
             f"- reviewer: reviewer\n- found: pass\n{row}",
             encoding="utf-8",
@@ -1179,30 +1180,31 @@ class ReachReviewGitTests(unittest.TestCase):
         git(self.repo, "checkout", "main")
 
     def _topic_cards(self, refs: list[str] | None) -> None:
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** one (fix)\n- [ ] **13** two (fix)"),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["app.py"], topic="login", refs=refs),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "13.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "13").mkdir(parents=True, exist_ok=True)
+        (self.repo / "jt-queue" / "tasks" / "13" / "task.md").write_text(
             card_body(["src/b.py"], topic="login", refs=["12"] if refs else None),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: add the related cards")
 
     def test_added_checker_the_card_did_not_ask_for_cannot_reach_review(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check_once.py").write_text("print('once')\n", encoding="utf-8")
         commit_all(self.repo, "fix: add a one-off checker")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         git(self.repo, "checkout", "main")
         self._write_plan("12", sha)
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: one-off-checker", result.stdout)
         self.assertIn("merge: no", result.stdout)
@@ -1211,12 +1213,12 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn("review:", after)
 
     def test_checker_the_card_asked_for_can_reach_review(self) -> None:
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["check_once.py"], do="create check_once.py"),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: the card asks for the checker")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         git(self.repo, "merge", "main")
         (self.repo / "check_once.py").write_text("print('once')\n", encoding="utf-8")
         commit_all(self.repo, "fix: add the checker the card asked for")
@@ -1224,13 +1226,13 @@ class ReachReviewGitTests(unittest.TestCase):
         git(self.repo, "checkout", "main")
         self._write_plan("12", sha)
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
 
     def test_checkout_module_is_not_a_one_off_checker(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "checkout.py").write_text("VALUE = 1\n", encoding="utf-8")
         commit_all(self.repo, "feat: add checkout")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
@@ -1242,9 +1244,9 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_unlinked_same_topic_cannot_reach_review(self) -> None:
         self._topic_cards(None)
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: related", result.stdout)
         self.assertIn("next: ask", result.stdout)
@@ -1254,7 +1256,7 @@ class ReachReviewGitTests(unittest.TestCase):
 
     def test_same_topic_linked_cards_can_reach_review_without_rule_update(self) -> None:
         self._topic_cards(["13"])
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         git(self.repo, "merge", "main")
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         commit_all(self.repo, "fix: patch only this card")
@@ -1262,21 +1264,21 @@ class ReachReviewGitTests(unittest.TestCase):
         git(self.repo, "checkout", "main")
         self._write_plan("12", sha)
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("allowed", result.stdout)
         self.assertIn("review: local", board)
         self.assertNotIn("merge:", board)
 
     def test_a_single_topic_can_patch_code_without_a_rule_row(self) -> None:
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["check.py"], topic="login"),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: classify the only card")
         self._set_card_check("0")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("review: local", board)
 
@@ -1331,28 +1333,28 @@ class DraftPrReachTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
         init_repo(self.repo)
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)"),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["check.py"]),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: add the board")
-        git(self.repo, "branch", "card-12")
+        git(self.repo, "branch", "task-12")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
     def _record_review(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        plan_dir = self.repo / "card-loop" / "plan"
+        plan_dir = self.repo / "jt-queue" / "tasks" / "12"
         plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / "12.md").write_text(
+        (plan_dir / "plan.md").write_text(
             f"# Plan 12\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
             encoding="utf-8",
         )
@@ -1360,7 +1362,7 @@ class DraftPrReachTests(unittest.TestCase):
         git(self.repo, "checkout", "main")
 
     def _commit_check(self, code: str) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "check.py").write_text(
             f"import sys\nsys.exit({code})\n# card\n",
             encoding="utf-8",
@@ -1400,10 +1402,10 @@ class DraftPrReachTests(unittest.TestCase):
         return env
 
     def _board(self) -> str:
-        return (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        return (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
 
     def test_classify_open_prs_names_the_draft_or_the_refusal(self) -> None:
-        head = "card-12"
+        head = "task-12"
         base = "main"
         url = "https://example.invalid/pull/7"
         draft = {
@@ -1424,7 +1426,7 @@ class DraftPrReachTests(unittest.TestCase):
         )
         blank = {**draft, "url": " "}
         self.assertEqual(gate.classify_open_prs([blank], head, base), ("ask", "pr-missing"))
-        other_head = {**draft, "headRefName": "card-9"}
+        other_head = {**draft, "headRefName": "task-9"}
         self.assertEqual(
             gate.classify_open_prs([other_head], head, base),
             ("ask", "pr-missing"),
@@ -1477,7 +1479,7 @@ class DraftPrReachTests(unittest.TestCase):
         self._origin()
         payload = (
             '[{"url":"https://example.invalid/pull/7","isDraft":true,'
-            '"headRefName":"card-12","baseRefName":"main"}]'
+            '"headRefName":"task-12","baseRefName":"main"}]'
         )
         result = run_gate(
             self.repo,
@@ -1500,7 +1502,7 @@ class DraftPrReachTests(unittest.TestCase):
         self._origin()
         payload = (
             '[{"url":"https://example.invalid/pull/7","isDraft":false,'
-            '"headRefName":"card-12","baseRefName":"main"}]'
+            '"headRefName":"task-12","baseRefName":"main"}]'
         )
         result = run_gate(
             self.repo,
@@ -1521,7 +1523,7 @@ class DraftPrReachTests(unittest.TestCase):
         self._origin()
         one = (
             '{"url":"https://example.invalid/pull/7","isDraft":true,'
-            '"headRefName":"card-12","baseRefName":"main"}'
+            '"headRefName":"task-12","baseRefName":"main"}'
         )
         result = run_gate(
             self.repo,
@@ -1616,7 +1618,7 @@ class V20FeatureTests(unittest.TestCase):
             text,
             {"1.1": card_body(["src/a.py"]), "1.2": card_body(["src/b.py"])},
         )
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "1.1")
         self.assertEqual(decision.reason, "ready")
 
@@ -1639,24 +1641,24 @@ class LandedTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
         init_repo(self.repo)
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat) review: local"),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["app.py"]),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: add the board")
-        git(self.repo, "branch", "card-12")
+        git(self.repo, "branch", "task-12")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
     def _diverge(self) -> None:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         commit_all(self.repo, "feat: card work")
         git(self.repo, "checkout", "main")
@@ -1664,19 +1666,19 @@ class LandedTests(unittest.TestCase):
     def test_squash_merged_pr_is_landed_when_not_ancestor(self) -> None:
         self._diverge()
         ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "card-12", "main"],
+            ["git", "merge-base", "--is-ancestor", "task-12", "main"],
             cwd=self.repo,
             capture_output=True,
         )
         self.assertNotEqual(ancestor.returncode, 0)
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         env = _git_bin_env(
             self.repo,
             "bin-squash",
-            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"card-12\"}'\n",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"headRefName\":\"task-12\"}'\n",
         )
         result = run_gate_env(self.repo, env, "landed", "--id", "12")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("landed: squash", result.stdout)
         self.assertIn("merge: no", result.stdout)
@@ -1688,7 +1690,7 @@ class LandedTests(unittest.TestCase):
         env = _git_bin_env(
             self.repo,
             "bin-open",
-            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"card-12\"}'\n",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"task-12\"}'\n",
         )
         result = run_gate_env(self.repo, env, "landed", "--id", "12")
         self.assertNotEqual(result.returncode, 0)
@@ -1698,7 +1700,7 @@ class LandedTests(unittest.TestCase):
 
     def test_ancestor_lands_without_calling_gh(self) -> None:
         self._diverge()
-        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card")
+        git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge card")
         result = run_gate_env(
             self.repo, _git_bin_env(self.repo, "bin-ancestor"), "landed", "--id", "12"
         )
@@ -1735,7 +1737,7 @@ class LandedTests(unittest.TestCase):
 if [ "$2" = "view" ]; then
   exit 1
 fi
-printf '%s\\n' '[{"state":"MERGED","headRefName":"card-12"}]'
+printf '%s\\n' '[{"state":"MERGED","headRefName":"task-12"}]'
 exit 0
 """
         result = run_gate_env(
@@ -1756,7 +1758,7 @@ exit 0
         git(self.repo, "remote", "add", "origin", "https://example.com/repo.git")
         hang_env = _git_bin_env(
             self.repo,
-            "card-loop/bin-hang",
+            "jt-queue/bin-hang",
             "#!/bin/sh\n/bin/sleep 5\n",
         )
         hang_env["JT_GH_TIMEOUT"] = "0.2"
@@ -1767,10 +1769,10 @@ exit 0
         self.assertNotIn("landed-waiting:", hung.stdout)
 
         # 3. Ancestor merged -> next prints landed-waiting: 12 and does not modify board.md
-        git(self.repo, "merge", "--no-ff", "card-12", "-m", "merge card-12")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         merged = run_gate(self.repo, "next")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertEqual(merged.returncode, 0, merged.stdout + merged.stderr)
         self.assertIn("landed-waiting: 12", merged.stdout)
         self.assertEqual(after, before)
@@ -1781,12 +1783,12 @@ exit 0
         script = """#!/bin/sh
 case "$*" in
   *"--state merged"*"--limit"*)
-    printf '%s\\n' '[{"state":"MERGED","headRefName":"card-12"}]' ;;
+    printf '%s\\n' '[{"state":"MERGED","headRefName":"task-12"}]' ;;
   *) printf '%s\\n' '[]' ;;
 esac
 exit 0
 """
-        env = _git_bin_env(self.repo, "card-loop/bin-squash", script)
+        env = _git_bin_env(self.repo, "jt-queue/bin-squash", script)
         result = run_gate_env(self.repo, env, "next")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("landed-waiting: 12", result.stdout)
@@ -1797,24 +1799,24 @@ class DiffCheckTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
         init_repo(self.repo)
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
         (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-        (self.repo / "card-loop" / "board.md").write_text(
+        (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** fresh (feat)", test=gate.NO_SUITE),
             encoding="utf-8",
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["app.py"]),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: add the board")
-        git(self.repo, "branch", "card-12")
+        git(self.repo, "branch", "task-12")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
     def _commit_code(self) -> str:
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         commit_all(self.repo, "feat: card work")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
@@ -1822,10 +1824,10 @@ class DiffCheckTests(unittest.TestCase):
         return sha
 
     def _write_plan(self, body: str) -> None:
-        git(self.repo, "checkout", "card-12")
-        plan = self.repo / "card-loop" / "plan"
+        git(self.repo, "checkout", "task-12")
+        plan = self.repo / "jt-queue" / "tasks" / "12"
         plan.mkdir(parents=True, exist_ok=True)
-        (plan / "12.md").write_text(body, encoding="utf-8")
+        (plan / "plan.md").write_text(body, encoding="utf-8")
         commit_all(self.repo, "docs: record review")
         git(self.repo, "checkout", "main")
 
@@ -1871,7 +1873,7 @@ class DiffCheckTests(unittest.TestCase):
         self._write_plan(
             f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
         )
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
         result = run_diff_check(self.repo)
         self.assertNotEqual(result.returncode, 0)
@@ -1880,9 +1882,9 @@ class DiffCheckTests(unittest.TestCase):
     def test_heading_alone_cannot_reach_review(self) -> None:
         self._commit_code()
         self._write_plan("# Plan 12\n\n## review-diff\n\nnote only\n")
-        before = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
-        after = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+        after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: review-diff", result.stdout)
         self.assertIn("detail: no-sha", result.stdout)
@@ -1919,7 +1921,7 @@ class DiffCheckTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("allowed", result.stdout)
-            board = (self.repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+            board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
             self.assertIn("review: local", board)
 
 
@@ -1946,7 +1948,7 @@ class StatusBoundaryTests(unittest.TestCase):
         self.assertEqual(decision.action, "stop")
         self.assertEqual(decision.reason, "unknown-status")
         self.assertEqual(decision.id, "13")
-        self.assertNotEqual(decision.action, "do-card")
+        self.assertNotEqual(decision.action, "do-task")
 
     def test_title_colon_words_stay_ready_and_can_be_marked_review(self) -> None:
         for name in ("task: login", "backdrop: night", "incomplete: form", "mask: login"):
@@ -1956,7 +1958,7 @@ class StatusBoundaryTests(unittest.TestCase):
             self.assertEqual(len(parsed.cards), 1, name)
             self.assertIsNone(parsed.cards[0].status, name)
             decision = decide_board(text, {"12": card_body(["src/a.py"])})
-            self.assertEqual(decision.action, "do-card", name)
+            self.assertEqual(decision.action, "do-task", name)
             self.assertEqual(decision.id, "12", name)
             self.assertEqual(decision.reason, "ready", name)
             updated = gate.apply_waiting_review(text, "12", 0, "local")
@@ -1974,7 +1976,7 @@ class StatusBoundaryTests(unittest.TestCase):
         parsed = gate.parse_board(text)
         self.assertEqual(parsed.cards[0].status, "send-back:")
         decision = decide_board(text, {"12": card_body(["src/a.py"])})
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "12")
         self.assertEqual(decision.reason, "send-back")
         updated = gate.apply_waiting_review(text, "12", 0, "local")
@@ -2024,7 +2026,7 @@ class StatusBoundaryTests(unittest.TestCase):
         decision = decide_board(done, bodies)
         self.assertEqual(decision.action, "stop")
         self.assertEqual(decision.reason, "unknown-status")
-        self.assertNotEqual(decision.action, "do-card")
+        self.assertNotEqual(decision.action, "do-task")
 
     def test_review_link_may_contain_merge_colon(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)")
@@ -2035,14 +2037,14 @@ class StatusBoundaryTests(unittest.TestCase):
     def test_capitalized_section_heading_is_still_the_queue(self) -> None:
         text = board_text("- [ ] **12** fresh (feat)").replace("## first\n", "## First\n", 1)
         decision = decide_board(text, {"12": card_body(["src/a.py"])})
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "12")
         self.assertEqual(decision.reason, "ready")
 
     def test_legacy_board_with_pair_line_is_ignored(self) -> None:
         text = board_text("- [ ] **12** mask: login · side-repo (feat)", pair="side-repo")
         decision = decide_board(text, {"12": card_body(["src/a.py"])})
-        self.assertEqual(decision.action, "do-card")
+        self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "12")
 
     def test_cargo_and_go_repos_have_setup_commands(self) -> None:
@@ -2067,18 +2069,18 @@ class CommandApprovalTests(unittest.TestCase):
         self.repo = Path(self.tmp.name)
         self.marker = self.repo.parent / f"{self.repo.name}-marker"
         init_repo(self.repo)
-        (self.repo / "card-loop" / "backlog").mkdir(parents=True)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
         (self.repo / "README.md").write_text("hello\n", encoding="utf-8")
-        self.board = self.repo / "card-loop" / "board.md"
+        self.board = self.repo / "jt-queue" / "board.md"
         self.board.write_text(
             board_text("- [ ] **12** doc (docs)", test="python3 -c pass"), encoding="utf-8"
         )
-        (self.repo / "card-loop" / "backlog" / "12.md").write_text(
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["README.md"], kind="docs"), encoding="utf-8"
         )
         commit_all(self.repo, "docs: board")
-        git(self.repo, "branch", "card-12")
-        git(self.repo, "checkout", "card-12")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
         (self.repo / "README.md").write_text("hello world\n", encoding="utf-8")
         commit_all(self.repo, "docs: card")
         git(self.repo, "checkout", "main")
@@ -2123,13 +2125,13 @@ class CommandApprovalTests(unittest.TestCase):
 
     def test_approval_is_stored_in_git_dir_not_in_the_tree(self) -> None:
         run_gate_raw(self.repo, "approve-commands", "--id", "12")
-        self.assertTrue((self.repo / ".git" / "card-loop" / "approved-commands.json").is_file())
+        self.assertTrue((self.repo / ".git" / "jt-queue" / "approved-commands.json").is_file())
         tracked = git(self.repo, "ls-files").stdout
         self.assertNotIn("approved-commands", tracked)
         self.assertEqual(git(self.repo, "status", "--porcelain").stdout.strip(), "")
 
     def test_changed_card_screen_commands_are_refused(self) -> None:
-        card = self.repo / "card-loop" / "backlog" / "12.md"
+        card = self.repo / "jt-queue" / "tasks" / "12" / "task.md"
         card.write_text(
             card_body(["README.md"], kind="docs", screen=True, start="true", port="1", click="true"),
             encoding="utf-8",
@@ -2145,7 +2147,7 @@ class CommandApprovalTests(unittest.TestCase):
         self.assertFalse(self.marker.exists())
 
     def test_screen_check_refuses_unapproved_start_even_without_screen_yes_or_via_cli_override(self) -> None:
-        card = self.repo / "card-loop" / "backlog" / "12.md"
+        card = self.repo / "jt-queue" / "tasks" / "12" / "task.md"
         card.write_text(
             card.read_text(encoding="utf-8") + f"\nstart: touch {self.marker}\nport: 1\n",
             encoding="utf-8",
@@ -2193,6 +2195,53 @@ class GateSourceTests(unittest.TestCase):
         for token in sorted(found - excluded):
             self.assertIn(token, gate.NEXT_FOR, f"missing NEXT_FOR entry for {token}")
             self.assertIn(gate.NEXT_FOR[token], {"retry", "ask", "stop"})
+
+
+class IgnoredQueueTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / ".gitignore").write_text("jt-queue/\n", encoding="utf-8")
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        commit_all(self.repo, "chore: add the checker")
+        git(self.repo, "checkout", "-b", "task-12")
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n# card\n", encoding="utf-8")
+        commit_all(self.repo, "feat: change the checker")
+        self.sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        git(self.repo, "checkout", "main")
+        queue = self.repo / "jt-queue"
+        task = queue / "tasks" / "12"
+        task.mkdir(parents=True)
+        (queue / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (queue / "brief.md").write_text("# Brief\n\nship the checker\n", encoding="utf-8")
+        (task / "task.md").write_text(card_body(["check.py"]), encoding="utf-8")
+        (task / "plan.md").write_text(
+            f"# Plan 12\n\n## review-diff\n\n- commit: {self.sha}\n- reviewer: reviewer\n- found: pass\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_ignored_queue_is_read_from_disk_and_stays_untracked(self) -> None:
+        listed = git(self.repo, "status", "--porcelain")
+        self.assertNotIn("jt-queue/", listed.stdout)
+        nxt = run_gate(self.repo, "next")
+        self.assertEqual(nxt.returncode, 0, nxt.stdout + nxt.stderr)
+        self.assertIn("action: do-task", nxt.stdout)
+        self.assertIn("id: 12", nxt.stdout)
+        checked = run_diff_check(self.repo)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertIn("diff-check: ok", checked.stdout)
+        opened = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
+        self.assertIn("review: local", (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8"))
+        listed_after = git(self.repo, "status", "--porcelain")
+        self.assertNotIn("jt-queue/", listed_after.stdout)
 
 
 if __name__ == "__main__":

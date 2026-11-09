@@ -2,11 +2,11 @@
 
 The agent's working notes. The human does not accept a plan before review opens.
 
-- Board item `<id>` on `card-loop/board.md`
+- Board item `<id>` on `jt-queue/board.md`
 - kind:
 - round: 1
 - round-status: working
-- Branch:
+- Branch: task-<id>
 - Commit:
 
 ## Goal

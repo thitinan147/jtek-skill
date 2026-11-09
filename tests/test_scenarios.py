@@ -45,7 +45,7 @@ def _init_fixture_repo(
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Scenario Test")
-    (repo / "card-loop" / "backlog").mkdir(parents=True, exist_ok=True)
+    (repo / "jt-queue" / "tasks" / card_id).mkdir(parents=True, exist_ok=True)
     board = (
         "# Board - scenario-app\n\n"
         "queue: main\n\n"
@@ -63,8 +63,8 @@ def _init_fixture_repo(
         "## main\n\nno items\n\n"
         "## later\n\nno items\n"
     )
-    (repo / "card-loop" / "board.md").write_text(board, encoding="utf-8")
-    (repo / "card-loop" / "backlog" / f"{card_id}.md").write_text(card_text, encoding="utf-8")
+    (repo / "jt-queue" / "board.md").write_text(board, encoding="utf-8")
+    (repo / "jt-queue" / "tasks" / card_id / "task.md").write_text(card_text, encoding="utf-8")
 
 
 class ScenarioGateIntegrationTests(unittest.TestCase):
@@ -87,10 +87,10 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             _git(repo, "commit", "-m", "docs: initial repo")
 
             nxt = _run_gate(repo, "next")
-            self.assertIn("action: do-card", nxt.stdout)
+            self.assertIn("action: do-task", nxt.stdout)
             self.assertIn("id: 1", nxt.stdout)
 
-            _git(repo, "checkout", "-b", "card-1")
+            _git(repo, "checkout", "-b", "task-1")
             (repo / "README.md").write_text("The quick brown fox\n", encoding="utf-8")
             _git(repo, "add", "README.md")
             _git(repo, "commit", "-m", "docs(1): fix typo in readme")
@@ -100,7 +100,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             self.assertEqual(reach.returncode, 0, reach.stdout)
             self.assertIn("tier: quick", reach.stdout)
             self.assertIn("repo-review: skip", reach.stdout)
-            board_after = (repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+            board_after = (repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
             self.assertIn("- [ ] **1** fix readme typo (docs) review: local", board_after)
             self.assertNotIn("merge:", board_after)
 
@@ -133,10 +133,10 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             _git(repo, "commit", "-m", "docs: initial buggy repo")
 
             nxt = _run_gate(repo, "next")
-            self.assertIn("action: do-card", nxt.stdout)
+            self.assertIn("action: do-task", nxt.stdout)
             self.assertIn("id: 2", nxt.stdout)
 
-            _git(repo, "checkout", "-b", "card-2")
+            _git(repo, "checkout", "-b", "task-2")
             (repo / "calc.py").write_text(
                 "def apply_discount(price: int, pct: int) -> int:\n    return price - (price * pct // 100)\n",
                 encoding="utf-8",
@@ -144,16 +144,16 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             _git(repo, "add", "calc.py")
             _git(repo, "commit", "-m", "fix(2): subtract discount percentage")
             code_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
-            plan_dir = repo / "card-loop" / "plan"
+            plan_dir = repo / "jt-queue" / "tasks" / "2"
             plan_dir.mkdir(parents=True, exist_ok=True)
-            (plan_dir / "2.md").write_text(
+            (plan_dir / "plan.md").write_text(
                 "# Plan 2\n\n## Goal\n- Fix discount\n\n## Done when\n- python3 -m unittest\n\n"
                 "## Escape\n- Signature change required\n\n"
                 f"## review-diff\n- commit: {code_sha}\n- reviewer: self\n- found: clean\n\n"
                 "## decisions\n| decision | why | evidence |\n|---|---|---|\n| subtract pct | fix bug | test_calc.py |\n",
                 encoding="utf-8",
             )
-            _git(repo, "add", "card-loop/plan/2.md")
+            _git(repo, "add", "jt-queue/tasks/2/plan.md")
             _git(repo, "commit", "-m", "docs(2): record plan and review-diff")
             _git(repo, "checkout", "main")
 
@@ -163,7 +163,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             self.assertEqual(reach.returncode, 0, reach.stdout)
             self.assertIn("tier: standard", reach.stdout)
             self.assertIn("repo-review: open", reach.stdout)
-            board_after = (repo / "card-loop" / "board.md").read_text(encoding="utf-8")
+            board_after = (repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
             self.assertIn("- [ ] **2** fix discount bug (fix) review: local", board_after)
 
     def test_scenario_3_ambiguous_requirement_stops_at_ask(self) -> None:
@@ -185,7 +185,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             _git(repo, "commit", "-m", "docs: initial repo")
 
             nxt = _run_gate(repo, "next")
-            self.assertIn("action: do-card", nxt.stdout)
+            self.assertIn("action: do-task", nxt.stdout)
 
             ask_res = _run_gate(
                 repo,
@@ -196,7 +196,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 "Should export format be CSV or PDF, and should archived users be included?",
             )
             self.assertEqual(ask_res.returncode, 0, ask_res.stdout)
-            _git(repo, "add", "card-loop/board.md", "card-loop/backlog/3.md")
+            _git(repo, "add", "jt-queue/board.md", "jt-queue/tasks/3/task.md")
             _git(repo, "commit", "-m", "docs(3): ask for export format clarification")
 
             after_next = _run_gate(repo, "next")
@@ -227,20 +227,20 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             _git(repo, "add", ".")
             _git(repo, "commit", "-m", "docs: initial failing test repo")
 
-            _git(repo, "checkout", "-b", "card-4")
+            _git(repo, "checkout", "-b", "task-4")
             for round_num in (1, 2, 3):
-                _git(repo, "checkout", "card-4")
+                _git(repo, "checkout", "task-4")
                 (repo / "config.py").write_text(f"ATTEMPT = {round_num}\n", encoding="utf-8")
                 _git(repo, "add", "config.py")
                 _git(repo, "commit", "-m", f"fix(4): attempt {round_num}")
                 code_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
-                plan_dir = repo / "card-loop" / "plan"
+                plan_dir = repo / "jt-queue" / "tasks" / "4"
                 plan_dir.mkdir(parents=True, exist_ok=True)
-                (plan_dir / "4.md").write_text(
+                (plan_dir / "plan.md").write_text(
                     f"# Plan 4\n\n## review-diff\n- commit: {code_sha}\n- reviewer: self\n- found: ok\n",
                     encoding="utf-8",
                 )
-                _git(repo, "add", "card-loop/plan/4.md")
+                _git(repo, "add", "jt-queue/tasks/4/plan.md")
                 _git(repo, "commit", "-m", f"docs(4): review round {round_num}")
                 _git(repo, "checkout", "main")
                 reach = _run_gate(repo, "reach-review", "--id", "4")
@@ -258,7 +258,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 "test-failed",
             )
             self.assertEqual(ask_res.returncode, 0, ask_res.stdout)
-            card_after = (repo / "card-loop" / "backlog" / "4.md").read_text(encoding="utf-8")
+            card_after = (repo / "jt-queue" / "tasks" / "4" / "task.md").read_text(encoding="utf-8")
             self.assertIn("tried ATTEMPT 1, 2, 3", card_after)
             self.assertIn("refused: test-failed", card_after)
 
