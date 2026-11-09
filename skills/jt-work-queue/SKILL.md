@@ -11,7 +11,7 @@ metadata:
 
 # jt-work-queue
 
-*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for board, card, plan, and tiered gate contracts. Templates live in [assets/board.template.md](assets/board.template.md), [assets/card.template.md](assets/card.template.md), and [assets/plan.template.md](assets/plan.template.md). The unified JTek gate CLI is [scripts/gate.py](scripts/gate.py).
+*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for board, card, plan, and tiered gate contracts. Templates live in [assets/board.template.md](assets/board.template.md), [assets/task.template.md](assets/task.template.md), and [assets/plan.template.md](assets/plan.template.md). The unified JTek gate CLI is [scripts/gate.py](scripts/gate.py).
 
 ```bash
 python3 <this-skill-dir>/scripts/gate.py next --root .
@@ -31,7 +31,7 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
 1. Run `gate.py next --root .` and follow `action:` (`setup-board`, `brief`, `add-task`, `do-task`, `wait`, `stop`).
 2. On `wait`, report `id:`/`ids:` and stop; for `reason: review`, tell the human those cards await `/jt-review-work`. If `landed-waiting: <ids>` appears, tell the human to run `/jt-review-work` to close those cards. Never mark `merge:` or invoke `/jt-review-work` yourself.
 3. **Setup board (`setup-board`):** Inspect the repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`) to detect `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`. Show the table with the source of each value (e.g. `TEST_CMD = npm test` from `package.json`) and **wait for human confirmation** before writing `jt-queue/board.md` from [assets/board.template.md](assets/board.template.md). Ensure `.gitignore` contains `jt-queue/`.
-4. **Brief & Add cards (`brief` / `add-task`):** Interview until intent, `do:`, `out:`, `files:`, and `pass:` are unambiguous. Wait for human approval before writing `jt-queue/brief.md` or `jt-queue/tasks/<id>/task.md` (from [assets/card.template.md](assets/card.template.md)) and adding `- [ ] **<id>** <name> (<kind>)` to `jt-queue/board.md` on `<queue>`.
+4. **Brief & Add cards (`brief` / `add-task`):** Interview until intent, `do:`, `out:`, `files:`, and `pass:` are unambiguous. Wait for human approval before writing `jt-queue/brief.md` or `jt-queue/tasks/<id>/task.md` (from [assets/task.template.md](assets/task.template.md)) and adding `- [ ] **<id>** <name> (<kind>)` to `jt-queue/board.md` on `<queue>`.
 
 ## 2. Select Execution Strategy & Minimum Evidence (`do-task`)
 

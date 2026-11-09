@@ -1173,7 +1173,7 @@ def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
     return kinds
 
 
-def _commit_kinds_outside_card_loop(
+def _commit_kinds_outside_queue(
     root: Path, queue: str, card_id: str
 ) -> list[str] | None:
     if not queue:
@@ -1244,7 +1244,7 @@ def card_tier(
         return "standard"
     if sees_screen(card_text):
         return "standard"
-    outside_kinds = _commit_kinds_outside_card_loop(root, queue, card_id)
+    outside_kinds = _commit_kinds_outside_queue(root, queue, card_id)
     if outside_kinds is None or any(k != base_kind for k in outside_kinds):
         return "standard"
     all_kinds = _commit_kinds(root, queue, card_id)
