@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 from pathlib import Path
@@ -113,6 +114,21 @@ class SkillContractTests(unittest.TestCase):
         self.assertTrue(
             fm.get("description", "").startswith("HUMAN-ONLY COMMAND.")
         )
+
+    def test_versions_match_across_plugin_and_skills(self) -> None:
+        plugin = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        market = json.loads((REPO / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        versions = {"plugin.json": plugin["version"]}
+        for entry in market["plugins"]:
+            if entry["name"] == plugin["name"]:
+                versions["marketplace.json"] = entry["version"]
+        for skill_dir in sorted(p for p in SKILLS_DIR.iterdir() if p.is_dir()):
+            text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+            match = re.search(r'^\s+version:\s*"([^"]+)"', text, re.MULTILINE)
+            self.assertIsNotNone(match, f"{skill_dir.name}: metadata.version missing")
+            versions[skill_dir.name] = match.group(1)
+        self.assertIn("marketplace.json", versions, "plugin missing from marketplace.json")
+        self.assertEqual(len(set(versions.values())), 1, f"versions differ: {versions}")
 
     def test_readme_links_and_skill_paths_exist(self) -> None:
         readme_path = REPO / "README.md"

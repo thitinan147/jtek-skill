@@ -1,0 +1,12 @@
+{
+  "name": "jtek",
+  "description": "Outcome-gated work queue for coding agents: the agent works tasks from a board, a deterministic gate checks tests and evidence before review, and only a human can merge.",
+  "version": "22.0.1",
+  "author": {
+    "name": "Thitinan"
+  },
+  "homepage": "https://github.com/thitinan147/jtek-skill",
+  "repository": "https://github.com/thitinan147/jtek-skill",
+  "license": "MIT",
+  "keywords": ["work-queue", "task-queue", "review", "testing", "workflow", "agent-skills"]
+}

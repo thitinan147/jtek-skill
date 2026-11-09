@@ -14,15 +14,30 @@
 
 ## Install
 
+Pick **one** method. Installing both gives you every skill twice.
+
+**Any agent (Claude Code, Codex, Cursor, ...)** with [skills.sh](https://skills.sh/thitinan147/jtek-skill):
+
 ```bash
 # Pin a release so later changes cannot reach you unreviewed (recommended)
-npx skills add thitinan147/jtek-skill#v22.0.0
+npx skills add thitinan147/jtek-skill#v22.0.1
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
 ```
 
-Add `-g` to install for all your projects instead of the current one. Then read [SECURITY.md](SECURITY.md): the gate runs your test command, so a human must approve it first.
+Add `-g` to install for all your projects instead of the current one.
+
+**Claude Code plugin** (update later with `/plugin update jtek@jtek-skill`):
+
+```text
+/plugin marketplace add thitinan147/jtek-skill
+/plugin install jtek@jtek-skill
+```
+
+As a plugin, the commands are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`. Use those names if another skill has the same short name.
+
+Then read [SECURITY.md](SECURITY.md): the gate runs your test command, so a human must approve it first. **New here? Read [Getting started](docs/getting-started.md)**, a walkthrough of one real round with the gate's actual output.
 
 ## Quick start
 
@@ -71,7 +86,8 @@ Human + Agent (/jt-work-queue)                          Human only (/jt-review-w
 
 ## Documentation
 
-- [Usage guide](docs/usage.md): the full walkthrough, task kinds, priorities, and the `jt-queue/` layout
+- [Getting started](docs/getting-started.md): the words jtek-skill uses, and one real round from setup to merge
+- [Usage guide](docs/usage.md): priorities, splitting work into tasks, task kinds, and the `jt-queue/` layout
 - [File and gate contract](skills/jt-work-queue/references/contract.md): every field the gate reads
 - [Security and trust model](SECURITY.md)
 - [Changelog](CHANGELOG.md) and [migrating from v20 or v21](MIGRATING.md)
@@ -82,7 +98,7 @@ Human + Agent (/jt-work-queue)                          Human only (/jt-review-w
 |---|---|
 | macOS, Linux | Supported. CI runs the tests on Ubuntu with Python 3.10 and 3.13. |
 | Windows | **Not supported yet.** The gate uses POSIX process groups (`os.killpg`) and `fcntl`. Use WSL. |
-| Claude Code | Tested, including a clean install from a release tag. |
+| Claude Code | Tested: install from a release tag with skills.sh, and loading as a plugin. |
 | Codex, Cursor, Grok Build, Antigravity | Follows the Agent Skills format and should work, but is not tested by the author. Reports are welcome. |
 
 Needs `git` and Python 3.10 or later (standard library only). The GitHub CLI (`gh`) is optional.
