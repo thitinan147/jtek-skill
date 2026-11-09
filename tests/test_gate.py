@@ -1037,6 +1037,7 @@ class ReachReviewGitTests(unittest.TestCase):
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         self.assertIn("refused: click-mismatch", result.stdout)
         self.assertIn("BOOM_CLICK", result.stdout)
+        self.assertIn("click exited with code 1", result.stdout)
         self.assertIn("hint:", result.stdout)
         log_line = next(line for line in result.stdout.splitlines() if line.startswith("log: "))
         self.assertIn("BOOM_CLICK", Path(log_line[len("log: "):]).read_text(encoding="utf-8"))

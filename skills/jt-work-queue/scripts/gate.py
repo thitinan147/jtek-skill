@@ -1511,9 +1511,13 @@ def _click_surface(work: Path, card_text: str, card_id: str = "") -> str | None:
             raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
         if result.returncode != 0:
             detail, log_path = _command_evidence(
-                work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "click-failed"
+                work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "no output"
             )
-            raise GateError("click-mismatch", detail=detail, log=log_path)
+            raise GateError(
+                "click-mismatch",
+                detail=f"click exited with code {result.returncode}\n{detail}",
+                log=log_path,
+            )
         return None
 
     return _run_while_up(work, start, ports, wait_seconds, run, card_id)
