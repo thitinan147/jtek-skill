@@ -11,7 +11,7 @@ metadata:
 
 # jt-work-queue
 
-*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for board, task, plan, and tiered gate contracts. Templates live in [assets/board.template.md](assets/board.template.md), [assets/brief.template.md](assets/brief.template.md), [assets/task.template.md](assets/task.template.md), and [assets/plan.template.md](assets/plan.template.md). The unified JTek gate CLI is [scripts/gate.py](scripts/gate.py).
+*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for board, task, plan, and tiered gate contracts. Templates live in [assets/board.template.md](assets/board.template.md), [assets/brief.template.md](assets/brief.template.md), [assets/task.template.md](assets/task.template.md), and [assets/plan.template.md](assets/plan.template.md). The gate is [scripts/gate.py](scripts/gate.py).
 
 ```bash
 python3 <this-skill-dir>/scripts/gate.py next --root .
@@ -34,16 +34,17 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
 3. **Setup board (`setup-board`):** Inspect the repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`) to detect `<TEST_CMD>`, `<SETUP_CMD>` (start from `gate.py detect --root .`), `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`. Show the table with the source of each value (e.g. `TEST_CMD = npm test` from `package.json`) and **wait for human confirmation** before writing `jt-queue/board.md` from [assets/board.template.md](assets/board.template.md). Ensure `.gitignore` contains `jt-queue/`.
 4. **Brief & Add tasks (`brief` / `add-task`):** Read the code first and ask the human only what the code cannot answer, one question at a time with two or three options. Interview until intent, `do:`, `out:`, `files:`, and `pass:` are unambiguous. Cut work into vertical slices that can pass their own `pass:`, not layers; an earlier task goes under `first`. Use the next free id (`1.1` only for a split of task `1`). When the task depends on work in another repo, write it under `needs:` (text only; the gate ignores it). Wait for human approval before writing `jt-queue/brief.md` (from [assets/brief.template.md](assets/brief.template.md)) or `jt-queue/tasks/<id>/task.md` (from [assets/task.template.md](assets/task.template.md)) and adding `- [ ] **<id>** <name> (<kind>)` to `jt-queue/board.md` on `<queue>`.
 
-## 2. Select Execution Strategy & Minimum Evidence (`do-task`)
+## 2. Do the Task & Minimum Evidence (`do-task`)
 
-Choose your own implementation method (TDD, planning, subagents, worktrees are optional); [references/playbooks.md](references/playbooks.md) has habits by `<kind>`. The gate enforces only minimum outcome evidence by tier:
+Choose your own implementation method (TDD, planning, subagents, worktrees are optional); [references/playbooks.md](references/playbooks.md) has habits by `<kind>`. The gate computes the tier from `(<kind>)` and checks only this minimum evidence:
 
-| Mode (Gate Tier) | When to Use | Minimum Evidence Checked by `gate.py` |
+| Gate tier | Task kinds | Minimum evidence checked by `gate.py` |
 |---|---|---|
-| **1. Direct Execution (`tier: quick`)** | `docs` (doc files only) or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. Skip `tasks/<id>/plan.md` and `diff-check`. |
-| **2. Investigate & Debug (`tier: standard`)** | `fix` tasks | `jt-queue/tasks/<id>/plan.md` (from [assets/plan.template.md](assets/plan.template.md)), `<TEST_CMD>` green, diff review via `<REPO_SKILLS>` or self recorded in `## review-diff` with latest code SHA (`gate.py diff-check`), plus JTek `gate.py screen-check` when `screen: yes`. |
-| **3. Plan & Implement (`tier: standard`)** | `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` | Same as Standard above; review this task's diff via `<REPO_SKILLS>` or yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review. |
-| **4. Decompose / Ask (`mode only`)** | Ambiguous intent, breaking contract, irreversible action, or oversized task | Do not guess. Run `gate.py ask` with options or a decomposition proposal, leave `jt-queue/` uncommitted, and move to the next task. |
+| **Quick** | `docs` (doc files only), or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. No `plan.md` or `diff-check` needed. |
+| **Standard** | `fix`, `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, and any escalated `docs`/`style` | `jt-queue/tasks/<id>/plan.md` (from [assets/plan.template.md](assets/plan.template.md)) with an `## evidence` row for every `pass:` line, `<TEST_CMD>` green, a diff review via `<REPO_SKILLS>` or yourself recorded in `## review-diff` against the latest code SHA (`gate.py diff-check`), and the JTek `gate.py screen-check` when `screen: yes`. |
+
+- **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review.
+- **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
 
 ## 3. Scope, Failure & Recovery, and Handoff
 

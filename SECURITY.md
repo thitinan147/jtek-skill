@@ -6,7 +6,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 ## Trust model (read before installing)
 
-`jt-skill` is a work queue for coding agents. It is **not a sandbox**. Its Python gate (`skills/jt-work-queue/scripts/gate.py`) runs shell commands on your machine, so these commands are code that you are trusting:
+`jtek-skill` is a work queue for coding agents. It is **not a sandbox**. Its Python gate (`skills/jt-work-queue/scripts/gate.py`) runs shell commands on your machine, so these commands are code that you are trusting:
 
 | Command | Where it is declared | Run by |
 |---|---|---|
