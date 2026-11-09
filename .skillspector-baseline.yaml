@@ -39,3 +39,7 @@ rules:
   - id: "AS3"
     path: "README.md"
     reason: "Markdown links to this repo's own skills/*/SKILL.md. Does not read other installed skills."
+  - id: "AE1"
+    path: "*SKILL.md"
+    message: "*scripts/*.py (partial)*"
+    reason: "Coverage notice, not a finding in the code. SkillSpector v2.12.0 reports the bundled scripts as only partly inspected ('obfuscated_instruction_text') on a fresh install, even for commits that passed before (verified on 3008b3f). gate.py and landed.py contain no non-ASCII text and no line over 200 characters, and their real findings (AST4, TT2) are still reported. Re-check when SkillSpector is upgraded."
