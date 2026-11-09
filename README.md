@@ -1,4 +1,4 @@
-# jtek-skill (v21)
+# jtek-skill (v22)
 
 ***Constrain the outcome, not the agent.***
 
@@ -10,7 +10,7 @@ Designed for **Claude Code**, **Codex**, **Cursor**, **Grok Build**, and **Antig
 
 ```bash
 # Recommended: pin a release so later changes cannot reach you unreviewed
-npx skills add thitinan147/jtek-skill#v21.0.0 -g
+npx skills add thitinan147/jtek-skill#v22.0.0 -g
 
 # Or follow the default branch (latest, unpinned)
 npx skills add thitinan147/jtek-skill -g
@@ -33,7 +33,7 @@ Human + Agent (/jt-work-queue)                          Human Only (/jt-review-w
 ```
 
 1. **Queue files stay local, code lives on `task-<id>`:** Keep `jt-queue/` gitignored. The gate reads it from the working tree, so the board, brief, and task files are not committed or pushed. Commit implementation on `task-<id>`. Worktrees are optional.
-2. **Deterministic gate before review:** The agent cannot mark a task `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## review-diff` cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
+2. **Deterministic gate before review:** The agent cannot mark a task `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## evidence` covers every `pass:` line and whose `## review-diff` cites the latest code commit with `verdict: pass` and a `checked:` line, and `gate.py screen-check` when `screen: yes`. After three failed test rounds on new commits the gate answers `next: ask`.
 3. **Human holds the merge key:** `/jt-work-queue` does not merge into `<queue>` and does not mark `merge:`. Only a human invoking `/jt-review-work` can close or send a task back, and `merge:` is written only after `task-<id>` has landed.
 
 ## Two Commands

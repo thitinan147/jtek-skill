@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skill `jt-work-queue` version 21. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
+The rules live in skill `jt-work-queue` version 22. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
 
 queue:
 
@@ -18,13 +18,13 @@ queue:
 | `<STACK_LOCK>` | |
 | `<REPO_SKILLS>` | |
 
-`<SETUP_CMD>` prepares dependencies in the card worktree before tests and before start. An empty cell means do not run it.
+`<SETUP_CMD>` prepares dependencies in the temporary worktree the gate creates for `task-<id>` (unless you are already on that branch) before tests and before start. An empty cell means do not run it.
 
-`<REPO_SKILLS>` names skills used to review code diffs on `Standard` tier cards before `review:`. An empty cell means the agent reviews the diff directly.
+`<REPO_SKILLS>` names skills used to review code diffs on `Standard` tier tasks before `review:`. An empty cell means the agent reviews the diff directly.
 
 `- [ ]` is open (`ask:`, `review:`, `send-back:`). `- [x]` is closed (`merge:` or `drop:`).
 
-Ticket kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
+Task kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 
 Pick **first**, then **main**, then **later**.
 

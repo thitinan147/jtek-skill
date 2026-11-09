@@ -109,6 +109,53 @@ NEXT_FOR = {
     "git-status-failed": "stop",
     "invalid-id": "stop",
 }
+HINT_FOR = {
+    "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
+    "test-timeout": "The test command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
+    "review-diff": "Add a '## review-diff' section to plan.md that cites the latest code commit SHA, then run gate.py diff-check.",
+    "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
+    "task-branch-missing": "Commit the work on a branch named task-<id>, then run reach-review again.",
+    "merge-refused": "This gate cannot merge. Stop and report to the human.",
+    "related": "Link each same-layer task under refs: in task.md, or run gate.py ask.",
+    "browser-empty": "<BROWSER_TOOL> is empty in jt-queue/board.md. A human sets it; run gate.py ask.",
+    "browser-missing": "No playwright or cypress was found. Install the project's browser tool, or run gate.py ask.",
+    "browser-failed": "The browser command failed. Read its output above, fix the screen or the check, then retry.",
+    "start-down": "Check start:, port:, and wait: in task.md and read log:. The app must listen on every port in port:.",
+    "click-mismatch": "The click: command failed or is empty. Read log:, then fix the screen or the command.",
+    "worktree-failed": "Git could not create a worktree for task-<id>. Resolve it, or run gate.py ask.",
+    "pr-missing": "Push task-<id> and open one draft pull request (head task-<id>, base <queue>); see Handoff in SKILL.md.",
+    "pr-duplicate": "Close the extra open PRs whose head is task-<id> so exactly one remains.",
+    "pr-base": "Retarget the open PR to the queue branch.",
+    "pr-not-draft": "Convert the PR back to a draft, then run reach-review --write again.",
+    "pr-failed": "gh could not list PRs. Check gh auth and network, or run gate.py ask.",
+    "gh-missing": "Install the GitHub CLI (gh), or run gate.py ask.",
+    "question-open": "The ask: line in task.md is still open. Wait for the human to answer it.",
+    "board-missing": "Create jt-queue/board.md with /jt-work-queue first.",
+    "commands-unapproved": "Stop. A human must review the commands and run approve-commands. Never run it yourself.",
+    "commands-changed": "Stop. Show the human what changed; only the human runs approve-commands.",
+    "not-on-queue-branch": "Check out the queue: branch named in board.md before using --write.",
+    "test-cmd-empty": "<TEST_CMD> is empty in board.md. Ask the human to set it (or no-suite).",
+    "unknown-status": "Fix the status token on that board line to one of ask:, review:, send-back:, merge:, drop:.",
+    "task-line-missing": "That id has no open line on the board. Add the line or check the id.",
+    "task-closed": "That task is already closed on the board. Pick another id.",
+    "merge": "This gate cannot merge. Only a human merges, then records it with /jt-review-work.",
+    "git-status-failed": "git status failed. Fix the repository state, then run the command again.",
+    "invalid-id": "Task ids look like 1 or 1.2 and nothing else.",
+}
+MAX_ROUNDS = 3
+ROUND_REASONS = frozenset({"test-failed", "test-timeout", "setup-failed"})
+_VERDICT_LINE = re.compile(r"^[\s>*-]*verdict:[ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+_CHECKED_LINE = re.compile(r"^[\s>*-]*checked:[ \t]*\S", re.IGNORECASE | re.MULTILINE)
+REVIEW_DETAIL = {
+    "no-review": "plan.md has no non-empty '## review-diff' section",
+    "no-sha": "'## review-diff' does not cite any commit SHA",
+    "stale-review": "'## review-diff' does not cite the latest code commit, or the worktree has uncommitted changes",
+    "no-verdict": "'## review-diff' needs one line 'verdict: pass' or 'verdict: fix-needed'",
+    "review-fix-needed": "'## review-diff' says verdict: fix-needed; fix the diff, commit, and review it again",
+    "no-checked": "'## review-diff' needs at least one 'checked: <what you checked>' line",
+    "evidence-missing": "every pass: line in task.md needs a row in '## evidence' of plan.md",
+}
 MERGE_ARGV = {
     "merge",
     "/merge",
@@ -681,6 +728,7 @@ def cmd_ask(root: Path, card_id: str, question: str, refused: str = "") -> int:
     updated_card = apply_card_ask(card_path.read_text(encoding="utf-8"), question, refused)
     card_path.write_text(updated_card, encoding="utf-8")
     board_path.write_text(updated_board, encoding="utf-8")
+    reset_rounds(root, card_id)
     print(f"asked: {card_id}")
     print("merge: no")
     return 0
@@ -993,21 +1041,6 @@ def _record_command_log(
     return detail, str(log_path)
 
 
-def execute_test_cmd(root: Path, card_id: str, test_cmd: str, setup_cmd: str = "") -> int:
-    command = test_cmd.strip()
-    if command == "":
-        raise GateError("test-cmd-empty")
-    if not _branch_exists(root, f"task-{card_id}"):
-        raise GateError("task-branch-missing")
-    if command == NO_SUITE:
-        return 0
-    with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
-        limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
-        code, out, timed_out = _run_shell(command, work, timeout=limit)
-        if timed_out:
-            detail, log_path = _record_command_log(root, card_id, "test", out)
-            raise GateError("test-timeout", detail=detail, log=log_path)
-        return code
 
 
 def _env_with_bin(cwd: Path) -> dict[str, str]:
@@ -1119,16 +1152,70 @@ def cmd_next(root: Path) -> int:
     return 0
 
 
-def _refuse(reason: str, detail: str = "", log: str = "") -> int:
+def _attempts_path(root: Path) -> Path:
+    return _git_common_dir(root) / "jt-queue" / "attempts.json"
+
+
+def _load_attempts(root: Path) -> dict:
+    try:
+        data = json.loads(_attempts_path(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_attempts(root: Path, data: dict) -> None:
+    path = _attempts_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def reset_rounds(root: Path, card_id: str) -> None:
+    data = _load_attempts(root)
+    if data.pop(card_id, None) is not None:
+        _save_attempts(root, data)
+
+
+def count_round(root: Path, card_id: str) -> int:
+    """A failed round counts once per new commit on task-<id>; reruns of the same commit do not."""
+    tip = _run_git(root, ["rev-parse", "--verify", "--quiet", f"task-{card_id}"]).stdout.strip()
+    data = _load_attempts(root)
+    entry = data.get(card_id) if isinstance(data.get(card_id), dict) else {"count": 0, "sha": ""}
+    if tip != entry.get("sha"):
+        entry = {"count": int(entry.get("count", 0)) + 1, "sha": tip}
+        data[card_id] = entry
+        _save_attempts(root, data)
+    return int(entry["count"])
+
+
+def _refuse_round(root: Path, card_id: str, reason: str, detail: str = "", log: str = "") -> int:
+    rounds = count_round(root, card_id)
+    note = f"round {min(rounds, MAX_ROUNDS)} of {MAX_ROUNDS}"
+    if rounds >= MAX_ROUNDS:
+        return _refuse(
+            reason,
+            detail=f"{detail}\n{note}: stop retrying and run gate.py ask with what each round tried".lstrip(),
+            log=log,
+            next_step="ask",
+        )
+    return _refuse(reason, detail=f"{detail}\n{note}".lstrip(), log=log)
+
+
+def _refuse(
+    reason: str, detail: str = "", log: str = "", next_step: str = ""
+) -> int:
     print(f"refused: {reason}")
     print("merge: no")
-    nxt = NEXT_FOR.get(reason)
+    nxt = next_step or NEXT_FOR.get(reason)
     if nxt:
         print(f"next: {nxt}")
     if detail:
         print(f"detail: {detail}")
     if log:
         print(f"log: {log}")
+    hint = HINT_FOR.get(reason)
+    if hint:
+        print(f"hint: {hint}")
     return 1
 
 
@@ -1322,28 +1409,49 @@ def _parse_ports(port_text: str) -> list[int] | None:
     return ports or None
 
 
-def _run_while_up(work: Path, start: str, ports: list[int], wait_seconds: int, run) -> str | None:
-    proc = subprocess.Popen(
-        start,
-        # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
-        shell=True,  # nosec B602
-        cwd=work,
-        start_new_session=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=_env_with_bin(work),
-        text=True,
-    )
-    try:
-        if not _wait_until_up(proc, ports, wait_seconds):
-            return "start-down"
-        return run()
-    finally:
-        _stop_process(proc)
+def _command_evidence(
+    root: Path, card_id: str, command_name: str, output: str, fallback: str
+) -> tuple[str, str]:
+    """Return (detail, log path); outside a git repo there is no log, only the tail."""
+    if _is_git(root):
+        return _record_command_log(root, card_id or "adhoc", command_name, output)
+    tail = [line for line in output.splitlines() if line.strip()][-20:]
+    return ("\n".join(tail) if tail else fallback), ""
 
 
-def _click_surface(work: Path, card_text: str) -> str | None:
+def _run_while_up(
+    work: Path, start: str, ports: list[int], wait_seconds: int, run, card_id: str = ""
+) -> str | None:
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as sink:
+        proc = subprocess.Popen(
+            start,
+            # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+            shell=True,  # nosec B602
+            cwd=work,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            env=_env_with_bin(work),
+        )
+        try:
+            if not _wait_until_up(proc, ports, wait_seconds):
+                code = proc.poll()
+                state = (
+                    f"start exited with code {code}"
+                    if code is not None
+                    else f"start is still running but port(s) {', '.join(map(str, ports))} did not open within {wait_seconds}s"
+                )
+                sink.flush()
+                sink.seek(0)
+                detail, log_path = _command_evidence(work, card_id, "start", sink.read(), "start-down")
+                raise GateError("start-down", detail=f"{state}\n{detail}", log=log_path)
+            return run()
+        finally:
+            _stop_process(proc)
+
+
+def _click_surface(work: Path, card_text: str, card_id: str = "") -> str | None:
     start = _label(card_text, "start")
     port_text = _label(card_text, "port")
     click = _label(card_text, "click")
@@ -1351,11 +1459,11 @@ def _click_surface(work: Path, card_text: str) -> str | None:
     wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
     ports = _parse_ports(port_text)
     if not start or ports is None:
-        return "start-down"
+        raise GateError("start-down", detail="start: is empty or port: is missing or invalid in task.md")
 
     def run() -> str | None:
         if not click:
-            return "click-mismatch"
+            raise GateError("click-mismatch", detail="click: is empty in task.md")
         try:
             result = subprocess.run(
                 click,
@@ -1367,13 +1475,18 @@ def _click_surface(work: Path, card_text: str) -> str | None:
                 env=_env_with_bin(work),
                 timeout=300,
             )
-        except subprocess.TimeoutExpired:
-            return "click-mismatch"
+        except subprocess.TimeoutExpired as exc:
+            partial = exc.output.decode("utf-8", "replace") if isinstance(exc.output, bytes) else (exc.output or "")
+            detail, log_path = _command_evidence(work, card_id, "click", partial, "click-timeout")
+            raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
         if result.returncode != 0:
-            return "click-mismatch"
+            detail, log_path = _command_evidence(
+                work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "click-failed"
+            )
+            raise GateError("click-mismatch", detail=detail, log=log_path)
         return None
 
-    return _run_while_up(work, start, ports, wait_seconds, run)
+    return _run_while_up(work, start, ports, wait_seconds, run, card_id)
 
 
 _BROWSER_ORDER = ("playwright", "cypress")
@@ -1462,21 +1575,30 @@ def run_screen_check(
     wait: str = "",
     browser: str = "",
     no_start: bool = False,
+    card_id: str = "",
 ) -> int:
+    def fail(reason: str, detail: str = "", log: str = "") -> int:
+        print(f"screen-check: {reason}")
+        if detail:
+            print(f"detail: {detail}")
+        if log:
+            print(f"log: {log}")
+        hint = HINT_FOR.get(reason)
+        if hint:
+            print(f"hint: {hint}")
+        return 1
+
     argv = resolve_browser_argv(root, browser)
     if argv is None:
-        print("screen-check: browser-missing")
-        return 1
+        return fail("browser-missing")
     if no_start or not start.strip():
         if _run_argv(argv, root) != 0:
-            print("screen-check: browser-failed")
-            return 1
+            return fail("browser-failed")
         print("screen-check: ok")
         return 0
     parsed = _parse_ports(ports)
     if parsed is None:
-        print("screen-check: start-down")
-        return 1
+        return fail("start-down", "port: is missing or invalid")
     wait_seconds = int(wait) if wait.isdigit() and int(wait) > 0 else 60
 
     def run() -> str | None:
@@ -1484,10 +1606,12 @@ def run_screen_check(
             return "browser-failed"
         return None
 
-    reason = _run_while_up(root, start, parsed, wait_seconds, run)
+    try:
+        reason = _run_while_up(root, start, parsed, wait_seconds, run, card_id)
+    except GateError as err:
+        return fail(err.reason, err.detail, err.log)
     if reason:
-        print(f"screen-check: {reason}")
-        return 1
+        return fail(reason)
     print("screen-check: ok")
     return 0
 
@@ -1539,6 +1663,7 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         wait=wait,
         browser=browser,
         no_start=args.no_start,
+        card_id=args.id,
     )
 
 
@@ -1567,18 +1692,10 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
         shutil.rmtree(parent, ignore_errors=True)
 
 
-def surface_refusal(
-    root: Path, card_id: str, card_text: str, browser: str, setup_cmd: str = ""
-) -> str | None:
-    if not sees_screen(card_text):
-        return None
-    if browser.strip() == "":
-        return "browser-empty"
-    with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
-        return _click_surface(work, card_text)
 
 
-def repo_setup_cmd(root: Path) -> str:
+def detect_setup_cmd(root: Path) -> tuple[str, str]:
+    """Return (command, source file) for the dependency install step, or ("", "")."""
     package = root / "package.json"
     if package.is_file():
         try:
@@ -1588,45 +1705,67 @@ def repo_setup_cmd(root: Path) -> str:
         has_deps = bool(data.get("dependencies") or data.get("devDependencies"))
         if has_deps:
             if (root / "pnpm-lock.yaml").is_file():
-                return "pnpm install --frozen-lockfile"
+                return "pnpm install --frozen-lockfile", "pnpm-lock.yaml"
             if (root / "yarn.lock").is_file():
-                return "yarn install --frozen-lockfile"
-            if (root / "bun.lock").is_file() or (root / "bun.lockb").is_file():
-                return "bun install --frozen-lockfile"
+                return "yarn install --frozen-lockfile", "yarn.lock"
+            if (root / "bun.lock").is_file():
+                return "bun install --frozen-lockfile", "bun.lock"
+            if (root / "bun.lockb").is_file():
+                return "bun install --frozen-lockfile", "bun.lockb"
             if (root / "package-lock.json").is_file():
-                return "npm ci"
-            return "npm install"
+                return "npm ci", "package-lock.json"
+            return "npm install", "package.json"
     if (root / "uv.lock").is_file():
-        return "uv sync --frozen"
+        return "uv sync --frozen", "uv.lock"
     if (root / "poetry.lock").is_file():
-        return "poetry install"
+        return "poetry install", "poetry.lock"
     if (root / "Cargo.toml").is_file():
-        return "cargo build"
+        return "cargo build", "Cargo.toml"
     if (root / "go.mod").is_file():
-        return "go mod download"
-    return ""
+        return "go mod download", "go.mod"
+    return "", ""
 
 
-def repo_test_cmd(root: Path) -> str:
+def detect_test_cmd(root: Path) -> tuple[str, str]:
+    """Return (command, source file) for the test step; no-suite when none is found."""
     package = root / "package.json"
     if package.is_file():
         try:
             data = json.loads(package.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return ""
+            return "", "package.json (invalid JSON)"
         scripts = data.get("scripts")
         if isinstance(scripts, dict):
             script = scripts.get("test")
             if isinstance(script, str) and script.strip():
-                return script.strip()
+                return script.strip(), "package.json scripts.test"
     if (root / "Cargo.toml").is_file():
-        return "cargo test"
+        return "cargo test", "Cargo.toml"
     if (root / "go.mod").is_file():
-        return "go test ./..."
+        return "go test ./...", "go.mod"
     pyproject = root / "pyproject.toml"
     if pyproject.is_file() and "pytest" in pyproject.read_text(encoding="utf-8"):
-        return "pytest"
-    return NO_SUITE
+        return "pytest", "pyproject.toml"
+    return NO_SUITE, "no test runner found"
+
+
+def repo_setup_cmd(root: Path) -> str:
+    return detect_setup_cmd(root)[0]
+
+
+def repo_test_cmd(root: Path) -> str:
+    return detect_test_cmd(root)[0]
+
+
+def cmd_detect(root: Path) -> int:
+    """Read-only: print the commands this repo suggests, each with its source."""
+    for name, (value, source) in (
+        ("TEST_CMD", detect_test_cmd(root)),
+        ("SETUP_CMD", detect_setup_cmd(root)),
+    ):
+        print(f"{name} = {value or '(empty)'}  [source: {source or 'none found'}]")
+    print("merge: no")
+    return 0
 
 
 def _read_card(root: Path, card_id: str) -> str:
@@ -1769,6 +1908,20 @@ def _card_worktree_drift(root: Path, card_id: str) -> bool:
     return bool(proc.stdout.strip())
 
 
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("`", "")).strip().casefold()
+
+
+def evidence_gaps(root: Path, card_id: str, plan: str) -> list[str]:
+    """pass: lines of the task that no '## evidence' text quotes."""
+    evidence = _norm(_section_h2(plan, "evidence"))
+    return [
+        bullet
+        for bullet in _header_bullets(_read_card(root, card_id))
+        if _norm(bullet) not in evidence
+    ]
+
+
 def diff_review_detail(root: Path, card_id: str) -> str:
     if not valid_card_id(card_id):
         return "no-review"
@@ -1794,6 +1947,15 @@ def diff_review_detail(root: Path, card_id: str) -> str:
         return "no-sha"
     if sha not in section and sha[:7] not in section:
         return "stale-review"
+    verdicts = _VERDICT_LINE.findall(section)
+    if not verdicts or any(v.casefold() not in {"pass", "fix-needed"} for v in verdicts):
+        return "no-verdict"
+    if any(v.casefold() == "fix-needed" for v in verdicts):
+        return "review-fix-needed"
+    if _CHECKED_LINE.search(section) is None:
+        return "no-checked"
+    if evidence_gaps(root, card_id, plan):
+        return "evidence-missing"
     return "ok"
 
 
@@ -1815,7 +1977,7 @@ def _review_recorded(root: Path, queue: str, card_id: str) -> str | None:
     detail = diff_review_detail(root, card_id)
     if detail == "ok":
         return None
-    if detail in {"no-review", "no-sha", "stale-review"}:
+    if detail in {"no-review", "no-sha", "stale-review", *REVIEW_DETAIL}:
         return detail
     return "no-review"
 
@@ -1892,19 +2054,24 @@ def style_changes(
     return changed
 
 
-def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
+def one_off_files(root: Path, queue: str, card_id: str, card_text: str) -> list[str]:
     added = _diff_names(root, queue, card_id, added_only=True)
     if not added:
-        return False
+        return []
     asked = _section_label(card_text, "do:")
+    found: list[str] = []
     for path in added:
         name = path.rsplit("/", 1)[-1]
         if _CHECKER_BASENAME.match(name) is None:
             continue
         if name in asked or path in asked:
             continue
-        return True
-    return False
+        found.append(path)
+    return found
+
+
+def one_off_checker(root: Path, queue: str, card_id: str, card_text: str) -> bool:
+    return bool(one_off_files(root, queue, card_id, card_text))
 
 
 def _has_remote(root: Path) -> bool:
@@ -1983,26 +2150,35 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         return _refuse("question-open")
     cards = _cards_from_text(root, text)
     current = next((card for card in cards if card.id == card_id), None)
-    if current is not None and _related_stop(current, cards) is not None:
-        return _refuse("related")
+    stopped = _related_stop(current, cards) if current is not None else None
+    if stopped is not None:
+        return _refuse(
+            "related",
+            detail="same-layer tasks without refs: links: " + ", ".join(stopped.ids),
+        )
     if not _branch_exists(root, f"task-{card_id}"):
         return _refuse("task-branch-missing")
     tier = card_tier(root, queue, card_id, card_text, text)
     kinds = _commit_kinds(root, queue, card_id)
     if kinds is None:
-        return _refuse("review-diff")
+        return _refuse("review-diff", detail="could not read the commits on task-<id> against queue:")
     if tier == "standard" and (
         _code_diff_reviewable(root, queue, card_id)
         or any(opens_repo_review(kind) for kind in kinds)
     ):
         if not _code_diff_reviewable(root, queue, card_id):
-            return _refuse("review-diff")
+            return _refuse("review-diff", detail="no diff outside jt-queue/ to review")
         review_err = _review_recorded(root, queue, card_id)
         if review_err:
-            return _refuse("review-diff", detail=review_err)
+            note = f"{review_err}: {REVIEW_DETAIL.get(review_err, 'review-diff is not recorded')}"
+            if review_err == "evidence-missing":
+                plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+                note += ": " + "; ".join(evidence_gaps(root, card_id, plan))
+            return _refuse("review-diff", detail=note)
         review_state = "open"
-    if one_off_checker(root, queue, card_id, card_text):
-        return _refuse("one-off-checker")
+    one_off = one_off_files(root, queue, card_id, card_text)
+    if one_off:
+        return _refuse("one-off-checker", detail="new check script: " + ", ".join(one_off))
     unapproved = _commands_refusal(root, text, card_id, card_text)
     if unapproved:
         return _refuse(unapproved[0], detail=unapproved[1])
@@ -2012,22 +2188,20 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if need_screen:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
-                return _refuse("browser-empty")
+                return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
         if need_screen or need_test:
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 if need_screen:
-                    reason = _click_surface(work, card_text)
-                    if reason:
-                        return _refuse(reason)
+                    _click_surface(work, card_text, card_id)
                 if need_test:
                     limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
                     code, out, timed_out = _run_shell(test_cmd, work, timeout=limit)
                     if timed_out:
                         detail, log_path = _record_command_log(root, card_id, "test", out)
-                        return _refuse("test-timeout", detail=detail, log=log_path)
+                        return _refuse_round(root, card_id, "test-timeout", detail, log_path)
                     if code != 0:
                         detail, log_path = _record_command_log(root, card_id, "test", out)
-                        return _refuse("test-failed", detail=detail, log=log_path)
+                        return _refuse_round(root, card_id, "test-failed", detail, log_path)
                 else:
                     code = 0
         else:
@@ -2043,7 +2217,10 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             )
             board_path.write_text(updated, encoding="utf-8")
     except GateError as err:
+        if err.reason in ROUND_REASONS:
+            return _refuse_round(root, card_id, err.reason, err.detail, err.log)
         return _refuse(err.reason, detail=err.detail, log=err.log)
+    reset_rounds(root, card_id)
     print("allowed")
     print("merge: no")
     print(f"tier: {tier}")
@@ -2095,6 +2272,7 @@ def main(argv: list[str] | None = None) -> int:
     screen.add_argument("--no-start", action="store_true")
     approve = sub.add_parser("approve-commands", parents=[common])
     approve.add_argument("--id", default="")
+    sub.add_parser("detect", parents=[common])
     landed = sub.add_parser("landed", parents=[common])
     landed.add_argument("--id", required=True)
 
@@ -2108,6 +2286,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_reach_review(root, parsed.id, parsed.write, parsed.link)
     if parsed.cmd == "approve-commands":
         return cmd_approve_commands(root, parsed.id)
+    if parsed.cmd == "detect":
+        return cmd_detect(root)
     if parsed.cmd == "landed":
         return cmd_landed(root, parsed.id)
     return _refuse("merge")

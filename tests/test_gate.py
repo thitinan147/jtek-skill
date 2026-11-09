@@ -428,7 +428,7 @@ class ReachReviewGitTests(unittest.TestCase):
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_path = plan_dir / "plan.md"
         plan_path.write_text(
-            f"# Plan {card_id}\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
+            f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1009,6 +1009,38 @@ class ReachReviewGitTests(unittest.TestCase):
             time.sleep(0.05)
         self.assertFalse(port_open(port))
 
+    def test_screen_start_failure_keeps_its_output_in_a_log(self) -> None:
+        self._screen(
+            "build",
+            "playwright",
+            "python3 -c 'import sys; print(\"BOOM_START\"); sys.exit(3)'",
+            str(free_port()),
+            "python3 -c 'print(1)'",
+        )
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertIn("refused: start-down", result.stdout)
+        self.assertIn("start exited with code 3", result.stdout)
+        self.assertIn("BOOM_START", result.stdout)
+        self.assertIn("hint:", result.stdout)
+        log_line = next(line for line in result.stdout.splitlines() if line.startswith("log: "))
+        self.assertIn("BOOM_START", Path(log_line[len("log: "):]).read_text(encoding="utf-8"))
+
+    def test_screen_click_failure_keeps_its_output_in_a_log(self) -> None:
+        port = free_port()
+        self._screen(
+            "refactor",
+            "playwright",
+            f"python3 -m http.server {port}",
+            str(port),
+            "python3 -c 'import sys; print(\"BOOM_CLICK\"); sys.exit(1)'",
+        )
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertIn("refused: click-mismatch", result.stdout)
+        self.assertIn("BOOM_CLICK", result.stdout)
+        self.assertIn("hint:", result.stdout)
+        log_line = next(line for line in result.stdout.splitlines() if line.startswith("log: "))
+        self.assertIn("BOOM_CLICK", Path(log_line[len("log: "):]).read_text(encoding="utf-8"))
+
     def test_screen_click_that_matches_the_header_can_reach_review(self) -> None:
         port = free_port()
         self._screen(
@@ -1172,8 +1204,8 @@ class ReachReviewGitTests(unittest.TestCase):
                 f"| {decision} |\n"
             )
         (plan_dir / "plan.md").write_text(
-            f"# Plan {card_id}\n\n## review-diff\n\n- commit: {sha}\n"
-            f"- reviewer: reviewer\n- found: pass\n{row}",
+            f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n"
+            f"- reviewer: reviewer\n- verdict: pass\n- checked: scope\n{row}",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1355,7 +1387,7 @@ class DraftPrReachTests(unittest.TestCase):
         plan_dir = self.repo / "jt-queue" / "tasks" / "12"
         plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / "plan.md").write_text(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- found: pass\n",
+            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1839,11 +1871,48 @@ class DiffCheckTests(unittest.TestCase):
     def test_matching_sha_exits_zero(self) -> None:
         sha = self._commit_code()
         self._write_plan(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
+            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
         )
         result = run_diff_check(self.repo)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.strip(), "diff-check: ok")
+
+    def _plan_with(self, sha: str, review: str, evidence: str = "| HEADER_TOKEN | check | ok |") -> None:
+        self._write_plan(
+            f"# Plan 12\n\n## evidence\n\n{evidence}\n\n## review-diff\n\nsha: {sha}\n{review}"
+        )
+
+    def test_review_needs_a_pass_verdict_and_a_checked_line(self) -> None:
+        sha = self._commit_code()
+        cases = {
+            "no-verdict": "checked: scope\n",
+            "review-fix-needed": "verdict: fix-needed\nchecked: scope\n",
+            "no-checked": "verdict: pass\n",
+        }
+        for status, review in cases.items():
+            with self.subTest(status):
+                self._plan_with(sha, review)
+                result = run_diff_check(self.repo)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"diff-check: {status}", result.stdout)
+
+    def test_the_unfilled_template_verdict_does_not_pass(self) -> None:
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: pass | fix-needed\nchecked: scope\n")
+        result = run_diff_check(self.repo)
+        self.assertIn("diff-check: no-verdict", result.stdout)
+
+    def test_every_pass_line_needs_an_evidence_row(self) -> None:
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: pass\nchecked: scope\n", evidence="| something else | x | ok |")
+        result = run_diff_check(self.repo)
+        self.assertIn("diff-check: evidence-missing", result.stdout)
+        refused = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: review-diff", refused.stdout)
+        self.assertIn("evidence-missing", refused.stdout)
+        self.assertIn("HEADER_TOKEN", refused.stdout)
+        self._plan_with(sha, "verdict: pass\nchecked: scope\n", evidence="| `header_token` | run | ok |")
+        self.assertEqual(run_diff_check(self.repo).returncode, 0)
 
     def test_missing_section_exits_nonzero(self) -> None:
         self._commit_code()
@@ -1861,7 +1930,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_wrong_sha_exits_nonzero(self) -> None:
         self._commit_code()
         self._write_plan(
-            "# Plan 12\n\n## review-diff\n\n- commit: "
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: "
             "0123456789abcdef0123456789abcdef01234567\n"
         )
         result = run_diff_check(self.repo)
@@ -1871,7 +1940,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_dirty_card_worktree_exits_nonzero(self) -> None:
         sha = self._commit_code()
         self._write_plan(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
+            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
         )
         git(self.repo, "checkout", "task-12")
         (self.repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
@@ -1895,7 +1964,7 @@ class DiffCheckTests(unittest.TestCase):
     def test_copied_skill_folder_without_root_scripts_passes_reach_review(self) -> None:
         sha = self._commit_code()
         self._write_plan(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- found: pass\n"
+            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
         )
         with tempfile.TemporaryDirectory() as isolated_tmp:
             skill_dir = GATE_PATH.parent.parent
@@ -2061,6 +2130,31 @@ class StatusBoundaryTests(unittest.TestCase):
             self.assertEqual(gate.repo_setup_cmd(root), "go mod download")
 
 
+class DetectTests(unittest.TestCase):
+    def test_detect_reports_commands_with_their_source_and_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "package.json").write_text(
+                '{"scripts": {"test": "vitest run"}, "devDependencies": {"vitest": "1"}}',
+                encoding="utf-8",
+            )
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            result = run_gate_raw(root, "detect")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("TEST_CMD = vitest run  [source: package.json scripts.test]", result.stdout)
+            self.assertIn("SETUP_CMD = pnpm install --frozen-lockfile  [source: pnpm-lock.yaml]", result.stdout)
+            self.assertIn("merge: no", result.stdout)
+            self.assertEqual(
+                sorted(p.name for p in root.iterdir()), ["package.json", "pnpm-lock.yaml"]
+            )
+
+    def test_detect_falls_back_to_no_suite_and_an_empty_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_gate_raw(Path(tmp), "detect")
+            self.assertIn("TEST_CMD = no-suite", result.stdout)
+            self.assertIn("SETUP_CMD = (empty)", result.stdout)
+
+
 class CommandApprovalTests(unittest.TestCase):
     """A human must approve board/card shell commands; later edits must not run silently."""
 
@@ -2181,6 +2275,12 @@ class GateSourceTests(unittest.TestCase):
         self.assertIn("pr-missing", source)
         self.assertNotIn("pr create", source)
 
+    def test_every_refusal_token_has_a_hint_and_every_hint_a_refusal(self) -> None:
+        self.assertEqual(set(gate.HINT_FOR), set(gate.NEXT_FOR))
+        for token, hint in gate.HINT_FOR.items():
+            self.assertTrue(hint.strip(), token)
+            self.assertNotIn("\n", hint, token)
+
     def test_every_refusal_token_is_in_next_for(self) -> None:
         import re as _re
 
@@ -2220,7 +2320,7 @@ class IgnoredQueueTests(unittest.TestCase):
         (queue / "brief.md").write_text("# Brief\n\nship the checker\n", encoding="utf-8")
         (task / "task.md").write_text(card_body(["check.py"]), encoding="utf-8")
         (task / "plan.md").write_text(
-            f"# Plan 12\n\n## review-diff\n\n- commit: {self.sha}\n- reviewer: reviewer\n- found: pass\n",
+            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {self.sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
             encoding="utf-8",
         )
 

@@ -149,7 +149,8 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             (plan_dir / "plan.md").write_text(
                 "# Plan 2\n\n## Goal\n- Fix discount\n\n## Done when\n- python3 -m unittest\n\n"
                 "## Escape\n- Signature change required\n\n"
-                f"## review-diff\n- commit: {code_sha}\n- reviewer: self\n- found: clean\n\n"
+                "## evidence\n| python3 -m unittest passes | python3 -m unittest | OK |\n\n"
+                f"## review-diff\n- commit: {code_sha}\n- reviewer: self\n- verdict: pass\n- checked: scope\n\n"
                 "## decisions\n| decision | why | evidence |\n|---|---|---|\n| subtract pct | fix bug | test_calc.py |\n",
                 encoding="utf-8",
             )
@@ -237,7 +238,8 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 plan_dir = repo / "jt-queue" / "tasks" / "4"
                 plan_dir.mkdir(parents=True, exist_ok=True)
                 (plan_dir / "plan.md").write_text(
-                    f"# Plan 4\n\n## review-diff\n- commit: {code_sha}\n- reviewer: self\n- found: ok\n",
+                    "# Plan 4\n\n## evidence\n| python3 -m unittest passes | python3 -m unittest | fails |\n\n"
+                    f"## review-diff\n- commit: {code_sha}\n- reviewer: self\n- verdict: pass\n- checked: scope\n",
                     encoding="utf-8",
                 )
                 _git(repo, "add", "jt-queue/tasks/4/plan.md")
@@ -245,7 +247,8 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 _git(repo, "checkout", "main")
                 reach = _run_gate(repo, "reach-review", "--id", "4")
                 self.assertIn("refused: test-failed", reach.stdout)
-                self.assertIn("next: retry", reach.stdout)
+                self.assertIn(f"round {round_num} of 3", reach.stdout)
+                self.assertIn("next: retry" if round_num < 3 else "next: ask", reach.stdout)
 
             ask_res = _run_gate(
                 repo,
@@ -261,6 +264,24 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             card_after = (repo / "jt-queue" / "tasks" / "4" / "task.md").read_text(encoding="utf-8")
             self.assertIn("tried ATTEMPT 1, 2, 3", card_after)
             self.assertIn("refused: test-failed", card_after)
+
+            # The human answered and the task resumes: the round count starts again.
+            card_path = repo / "jt-queue" / "tasks" / "4" / "task.md"
+            card_path.write_text(
+                "\n".join(
+                    "ask:" if line.startswith("ask:") else line
+                    for line in card_after.splitlines()
+                    if not line.startswith("refused:")
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            again = _run_gate(repo, "reach-review", "--id", "4")
+            self.assertIn("round 1 of 3", again.stdout)
+            self.assertIn("next: retry", again.stdout)
+            # Running the same commit again is not a new round.
+            same = _run_gate(repo, "reach-review", "--id", "4")
+            self.assertIn("round 1 of 3", same.stdout)
 
 
 if __name__ == "__main__":
