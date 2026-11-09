@@ -43,7 +43,7 @@ Choose your own implementation method (TDD, planning, subagents, worktrees are o
 | **Quick** | `docs` (doc files only), or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. No `plan.md` or `diff-check` needed. |
 | **Standard** | `fix`, `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, and any escalated `docs`/`style` | `jt-queue/tasks/<id>/plan.md` (from [assets/plan.template.md](assets/plan.template.md)) with an `## evidence` row for every `pass:` line, `<TEST_CMD>` green, a diff review via `<REPO_SKILLS>` or yourself recorded in `## review-diff` against the latest code SHA (`gate.py diff-check`), and the JTek `gate.py screen-check` when `screen: yes`. |
 
-- **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review.
+- **Review the diff** (via `<REPO_SKILLS>` or yourself) on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review.
 - **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
 
 ## 3. Scope, Failure & Recovery, and Handoff

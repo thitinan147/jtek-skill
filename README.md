@@ -28,12 +28,15 @@ npx skills add thitinan147/jtek-skill
 
 Add `-g` to install for all your projects instead of the current one.
 
-**Claude Code plugin** (update later with `/plugin update jtek@jtek-skill`):
+**Claude Code plugin:**
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill
+# Pinned to a release (recommended)
+/plugin marketplace add thitinan147/jtek-skill#v22.0.1
 /plugin install jtek@jtek-skill
 ```
+
+Without `#v22.0.1` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
 
 As a plugin, the commands are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`. Use those names if another skill has the same short name.
 

@@ -1,6 +1,6 @@
 # Getting started
 
-This guide explains the words jtek-skill uses, then walks through one real round on a tiny Python repo: two tasks, one refusal from the gate and its fix, and the human review at the end. Every gate output below was captured from a real run. Only local paths were shortened to `~/code/tempconv`.
+This guide explains the words jtek-skill uses, then walks through one real round on a tiny Python repo: two tasks, one refusal from the gate and its fix, and the human review at the end. Every gate output below was captured from a real run. Only local file paths were shortened.
 
 You type the slash commands. The agent runs `gate.py` for you; the commands are shown so you can see what it checks. In the examples, `gate.py` stands for `python3 <skill folder>/scripts/gate.py`.
 
@@ -85,7 +85,7 @@ queue: main
 
 ### 2. Agree the brief, then the tasks
 
-The gate now answers `action: brief`. The agent reads the code, asks you only what the code cannot answer, and writes `jt-queue/brief.md` after you agree. Next it answers `action: add-task`, and the agent drafts one `task.md` per task for your approval. This is task 2:
+The gate now answers `action: brief`. The agent reads the code, asks you only what the code cannot answer, and writes `jt-queue/brief.md` after you agree. Next it answers `action: add-task`, and the agent drafts one `task.md` per task for your approval. This is part of task 2 (empty fields left out):
 
 ```markdown
 # 2 - c_to_f adds 23 instead of 32
