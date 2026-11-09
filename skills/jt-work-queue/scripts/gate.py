@@ -2107,6 +2107,15 @@ def style_changes(
     return changed
 
 
+def parse_needs(card_text: str) -> list[str]:
+    needs: list[str] = []
+    for line in _section_label(card_text, "needs:").splitlines():
+        item = line.strip()[1:].strip() if line.strip().startswith("-") else ""
+        if item:
+            needs.append(item)
+    return needs
+
+
 def one_off_files(root: Path, queue: str, card_id: str, card_text: str) -> list[str]:
     added = _diff_names(root, queue, card_id, added_only=True)
     if not added:
@@ -2288,6 +2297,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     style_diff = style_changes(root, queue, card_id, text)
     if style_diff:
         print("style-changes: " + ", ".join(style_diff))
+    needs = parse_needs(card_text)
+    if needs:
+        print("needs: " + "; ".join(needs))
     return 0
 
 

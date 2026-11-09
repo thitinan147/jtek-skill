@@ -6,7 +6,7 @@ This contract belongs to skill `jt-work-queue`. All queue files live under `jt-q
 
 - `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, `<REPO_SKILLS>`).
 - `jt-queue/brief.md`: Optional round brief accepted by the human.
-- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
+- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, and `## decisions`.
 
 `jt-queue/` is gitignored by default, so the gate reads these paths from the working tree and they are never part of a commit or a push. Only when a path is tracked is it read from a branch: the board, brief, and `task.md` from `<queue>`, and `plan.md` from `task-<id>`.
@@ -22,6 +22,7 @@ This contract belongs to skill `jt-work-queue`. All queue files live under `jt-q
 - Allowed status tokens: `ask:`, `review:`, `send-back:`, `merge:`, `drop:`. Any other colon token in the status slot stops the queue with `unknown-status`.
 - **Agent permissions:** May add human-approved new task lines, but must update status tokens on existing lines **only** via `gate.py ask` and `gate.py reach-review --write`. Never write `merge:` or `drop:`. Never run `gate.py approve-commands` and never change `<TEST_CMD>`, `<SETUP_CMD>`, or a task's screen-check commands to make a refusal pass; the human approves those commands (stored in `.git`, outside every branch).
 - **Human permissions (`/jt-review-work`):** Writes `merge:`, `send-back:`, and `drop:`. Answers `ask:` by updating `jt-queue/tasks/<id>/task.md` until intent is closed and clearing the `ask:` heading; on the next run, `gate.py next` resumes the task (`question-cleared`) and `reach-review --write` replaces `ask:` with `review:`.
+- `needs:` names work in another repository (for example a backend task for a frontend task) that must land first. It is text for the human: the gate never reads it and never refuses because of it.
 - Same-topic tasks sharing `layer:` must link each other under `refs:`. Do not split into parallel agents without a link.
 
 ## 3. Adaptive Gate Tiers (`Quick` vs `Standard`)

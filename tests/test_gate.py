@@ -1948,6 +1948,22 @@ class DiffCheckTests(unittest.TestCase):
         self.assertIn("no-verdict", refused.stdout)
         self.assertIn("'looks good'", refused.stdout)
 
+    def test_needs_is_printed_but_never_blocks_review(self) -> None:
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["app.py"]).replace(
+                "refs:\n", "needs:\n- be-repo POST /login merged\n- be-repo schema v2\n\nrefs:\n"
+            ),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: the task needs the backend")
+        sha = self._commit_code()
+        self._plan_with(sha, "verdict: pass\nchecked: scope\n")
+        self.assertEqual(gate.parse_needs((self.repo / "jt-queue/tasks/12/task.md").read_text(encoding="utf-8")),
+                         ["be-repo POST /login merged", "be-repo schema v2"])
+        result = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("needs: be-repo POST /login merged; be-repo schema v2", result.stdout)
+
     def test_missing_section_exits_nonzero(self) -> None:
         self._commit_code()
         result = run_diff_check(self.repo)

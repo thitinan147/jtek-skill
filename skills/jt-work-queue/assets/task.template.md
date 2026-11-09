@@ -27,6 +27,11 @@ pass:
 files:
 -
 
+# needs lists work in another repo that must land first, one line each, for example: be-repo POST /login merged.
+# The gate does not read it. /jt-review-work shows it before merge.
+needs:
+- 
+
 refs:
 - 
 

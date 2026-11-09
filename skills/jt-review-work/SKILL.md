@@ -31,7 +31,7 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
 ## 2. Open a Task for Review
 
 When inspecting a `review:` task `<id>`, present:
-1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, and `files:` from `jt-queue/tasks/<id>/task.md`.
+1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, `files:`, and `needs:` from `jt-queue/tasks/<id>/task.md`.
 2. Scope & style checks on `task-<id>` vs `<queue>`:
    - Run `git diff --name-only <queue>...task-<id> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
    - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...task-<id> -- . ':(exclude)jt-queue'` to report non-whitespace changes.
@@ -43,7 +43,7 @@ When inspecting a `review:` task `<id>`, present:
 
 Update `jt-queue/board.md` only (answering `ask:` is the one exception and edits `tasks/<id>/task.md`). Leave it uncommitted when that folder is gitignored. Commit it on `<queue>` only when the folder is tracked.
 
-- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash` (if not landed yet, tell the human to merge on GitHub/locally first). Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`.
+- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash` (if not landed yet, tell the human to merge on GitHub/locally first). If `needs:` lists work in another repo, ask the human to confirm each item has landed first; the gate does not check it. Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`.
 - **Send back (`send-back:`):** Change `review:` to `send-back: <reason>` on `jt-queue/board.md` (stays `- [ ]`).
 - **Drop (`drop:`):** Require a `<reason>`. Change `- [ ]` to `- [x]` and append `drop: <reason>` on `jt-queue/board.md`, and close any open PR without merging.
 - **Answer (`ask:`):** Show the question and options from the `ask:` line of `jt-queue/tasks/<id>/task.md`. Once the human chooses, record the choice in that file's `do:`, `out:`, `pass:`, or `files:`, then clear the `ask:` line. Leave the board line alone: `gate.py next` resumes the task.

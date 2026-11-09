@@ -74,6 +74,7 @@ Pass your task directly to `/jt-work-queue`:
 
 - **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
 - **Slices:** Cut work into vertical slices that can pass their own `pass:`, not into layers. There is no `depends:`, so put the task that must come first under `## first`.
+- **Frontend and backend in separate repos:** Each repo keeps its own `jt-queue/`. List work in the other repo under `needs:` in `task.md`. The gate prints it but does not check it, and `/jt-review-work` asks you to confirm it has landed before `merge:`.
 - **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
 - **Same topic:** Tasks that share `layer:` link each other under `refs:`.
 - **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
