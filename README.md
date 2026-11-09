@@ -23,18 +23,18 @@ After installing, read [SECURITY.md](SECURITY.md): the gate runs your test comma
 ```text
   Human + Agent (/jt-work-queue)                        Human Only (/jt-review-work)
 ┌────────────────────────────────────────────────────┐  ┌──────────────────────────────┐
-│ 1. setup     Create jt-queue/board.md on <queue>  │  │ Inspect diff, test evidence, │
-│ 2. brief     Align on round scope in brief.md      │  │ scope warnings, and UI shots │
-│ 3. add-task  Draft tasks/<id>/task.md on board   │  │                              │
-│ 4. do-work   Branch work/<id> + git worktree       ├──►  • merge: <sha>  (land work) │
-│              Run Quick / Standard verification     │  │  • send-back:    (fix & redo)│
-│              Verify gate → mark review:            │◄──  • drop: <why>   (cancel)    │
+│ 1. setup     Write board.md and gitignore jt-queue │  │ Inspect diff, test evidence, │
+│ 2. brief     Agree this round in brief.md          │  │ scope warnings, and UI shots │
+│ 3. add-task  Draft tasks/<id>/task.md              │  │                              │
+│ 4. do-task   Commit code on task-<id>              ├──►  • merge:     (after landed) │
+│              Quick / Standard evidence             │  │  • send-back:  (fix & redo)  │
+│              reach-review → mark review:           │◄──  • drop:       (cancel)      │
 └────────────────────────────────────────────────────┘  └──────────────────────────────┘
 ```
 
-1. **Queue lives on `<queue>`, code lives on `work/<id>`:** Planning files stay cleanly separated from implementation branches using isolated Git worktrees (`.worktrees/work-<id>`).
-2. **Deterministic gate before review:** The agent cannot mark a card `review:` on its own. `gate.py verify --id <id>` checks that commits exist, `plan.md` is complete, the test command actually ran and passed on the current `HEAD` SHA, and `Standard` tier reviews (`diff-review.md`, `test-quality.md`, `verify.md`, plus `screen.md` when `screen: yes`) are Recorded.
-3. **Human holds the merge key:** `/jt-work-queue` is forbidden from merging into `<queue>` or marking `merge:`. Only a human invoking `/jt-review-work` can close or send back cards.
+1. **Queue files stay local, code lives on `task-<id>`:** Keep `jt-queue/` gitignored. The gate reads it from the working tree, so the board, brief, and task files are not committed or pushed. Commit implementation on `task-<id>`. Worktrees are optional.
+2. **Deterministic gate before review:** The agent cannot mark a card `review:` on its own. `gate.py reach-review --root . --id <id>` checks the tier evidence. Quick requires the test command to pass (or `no-suite`). Standard also requires `tasks/<id>/plan.md` whose `## review-diff` cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
+3. **Human holds the merge key:** `/jt-work-queue` does not merge into `<queue>` and does not mark `merge:`. Only a human invoking `/jt-review-work` can close or send a card back, and `merge:` is written only after `task-<id>` has landed.
 
 ## Two Commands
 
@@ -54,63 +54,64 @@ Run `/jt-work-queue` in any Git repository:
 /jt-work-queue
 ```
 
-- **No `jt-queue/board.md` yet (`setup`):** The agent inspects your repo (`package.json`, `pyproject.toml`, `Makefile`, etc.), proposes `<BASE>`, `<QUEUE>`, `<TEST_CMD>`, and `<REPO_SKILLS>`, waits for your approval, and creates `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md).
+- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, and `<REPO_SKILLS>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
 - **Empty board and no `jt-queue/brief.md` (`brief`):** The agent interviews you to capture the goal and scope of the current round in `jt-queue/brief.md`.
-- **Brief ready (`add-task`):** The agent drafts cards from [`skills/jt-work-queue/assets/card.template.md`](skills/jt-work-queue/assets/card.template.md) and adds them to `jt-queue/board.md` after your approval.
+- **Brief ready (`add-task`):** The agent drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-work-queue/assets/card.template.md`](skills/jt-work-queue/assets/card.template.md) and adds it to `jt-queue/board.md` after your approval.
 
-### 2. Add one or multiple cards at once
+### 2. Add one or multiple tasks at once
 Pass your task directly to `/jt-work-queue`:
 
 ```text
-# Add a single card
+# Add a single task
 /jt-work-queue Add rate limiting to POST /api/login
 
-# Break a feature into multiple sequential cards
-/jt-work-queue Break user authentication into 3 cards:
+# Break a feature into several tasks
+/jt-work-queue Break user authentication into 3 tasks:
 1. Database migration and User model (first)
-2. POST /api/login and session middleware (main, depends on 001)
-3. Login form UI and E2E check (main, depends on 002, screen: yes)
+2. POST /api/login and session middleware (main)
+3. Login form UI and E2E check (main, screen: yes)
 ```
 
-- **Priority sections:** Place urgent cards under `## first`, normal work under `## main`, and deferred ideas under `## later`.
-- **Dependencies (`depends:`):** Set `depends: 001` in `jt-queue/tasks/002/task.md` so task `002` waits until `001` is marked `- [x] **001** ... merge:`.
-- **Card kinds (`<kind>`):** Every card declares `(feature)`, `(bug)`, `(refactor)`, `(perf)`, `(security)`, or `(style)`.
-- **Verification tiers:**
-  - **`Quick` tier:** Auto-selected for small changes (≤ 2 files in `files:`, `screen: no`, and kind is `style`/`bug`/`refactor`/`perf`). Requires passing tests + `plan.md`.
-  - **`Standard` tier:** Required for `feature`, `security`, `screen: yes`, or ≥ 3 files. Adds independent subagent diff review, test-quality audit (`PASS` + `assertions` + `independent-oracle`), and acceptance walk (`verify.md` from [`skills/jt-work-queue/assets/plan.template.md`](skills/jt-work-queue/assets/plan.template.md)).
+- **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
+- **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
+- **Same topic:** Tasks that share `layer:` link each other under `refs:`.
+- **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
+- **Verification tiers:** See [`skills/jt-work-queue/references/contract.md`](skills/jt-work-queue/references/contract.md).
+  - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
+  - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work-queue/assets/plan.template.md`](skills/jt-work-queue/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
 
-### 3. Work the queue (`do-work`)
-Each invocation of `/jt-work-queue` picks the next ready card (`send-back:` first, then `doing:`, then the first unblocked card in `first` → `main` → `later`):
+### 3. Work the queue (`do-task`)
+Each invocation of `/jt-work-queue` follows `gate.py next`: a `send-back:` task first, then an `ask:` whose question is cleared, then the first ready task in `first`, then `main`, then `later`.
 
 ```text
 /jt-work-queue
 ```
 
-Before the gate runs `<TEST_CMD>` (or any card `start:` / `click:` command) for the first time, a human must approve the exact command strings on the console:
+Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a human approves the exact command strings:
 
 ```bash
-python3 skills/jt-work-queue/scripts/gate.py approve-commands --id 001
+python3 skills/jt-work-queue/scripts/gate.py approve-commands --root . --id 001
 ```
 
-Once implemented and verified by `gate.py verify --id 001`, the card is marked `review:` on `jt-queue/board.md` (and a draft PR is opened if an `origin` remote exists).
+Commit code on `task-<id>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `task-<id>`, open one draft PR (`gh pr create --draft --base <queue> --head task-<id>`), then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
 
 ### 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
-When one or more cards reach `review:`, the human runs:
+When one or more tasks reach `review:`, the human runs:
 
 ```text
 /jt-review-work
 ```
 
-Or to inspect a specific card directly:
+Or to inspect a specific task directly:
 
 ```text
 /jt-review-work 001
 ```
 
-`/jt-review-work` summarizes the board, flags any out-of-scope file edits or `style` cards with non-whitespace changes, checks if any branches have already landed on `<base>`/`<queue>`, and asks whether to:
-- **`merge:`** — Merge `work/<id>` (or squash-merge the PR), record `- [x] **<id>** ... merge: <sha>`, and clean up the worktree.
-- **`send-back:`** — Write the human's feedback to `jt-queue/work/<id>/send-back.md` and return the card to the top of the work queue.
-- **`drop: <reason>`** — Cancel the card and clean up its worktree.
+`/jt-review-work` reads `jt-queue/board.md` from the working tree (from the `<queue>` branch only when that file is tracked). It flags files touched outside `files:` and non-whitespace changes on `style` tasks, checks whether `task-<id>` has landed, and records the decision on the board only:
+- **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`.
+- **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`.
+- **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging.
 
 ## Repository Artifacts (`jt-queue/`)
 
@@ -130,7 +131,7 @@ Add `jt-queue/` to `.gitignore`. The gate reads that folder from the working tre
 
 ## Security
 
-`jtek-skill` runs shell commands (your test command and any card `start`/`click`) on your machine; it is not a sandbox. Before the gate runs them, a human must review and approve them with `gate.py approve-commands --id <id>`, and the gate refuses if they change afterwards. Read [SECURITY.md](SECURITY.md) for the full trust model, what leaves your machine (a draft PR push when a remote exists), and how to report a vulnerability.
+`jtek-skill` runs shell commands (your test command and any card `start`/`click`) on your machine; it is not a sandbox. Before the gate runs them, a human must review and approve them with `gate.py approve-commands --root . --id <id>`, and the gate refuses if they change afterwards. Read [SECURITY.md](SECURITY.md) for the full trust model, what leaves your machine (a draft PR push when a remote exists), and how to report a vulnerability.
 
 <details>
 <summary><strong>Migrating from v20 to v21</strong></summary>
