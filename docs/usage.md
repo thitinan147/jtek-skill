@@ -2,7 +2,7 @@
 
 Full walkthrough of the queue. For a short start see the [README](../README.md).
 
-### 1. Start a project or a new round (`setup` → `brief` → `add-task`)
+## 1. Start a project or a new round (`setup` → `brief` → `add-task`)
 Run `/jt-work-queue` in any Git repository:
 
 ```text
@@ -13,7 +13,7 @@ Run `/jt-work-queue` in any Git repository:
 - **Empty board and no `jt-queue/brief.md` (`brief`):** The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-work-queue/assets/brief.template.md`](../skills/jt-work-queue/assets/brief.template.md)).
 - **Brief ready (`add-task`):** The agent drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-work-queue/assets/task.template.md`](../skills/jt-work-queue/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
 
-### 2. Add one or multiple tasks at once
+## 2. Add one or multiple tasks at once
 Pass your task directly to `/jt-work-queue`:
 
 ```text
@@ -37,7 +37,7 @@ Pass your task directly to `/jt-work-queue`:
   - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
   - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work-queue/assets/plan.template.md`](../skills/jt-work-queue/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
 
-### 3. Work the queue (`do-task`)
+## 3. Work the queue (`do-task`)
 Each invocation of `/jt-work-queue` follows `gate.py next`: a `send-back:` task first, then an `ask:` whose question is cleared, then the first ready task in `first`, then `main`, then `later`.
 
 ```text
@@ -52,7 +52,7 @@ python3 skills/jt-work-queue/scripts/gate.py approve-commands --root . --id 001
 
 Commit code on `task-<id>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push `task-<id>` and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>`). `reach-review --write` refuses with `pr-missing` until that open draft PR has head `task-<id>` and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
 
-### 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
+## 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
 When one or more tasks reach `review:`, the human runs:
 
 ```text
