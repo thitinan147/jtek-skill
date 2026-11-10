@@ -25,26 +25,26 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
    ```bash
    python3 <this-skill-dir>/scripts/landed.py --root . --id <id>
    ```
-3. Surface any `review:` tasks that already report `landed: ancestor` or `landed: squash` **first** so the human can immediately mark them `merge:`.
+3. Surface any `review:` tasks that already report `landed: ancestor`, `landed: squash`, or `landed: all` **first** so the human can immediately mark them `merge:`.
 4. Report the remaining queue status (`review:`, `send-back:`, `ask:`, and ready tasks).
 
 ## 2. Open a Task for Review
 
 When inspecting a `review:` task `<id>`, present:
-1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, `files:`, and `needs:` from `jt-queue/tasks/<id>/task.md`.
-2. Scope & style checks on `task-<id>` vs `<queue>`:
+1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, `files:`, `needs:`, `repos:`, and `land:` from `jt-queue/tasks/<id>/task.md`.
+2. Scope & style checks on `task-<id>` vs `<queue>`. When the task lists `repos:`, run each check in every listed repo (its `path:` and `queue:` from `## repos` in the board) and match `files:` entries prefixed `<repo>:`:
    - Run `git diff --name-only <queue>...task-<id> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
    - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...task-<id> -- . ':(exclude)jt-queue'` to report non-whitespace changes.
 3. Plan `## decisions`, `## review-diff`, and `## Done when` from `jt-queue/tasks/<id>/plan.md` in the working tree, or from `task-<id>:jt-queue/tasks/<id>/plan.md` when that file is tracked.
 4. `git diff <queue>...task-<id>` and test/screen evidence.
-5. Findings as a table `Severity | Location | Issue | Evidence`, then a recommendation (`merge:`, `send-back:`, or `drop:`) the human may override. For `screen: yes`, also cover the empty, loading, error, and long-text states. A send-back reason must cite a `pass:` bullet or a `file:line` so the next round can act on it.
+5. Findings as a table `Severity | Location | Issue | Evidence`, then a recommendation (`merge:`, `send-back:`, or `drop:`) the human may override. For `screen: yes`, also cover the empty, loading, error, and long-text states. A send-back reason must cite a `pass:` bullet or a `file:line` (`<repo>:file:line` for a task across repos) so the next round can act on it.
 
 ## 3. Record the Human's Decision (on `<queue>` branch, clean tree)
 
 Update `jt-queue/board.md` only (answering `ask:` is the one exception and edits `tasks/<id>/task.md`). Leave it uncommitted when that folder is gitignored. Commit it on `<queue>` only when the folder is tracked.
 
-- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash` (if not landed yet, tell the human to merge on GitHub/locally first). If `needs:` lists work in another repo, ask the human to confirm each item has landed first; the gate does not check it. Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`.
+- **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash`, or `landed: all` for a task across repos (if not landed yet, tell the human to merge on GitHub/locally first, in the `land-order:` it prints). Show any `order-warning:` line to the human before writing `merge:`. If `needs:` lists work in another repo, ask the human to confirm each item has landed first; the gate does not check it. Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`.
 - **Send back (`send-back:`):** Change `review:` to `send-back: <reason>` on `jt-queue/board.md` (stays `- [ ]`).
-- **Drop (`drop:`):** Require a `<reason>`. Change `- [ ]` to `- [x]` and append `drop: <reason>` on `jt-queue/board.md`, and close any open PR without merging.
+- **Drop (`drop:`):** Require a `<reason>`. Change `- [ ]` to `- [x]` and append `drop: <reason>` on `jt-queue/board.md`, and close any open PR without merging (one per repo under `repos:`).
 - **Answer (`ask:`):** Show the question and options from the `ask:` line of `jt-queue/tasks/<id>/task.md`. Once the human chooses, record the choice in that file's `do:`, `out:`, `pass:`, or `files:`, then clear the `ask:` line. Leave the board line alone: `gate.py next` resumes the task.
 - **Move (`first` | `main` | `later` | `closed`):** Move only that line on `jt-queue/board.md` without changing its status or touching code.

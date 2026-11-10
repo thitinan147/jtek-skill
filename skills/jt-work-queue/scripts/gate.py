@@ -16,6 +16,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 try:  # POSIX only; without it the round counter is unlocked
@@ -1308,6 +1309,11 @@ def cmd_next(root: Path) -> int:
                 and card.status == "review:"
                 and valid_card_id(card.id)
             ):
+                across = landed_across(root, board.text, _read_card(root, card.id), card.id)
+                if across is not None:
+                    if across[0]:
+                        landed_ids.append(card.id)
+                    continue
                 if _is_ancestor(root, f"task-{card.id}", board.queue_branch):
                     landed_ids.append(card.id)
                 else:
@@ -2068,6 +2074,78 @@ def landed_via(
     return "", "pr-open" if mark == "open" else "pr-missing"
 
 
+def _gh_merged_at(root: Path, head: str) -> int | None:
+    proc = _gh(root, ["pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"])
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    for row in rows if isinstance(rows, list) else [rows]:
+        if isinstance(row, dict) and row.get("headRefName") == head and isinstance(row.get("mergedAt"), str):
+            try:
+                return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                return None
+    return None
+
+
+def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
+    """When task-<id> reached queue: the first queue commit that contains it, or the PR merge time."""
+    if via == "squash":
+        return _gh_merged_at(root, f"task-{card_id}")
+    tip = _run_git(root, ["rev-parse", f"task-{card_id}"]).stdout.strip()
+    path = _run_git(root, ["rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
+    first = path.stdout.split()[0] if path.returncode == 0 and path.stdout.split() else tip
+    shown = _run_git(root, ["show", "-s", "--format=%ct", first])
+    return int(shown.stdout.strip()) if shown.returncode == 0 and shown.stdout.strip().isdigit() else None
+
+
+def land_order(card_text: str, repos: list[RepoSpec], names: list[str]) -> list[str]:
+    """land: on the task, then the '## repos' order for repos it does not name."""
+    wanted = [n for n in re.split(r"[\s,]+", _label(card_text, "land")) if n in names]
+    rest = [repo.name for repo in repos if repo.name in names and repo.name not in wanted]
+    return list(dict.fromkeys(wanted + rest + [n for n in names if n not in wanted + rest]))
+
+
+def landed_across(root: Path, board_text: str, card_text: str, card_id: str) -> tuple[bool, list[str], str] | None:
+    """Landed state of a task in every repo it lists, or None for a home-only task."""
+    repos = parse_repos(board_text)
+    names = list(dict.fromkeys(card_repo_names(card_text)))
+    home_name = next((repo.name for repo in repos if repo.is_home), "")
+    if not repos or not names or names == [home_name]:
+        return None
+    by_name = {repo.name: repo for repo in repos}
+    order = land_order(card_text, repos, names)
+    states: dict[str, str] = {}
+    times: dict[str, int | None] = {}
+    for name in order:
+        repo = by_name.get(name)
+        if repo is None:
+            states[name] = "unknown-repo"
+            continue
+        target = _repo_target(root, board_text, repo)
+        if not target.root.is_dir():
+            states[name] = "repo-missing"
+            continue
+        via, detail = landed_via(target.root, card_id, target.queue)
+        states[name] = via or detail
+        if via:
+            times[name] = _land_time(target.root, card_id, target.queue, via)
+    lines = [f"landed-{name}: {states[name]}" for name in order]
+    lines.append("land-order: " + ", ".join(order))
+    waiting = [name for name in order if states[name] not in ("ancestor", "squash")]
+    if waiting:
+        return False, lines, "; ".join(f"{name}: {states[name]}" for name in waiting)
+    for i, first in enumerate(order):
+        for later in order[i + 1 :]:
+            a, b = times.get(first), times.get(later)
+            if a is not None and b is not None and b < a:
+                lines.append(f"order-warning: {later} landed before {first}")
+    return True, lines, ""
+
+
 def cmd_landed(root: Path, card_id: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
@@ -2077,6 +2155,17 @@ def cmd_landed(root: Path, card_id: str) -> int:
     queue = parse_queue(board_text)
     if not queue:
         return _refuse("not-landed", detail="no-queue")
+    across = landed_across(root, board_text, _read_card(root, card_id), card_id)
+    if across is not None:
+        ok, lines, detail = across
+        if not ok:
+            _refuse("not-landed", detail=detail)
+            print("\n".join(lines))
+            return 1
+        print("\n".join(lines))
+        print("landed: all")
+        print("merge: no")
+        return 0
     via, detail = landed_via(root, card_id, queue)
     if not via:
         return _refuse("not-landed", detail=detail)
