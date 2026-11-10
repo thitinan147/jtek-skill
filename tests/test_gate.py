@@ -2576,5 +2576,141 @@ class ReposGitTests(unittest.TestCase):
         self.assertEqual(card["start"], "")
 
 
+class MultiRepoReachReviewTests(unittest.TestCase):
+    """A task with repos: fe, be reaches review only when both repos pass."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.fe = base / "fe"
+        self.be = base / "be"
+        for repo in (self.fe, self.be):
+            repo.mkdir()
+            init_repo(repo)
+            (repo / "README.md").write_text("x\n", encoding="utf-8")
+            (repo / ".gitignore").write_text("jt-queue/\n", encoding="utf-8")
+            commit_all(repo, "docs: init")
+        self.marker = base / "be-test-ran"
+        self.write_board(be_test=f"touch {self.marker}")
+        self.card_dir = self.fe / "jt-queue" / "tasks" / "12"
+        self.card_dir.mkdir(parents=True)
+        self.write_card(["fe:app.txt", "be:api.txt"])
+        self.fe_sha = self.commit_on_task(self.fe, "app.txt")
+        self.be_sha = self.commit_on_task(self.be, "api.txt")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def write_board(self, be_test: str = "python3 -c pass", line: str = "- [ ] **12** login (feat)") -> None:
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test=be_test)
+        (self.fe / "jt-queue").mkdir(exist_ok=True)
+        (self.fe / "jt-queue" / "board.md").write_text(
+            board_text(line, test="python3 -c pass", repos=repos), encoding="utf-8"
+        )
+
+    def write_card(self, files: list[str], repos: str = "fe, be") -> None:
+        (self.card_dir / "task.md").write_text(
+            card_body(files) + f"\nrepos: {repos}\n", encoding="utf-8"
+        )
+
+    def commit_on_task(self, repo: Path, name: str) -> str:
+        git(repo, "checkout", "-q", "-b", "task-12")
+        (repo / name).write_text("new\n", encoding="utf-8")
+        commit_all(repo, f"feat: add {name}")
+        sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "checkout", "-q", "main")
+        return sha
+
+    def write_plan(self, fe_sha: str | None = None, be_sha: str | None = None) -> None:
+        fe_sha = fe_sha or self.fe_sha
+        be_sha = be_sha or self.be_sha
+        (self.card_dir / "plan.md").write_text(
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+            f"- fe: {fe_sha[:9]}\n- be: {be_sha[:9]}\n- verdict: pass\n- checked: both sides\n",
+            encoding="utf-8",
+        )
+
+    def test_both_repos_green_reach_review_and_run_each_test(self) -> None:
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+        self.assertIn("repos: fe, be", result.stdout)
+        self.assertTrue(self.marker.exists(), "be TEST_CMD did not run in be")
+        self.assertNotIn("outside-files", result.stdout)
+
+    def test_review_must_cite_each_repo_sha(self) -> None:
+        self.write_plan(be_sha="0000000000")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("repo be: no-repo-sha", result.stdout)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(gate.diff_review_detail(self.fe, "12"), "no-repo-sha")
+
+    def test_red_test_in_one_repo_counts_a_round(self) -> None:
+        self.write_board(be_test="python3 -c 'import sys; sys.exit(3)'")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertIn("repo be:", result.stdout)
+        self.assertIn("round 1 of 3", result.stdout)
+
+    def test_missing_branch_in_a_listed_repo_is_refused(self) -> None:
+        git(self.be, "branch", "-q", "-D", "task-12")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: task-branch-missing", result.stdout)
+        self.assertIn("repo be", result.stdout)
+
+    def test_commits_in_an_unlisted_repo_are_refused(self) -> None:
+        self.write_card(["app.txt"], repos="fe")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-undeclared", result.stdout)
+        self.assertIn("next: ask", result.stdout)
+        self.assertIn("be", result.stdout)
+
+    def test_unknown_repo_name_is_refused(self) -> None:
+        self.write_card(["app.txt"], repos="fe, api")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-invalid", result.stdout)
+        self.assertIn("api", result.stdout)
+
+    def test_outside_files_are_reported_per_repo(self) -> None:
+        self.write_card(["fe:app.txt", "be:other.txt"])
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        self.assertIn("outside-files: be:api.txt", result.stdout)
+
+    def test_edit_to_another_repo_command_is_refused_after_approval(self) -> None:
+        self.write_plan()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.write_board(be_test=f"touch {self.marker}.sneaky")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+        self.assertFalse(Path(f"{self.marker}.sneaky").exists())
+
+    def test_write_records_a_link_per_repo(self) -> None:
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        board = (self.fe / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        self.assertIn("- [ ] **12** login (feat) review: fe:local be:local", board)
+        parsed = gate.parse_board(board)
+        self.assertEqual(parsed.cards[0].status, "review:")
+
+    def test_home_only_task_with_repos_board_keeps_the_v22_path(self) -> None:
+        git(self.be, "branch", "-q", "-D", "task-12")
+        self.write_card(["app.txt"], repos="fe")
+        (self.card_dir / "plan.md").write_text(
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+            f"- commit: {self.fe_sha}\n- verdict: pass\n- checked: scope\n",
+            encoding="utf-8",
+        )
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        self.assertNotIn("repos:", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

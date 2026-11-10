@@ -115,6 +115,7 @@ NEXT_FOR = {
     "invalid-id": "stop",
     "repo-missing": "stop",
     "repo-invalid": "stop",
+    "repo-undeclared": "ask",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
@@ -150,6 +151,7 @@ HINT_FOR = {
     "git-status-failed": "git status failed. Fix the repository state, then run the command again.",
     "invalid-id": "Task ids look like 1 or 1.2 and nothing else.",
     "repo-missing": "A repo under '## repos' in board.md is not a git repository at its path:. Clone it there or fix path:, then run again.",
+    "repo-undeclared": "task-<id> has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
     "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
 }
 MAX_ROUNDS = 3
@@ -163,6 +165,7 @@ REVIEW_DETAIL = {
     "no-verdict": "'## review-diff' needs one line 'verdict: pass' or 'verdict: fix-needed'",
     "review-fix-needed": "'## review-diff' says verdict: fix-needed; fix the diff, commit, and review it again",
     "no-checked": "'## review-diff' needs at least one 'checked: <what you checked>' line",
+    "no-repo-sha": "'## review-diff' needs one '<repo>: <sha>' line for each repo under repos:, citing that repo's latest code commit",
     "evidence-missing": "every pass: line in task.md must be quoted in the first cell of a filled row (pass line | command | result) in '## evidence' of plan.md",
 }
 MERGE_ARGV = {
@@ -2152,12 +2155,127 @@ def evidence_gaps(root: Path, card_id: str, plan: str) -> list[str]:
     ]
 
 
+def card_repo_names(card_text: str) -> list[str]:
+    raw = _label(card_text, "repos")
+    return [name for name in re.split(r"[\s,]+", raw) if name and name != "-"]
+
+
+@dataclass
+class Target:
+    name: str
+    root: Path
+    queue: str
+    test_cmd: str
+    setup_cmd: str
+
+
+def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
+    if repo.is_home:
+        return Target(
+            repo.name,
+            home,
+            parse_queue(board_text),
+            parse_field(board_text, "TEST_CMD"),
+            parse_field(board_text, "SETUP_CMD"),
+        )
+    return Target(
+        repo.name,
+        repo_root(home, repo),
+        repo.queue,
+        repo.values.get("TEST_CMD", ""),
+        repo.values.get("SETUP_CMD", ""),
+    )
+
+
+def card_targets(home: Path, board_text: str, card_text: str) -> list[Target] | None:
+    """The repos a task works in, or None when it is a home-only (v22) task."""
+    repos = parse_repos(board_text)
+    names = card_repo_names(card_text)
+    if not repos:
+        if names:
+            raise GateError("repo-invalid", "task.md names repos: but board.md has no '## repos'")
+        return None
+    home_name = next((repo.name for repo in repos if repo.is_home), "")
+    if not names or names == [home_name]:
+        return None
+    by_name = {repo.name: repo for repo in repos}
+    unknown = [name for name in names if name not in by_name]
+    if unknown:
+        raise GateError("repo-invalid", "repos: names a repo not in board.md: " + ", ".join(unknown))
+    return [_repo_target(home, board_text, by_name[name]) for name in dict.fromkeys(names)]
+
+
+def files_in_repo(card_text: str, repo: str, home_name: str) -> list[str]:
+    """files: entries for one repo; `be:src/x` belongs to be, an unprefixed path to home."""
+    picked: list[str] = []
+    for entry in parse_files(card_text):
+        head, sep, rest = entry.partition(":")
+        if sep and REPO_NAME_RE.match(head) and not rest.startswith("//"):
+            if head == repo:
+                picked.append(rest.strip())
+        elif repo == home_name:
+            picked.append(entry)
+    return picked
+
+
+def undeclared_repos(home: Path, board_text: str, card_id: str, declared: list[str]) -> list[str]:
+    """Repos outside repos: whose task-<id> branch changes code."""
+    found: list[str] = []
+    for repo in parse_repos(board_text):
+        if repo.name in declared:
+            continue
+        target = _repo_target(home, board_text, repo)
+        if target.root.is_dir() and _diff_names(target.root, target.queue, card_id):
+            found.append(repo.name)
+    return found
+
+
+def _repo_sha_cited(section: str, name: str, sha: str) -> bool:
+    pattern = re.compile(rf"^[\s>*-]*`?{re.escape(name)}`?:[ \t]*`?([0-9a-f]{{7,40}})", re.I | re.M)
+    return any(sha.startswith(found.lower()) for found in pattern.findall(section))
+
+
+def multi_review_detail(home: Path, card_id: str, targets: list[Target]) -> tuple[str, str]:
+    """(status, repo) for a task across repos; repo names the one that failed, if any."""
+    for target in targets:
+        if not target.queue or not _branch_exists(target.root, f"task-{card_id}"):
+            return "no-review", target.name
+        if _card_worktree_drift(target.root, card_id):
+            return "stale-review", target.name
+    plan = _read_queue_file(home, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+    section = _section_h2(plan, "review-diff")
+    if not section.strip():
+        return "no-review", ""
+    for target in targets:
+        sha = _code_tip_sha(target.root, target.queue, card_id)
+        if not sha:
+            return "no-review", target.name
+        if not _repo_sha_cited(section, target.name, sha):
+            return "no-repo-sha", target.name
+    verdicts = review_verdicts(section)
+    if not verdicts or any(v not in {"pass", "fix-needed"} for v in verdicts):
+        return "no-verdict", ""
+    if "fix-needed" in verdicts:
+        return "review-fix-needed", ""
+    if _CHECKED_LINE.search(section) is None:
+        return "no-checked", ""
+    if evidence_gaps(home, card_id, plan):
+        return "evidence-missing", ""
+    return "ok", ""
+
+
 def diff_review_detail(root: Path, card_id: str) -> str:
     if not valid_card_id(card_id):
         return "no-review"
     board_text = read_board_text(root)
     if board_text is None:
         return "no-review"
+    try:
+        targets = card_targets(root, board_text, _read_card(root, card_id))
+    except GateError:
+        return "no-review"
+    if targets is not None:
+        return multi_review_detail(root, card_id, targets)[0]
     queue = parse_queue(board_text)
     branch = f"task-{card_id}"
     if not queue or not _branch_exists(root, branch):
@@ -2368,6 +2486,103 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
     return classify_open_prs(data, head, base)
 
 
+def _reach_review_multi(
+    root: Path,
+    card_id: str,
+    write: bool,
+    link: str,
+    text: str,
+    card_text: str,
+    targets: list[Target],
+    question_empty: bool,
+) -> int:
+    """reach-review for a task across repos: every listed repo must pass, others stay untouched."""
+    names = [target.name for target in targets]
+    extra = undeclared_repos(root, text, card_id, names)
+    if extra:
+        return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
+    for target in targets:
+        if not _branch_exists(target.root, f"task-{card_id}"):
+            return _refuse("task-branch-missing", detail=f"repo {target.name}: no task-{card_id} branch")
+        if not _code_diff_reviewable(target.root, target.queue, card_id):
+            return _refuse("review-diff", detail=f"repo {target.name}: no diff outside jt-queue/ to review")
+    status, failed = multi_review_detail(root, card_id, targets)
+    if status != "ok":
+        where = f"repo {failed}: " if failed else ""
+        note = f"{where}{status}: {REVIEW_DETAIL.get(status, 'review-diff is not recorded')}"
+        if status == "evidence-missing":
+            plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+            note += ": " + "; ".join(evidence_gaps(root, card_id, plan))
+        return _refuse("review-diff", detail=note)
+    for target in targets:
+        one_off = one_off_files(target.root, target.queue, card_id, card_text)
+        if one_off:
+            return _refuse(
+                "one-off-checker", detail=f"repo {target.name}: new check script: " + ", ".join(one_off)
+            )
+    unapproved = _commands_refusal(root, text, card_id, card_text)
+    if unapproved:
+        return _refuse(unapproved[0], detail=unapproved[1])
+    if sees_screen(card_text):
+        return _refuse("repo-invalid", detail="screen: yes is not supported yet for a task across repos")
+    current = ""
+    try:
+        for target in targets:
+            current = target.name
+            if target.test_cmd.strip() == "":
+                return _refuse("test-cmd-empty", detail=f"repo {target.name}")
+            if target.test_cmd.strip() == NO_SUITE:
+                continue
+            with _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd) as work:
+                limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
+                code, out, timed_out = _run_shell(target.test_cmd, work, timeout=limit)
+                if timed_out or code != 0:
+                    detail, log_path = _record_command_log(root, card_id, f"{target.name}-test", out)
+                    reason = "test-timeout" if timed_out else "test-failed"
+                    return _refuse_round(root, card_id, reason, f"repo {target.name}:\n{detail}", log_path)
+        current = ""
+        if write:
+            links: list[str] = []
+            for target in targets:
+                current = target.name
+                kind, value = lookup_draft_pr(target.root, f"task-{card_id}", target.queue)
+                if kind == "ask":
+                    return _refuse(value, detail=f"repo {target.name}")
+                links.append(f"{target.name}:{value if kind == 'ok' else (link.strip() or 'local')}")
+            current = ""
+            updated = apply_waiting_review(
+                text, card_id, 0, " ".join(links), question_empty=question_empty
+            )
+            (root / QUEUE_DIR / "board.md").write_text(updated, encoding="utf-8")
+    except GateError as err:
+        detail = f"repo {current}: {err.detail}" if current else err.detail
+        if err.reason in ROUND_REASONS:
+            return _refuse_round(root, card_id, err.reason, detail, err.log)
+        return _refuse(err.reason, detail=detail, log=err.log)
+    reset_rounds(root, card_id)
+    print("allowed")
+    print("merge: no")
+    print("tier: standard")
+    print("repo-review: open")
+    print("repos: " + ", ".join(names))
+    home_name = next((repo.name for repo in parse_repos(text) if repo.is_home), "")
+    outside: list[str] = []
+    for target in targets:
+        declared = [f.rstrip("/") for f in files_in_repo(card_text, target.name, home_name) if f.strip()]
+        if not declared:
+            continue
+        for path in _diff_names(target.root, target.queue, card_id) or []:
+            norm = path.strip().rstrip("/")
+            if not any(norm == d or norm.startswith(d + "/") for d in declared):
+                outside.append(f"{target.name}:{path}")
+    if outside:
+        print("outside-files: " + ", ".join(outside))
+    needs = parse_needs(card_text)
+    if needs:
+        print("needs: " + "; ".join(needs))
+    return 0
+
+
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
@@ -2395,6 +2610,27 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             "related",
             detail="same-layer tasks without refs: links: " + ", ".join(stopped.ids),
         )
+    repos = parse_repos(text)
+    if repos:
+        shape = repos_shape_problems(repos)
+        if shape:
+            return _refuse("repo-invalid", detail=", ".join(shape))
+        problem = check_repos(root, repos)
+        if problem:
+            return _refuse(problem[0], detail=", ".join(problem[1]))
+    try:
+        targets = card_targets(root, text, card_text)
+    except GateError as err:
+        return _refuse(err.reason, detail=err.detail)
+    if targets is not None:
+        return _reach_review_multi(
+            root, card_id, write, link, text, card_text, targets, question_empty
+        )
+    if repos:
+        home_name = next(repo.name for repo in repos if repo.is_home)
+        extra = undeclared_repos(root, text, card_id, [home_name])
+        if extra:
+            return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
     if not _branch_exists(root, f"task-{card_id}"):
         return _refuse("task-branch-missing")
     tier = card_tier(root, queue, card_id, card_text, text)
