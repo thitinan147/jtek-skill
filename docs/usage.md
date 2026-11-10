@@ -29,7 +29,7 @@ Pass your task directly to `/jt-work-queue`:
 
 - **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
 - **Slices:** Cut work into vertical slices that can pass their own `pass:`, not into layers. There is no `depends:`, so put the task that must come first under `## first`.
-- **Frontend and backend in separate repos:** Each repo keeps its own `jt-queue/`. List work in the other repo under `needs:` in `task.md`. The gate prints it but does not check it, and `/jt-review-work` asks you to confirm it has landed before `merge:`.
+- **Frontend and backend in separate repos:** Keep one board and declare the other repo under `## repos` (see [section 5](#5-frontend-and-backend-in-two-repos)). Use `needs:` only for work that is not on this board; the gate prints it but does not check it.
 - **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
 - **Same topic:** Tasks that share `layer:` link each other under `refs:`.
 - **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
@@ -69,6 +69,67 @@ Or to inspect a specific task directly:
 - **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`.
 - **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`.
 - **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging.
+
+## 5. Frontend and backend in two repos
+
+Clone the repos side by side and keep the board in the one you open most (the home repo):
+
+```text
+~/work/app-fe/   # home: jt-queue/ lives here
+~/work/app-be/
+```
+
+Tell the agent about the other repo:
+
+```text
+/jt-work-queue add repo be ../app-be
+```
+
+It runs `gate.py detect --root ../app-be`, shows you this block, and writes it after you confirm:
+
+```text
+## repos
+
+### fe
+path: .
+
+### be
+path: ../app-be
+queue: main
+
+| Value | In this repo |
+|---|---|
+| `<TEST_CMD>` | npm ci && npm test |
+| `<SETUP_CMD>` | npm ci |
+| `<TYPECHECK_CMD>` | |
+| `<LINT_CMD>` | |
+| `<STACK_LOCK>` | node · express · jest · no ORM |
+```
+
+Then approve the commands once: `approve-commands` now covers the `be` path, queue, and commands too.
+
+A task that needs both sides stays one vertical slice:
+
+```text
+kind: feat
+screen: yes
+start:
+- be: npm run dev
+- fe: npm run dev
+port: 4000, 3000
+click: fe: npx playwright test login.spec.ts
+
+files:
+- be:src/routes/login.ts
+- fe:src/pages/Login.tsx
+
+repos: fe, be
+land: be, fe
+```
+
+- The agent commits on `task-<id>` in both repos. `reach-review` runs each repo's `TEST_CMD` in its own worktree, starts both apps from the task branches for the screen check, and needs `## review-diff` to cite `fe: <sha>` and `be: <sha>`.
+- `--write` records both PRs: `review: fe:<url> be:<url>`.
+- In `/jt-review-work`, `landed.py` prints each repo's state in `land:` order. `merge:` needs `landed: all`. If the frontend landed before the backend it prints `order-warning:` so you can check nothing broke.
 
 ## Repository Artifacts (`jt-queue/`)
 

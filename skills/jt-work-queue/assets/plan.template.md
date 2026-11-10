@@ -86,6 +86,7 @@ Raise `round:` by one. Add a line to `jt-queue/lessons.md` for each point.
 Review this task's diff, not your memory of it. Report only what you confirmed by following the code from source to effect. A finding you could not confirm is not a finding.
 
 sha: <latest code commit on task-<id>>
+(Across repos: instead of sha:, write one `<repo>: <latest code commit on task-<id> in that repo>` line per repo under `repos:`.)
 verdict: pass | fix-needed
 checked: scope - every changed file is under `files:`
 checked: out - nothing under `out:` was touched

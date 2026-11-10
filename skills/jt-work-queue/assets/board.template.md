@@ -17,6 +17,8 @@ queue:
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
 
+Frontend and backend in separate repos: add a `## repos` section that names each repo and its path (see `contract.md` section 5). Without it the board covers this repo only.
+
 `<SETUP_CMD>` prepares dependencies in the temporary worktree the gate creates for `task-<id>` (unless you are already on that branch) before tests and before start. An empty cell means do not run it.
 
 `- [ ]` is open (`ask:`, `review:`, `send-back:`). `- [x]` is closed (`merge:` or `drop:`).

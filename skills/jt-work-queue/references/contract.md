@@ -53,3 +53,25 @@ The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A trac
 - **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. The gate counts a round each time `<TEST_CMD>` or setup fails in `reach-review` (retrying an unchanged commit counts too), and prints `round <n> of 3`. On the third it answers `next: ask`: run `gate.py ask` with what each round tried. `gate.py ask` starts the count again.
 - **Diff review:** On `Standard` tier tasks touching code, review this task's diff yourself before `review:` and record it in `## review-diff`. `docs` does not need it. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
 - **Draft PR handoff:** When a git remote exists, push `task-<id>` and open a draft PR with `gh pr create --draft --base <queue> --head task-<id>`. If the draft PR cannot be opened, run `gate.py ask`. The line must not be `review:`. The gate refuses.
+
+## 5. Repos (opt-in, for frontend + backend)
+
+A board without `## repos` works exactly as above. With it, one board in the home repo drives several sibling repos.
+
+```text
+## repos
+
+### fe
+path: .
+
+### be
+path: ../app-be
+queue: main
+(the same two-column table: `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<STACK_LOCK>`)
+```
+
+- One `### <name>` block per repo (`[a-z][a-z0-9-]*`). Exactly one has `path: .` and nothing else: the home repo, whose commands stay in the main table. Every other `path:` is relative to home's main worktree and must be the top of its own git repo. `next` stops with `repo-invalid`, `not-ready` (`be.TEST_CMD`), or `repo-missing`.
+- `approve-commands` covers each repo's `path:`, `queue:`, `TEST_CMD`, and `SETUP_CMD`, and a task's per-repo screen-check commands. Changing any of them refuses with `commands-changed`.
+- `task.md`: `repos: fe, be` names the repos; none, or only home, keeps the single-repo rules. `files:` entries are `<repo>:<path>` (no prefix means home). `land: be, fe` is the landing order (default: `## repos` order). The screen-check commands take one line per repo, as `task.template.md` shows.
+- `reach-review` on such a task is always `Standard`: `task-<id>` in every listed repo, each repo's `TEST_CMD` in its own worktree (a failure counts one round), `## review-diff` with one `<repo>: <sha>` line per repo, and `outside-files:` per repo. A `task-<id>` with code in an unlisted repo refuses with `repo-undeclared`. `--write` writes `review: fe:<url|local> be:<url|local>`.
+- `landed.py` prints `landed-<repo>:` for each repo and `landed: all` only when every repo has landed; it adds `order-warning:` when a repo landed before one earlier in `land:`. `merge:` needs `landed: all`.
