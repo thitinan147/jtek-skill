@@ -16,11 +16,8 @@ queue:
 | `<LINT_CMD>` | |
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
-| `<REPO_SKILLS>` | |
 
 `<SETUP_CMD>` prepares dependencies in the temporary worktree the gate creates for `task-<id>` (unless you are already on that branch) before tests and before start. An empty cell means do not run it.
-
-`<REPO_SKILLS>` names skills used to review code diffs on `Standard` tier tasks before `review:`. An empty cell means the agent reviews the diff directly.
 
 `- [ ]` is open (`ask:`, `review:`, `send-back:`). `- [x]` is closed (`merge:` or `drop:`).
 

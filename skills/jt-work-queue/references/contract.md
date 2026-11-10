@@ -4,7 +4,7 @@ This contract belongs to skill `jt-work-queue`. All queue files live under `jt-q
 
 ## 1. Files & Branch Locations
 
-- `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`, `<REPO_SKILLS>`).
+- `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`).
 - `jt-queue/brief.md`: Optional round brief accepted by the human.
 - `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, and `## decisions`.
@@ -47,9 +47,9 @@ The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A trac
 | JTek `gate.py screen-check` when `screen: yes` | — | ✓ |
 | Report `outside-files:` and `style-changes:` | ✓ (both) | ✓ (`outside-files:` only) |
 
-## 4. Plan, Three Rounds, and `<REPO_SKILLS>` Diff Review
+## 4. Plan, Three Rounds, and Diff Review
 
 - **Plan (`Standard` tier):** A `Done when` line is a command to run, or an artifact to open. If `Done when` has no command and no artifact, run `gate.py ask`. If `Escape` is empty, or an `Escape` line is true, run `gate.py ask` and do not set `review:`.
 - **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. The gate counts a round each time `<TEST_CMD>` or setup fails in `reach-review` (retrying an unchanged commit counts too), and prints `round <n> of 3`. On the third it answers `next: ask`: run `gate.py ask` with what each round tried. `gate.py ask` starts the count again.
-- **`<REPO_SKILLS>` diff review:** On `Standard` tier tasks touching code, open `<REPO_SKILLS>` before `review:`. `docs` does not open. If no repo skill is on this machine, review this task's diff yourself before `review:`. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
+- **Diff review:** On `Standard` tier tasks touching code, review this task's diff yourself before `review:` and record it in `## review-diff`. `docs` does not need it. Do not skip that review; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
 - **Draft PR handoff:** When a git remote exists, push `task-<id>` and open a draft PR with `gh pr create --draft --base <queue> --head task-<id>`. If the draft PR cannot be opened, run `gate.py ask`. The line must not be `review:`. The gate refuses.

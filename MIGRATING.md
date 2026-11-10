@@ -18,7 +18,7 @@ Upgrade notes for older queues. For the full list of changes see [CHANGELOG.md](
 | v20 Command / Skill | v21 Replacement |
 |---|---|
 | `/jt-new-board` | `/jt-work-queue` (auto-detects when `jt-queue/board.md` is missing) |
-| `/jt-find-skills` | `/jt-work-queue` (proposes `<REPO_SKILLS>` during board setup) |
+| `/jt-find-skills` | Removed (v21 proposed `<REPO_SKILLS>` during board setup; that row is gone too) |
 | `/jt-ask-brief` | `/jt-work-queue` (runs when queue is empty and no brief exists) |
 | `/jt-new-card` | `/jt-work-queue <task>` |
 | `/jt-next-step` | `/jt-work-queue` |
@@ -35,5 +35,5 @@ Upgrade notes for older queues. For the full list of changes see [CHANGELOG.md](
 
 - **`complete:` status (parent-child cards removed):** v21 stops the queue with `unknown-status` if a line uses `complete:`. Replace `- [ ] **<id>** ... complete:` with `- [x] **<id>** ... merge:` or remove the parent summary line. Dotted IDs (`1.1`, `1.2`) still work as normal independent cards.
 - **`pair:` line (paired-repo support removed):** Ignored by the v21 gate; you may delete the `pair:` line from `jt-queue/board.md`.
-- **`<TEK_SKILLS>` row:** Removed from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). Only `<REPO_SKILLS>` is used for `Standard` tier diff reviews; existing boards with a `<TEK_SKILLS>` row continue to work without error.
+- **`<TEK_SKILLS>` row:** Removed from [`skills/jt-work-queue/assets/board.template.md`](skills/jt-work-queue/assets/board.template.md). `<REPO_SKILLS>` was removed later as well: the agent reviews the diff itself. Existing boards with either row keep working; the gate never read them.
 

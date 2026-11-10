@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Removed `<REPO_SKILLS>` from the board template, `jt-work-queue` SKILL.md, and `contract.md`. The gate never read it; the agent reviews a Standard task's diff itself and records it in `## review-diff`, as before. Boards that still have the row keep working.
+- README and CHANGELOG show the plugin marketplace pinned with `#v22.0.1`. `getting-started.md` marks the task 2 block as an excerpt.
+
 ## 22.0.1 - easier to start
 
 - Claude Code plugin: `/plugin marketplace add thitinan147/jtek-skill#v22.0.1`, then `/plugin install jtek@jtek-skill`. The skills are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`.
