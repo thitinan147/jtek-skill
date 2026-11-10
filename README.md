@@ -20,7 +20,7 @@ Pick **one** method. Installing both gives you every skill twice.
 
 ```bash
 # Pin a release so later changes cannot reach you unreviewed (recommended)
-npx skills add thitinan147/jtek-skill#v22.0.1
+npx skills add thitinan147/jtek-skill#v22.1.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 
 ```text
 # Pinned to a release (recommended)
-/plugin marketplace add thitinan147/jtek-skill#v22.0.1
+/plugin marketplace add thitinan147/jtek-skill#v22.1.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v22.0.1` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
+Without `#v22.1.0` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
 
 As a plugin, the commands are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`. Use those names if another skill has the same short name.
 

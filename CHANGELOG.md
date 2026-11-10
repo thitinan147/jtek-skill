@@ -11,7 +11,7 @@
 - A repo cannot be named after a status word (`merge`, `review`, `ask`, `drop`, `send-back`).
 
 - Removed `<REPO_SKILLS>` from the board template, `jt-work-queue` SKILL.md, and `contract.md`. The gate never read it; the agent reviews a Standard task's diff itself and records it in `## review-diff`, as before. Boards that still have the row keep working.
-- README and CHANGELOG show the plugin marketplace pinned with `#v22.0.1`. `getting-started.md` marks the task 2 block as an excerpt.
+- README and CHANGELOG show the plugin marketplace pinned with `#v22.1.0`. `getting-started.md` marks the task 2 block as an excerpt.
 
 ## 22.0.1 - easier to start
 
