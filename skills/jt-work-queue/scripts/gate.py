@@ -113,6 +113,8 @@ NEXT_FOR = {
     "merge": "stop",
     "git-status-failed": "stop",
     "invalid-id": "stop",
+    "repo-missing": "stop",
+    "repo-invalid": "stop",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
@@ -147,6 +149,8 @@ HINT_FOR = {
     "merge": "This gate cannot merge. Only a human merges, then records it with /jt-review-work.",
     "git-status-failed": "git status failed. Fix the repository state, then run the command again.",
     "invalid-id": "Task ids look like 1 or 1.2 and nothing else.",
+    "repo-missing": "A repo under '## repos' in board.md is not a git repository at its path:. Clone it there or fix path:, then run again.",
+    "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset({"test-failed", "test-timeout", "setup-failed"})
@@ -183,6 +187,9 @@ _KIND_TAIL = re.compile(r"\([a-z]+\)\s*(.*)$")
 _KIND_PAREN = re.compile(r"\(([a-z]+)\)\s*(.*)$")
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
+REPOS_SECTION = "repos"
+REPO_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+REPO_VALUES = ("TEST_CMD", "SETUP_CMD", "TYPECHECK_CMD", "LINT_CMD", "STACK_LOCK")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 _DOC_EXTS = (".md", ".rst", ".adoc")
 _DOC_PREFIXES = (
@@ -287,6 +294,7 @@ class Board:
     stack_lock: str
     cards: list[Card]
     text: str
+    repos: list["RepoSpec"] = field(default_factory=list)
 
 
 @dataclass
@@ -305,19 +313,119 @@ class Decision:
             raise GateError("merge-refused")
 
 
-def parse_queue(text: str) -> str:
+def _home_lines(text: str) -> list[str]:
+    """Board lines outside `## repos`: the home repo's own fields."""
+    lines: list[str] = []
+    inside = False
     for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == REPOS_SECTION
+        if not inside:
+            lines.append(line)
+    return lines
+
+
+def parse_queue(text: str) -> str:
+    for line in _home_lines(text):
         if line.startswith("queue:"):
             return line.split(":", 1)[1].strip()
     return ""
 
 
 def parse_field(text: str, name: str) -> str:
-    for line in text.splitlines():
+    for line in _home_lines(text):
         match = ROW_RE.match(line)
         if match and match.group(1) == name:
             return match.group(2).strip()
     return ""
+
+
+@dataclass
+class RepoSpec:
+    name: str
+    path: str = ""
+    queue: str = ""
+    values: dict[str, str] = field(default_factory=dict)
+    stray: tuple[str, ...] = ()
+
+    @property
+    def is_home(self) -> bool:
+        return self.path == "."
+
+
+def parse_repos(text: str) -> list[RepoSpec]:
+    """Read `## repos`: one `### <name>` block per repo with path:, queue:, and a value table."""
+    repos: list[RepoSpec] = []
+    inside = False
+    current: RepoSpec | None = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == REPOS_SECTION
+            current = None
+            continue
+        if not inside:
+            continue
+        if line.startswith("### "):
+            current = RepoSpec(name=line[4:].strip())
+            repos.append(current)
+            continue
+        if current is None:
+            continue
+        if line.startswith("path:"):
+            current.path = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("queue:"):
+            current.queue = line.split(":", 1)[1].strip()
+            continue
+        match = ROW_RE.match(line)
+        if match:
+            name, value = match.group(1), match.group(2).strip()
+            if name in REPO_VALUES:
+                current.values[name] = value
+            elif value:
+                current.stray = (*current.stray, name)
+    return repos
+
+
+def repos_shape_problems(repos: list[RepoSpec]) -> list[str]:
+    """Problems in `## repos` that need no filesystem: names, the home row, absolute paths."""
+    if not repos:
+        return []
+    problems: list[str] = []
+    names = [repo.name for repo in repos]
+    for name in dict.fromkeys(names):
+        if not REPO_NAME_RE.match(name):
+            problems.append(f"{name or '(empty)'}.name")
+        elif names.count(name) > 1:
+            problems.append(f"{name}.duplicate")
+    homes = [repo for repo in repos if repo.is_home]
+    if len(homes) != 1:
+        problems.append("home")
+    if len(repos) < 2:
+        problems.append("repos")
+    for repo in repos:
+        if repo.is_home:
+            if repo.queue or any(v.strip() for v in repo.values.values()) or repo.stray:
+                problems.append(f"{repo.name}.home-values")
+            continue
+        if not repo.path or PurePosixPath(repo.path).is_absolute() or repo.path.startswith("~"):
+            problems.append(f"{repo.name}.path")
+        for stray in repo.stray:
+            problems.append(f"{repo.name}.{stray}")
+    return problems
+
+
+def repos_missing_fields(repos: list[RepoSpec]) -> list[str]:
+    missing: list[str] = []
+    for repo in repos:
+        if repo.is_home:
+            continue
+        if not repo.queue:
+            missing.append(f"{repo.name}.queue")
+        for name in ("TEST_CMD", "STACK_LOCK"):
+            if not repo.values.get(name, "").strip():
+                missing.append(f"{repo.name}.{name}")
+    return missing
 
 
 def parse_board(text: str) -> Board:
@@ -348,6 +456,7 @@ def parse_board(text: str) -> Board:
         stack_lock=parse_field(text, "STACK_LOCK"),
         cards=cards,
         text=text,
+        repos=parse_repos(text),
     )
 
 
@@ -492,9 +601,13 @@ def decide(
     brief_exists: bool,
     dirty: bool | str,
     is_git: bool,
+    repo_problem: tuple[str, tuple[str, ...]] | None = None,
 ) -> Decision:
     if board is None:
         return Decision("setup-board", reason="no-board", command=COMMAND_FOR["setup-board"])
+    shape = repos_shape_problems(board.repos)
+    if shape:
+        return Decision("stop", reason="repo-invalid", fields=tuple(shape))
     missing: list[str] = []
     if not board.queue_branch:
         missing.append("queue")
@@ -502,10 +615,13 @@ def decide(
         missing.append("TEST_CMD")
     if board.stack_lock.strip() == "":
         missing.append("STACK_LOCK")
+    missing.extend(repos_missing_fields(board.repos))
     if missing:
         return Decision("stop", reason="not-ready", fields=tuple(missing))
     if not is_git:
         return Decision("stop", reason="not-git")
+    if repo_problem:
+        return Decision("stop", reason=repo_problem[0], fields=repo_problem[1])
     if dirty == "unknown":
         return Decision("stop", reason="git-status-failed")
     if dirty is True or dirty == "dirty":
@@ -934,16 +1050,67 @@ def _git_common_dir(root: Path) -> Path:
     return (root / ".git").resolve()
 
 
+def _home_toplevel(root: Path) -> Path:
+    """The home repo's main worktree, so `## repos` paths mean the same from a linked worktree."""
+    common = _git_common_dir(root)
+    if common.name == ".git":
+        return common.parent.resolve()
+    proc = _run_git(root, ["rev-parse", "--show-toplevel"])
+    return Path(proc.stdout.strip()).resolve() if proc.returncode == 0 else root.resolve()
+
+
+def repo_root(root: Path, repo: RepoSpec) -> Path:
+    return (_home_toplevel(root) / repo.path).resolve()
+
+
+def check_repos(root: Path, repos: list[RepoSpec]) -> tuple[str, tuple[str, ...]] | None:
+    """Every non-home repo must be its own git work tree at path:, distinct from home and each other."""
+    if not repos:
+        return None
+    home = _home_toplevel(root)
+    seen: dict[Path, str] = {home: next((r.name for r in repos if r.is_home), "home")}
+    missing: list[str] = []
+    invalid: list[str] = []
+    for repo in repos:
+        if repo.is_home:
+            continue
+        target = repo_root(root, repo)
+        proc = _run_git(target, ["rev-parse", "--show-toplevel"]) if target.is_dir() else None
+        if proc is None or proc.returncode != 0:
+            missing.append(repo.name)
+            continue
+        top = Path(proc.stdout.strip()).resolve()
+        if top != target or top in seen:
+            invalid.append(f"{repo.name}.path")
+            continue
+        seen[top] = repo.name
+    if missing:
+        return "repo-missing", tuple(missing)
+    if invalid:
+        return "repo-invalid", tuple(invalid)
+    return None
+
+
 def _digest(parts: dict[str, str]) -> str:
     blob = json.dumps({k: v.strip() for k, v in parts.items()}, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _board_commands(board_text: str) -> dict[str, str]:
-    return {
+    # Without `## repos` this must stay exactly the v22 dict, so existing approvals still match.
+    commands = {
         "TEST_CMD": parse_field(board_text, "TEST_CMD"),
         "SETUP_CMD": parse_field(board_text, "SETUP_CMD"),
     }
+    for repo in parse_repos(board_text):
+        if repo.is_home:
+            continue
+        # path: and queue: decide where the commands run, so they are approved with them.
+        commands[f"repo:{repo.name}:path"] = repo.path
+        commands[f"repo:{repo.name}:queue"] = repo.queue
+        commands[f"repo:{repo.name}:TEST_CMD"] = repo.values.get("TEST_CMD", "")
+        commands[f"repo:{repo.name}:SETUP_CMD"] = repo.values.get("SETUP_CMD", "")
+    return commands
 
 
 def _card_commands(card_text: str) -> dict[str, str]:
@@ -951,8 +1118,13 @@ def _card_commands(card_text: str) -> dict[str, str]:
 
 
 def _board_runs_commands(commands: dict[str, str]) -> bool:
-    test = commands["TEST_CMD"].strip()
-    return bool(commands["SETUP_CMD"].strip()) or (test != "" and test != NO_SUITE)
+    for name, value in commands.items():
+        value = value.strip()
+        if name.endswith("SETUP_CMD") and value:
+            return True
+        if name.endswith("TEST_CMD") and value not in ("", NO_SUITE):
+            return True
+    return False
 
 
 def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
@@ -983,12 +1155,12 @@ def _commands_refusal(
         known = approvals.get("board")
         if not known:
             return "commands-unapproved", (
-                "TEST_CMD/SETUP_CMD in jt-queue/board.md have not been approved on this machine. "
+                "TEST_CMD/SETUP_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(board_cmds):
             return "commands-changed", (
-                "TEST_CMD/SETUP_CMD in jt-queue/board.md changed since a human approved them. "
+                "TEST_CMD/SETUP_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     card_cmds = _card_commands(card_text)
@@ -1120,6 +1292,7 @@ def cmd_next(root: Path) -> int:
         brief_exists=brief_exists,
         dirty=_dirty(root) if board is not None and has_git else "clean",
         is_git=True if board is None else has_git,
+        repo_problem=check_repos(root, board.repos) if board is not None and has_git else None,
     )
     extra: list[str] = []
     if board is not None and has_git and board.queue_branch:
