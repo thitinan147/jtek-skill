@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
@@ -87,6 +88,143 @@ def _github_mark(root: Path, card_id: str) -> str:
     return _payload_mark(listed.stdout, head)
 
 
+def _home_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == "repos"
+        if not inside:
+            lines.append(line)
+    return lines
+
+
+def _repos(text: str) -> list[dict[str, str]]:
+    """`### <name>` blocks under `## repos` with their path: and queue: (same rules as gate.py)."""
+    repos: list[dict[str, str]] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == "repos"
+            continue
+        if not inside:
+            continue
+        if line.startswith("### "):
+            repos.append({"name": line[4:].strip(), "path": "", "queue": ""})
+        elif repos and line.startswith("path:"):
+            repos[-1]["path"] = line.split(":", 1)[1].strip()
+        elif repos and line.startswith("queue:"):
+            repos[-1]["queue"] = line.split(":", 1)[1].strip()
+    return repos
+
+
+def _label(text: str, name: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(f"{name}:"):
+            return line[len(name) + 1 :].strip()
+    return ""
+
+
+def _names(raw: str) -> list[str]:
+    return list(dict.fromkeys(n for n in re.split(r"[\s,]+", raw) if n and n != "-"))
+
+
+def _home_toplevel(root: Path) -> Path:
+    proc = _run(root, ["git", "rev-parse", "--git-common-dir"])
+    if proc is not None and proc.returncode == 0 and proc.stdout.strip():
+        common = Path(proc.stdout.strip())
+        common = common if common.is_absolute() else (root / common).resolve()
+        if common.name == ".git":
+            return common.parent.resolve()
+    proc = _run(root, ["git", "rev-parse", "--show-toplevel"])
+    if proc is not None and proc.returncode == 0:
+        return Path(proc.stdout.strip()).resolve()
+    return root.resolve()
+
+
+def _landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
+    head = f"task-{card_id}"
+    if _branch_exists(root, head) and _branch_exists(root, queue):
+        anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
+        if anc is not None and anc.returncode == 0:
+            return "ancestor", ""
+    mark = _github_mark(root, card_id)
+    if mark == "merged":
+        return "squash", ""
+    return "", "pr-open" if mark == "open" else "pr-missing"
+
+
+def _gh_merged_at(root: Path, head: str) -> int | None:
+    proc = _run(root, ["gh", "pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"])
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    for row in rows if isinstance(rows, list) else [rows]:
+        if isinstance(row, dict) and row.get("headRefName") == head and isinstance(row.get("mergedAt"), str):
+            try:
+                return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                return None
+    return None
+
+
+def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
+    if via == "squash":
+        return _gh_merged_at(root, f"task-{card_id}")
+    tip_proc = _run(root, ["git", "rev-parse", f"task-{card_id}"])
+    tip = tip_proc.stdout.strip() if tip_proc is not None else ""
+    path = _run(root, ["git", "rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
+    first = path.stdout.split()[0] if path is not None and path.returncode == 0 and path.stdout.split() else tip
+    shown = _run(root, ["git", "show", "-s", "--format=%ct", first])
+    if shown is None or shown.returncode != 0 or not shown.stdout.strip().isdigit():
+        return None
+    return int(shown.stdout.strip())
+
+
+def _landed_across(root: Path, board: str, card: str, card_id: str, home_queue: str) -> tuple[bool, list[str], str] | None:
+    repos = _repos(board)
+    names = _names(_label(card, "repos"))
+    home_name = next((r["name"] for r in repos if r["path"] == "."), "")
+    if not repos or not names or names == [home_name]:
+        return None
+    by_name = {r["name"]: r for r in repos}
+    wanted = [n for n in _names(_label(card, "land")) if n in names]
+    rest = [r["name"] for r in repos if r["name"] in names and r["name"] not in wanted]
+    order = list(dict.fromkeys(wanted + rest + [n for n in names if n not in wanted + rest]))
+    home = _home_toplevel(root)
+    states: dict[str, str] = {}
+    times: dict[str, int | None] = {}
+    for name in order:
+        repo = by_name.get(name)
+        if repo is None:
+            states[name] = "unknown-repo"
+            continue
+        is_home = repo["path"] == "."
+        where = root if is_home else (home / repo["path"]).resolve()
+        queue = home_queue if is_home else repo["queue"]
+        if not where.is_dir():
+            states[name] = "repo-missing"
+            continue
+        via, detail = _landed_via(where, card_id, queue)
+        states[name] = via or detail
+        if via:
+            times[name] = _land_time(where, card_id, queue, via)
+    lines = [f"landed-{name}: {states[name]}" for name in order]
+    lines.append("land-order: " + ", ".join(order))
+    waiting = [name for name in order if states[name] not in ("ancestor", "squash")]
+    if waiting:
+        return False, lines, "; ".join(f"{name}: {states[name]}" for name in waiting)
+    for i, first in enumerate(order):
+        for later in order[i + 1 :]:
+            a, b = times.get(first), times.get(later)
+            if a is not None and b is not None and b < a:
+                lines.append(f"order-warning: {later} landed before {first}")
+    return True, lines, ""
+
+
 def _refuse(reason: str, detail: str = "", nxt: str = "") -> int:
     print(f"refused: {reason}")
     print("merge: no")
@@ -112,13 +250,27 @@ def main(argv: list[str] | None = None) -> int:
     board_path = root / "jt-queue" / "board.md"
     if not board_path.is_file():
         return _refuse("board-missing", nxt="stop")
+    board = board_path.read_text(encoding="utf-8")
     queue = ""
-    for line in board_path.read_text(encoding="utf-8").splitlines():
+    for line in _home_lines(board):
         if line.startswith("queue:"):
             queue = line.split(":", 1)[1].strip()
             break
     if not queue:
         return _refuse("not-landed", detail="no-queue")
+    card_path = root / "jt-queue" / "tasks" / card_id / "task.md"
+    card = card_path.read_text(encoding="utf-8") if card_path.is_file() else ""
+    across = _landed_across(root, board, card, card_id, queue)
+    if across is not None:
+        ok, lines, detail = across
+        if not ok:
+            _refuse("not-landed", detail=detail)
+            print("\n".join(lines))
+            return 1
+        print("\n".join(lines))
+        print("landed: all")
+        print("merge: no")
+        return 0
     head = f"task-{card_id}"
     if _branch_exists(root, head) and _branch_exists(root, queue):
         anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])

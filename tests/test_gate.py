@@ -36,8 +36,10 @@ def board_text(
     browser: str = "",
     pair: str | None = None,
     setup: str = "",
+    repos: str = "",
 ) -> str:
     pair_line = "" if pair is None else f"pair: {pair}\n\n"
+    repos_block = f"## repos\n\n{repos}\n\n" if repos else ""
     return (
         "# Board - app\n\n"
         "queue: main\n\n"
@@ -52,6 +54,7 @@ def board_text(
         f"| `<STACK_LOCK>` | {stack} |\n"
         "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
+        f"{repos_block}"
         "## first\n\n"
         f"{cards}\n\n"
         "## main\n\n"
@@ -2427,6 +2430,415 @@ class IgnoredQueueTests(unittest.TestCase):
         self.assertIn("review: local", (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8"))
         listed_after = git(self.repo, "status", "--porcelain")
         self.assertNotIn("jt-queue/", listed_after.stdout)
+
+
+def repo_block(name: str, path: str, queue: str = "main", test: str = "npm test", setup: str = "",
+               stack: str = "node · express · jest · no ORM") -> str:
+    if path == ".":
+        return f"### {name}\npath: .\n"
+    return (
+        f"### {name}\npath: {path}\nqueue: {queue}\n\n"
+        "| Value | In this repo |\n|---|---|\n"
+        f"| `<TEST_CMD>` | {test} |\n| `<SETUP_CMD>` | {setup} |\n"
+        "| `<TYPECHECK_CMD>` | |\n| `<LINT_CMD>` | |\n"
+        f"| `<STACK_LOCK>` | {stack} |\n"
+    )
+
+
+TWO_REPOS = repo_block("fe", ".") + "\n" + repo_block("be", "../be")
+
+
+class ReposParseTests(unittest.TestCase):
+    """`## repos` is opt-in; it must never leak into the home repo's fields."""
+
+    def test_blocks_parse_and_keep_pipes_in_commands(self) -> None:
+        text = board_text("no items", repos=repo_block("fe", ".") + "\n" + repo_block(
+            "be", "../be", test="npm ci || npm test"))
+        repos = gate.parse_repos(text)
+        self.assertEqual([r.name for r in repos], ["fe", "be"])
+        self.assertTrue(repos[0].is_home)
+        self.assertEqual(repos[1].path, "../be")
+        self.assertEqual(repos[1].queue, "main")
+        self.assertEqual(repos[1].values["TEST_CMD"], "npm ci || npm test")
+
+    def test_repos_block_before_home_table_does_not_replace_home_fields(self) -> None:
+        repos = repo_block("fe", ".") + repo_block("be", "../be", queue="develop", test="npm test")
+        text = "## repos\n\n" + repos + "\n## home\n\n" + board_text("no items")
+        board = gate.parse_board(text)
+        self.assertEqual(board.queue_branch, "main")
+        self.assertEqual(board.test_cmd, "python3 check.py")
+        self.assertEqual(board.stack_lock, "py · none · test · ban")
+
+    def test_board_without_repos_keeps_the_v22_command_digest(self) -> None:
+        text = board_text("no items", setup="npm ci")
+        self.assertEqual(
+            gate._board_commands(text), {"TEST_CMD": "python3 check.py", "SETUP_CMD": "npm ci"}
+        )
+        v22 = gate._digest({"TEST_CMD": "python3 check.py", "SETUP_CMD": "npm ci"})
+        self.assertEqual(gate._digest(gate._board_commands(text)), v22)
+
+    def test_repo_commands_need_approval_even_when_home_runs_nothing(self) -> None:
+        text = board_text("no items", test="no-suite", repos=TWO_REPOS)
+        self.assertTrue(gate._board_runs_commands(gate._board_commands(text)))
+
+    def test_shape_problems_stop_the_queue(self) -> None:
+        cases = {
+            "no home": (repo_block("be", "../be") + repo_block("api", "../api"), "home"),
+            "only home": (repo_block("fe", "."), "repos"),
+            "duplicate": (repo_block("fe", ".") + repo_block("be", "../be") + repo_block("be", "../b2"), "be.duplicate"),
+            "bad name": (repo_block("fe", ".") + repo_block("Be", "../be"), "Be.name"),
+            "absolute": (repo_block("fe", ".") + repo_block("be", "/srv/be"), "be.path"),
+            "home values": (repo_block("fe", ".") + "queue: main\n\n" + repo_block("be", "../be"), "fe.home-values"),
+            "status name": (repo_block("fe", ".") + repo_block("merge", "../be"), "merge.name"),
+        }
+        for label, (repos, field) in cases.items():
+            with self.subTest(label):
+                decision = decide_board(board_text("no items", repos=repos), {})
+                self.assertEqual((decision.action, decision.reason), ("stop", "repo-invalid"))
+                self.assertIn(field, decision.fields)
+
+    def test_missing_repo_fields_are_not_ready(self) -> None:
+        repos = repo_block("fe", ".") + repo_block("be", "../be", queue="", test="")
+        decision = decide_board(board_text("no items", repos=repos), {})
+        self.assertEqual(decision.reason, "not-ready")
+        self.assertEqual(decision.fields, ("be.queue", "be.TEST_CMD"))
+
+    def test_valid_repos_do_not_change_the_decision(self) -> None:
+        decision = decide_board(board_text("no items", repos=TWO_REPOS), {}, brief=True)
+        self.assertEqual((decision.action, decision.reason), ("add-task", "no-task"))
+
+
+class ReposGitTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.home = base / "fe"
+        self.other = base / "be"
+        for repo in (self.home, self.other):
+            repo.mkdir()
+            init_repo(repo)
+            (repo / "README.md").write_text("x\n", encoding="utf-8")
+            commit_all(repo, "docs: init")
+        (self.home / ".gitignore").write_text("jt-queue/\n", encoding="utf-8")
+        commit_all(self.home, "chore: ignore queue")
+        (self.home / "jt-queue").mkdir()
+        (self.home / "jt-queue" / "brief.md").write_text("# Brief\n", encoding="utf-8")
+        self.board = self.home / "jt-queue" / "board.md"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _next(self, repos: str) -> str:
+        self.board.write_text(board_text("no items", repos=repos), encoding="utf-8")
+        result = run_gate_raw(self.home, "next")
+        return result.stdout + result.stderr
+
+    def test_present_repo_lets_the_queue_continue(self) -> None:
+        out = self._next(TWO_REPOS)
+        self.assertIn("action: add-task", out)
+
+    def test_missing_repo_stops_with_its_name(self) -> None:
+        out = self._next(repo_block("fe", ".") + repo_block("be", "../nowhere"))
+        self.assertIn("action: stop", out)
+        self.assertIn("reason: repo-missing", out)
+        self.assertIn("fields: be", out)
+
+    def test_path_into_home_or_a_subfolder_is_invalid(self) -> None:
+        (self.other / "sub").mkdir()
+        for path in ("../fe", "../be/sub"):
+            with self.subTest(path):
+                out = self._next(repo_block("fe", ".") + repo_block("be", path))
+                self.assertIn("reason: repo-invalid", out)
+                self.assertIn("fields: be.path", out)
+
+    def test_two_rows_for_one_repo_are_invalid(self) -> None:
+        out = self._next(TWO_REPOS + repo_block("api", "../fe/../be"))
+        self.assertIn("reason: repo-invalid", out)
+        self.assertIn("api.path", out)
+
+    def test_paths_resolve_from_the_main_worktree(self) -> None:
+        git(self.home, "worktree", "add", "-q", "-b", "side", str(self.home.parent / "wt" / "side"))
+        linked = self.home.parent / "wt" / "side"
+        (linked / "jt-queue").mkdir()
+        (linked / "jt-queue" / "brief.md").write_text("# Brief\n", encoding="utf-8")
+        (linked / "jt-queue" / "board.md").write_text(board_text("no items", repos=TWO_REPOS), encoding="utf-8")
+        out = run_gate_raw(linked, "next").stdout
+        self.assertIn("action: add-task", out)
+
+    def test_repo_commands_are_approved_and_a_path_edit_is_refused(self) -> None:
+        self.board.write_text(board_text("- [ ] **12** doc (docs)", test="no-suite", repos=TWO_REPOS), encoding="utf-8")
+        card = gate._card_commands("")
+        text = self.board.read_text(encoding="utf-8")
+        self.assertEqual(gate._commands_refusal(self.home, text, "12", "")[0], "commands-unapproved")
+        self.assertEqual(run_gate_raw(self.home, "approve-commands", "--id", "12").returncode, 0)
+        self.assertIsNone(gate._commands_refusal(self.home, text, "12", ""))
+        moved = text.replace("path: ../be", "path: ../elsewhere")
+        self.assertEqual(gate._commands_refusal(self.home, moved, "12", "")[0], "commands-changed")
+        self.assertEqual(card["start"], "")
+
+
+class MultiRepoFixture(unittest.TestCase):
+    """Two sibling repos, fe (home, holds the board) and be, each with work on task-12."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.fe = base / "fe"
+        self.be = base / "be"
+        for repo in (self.fe, self.be):
+            repo.mkdir()
+            init_repo(repo)
+            (repo / "README.md").write_text("x\n", encoding="utf-8")
+            (repo / ".gitignore").write_text("jt-queue/\n", encoding="utf-8")
+            commit_all(repo, "docs: init")
+        self.marker = base / "be-test-ran"
+        self.write_board(be_test=f"touch {self.marker}")
+        self.card_dir = self.fe / "jt-queue" / "tasks" / "12"
+        self.card_dir.mkdir(parents=True)
+        self.write_card(["fe:app.txt", "be:api.txt"])
+        self.fe_sha = self.commit_on_task(self.fe, "app.txt")
+        self.be_sha = self.commit_on_task(self.be, "api.txt")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def write_board(self, be_test: str = "python3 -c pass", line: str = "- [ ] **12** login (feat)") -> None:
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test=be_test)
+        (self.fe / "jt-queue").mkdir(exist_ok=True)
+        (self.fe / "jt-queue" / "board.md").write_text(
+            board_text(line, test="python3 -c pass", repos=repos), encoding="utf-8"
+        )
+
+    def write_card(self, files: list[str], repos: str = "fe, be") -> None:
+        (self.card_dir / "task.md").write_text(
+            card_body(files) + f"\nrepos: {repos}\n", encoding="utf-8"
+        )
+
+    def commit_on_task(self, repo: Path, name: str) -> str:
+        git(repo, "checkout", "-q", "-b", "task-12")
+        (repo / name).write_text("new\n", encoding="utf-8")
+        commit_all(repo, f"feat: add {name}")
+        sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "checkout", "-q", "main")
+        return sha
+
+    def write_plan(self, fe_sha: str | None = None, be_sha: str | None = None) -> None:
+        fe_sha = fe_sha or self.fe_sha
+        be_sha = be_sha or self.be_sha
+        (self.card_dir / "plan.md").write_text(
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+            f"- fe: {fe_sha[:9]}\n- be: {be_sha[:9]}\n- verdict: pass\n- checked: both sides\n",
+            encoding="utf-8",
+        )
+
+
+
+class MultiRepoReachReviewTests(MultiRepoFixture):
+    """A task with repos: fe, be reaches review only when both repos pass."""
+
+    def test_both_repos_green_reach_review_and_run_each_test(self) -> None:
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+        self.assertIn("repos: fe, be", result.stdout)
+        self.assertTrue(self.marker.exists(), "be TEST_CMD did not run in be")
+        self.assertNotIn("outside-files", result.stdout)
+
+    def test_review_must_cite_each_repo_sha(self) -> None:
+        self.write_plan(be_sha="0000000000")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: review-diff", result.stdout)
+        self.assertIn("repo be: no-repo-sha", result.stdout)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(gate.diff_review_detail(self.fe, "12"), "no-repo-sha")
+
+    def test_red_test_in_one_repo_counts_a_round(self) -> None:
+        self.write_board(be_test="python3 -c 'import sys; sys.exit(3)'")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertIn("repo be:", result.stdout)
+        self.assertIn("round 1 of 3", result.stdout)
+
+    def test_missing_branch_in_a_listed_repo_is_refused(self) -> None:
+        git(self.be, "branch", "-q", "-D", "task-12")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: task-branch-missing", result.stdout)
+        self.assertIn("repo be", result.stdout)
+
+    def test_commits_in_an_unlisted_repo_are_refused(self) -> None:
+        self.write_card(["app.txt"], repos="fe")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-undeclared", result.stdout)
+        self.assertIn("next: ask", result.stdout)
+        self.assertIn("be", result.stdout)
+
+    def test_unknown_repo_name_is_refused(self) -> None:
+        self.write_card(["app.txt"], repos="fe, api")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-invalid", result.stdout)
+        self.assertIn("api", result.stdout)
+
+    def test_outside_files_are_reported_per_repo(self) -> None:
+        self.write_card(["fe:app.txt", "be:other.txt"])
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        self.assertIn("outside-files: be:api.txt", result.stdout)
+
+    def test_edit_to_another_repo_command_is_refused_after_approval(self) -> None:
+        self.write_plan()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.write_board(be_test=f"touch {self.marker}.sneaky")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+        self.assertFalse(Path(f"{self.marker}.sneaky").exists())
+
+    def test_write_records_a_link_per_repo(self) -> None:
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12", "--write", "--link", "local")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        board = (self.fe / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        self.assertIn("- [ ] **12** login (feat) review: fe:local be:local", board)
+        parsed = gate.parse_board(board)
+        self.assertEqual(parsed.cards[0].status, "review:")
+
+    def test_home_only_task_with_repos_board_keeps_the_v22_path(self) -> None:
+        git(self.be, "branch", "-q", "-D", "task-12")
+        self.write_card(["fe:app.txt"], repos="fe")
+        (self.card_dir / "plan.md").write_text(
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+            f"- commit: {self.fe_sha}\n- verdict: pass\n- checked: scope\n",
+            encoding="utf-8",
+        )
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout)
+        self.assertNotIn("repos:", result.stdout)
+        self.assertNotIn("outside-files", result.stdout)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class MultiRepoScreenTests(MultiRepoFixture):
+    """screen: yes across repos starts each repo from its own task worktree."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.be_port, self.fe_port = _free_port(), _free_port()
+        self.clicked = Path(self.tmp.name) / "clicked"
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test="python3 -c pass")
+        (self.fe / "jt-queue" / "board.md").write_text(
+            board_text("- [ ] **12** login (feat)", test="python3 -c pass", browser="playwright", repos=repos),
+            encoding="utf-8",
+        )
+        self.write_plan()
+
+    def screen_card(self, be_start: str | None = None, extra: str = "") -> None:
+        be_start = be_start or f"python3 -m http.server {self.be_port} --bind 127.0.0.1"
+        click = (
+            "fe: python3 -c \"import urllib.request as u; "
+            f"u.urlopen('http://127.0.0.1:{self.be_port}/api.txt'); "
+            f"u.urlopen('http://127.0.0.1:{self.fe_port}/app.txt'); "
+            f"open('{self.clicked}', 'w').write('ok')\""
+        )
+        (self.card_dir / "task.md").write_text(
+            "# 12 - login\n\nkind: feat\n\nscreen: yes\nstart:\n"
+            f"- be: {be_start}\n"
+            f"- fe: python3 -m http.server {self.fe_port} --bind 127.0.0.1\n{extra}"
+            f"port: {self.be_port}, {self.fe_port}\nwait: 20\nclick: {click}\n\n"
+            "do:\n- something\n\nout:\n- other\n\npass:\n- HEADER_TOKEN\n\n"
+            "files:\n- fe:app.txt\n- be:api.txt\n\nrepos: fe, be\n\nask:\n",
+            encoding="utf-8",
+        )
+
+    def test_click_reaches_both_task_branches(self) -> None:
+        self.screen_card()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+        self.assertTrue(self.clicked.exists(), "click did not reach both servers")
+        self.assertFalse(gate._port_open(self.be_port))
+        self.assertFalse(gate._port_open(self.fe_port))
+
+    def test_a_start_that_dies_names_its_repo(self) -> None:
+        self.screen_card(be_start="python3 -c 'import sys; sys.exit(4)'")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: start-down", result.stdout)
+        self.assertIn("repo be: start exited with code 4", result.stdout)
+        self.assertFalse(gate._port_open(self.fe_port))
+
+    def test_start_list_is_part_of_the_task_approval(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.screen_card(be_start=f"touch {self.clicked}")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+        self.assertFalse(self.clicked.exists())
+
+    def test_start_for_an_unlisted_repo_is_refused(self) -> None:
+        self.screen_card(extra="- api: python3 -c pass\n")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-invalid", result.stdout)
+        self.assertIn("api", result.stdout)
+
+    def test_moving_a_repo_path_after_approval_stops_screen_check(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        elsewhere = Path(self.tmp.name) / "elsewhere"
+        elsewhere.mkdir()
+        init_repo(elsewhere)
+        board = self.fe / "jt-queue" / "board.md"
+        board.write_text(board.read_text(encoding="utf-8").replace("path: ../be", "path: ../elsewhere"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "screen-check", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout, result.stdout)
+        self.assertFalse(gate._port_open(self.be_port))
+
+    def test_moving_a_path_is_refused_even_when_every_repo_is_no_suite(self) -> None:
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test="no-suite")
+        board = self.fe / "jt-queue" / "board.md"
+        board.write_text(board_text("- [ ] **12** login (feat)", test="no-suite", repos=repos), encoding="utf-8")
+        self.write_card(["fe:app.txt", "be:api.txt"])
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.assertIn("allowed", run_gate_raw(self.fe, "reach-review", "--id", "12").stdout)
+        board.write_text(board.read_text(encoding="utf-8").replace("path: ../be", "path: ../be/"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+
+    def test_reordering_repos_changes_where_click_runs_and_needs_approval(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        card = self.card_dir / "task.md"
+        card.write_text(card.read_text(encoding="utf-8").replace("repos: fe, be", "repos: be, fe"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+
+    def test_v22_card_commands_keep_their_digest_keys(self) -> None:
+        commands = gate._card_commands(card_body(["a"], screen=True, start="npm start", port="3000", click="true"))
+        self.assertEqual(sorted(commands), ["click", "port", "start", "wait"])
+
+    def test_cli_screen_check_starts_each_repo_from_its_checkout(self) -> None:
+        self.screen_card()
+        git(self.be, "checkout", "-q", "task-12")
+        git(self.fe, "checkout", "-q", "task-12")
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        fake = bin_dir / "playwright"
+        fake.write_text(
+            "#!/bin/sh\nexec python3 -c \"import urllib.request as u; "
+            f"u.urlopen('http://127.0.0.1:{self.be_port}/api.txt'); open('{self.clicked}', 'w')\"\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}:{env['PATH']}"
+        result = run_gate(self.fe, "screen-check", "--id", "12", env=env)
+        self.assertIn("screen-check: ok", result.stdout, result.stdout + result.stderr)
+        self.assertTrue(self.clicked.exists())
 
 
 if __name__ == "__main__":

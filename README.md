@@ -2,7 +2,7 @@
 
 **Let your coding agent work through a task queue, and let a script, not the agent, decide when work is ready for you to review.**
 
-`jtek-skill` is a pair of [Agent Skills](https://agentskills.io/) for one Git repository. The agent takes tasks from a board, commits its work on a branch, and asks a deterministic Python gate ([`gate.py`](skills/jt-work-queue/scripts/gate.py)) to check the result: the diff, a passing test run, and review notes. Only when the gate agrees does the task move to `review:`. You hold the merge key: the agent can never merge.
+`jtek-skill` is a pair of [Agent Skills](https://agentskills.io/) for one Git repository, or for a frontend and a backend in two repos driven from one board. The agent takes tasks from a board, commits its work on a branch, and asks a deterministic Python gate ([`gate.py`](skills/jt-work-queue/scripts/gate.py)) to check the result: the diff, a passing test run, and review notes. Only when the gate agrees does the task move to `review:`. You hold the merge key: the agent can never merge.
 
 *Constrain the outcome, not the agent.*
 
@@ -90,7 +90,7 @@ Human + Agent (/jt-work-queue)                          Human only (/jt-review-w
 ## Documentation
 
 - [Getting started](docs/getting-started.md): the words jtek-skill uses, and one real round from setup to merge
-- [Usage guide](docs/usage.md): priorities, splitting work into tasks, task kinds, and the `jt-queue/` layout
+- [Usage guide](docs/usage.md): priorities, splitting work into tasks, task kinds, the `jt-queue/` layout, and [frontend and backend in two repos](docs/usage.md#5-frontend-and-backend-in-two-repos)
 - [File and gate contract](skills/jt-work-queue/references/contract.md): every field the gate reads
 - [Security and trust model](SECURITY.md)
 - [Changelog](CHANGELOG.md) and [migrating from v20 or v21](MIGRATING.md)

@@ -14,8 +14,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 try:  # POSIX only; without it the round counter is unlocked
@@ -113,6 +114,9 @@ NEXT_FOR = {
     "merge": "stop",
     "git-status-failed": "stop",
     "invalid-id": "stop",
+    "repo-missing": "stop",
+    "repo-invalid": "stop",
+    "repo-undeclared": "ask",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
@@ -147,6 +151,9 @@ HINT_FOR = {
     "merge": "This gate cannot merge. Only a human merges, then records it with /jt-review-work.",
     "git-status-failed": "git status failed. Fix the repository state, then run the command again.",
     "invalid-id": "Task ids look like 1 or 1.2 and nothing else.",
+    "repo-missing": "A repo under '## repos' in board.md is not a git repository at its path:. Clone it there or fix path:, then run again.",
+    "repo-undeclared": "task-<id> has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
+    "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset({"test-failed", "test-timeout", "setup-failed"})
@@ -159,6 +166,7 @@ REVIEW_DETAIL = {
     "no-verdict": "'## review-diff' needs one line 'verdict: pass' or 'verdict: fix-needed'",
     "review-fix-needed": "'## review-diff' says verdict: fix-needed; fix the diff, commit, and review it again",
     "no-checked": "'## review-diff' needs at least one 'checked: <what you checked>' line",
+    "no-repo-sha": "'## review-diff' needs one '<repo>: <sha>' line for each repo under repos:, citing that repo's latest code commit",
     "evidence-missing": "every pass: line in task.md must be quoted in the first cell of a filled row (pass line | command | result) in '## evidence' of plan.md",
 }
 MERGE_ARGV = {
@@ -183,6 +191,9 @@ _KIND_TAIL = re.compile(r"\([a-z]+\)\s*(.*)$")
 _KIND_PAREN = re.compile(r"\(([a-z]+)\)\s*(.*)$")
 _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
+REPOS_SECTION = "repos"
+REPO_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+REPO_VALUES = ("TEST_CMD", "SETUP_CMD", "TYPECHECK_CMD", "LINT_CMD", "STACK_LOCK")
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 _DOC_EXTS = (".md", ".rst", ".adoc")
 _DOC_PREFIXES = (
@@ -287,6 +298,7 @@ class Board:
     stack_lock: str
     cards: list[Card]
     text: str
+    repos: list["RepoSpec"] = field(default_factory=list)
 
 
 @dataclass
@@ -305,19 +317,119 @@ class Decision:
             raise GateError("merge-refused")
 
 
-def parse_queue(text: str) -> str:
+def _home_lines(text: str) -> list[str]:
+    """Board lines outside `## repos`: the home repo's own fields."""
+    lines: list[str] = []
+    inside = False
     for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == REPOS_SECTION
+        if not inside:
+            lines.append(line)
+    return lines
+
+
+def parse_queue(text: str) -> str:
+    for line in _home_lines(text):
         if line.startswith("queue:"):
             return line.split(":", 1)[1].strip()
     return ""
 
 
 def parse_field(text: str, name: str) -> str:
-    for line in text.splitlines():
+    for line in _home_lines(text):
         match = ROW_RE.match(line)
         if match and match.group(1) == name:
             return match.group(2).strip()
     return ""
+
+
+@dataclass
+class RepoSpec:
+    name: str
+    path: str = ""
+    queue: str = ""
+    values: dict[str, str] = field(default_factory=dict)
+    stray: tuple[str, ...] = ()
+
+    @property
+    def is_home(self) -> bool:
+        return self.path == "."
+
+
+def parse_repos(text: str) -> list[RepoSpec]:
+    """Read `## repos`: one `### <name>` block per repo with path:, queue:, and a value table."""
+    repos: list[RepoSpec] = []
+    inside = False
+    current: RepoSpec | None = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().casefold() == REPOS_SECTION
+            current = None
+            continue
+        if not inside:
+            continue
+        if line.startswith("### "):
+            current = RepoSpec(name=line[4:].strip())
+            repos.append(current)
+            continue
+        if current is None:
+            continue
+        if line.startswith("path:"):
+            current.path = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("queue:"):
+            current.queue = line.split(":", 1)[1].strip()
+            continue
+        match = ROW_RE.match(line)
+        if match:
+            name, value = match.group(1), match.group(2).strip()
+            if name in REPO_VALUES:
+                current.values[name] = value
+            elif value:
+                current.stray = (*current.stray, name)
+    return repos
+
+
+def repos_shape_problems(repos: list[RepoSpec]) -> list[str]:
+    """Problems in `## repos` that need no filesystem: names, the home row, absolute paths."""
+    if not repos:
+        return []
+    problems: list[str] = []
+    names = [repo.name for repo in repos]
+    for name in dict.fromkeys(names):
+        if not REPO_NAME_RE.match(name) or f"{name}:" in _STATUS_SET or name == "unknown":
+            problems.append(f"{name or '(empty)'}.name")
+        elif names.count(name) > 1:
+            problems.append(f"{name}.duplicate")
+    homes = [repo for repo in repos if repo.is_home]
+    if len(homes) != 1:
+        problems.append("home")
+    if len(repos) < 2:
+        problems.append("repos")
+    for repo in repos:
+        if repo.is_home:
+            if repo.queue or any(v.strip() for v in repo.values.values()) or repo.stray:
+                problems.append(f"{repo.name}.home-values")
+            continue
+        if not repo.path or PurePosixPath(repo.path).is_absolute() or repo.path.startswith("~"):
+            problems.append(f"{repo.name}.path")
+        for stray in repo.stray:
+            problems.append(f"{repo.name}.{stray}")
+    return problems
+
+
+def repos_missing_fields(repos: list[RepoSpec]) -> list[str]:
+    missing: list[str] = []
+    for repo in repos:
+        if repo.is_home:
+            continue
+        if not repo.queue:
+            missing.append(f"{repo.name}.queue")
+        for name in ("TEST_CMD", "STACK_LOCK"):
+            if not repo.values.get(name, "").strip():
+                missing.append(f"{repo.name}.{name}")
+    return missing
 
 
 def parse_board(text: str) -> Board:
@@ -348,6 +460,7 @@ def parse_board(text: str) -> Board:
         stack_lock=parse_field(text, "STACK_LOCK"),
         cards=cards,
         text=text,
+        repos=parse_repos(text),
     )
 
 
@@ -492,9 +605,13 @@ def decide(
     brief_exists: bool,
     dirty: bool | str,
     is_git: bool,
+    repo_problem: tuple[str, tuple[str, ...]] | None = None,
 ) -> Decision:
     if board is None:
         return Decision("setup-board", reason="no-board", command=COMMAND_FOR["setup-board"])
+    shape = repos_shape_problems(board.repos)
+    if shape:
+        return Decision("stop", reason="repo-invalid", fields=tuple(shape))
     missing: list[str] = []
     if not board.queue_branch:
         missing.append("queue")
@@ -502,10 +619,13 @@ def decide(
         missing.append("TEST_CMD")
     if board.stack_lock.strip() == "":
         missing.append("STACK_LOCK")
+    missing.extend(repos_missing_fields(board.repos))
     if missing:
         return Decision("stop", reason="not-ready", fields=tuple(missing))
     if not is_git:
         return Decision("stop", reason="not-git")
+    if repo_problem:
+        return Decision("stop", reason=repo_problem[0], fields=repo_problem[1])
     if dirty == "unknown":
         return Decision("stop", reason="git-status-failed")
     if dirty is True or dirty == "dirty":
@@ -934,29 +1054,107 @@ def _git_common_dir(root: Path) -> Path:
     return (root / ".git").resolve()
 
 
+def _home_toplevel(root: Path) -> Path:
+    """The home repo's main worktree, so `## repos` paths mean the same from a linked worktree."""
+    common = _git_common_dir(root)
+    if common.name == ".git":
+        return common.parent.resolve()
+    proc = _run_git(root, ["rev-parse", "--show-toplevel"])
+    return Path(proc.stdout.strip()).resolve() if proc.returncode == 0 else root.resolve()
+
+
+def repo_root(root: Path, repo: RepoSpec) -> Path:
+    return (_home_toplevel(root) / repo.path).resolve()
+
+
+def check_repos(root: Path, repos: list[RepoSpec]) -> tuple[str, tuple[str, ...]] | None:
+    """Every non-home repo must be its own git work tree at path:, distinct from home and each other."""
+    if not repos:
+        return None
+    home = _home_toplevel(root)
+    seen: dict[Path, str] = {home: next((r.name for r in repos if r.is_home), "home")}
+    missing: list[str] = []
+    invalid: list[str] = []
+    for repo in repos:
+        if repo.is_home:
+            continue
+        target = repo_root(root, repo)
+        proc = _run_git(target, ["rev-parse", "--show-toplevel"]) if target.is_dir() else None
+        if proc is None or proc.returncode != 0:
+            missing.append(repo.name)
+            continue
+        top = Path(proc.stdout.strip()).resolve()
+        if top != target or top in seen:
+            invalid.append(f"{repo.name}.path")
+            continue
+        seen[top] = repo.name
+    if missing:
+        return "repo-missing", tuple(missing)
+    if invalid:
+        return "repo-invalid", tuple(invalid)
+    return None
+
+
 def _digest(parts: dict[str, str]) -> str:
     blob = json.dumps({k: v.strip() for k, v in parts.items()}, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _board_commands(board_text: str) -> dict[str, str]:
-    return {
+    # Without `## repos` this must stay exactly the v22 dict, so existing approvals still match.
+    commands = {
         "TEST_CMD": parse_field(board_text, "TEST_CMD"),
         "SETUP_CMD": parse_field(board_text, "SETUP_CMD"),
     }
+    for repo in parse_repos(board_text):
+        if repo.is_home:
+            continue
+        # path: and queue: decide where the commands run, so they are approved with them.
+        commands[f"repo:{repo.name}:path"] = repo.path
+        commands[f"repo:{repo.name}:queue"] = repo.queue
+        commands[f"repo:{repo.name}:TEST_CMD"] = repo.values.get("TEST_CMD", "")
+        commands[f"repo:{repo.name}:SETUP_CMD"] = repo.values.get("SETUP_CMD", "")
+    return commands
+
+
+def start_entries(card_text: str) -> list[tuple[str, str]]:
+    """`start:` as a list, one `- <repo>: <command>` per repo, for a task across repos."""
+    entries: list[tuple[str, str]] = []
+    for line in _section_label(card_text, "start:").splitlines():
+        item = line.strip()
+        if not item.startswith("- "):
+            continue
+        head, sep, command = item[2:].partition(":")
+        if sep and REPO_NAME_RE.match(head.strip()) and command.strip():
+            entries.append((head.strip(), command.strip()))
+    return entries
 
 
 def _card_commands(card_text: str) -> dict[str, str]:
-    return {name: _label(card_text, name) for name in ("start", "port", "wait", "click")}
+    commands = {name: _label(card_text, name) for name in ("start", "port", "wait", "click")}
+    entries = start_entries(card_text)
+    if entries:  # absent on a v22 card, so its approval digest does not change
+        commands["start-repos"] = "\n".join(f"{name}: {command}" for name, command in entries)
+        commands["repos"] = _label(card_text, "repos")
+    return commands
 
 
 def _board_runs_commands(commands: dict[str, str]) -> bool:
-    test = commands["TEST_CMD"].strip()
-    return bool(commands["SETUP_CMD"].strip()) or (test != "" and test != NO_SUITE)
+    if any(name.startswith("repo:") for name in commands):
+        return True  # path: decides where every command and start line runs
+    for name, value in commands.items():
+        value = value.strip()
+        if name.endswith("SETUP_CMD") and value:
+            return True
+        if name.endswith("TEST_CMD") and value not in ("", NO_SUITE):
+            return True
+    return False
 
 
 def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
-    return bool(commands["start"].strip() or commands["click"].strip())
+    return bool(
+        commands["start"].strip() or commands["click"].strip() or commands.get("start-repos", "").strip()
+    )
 
 
 def _approval_path(root: Path) -> Path:
@@ -983,12 +1181,12 @@ def _commands_refusal(
         known = approvals.get("board")
         if not known:
             return "commands-unapproved", (
-                "TEST_CMD/SETUP_CMD in jt-queue/board.md have not been approved on this machine. "
+                "TEST_CMD/SETUP_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(board_cmds):
             return "commands-changed", (
-                "TEST_CMD/SETUP_CMD in jt-queue/board.md changed since a human approved them. "
+                "TEST_CMD/SETUP_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     card_cmds = _card_commands(card_text)
@@ -1120,6 +1318,7 @@ def cmd_next(root: Path) -> int:
         brief_exists=brief_exists,
         dirty=_dirty(root) if board is not None and has_git else "clean",
         is_git=True if board is None else has_git,
+        repo_problem=check_repos(root, board.repos) if board is not None and has_git else None,
     )
     extra: list[str] = []
     if board is not None and has_git and board.queue_branch:
@@ -1132,6 +1331,11 @@ def cmd_next(root: Path) -> int:
                 and card.status == "review:"
                 and valid_card_id(card.id)
             ):
+                across = landed_across(root, board.text, _read_card(root, card.id), card.id, quick=True)
+                if across is not None:
+                    if across[0]:
+                        landed_ids.append(card.id)
+                    continue
                 if _is_ancestor(root, f"task-{card.id}", board.queue_branch):
                     landed_ids.append(card.id)
                 else:
@@ -1491,36 +1695,112 @@ def _click_surface(work: Path, card_text: str, card_id: str = "") -> str | None:
     if not start or ports is None:
         raise GateError("start-down", detail="start: is empty or port: is missing or invalid in task.md")
 
-    def run() -> str | None:
-        if not click:
-            raise GateError("click-mismatch", detail="click: is empty in task.md")
-        try:
-            result = subprocess.run(
-                click,
-                # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
-                shell=True,  # nosec B602
-                cwd=work,
-                capture_output=True,
-                text=True,
-                env=_env_with_bin(work),
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired as exc:
-            partial = exc.output.decode("utf-8", "replace") if isinstance(exc.output, bytes) else (exc.output or "")
-            detail, log_path = _command_evidence(work, card_id, "click", partial, "click-timeout")
-            raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
-        if result.returncode != 0:
-            detail, log_path = _command_evidence(
-                work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "no output"
-            )
-            raise GateError(
-                "click-mismatch",
-                detail=f"click exited with code {result.returncode}\n{detail}",
-                log=log_path,
-            )
-        return None
+    return _run_while_up(work, start, ports, wait_seconds, lambda: _run_click(work, click, card_id), card_id)
 
-    return _run_while_up(work, start, ports, wait_seconds, run, card_id)
+
+def _run_click(work: Path, click: str, card_id: str) -> str | None:
+    if not click:
+        raise GateError("click-mismatch", detail="click: is empty in task.md")
+    try:
+        result = subprocess.run(
+            click,
+            # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+            shell=True,  # nosec B602
+            cwd=work,
+            capture_output=True,
+            text=True,
+            env=_env_with_bin(work),
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.output.decode("utf-8", "replace") if isinstance(exc.output, bytes) else (exc.output or "")
+        detail, log_path = _command_evidence(work, card_id, "click", partial, "click-timeout")
+        raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
+    if result.returncode != 0:
+        detail, log_path = _command_evidence(
+            work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "no output"
+        )
+        raise GateError(
+            "click-mismatch",
+            detail=f"click exited with code {result.returncode}\n{detail}",
+            log=log_path,
+        )
+    return None
+
+
+def _run_all_while_up(
+    starts: list[tuple[str, Path, str]], ports: list[int], wait_seconds: int, run, card_id: str = ""
+) -> str | None:
+    """Start every (repo, cwd, command) in order, wait for all ports, run, then stop them all."""
+    with ExitStack() as stack:
+        procs: list[tuple[str, Path, subprocess.Popen[str], object]] = []
+        for name, cwd, command in starts:
+            sink = stack.enter_context(
+                tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+            )
+            proc = subprocess.Popen(
+                command,
+                # Intentional: command comes from the human-approved card (see SECURITY.md).
+                shell=True,  # nosec B602
+                cwd=cwd,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                env=_env_with_bin(cwd),
+            )
+            stack.callback(_stop_process, proc)
+            procs.append((name, cwd, proc, sink))
+        deadline = time.monotonic() + wait_seconds
+        down: tuple[str, Path, subprocess.Popen[str], object] | None = None
+        while not all(_port_open(port) for port in ports):
+            down = next((entry for entry in procs if entry[2].poll() is not None), None)
+            if down is not None or time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+        else:
+            return run()
+        name, cwd, proc, sink = down or procs[-1]
+        code = proc.poll()
+        state = (
+            f"repo {name}: start exited with code {code}"
+            if code is not None
+            else f"port(s) {', '.join(map(str, ports))} did not open within {wait_seconds}s"
+        )
+        sink.flush()  # type: ignore[attr-defined]
+        sink.seek(0)  # type: ignore[attr-defined]
+        detail, log_path = _command_evidence(cwd, card_id, f"{name}-start", sink.read(), "start-down")  # type: ignore[attr-defined]
+        raise GateError("start-down", detail=f"{state}\n{detail}", log=log_path)
+
+
+def _click_target(click: str, names: list[str]) -> tuple[str, str]:
+    """`click: fe: npx playwright test` runs in fe; without a repo prefix it runs in the first repo."""
+    head, sep, rest = click.partition(":")
+    if sep and head.strip() in names and rest.strip():
+        return head.strip(), rest.strip()
+    return (names[0] if names else ""), click
+
+
+def _starts_across(card_text: str, roots: dict[str, Path]) -> list[tuple[str, Path, str]]:
+    entries = start_entries(card_text)
+    if not entries:
+        raise GateError("start-down", detail="start: needs one '- <repo>: <command>' line per repo for a task across repos")
+    unknown = [name for name, _cmd in entries if name not in roots]
+    if unknown:
+        raise GateError("repo-invalid", detail="start: names a repo not under repos: " + ", ".join(unknown))
+    return [(name, roots[name], command) for name, command in entries]
+
+
+def _click_across(works: dict[str, Path], card_text: str, card_id: str) -> str | None:
+    starts = _starts_across(card_text, works)
+    ports = _parse_ports(_label(card_text, "port"))
+    if ports is None:
+        raise GateError("start-down", detail="port: is missing or invalid in task.md")
+    wait_text = _label(card_text, "wait")
+    wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
+    target, click = _click_target(_label(card_text, "click"), list(works))
+    work = works[target]
+    return _run_all_while_up(starts, ports, wait_seconds, lambda: _run_click(work, click, card_id), card_id)
 
 
 _BROWSER_ORDER = ("playwright", "cypress")
@@ -1610,6 +1890,7 @@ def run_screen_check(
     browser: str = "",
     no_start: bool = False,
     card_id: str = "",
+    starts: list[tuple[str, Path, str]] | None = None,
 ) -> int:
     def fail(reason: str, detail: str = "", log: str = "") -> int:
         print(f"screen-check: {reason}")
@@ -1625,7 +1906,7 @@ def run_screen_check(
     argv = resolve_browser_argv(root, browser)
     if argv is None:
         return fail("browser-missing")
-    if no_start or not start.strip():
+    if no_start or not (start.strip() or starts):
         if _run_argv(argv, root) != 0:
             return fail("browser-failed")
         print("screen-check: ok")
@@ -1641,7 +1922,10 @@ def run_screen_check(
         return None
 
     try:
-        reason = _run_while_up(root, start, parsed, wait_seconds, run, card_id)
+        if starts:
+            reason = _run_all_while_up(starts, parsed, wait_seconds, run, card_id)
+        else:
+            reason = _run_while_up(root, start, parsed, wait_seconds, run, card_id)
     except GateError as err:
         return fail(err.reason, err.detail, err.log)
     if reason:
@@ -1679,11 +1963,36 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         card_start = _label(card, "start")
         if start and start.strip() != card_start.strip():
             return _refuse("commands-changed", detail="--start does not match card start")
-        unapproved = _commands_refusal(root, text, args.id, card, check_board=False)
+        multi = bool(start_entries(card))
+        if multi:
+            repos = parse_repos(text)
+            shape = repos_shape_problems(repos)
+            if shape:
+                return _refuse("repo-invalid", detail=", ".join(shape))
+            problem = check_repos(root, repos)
+            if problem:
+                return _refuse(problem[0], detail=", ".join(problem[1]))
+        unapproved = _commands_refusal(root, text, args.id, card, check_board=multi)
         if unapproved:
             return _refuse(unapproved[0], detail=unapproved[1])
         if not browser:
             browser = parse_field(text, "BROWSER_TOOL")
+        if start_entries(card):
+            # A task across repos starts each repo from its own checkout at path:.
+            try:
+                targets = card_targets(root, text, card) or []
+                starts = _starts_across(card, {t.name: t.root for t in targets})
+            except GateError as err:
+                return _refuse(err.reason, detail=err.detail)
+            return run_screen_check(
+                root,
+                ports=ports or _label(card, "port"),
+                wait=wait or _label(card, "wait"),
+                browser=browser,
+                no_start=args.no_start,
+                card_id=args.id,
+                starts=starts,
+            )
         if not start:
             start = card_start
         if not ports:
@@ -1892,6 +2201,80 @@ def landed_via(
     return "", "pr-open" if mark == "open" else "pr-missing"
 
 
+def _gh_merged_at(root: Path, head: str) -> int | None:
+    proc = _gh(root, ["pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"])
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    for row in rows if isinstance(rows, list) else [rows]:
+        if isinstance(row, dict) and row.get("headRefName") == head and isinstance(row.get("mergedAt"), str):
+            try:
+                return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                return None
+    return None
+
+
+def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
+    """When task-<id> reached queue: the first queue commit that contains it, or the PR merge time."""
+    if via == "squash":
+        return _gh_merged_at(root, f"task-{card_id}")
+    tip = _run_git(root, ["rev-parse", f"task-{card_id}"]).stdout.strip()
+    path = _run_git(root, ["rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
+    first = path.stdout.split()[0] if path.returncode == 0 and path.stdout.split() else tip
+    shown = _run_git(root, ["show", "-s", "--format=%ct", first])
+    return int(shown.stdout.strip()) if shown.returncode == 0 and shown.stdout.strip().isdigit() else None
+
+
+def land_order(card_text: str, repos: list[RepoSpec], names: list[str]) -> list[str]:
+    """land: on the task, then the '## repos' order for repos it does not name."""
+    wanted = [n for n in re.split(r"[\s,]+", _label(card_text, "land")) if n in names]
+    rest = [repo.name for repo in repos if repo.name in names and repo.name not in wanted]
+    return list(dict.fromkeys(wanted + rest + [n for n in names if n not in wanted + rest]))
+
+
+def landed_across(
+    root: Path, board_text: str, card_text: str, card_id: str, quick: bool = False
+) -> tuple[bool, list[str], str] | None:
+    """Landed state of a task in every repo it lists, or None for a home-only task."""
+    repos = parse_repos(board_text)
+    names = list(dict.fromkeys(card_repo_names(card_text)))
+    home_name = next((repo.name for repo in repos if repo.is_home), "")
+    if not repos or not names or names == [home_name]:
+        return None
+    by_name = {repo.name: repo for repo in repos}
+    order = land_order(card_text, repos, names)
+    states: dict[str, str] = {}
+    times: dict[str, int | None] = {}
+    for name in order:
+        repo = by_name.get(name)
+        if repo is None:
+            states[name] = "unknown-repo"
+            continue
+        target = _repo_target(root, board_text, repo)
+        if not target.root.is_dir():
+            states[name] = "repo-missing"
+            continue
+        via, detail = landed_via(target.root, card_id, target.queue, require_remote_for_gh=quick)
+        states[name] = via or detail
+        if via and not quick:
+            times[name] = _land_time(target.root, card_id, target.queue, via)
+    lines = [f"landed-{name}: {states[name]}" for name in order]
+    lines.append("land-order: " + ", ".join(order))
+    waiting = [name for name in order if states[name] not in ("ancestor", "squash")]
+    if waiting:
+        return False, lines, "; ".join(f"{name}: {states[name]}" for name in waiting)
+    for i, first in enumerate(order):
+        for later in order[i + 1 :]:
+            a, b = times.get(first), times.get(later)
+            if a is not None and b is not None and b < a:
+                lines.append(f"order-warning: {later} landed before {first}")
+    return True, lines, ""
+
+
 def cmd_landed(root: Path, card_id: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
@@ -1901,6 +2284,17 @@ def cmd_landed(root: Path, card_id: str) -> int:
     queue = parse_queue(board_text)
     if not queue:
         return _refuse("not-landed", detail="no-queue")
+    across = landed_across(root, board_text, _read_card(root, card_id), card_id)
+    if across is not None:
+        ok, lines, detail = across
+        if not ok:
+            _refuse("not-landed", detail=detail)
+            print("\n".join(lines))
+            return 1
+        print("\n".join(lines))
+        print("landed: all")
+        print("merge: no")
+        return 0
     via, detail = landed_via(root, card_id, queue)
     if not via:
         return _refuse("not-landed", detail=detail)
@@ -1979,12 +2373,127 @@ def evidence_gaps(root: Path, card_id: str, plan: str) -> list[str]:
     ]
 
 
+def card_repo_names(card_text: str) -> list[str]:
+    raw = _label(card_text, "repos")
+    return [name for name in re.split(r"[\s,]+", raw) if name and name != "-"]
+
+
+@dataclass
+class Target:
+    name: str
+    root: Path
+    queue: str
+    test_cmd: str
+    setup_cmd: str
+
+
+def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
+    if repo.is_home:
+        return Target(
+            repo.name,
+            home,
+            parse_queue(board_text),
+            parse_field(board_text, "TEST_CMD"),
+            parse_field(board_text, "SETUP_CMD"),
+        )
+    return Target(
+        repo.name,
+        repo_root(home, repo),
+        repo.queue,
+        repo.values.get("TEST_CMD", ""),
+        repo.values.get("SETUP_CMD", ""),
+    )
+
+
+def card_targets(home: Path, board_text: str, card_text: str) -> list[Target] | None:
+    """The repos a task works in, or None when it is a home-only (v22) task."""
+    repos = parse_repos(board_text)
+    names = card_repo_names(card_text)
+    if not repos:
+        if names:
+            raise GateError("repo-invalid", "task.md names repos: but board.md has no '## repos'")
+        return None
+    home_name = next((repo.name for repo in repos if repo.is_home), "")
+    if not names or names == [home_name]:
+        return None
+    by_name = {repo.name: repo for repo in repos}
+    unknown = [name for name in names if name not in by_name]
+    if unknown:
+        raise GateError("repo-invalid", "repos: names a repo not in board.md: " + ", ".join(unknown))
+    return [_repo_target(home, board_text, by_name[name]) for name in dict.fromkeys(names)]
+
+
+def files_in_repo(card_text: str, repo: str, home_name: str) -> list[str]:
+    """files: entries for one repo; `be:src/x` belongs to be, an unprefixed path to home."""
+    picked: list[str] = []
+    for entry in parse_files(card_text):
+        head, sep, rest = entry.partition(":")
+        if sep and REPO_NAME_RE.match(head) and not rest.startswith("//"):
+            if head == repo:
+                picked.append(rest.strip())
+        elif repo == home_name:
+            picked.append(entry)
+    return picked
+
+
+def undeclared_repos(home: Path, board_text: str, card_id: str, declared: list[str]) -> list[str]:
+    """Repos outside repos: whose task-<id> branch changes code."""
+    found: list[str] = []
+    for repo in parse_repos(board_text):
+        if repo.name in declared:
+            continue
+        target = _repo_target(home, board_text, repo)
+        if target.root.is_dir() and _diff_names(target.root, target.queue, card_id):
+            found.append(repo.name)
+    return found
+
+
+def _repo_sha_cited(section: str, name: str, sha: str) -> bool:
+    pattern = re.compile(rf"^[\s>*-]*`?{re.escape(name)}`?:[ \t]*`?([0-9a-f]{{7,40}})", re.I | re.M)
+    return any(sha.startswith(found.lower()) for found in pattern.findall(section))
+
+
+def multi_review_detail(home: Path, card_id: str, targets: list[Target]) -> tuple[str, str]:
+    """(status, repo) for a task across repos; repo names the one that failed, if any."""
+    for target in targets:
+        if not target.queue or not _branch_exists(target.root, f"task-{card_id}"):
+            return "no-review", target.name
+        if _card_worktree_drift(target.root, card_id):
+            return "stale-review", target.name
+    plan = _read_queue_file(home, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+    section = _section_h2(plan, "review-diff")
+    if not section.strip():
+        return "no-review", ""
+    for target in targets:
+        sha = _code_tip_sha(target.root, target.queue, card_id)
+        if not sha:
+            return "no-review", target.name
+        if not _repo_sha_cited(section, target.name, sha):
+            return "no-repo-sha", target.name
+    verdicts = review_verdicts(section)
+    if not verdicts or any(v not in {"pass", "fix-needed"} for v in verdicts):
+        return "no-verdict", ""
+    if "fix-needed" in verdicts:
+        return "review-fix-needed", ""
+    if _CHECKED_LINE.search(section) is None:
+        return "no-checked", ""
+    if evidence_gaps(home, card_id, plan):
+        return "evidence-missing", ""
+    return "ok", ""
+
+
 def diff_review_detail(root: Path, card_id: str) -> str:
     if not valid_card_id(card_id):
         return "no-review"
     board_text = read_board_text(root)
     if board_text is None:
         return "no-review"
+    try:
+        targets = card_targets(root, board_text, _read_card(root, card_id))
+    except GateError:
+        return "no-review"
+    if targets is not None:
+        return multi_review_detail(root, card_id, targets)[0]
     queue = parse_queue(board_text)
     branch = f"task-{card_id}"
     if not queue or not _branch_exists(root, branch):
@@ -2062,9 +2571,11 @@ def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) 
 
 
 def outside_card_files(
-    root: Path, queue: str, card_id: str, card_text: str
+    root: Path, queue: str, card_id: str, card_text: str, repos: list[RepoSpec] | None = None
 ) -> list[str]:
-    declared = [f.strip().rstrip("/") for f in parse_files(card_text) if f.strip()]
+    home_name = next((repo.name for repo in repos or [] if repo.is_home), "")
+    listed = files_in_repo(card_text, home_name, home_name) if home_name else parse_files(card_text)
+    declared = [f.strip().rstrip("/") for f in listed if f.strip()]
     if not declared:
         return []
     changed = _diff_names(root, queue, card_id)
@@ -2195,6 +2706,113 @@ def lookup_draft_pr(root: Path, head: str, base: str) -> tuple[str, str]:
     return classify_open_prs(data, head, base)
 
 
+def _reach_review_multi(
+    root: Path,
+    card_id: str,
+    write: bool,
+    link: str,
+    text: str,
+    card_text: str,
+    targets: list[Target],
+    question_empty: bool,
+) -> int:
+    """reach-review for a task across repos: every listed repo must pass, others stay untouched."""
+    names = [target.name for target in targets]
+    extra = undeclared_repos(root, text, card_id, names)
+    if extra:
+        return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
+    for target in targets:
+        if not _branch_exists(target.root, f"task-{card_id}"):
+            return _refuse("task-branch-missing", detail=f"repo {target.name}: no task-{card_id} branch")
+        if not _code_diff_reviewable(target.root, target.queue, card_id):
+            return _refuse("review-diff", detail=f"repo {target.name}: no diff outside jt-queue/ to review")
+    status, failed = multi_review_detail(root, card_id, targets)
+    if status != "ok":
+        where = f"repo {failed}: " if failed else ""
+        note = f"{where}{status}: {REVIEW_DETAIL.get(status, 'review-diff is not recorded')}"
+        if status == "evidence-missing":
+            plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+            note += ": " + "; ".join(evidence_gaps(root, card_id, plan))
+        return _refuse("review-diff", detail=note)
+    for target in targets:
+        one_off = one_off_files(target.root, target.queue, card_id, card_text)
+        if one_off:
+            return _refuse(
+                "one-off-checker", detail=f"repo {target.name}: new check script: " + ", ".join(one_off)
+            )
+    unapproved = _commands_refusal(root, text, card_id, card_text)
+    if unapproved:
+        return _refuse(unapproved[0], detail=unapproved[1])
+    for target in targets:
+        if target.test_cmd.strip() == "":
+            return _refuse("test-cmd-empty", detail=f"repo {target.name}")
+    need_screen = sees_screen(card_text)
+    if need_screen and parse_field(text, "BROWSER_TOOL").strip() == "":
+        return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
+    need_work = need_screen or any(t.test_cmd.strip() != NO_SUITE for t in targets)
+    current = ""
+    try:
+        with ExitStack() as stack:
+            works: dict[str, Path] = {}
+            for target in targets if need_work else []:
+                current = target.name
+                works[target.name] = stack.enter_context(
+                    _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd)
+                )
+            current = ""
+            if need_screen:
+                _click_across(works, card_text, card_id)
+            for target in targets:
+                if target.test_cmd.strip() == NO_SUITE:
+                    continue
+                limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
+                code, out, timed_out = _run_shell(target.test_cmd, works[target.name], timeout=limit)
+                if timed_out or code != 0:
+                    detail, log_path = _record_command_log(root, card_id, f"{target.name}-test", out)
+                    reason = "test-timeout" if timed_out else "test-failed"
+                    return _refuse_round(root, card_id, reason, f"repo {target.name}:\n{detail}", log_path)
+        if write:
+            links: list[str] = []
+            for target in targets:
+                current = target.name
+                kind, value = lookup_draft_pr(target.root, f"task-{card_id}", target.queue)
+                if kind == "ask":
+                    return _refuse(value, detail=f"repo {target.name}")
+                links.append(f"{target.name}:{value if kind == 'ok' else (link.strip() or 'local')}")
+            current = ""
+            updated = apply_waiting_review(
+                text, card_id, 0, " ".join(links), question_empty=question_empty
+            )
+            (root / QUEUE_DIR / "board.md").write_text(updated, encoding="utf-8")
+    except GateError as err:
+        detail = f"repo {current}: {err.detail}" if current else err.detail
+        if err.reason in ROUND_REASONS:
+            return _refuse_round(root, card_id, err.reason, detail, err.log)
+        return _refuse(err.reason, detail=detail, log=err.log)
+    reset_rounds(root, card_id)
+    print("allowed")
+    print("merge: no")
+    print("tier: standard")
+    print("repo-review: open")
+    print("repos: " + ", ".join(names))
+    home_name = next((repo.name for repo in parse_repos(text) if repo.is_home), "")
+    outside: list[str] = []
+    for target in targets:
+        declared = [f.rstrip("/") for f in files_in_repo(card_text, target.name, home_name) if f.strip()]
+        if not declared:
+            continue
+        for path in _diff_names(target.root, target.queue, card_id) or []:
+            norm = path.strip().rstrip("/")
+            if not any(norm == d or norm.startswith(d + "/") for d in declared):
+                outside.append(f"{target.name}:{path}")
+    if outside:
+        print("outside-files: " + ", ".join(outside))
+    needs = parse_needs(card_text)
+    if needs:
+        print("needs: " + "; ".join(needs))
+    return 0
+
+
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
@@ -2222,6 +2840,27 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             "related",
             detail="same-layer tasks without refs: links: " + ", ".join(stopped.ids),
         )
+    repos = parse_repos(text)
+    if repos:
+        shape = repos_shape_problems(repos)
+        if shape:
+            return _refuse("repo-invalid", detail=", ".join(shape))
+        problem = check_repos(root, repos)
+        if problem:
+            return _refuse(problem[0], detail=", ".join(problem[1]))
+    try:
+        targets = card_targets(root, text, card_text)
+    except GateError as err:
+        return _refuse(err.reason, detail=err.detail)
+    if targets is not None:
+        return _reach_review_multi(
+            root, card_id, write, link, text, card_text, targets, question_empty
+        )
+    if repos:
+        home_name = next(repo.name for repo in repos if repo.is_home)
+        extra = undeclared_repos(root, text, card_id, [home_name])
+        if extra:
+            return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
     if not _branch_exists(root, f"task-{card_id}"):
         return _refuse("task-branch-missing")
     tier = card_tier(root, queue, card_id, card_text, text)
@@ -2295,7 +2934,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("merge: no")
     print(f"tier: {tier}")
     print(f"repo-review: {review_state}")
-    outside = outside_card_files(root, queue, card_id, card_text)
+    outside = outside_card_files(root, queue, card_id, card_text, repos)
     if outside:
         print("outside-files: " + ", ".join(outside))
     style_diff = style_changes(root, queue, card_id, text)

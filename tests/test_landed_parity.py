@@ -127,5 +127,112 @@ class LandedParityTests(unittest.TestCase):
             self.assertIn("landed: ancestor", res.stdout)
 
 
+class MultiRepoLandedTests(unittest.TestCase):
+    """A task across repos is landed only when every repo has landed; order is a warning."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.fe = base / "fe"
+        self.be = base / "be"
+        for repo in (self.fe, self.be):
+            repo.mkdir()
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.email", "test@example.com")
+            git(repo, "config", "user.name", "Test")
+            (repo / "README.md").write_text("x\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "docs: init")
+            git(repo, "checkout", "-b", "task-12")
+            (repo / "work.txt").write_text("y\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "feat: work")
+            git(repo, "checkout", "main")
+        (self.fe / "jt-queue" / "tasks" / "12").mkdir(parents=True)
+        (self.fe / "jt-queue" / "board.md").write_text(
+            "# Board - app\n\nqueue: main\n\n## repos\n\n### fe\npath: .\n\n"
+            "### be\npath: ../be\nqueue: main\n\n## first\n\n"
+            "- [ ] **12** login (feat) review: fe:local be:local\n",
+            encoding="utf-8",
+        )
+        (self.fe / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            "# 12 - login\n\nkind: feat\n\nrepos: fe, be\nland: be, fe\n", encoding="utf-8"
+        )
+        bin_dir = base / "bin"
+        bin_dir.mkdir()
+        real_git = shutil.which("git")
+        assert real_git is not None
+        (bin_dir / "git").symlink_to(real_git)
+        self.env = os.environ.copy()
+        self.env["PATH"] = str(bin_dir)
+        self.env["GIT_TERMINAL_PROMPT"] = "0"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def merge(self, repo: Path, when: str) -> None:
+        env = os.environ.copy()
+        env["GIT_COMMITTER_DATE"] = when
+        env["GIT_AUTHOR_DATE"] = when
+        subprocess.run(
+            ["git", "merge", "--no-ff", "task-12", "-m", "merge task-12"],
+            cwd=repo, check=True, capture_output=True, text=True, env=env,
+        )
+
+    def both(self) -> subprocess.CompletedProcess[str]:
+        gate = subprocess.run(
+            [sys.executable, str(GATE_PATH), "landed", "--root", str(self.fe), "--id", "12"],
+            cwd=self.fe, capture_output=True, text=True, env=self.env,
+        )
+        landed = subprocess.run(
+            [sys.executable, str(LANDED_PATH), "--root", str(self.fe), "--id", "12"],
+            cwd=self.fe, capture_output=True, text=True, env=self.env,
+        )
+        self.assertEqual(landed.stdout, gate.stdout)
+        self.assertEqual(landed.returncode, gate.returncode)
+        return landed
+
+    def test_nothing_landed_lists_each_repo_in_land_order(self) -> None:
+        res = self.both()
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("refused: not-landed", res.stdout)
+        self.assertIn("detail: be: pr-missing; fe: pr-missing", res.stdout)
+        self.assertIn("land-order: be, fe", res.stdout)
+
+    def test_one_repo_landed_is_not_landed(self) -> None:
+        self.merge(self.be, "2026-01-01T10:00:00")
+        res = self.both()
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("detail: fe: pr-missing", res.stdout)
+        self.assertIn("landed-be: ancestor", res.stdout)
+
+    def test_all_landed_in_order_has_no_warning(self) -> None:
+        self.merge(self.be, "2026-01-01T10:00:00")
+        self.merge(self.fe, "2026-01-01T11:00:00")
+        res = self.both()
+        self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertIn("landed: all", res.stdout)
+        self.assertNotIn("order-warning", res.stdout)
+
+    def test_wrong_order_still_lands_with_a_warning(self) -> None:
+        self.merge(self.fe, "2026-01-01T10:00:00")
+        self.merge(self.be, "2026-01-01T11:00:00")
+        res = self.both()
+        self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertIn("landed: all", res.stdout)
+        self.assertIn("order-warning: fe landed before be", res.stdout)
+
+    def test_next_waits_for_every_repo_before_landed_waiting(self) -> None:
+        def next_out() -> str:
+            return subprocess.run(
+                [sys.executable, str(GATE_PATH), "next", "--root", str(self.fe)],
+                cwd=self.fe, capture_output=True, text=True, env=self.env,
+            ).stdout
+        self.merge(self.fe, "2026-01-01T10:00:00")
+        self.assertNotIn("landed-waiting", next_out())
+        self.merge(self.be, "2026-01-01T11:00:00")
+        self.assertIn("landed-waiting: 12", next_out())
+
+
 if __name__ == "__main__":
     unittest.main()
