@@ -2489,6 +2489,7 @@ class ReposParseTests(unittest.TestCase):
             "bad name": (repo_block("fe", ".") + repo_block("Be", "../be"), "Be.name"),
             "absolute": (repo_block("fe", ".") + repo_block("be", "/srv/be"), "be.path"),
             "home values": (repo_block("fe", ".") + "queue: main\n\n" + repo_block("be", "../be"), "fe.home-values"),
+            "status name": (repo_block("fe", ".") + repo_block("merge", "../be"), "merge.name"),
         }
         for label, (repos, field) in cases.items():
             with self.subTest(label):
@@ -2706,7 +2707,7 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
 
     def test_home_only_task_with_repos_board_keeps_the_v22_path(self) -> None:
         git(self.be, "branch", "-q", "-D", "task-12")
-        self.write_card(["app.txt"], repos="fe")
+        self.write_card(["fe:app.txt"], repos="fe")
         (self.card_dir / "plan.md").write_text(
             "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
             f"- commit: {self.fe_sha}\n- verdict: pass\n- checked: scope\n",
@@ -2715,6 +2716,7 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
         result = run_gate(self.fe, "reach-review", "--id", "12")
         self.assertIn("allowed", result.stdout, result.stdout)
         self.assertNotIn("repos:", result.stdout)
+        self.assertNotIn("outside-files", result.stdout)
 
 
 def _free_port() -> int:
@@ -2783,6 +2785,37 @@ class MultiRepoScreenTests(MultiRepoFixture):
         result = run_gate(self.fe, "reach-review", "--id", "12")
         self.assertIn("refused: repo-invalid", result.stdout)
         self.assertIn("api", result.stdout)
+
+    def test_moving_a_repo_path_after_approval_stops_screen_check(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        elsewhere = Path(self.tmp.name) / "elsewhere"
+        elsewhere.mkdir()
+        init_repo(elsewhere)
+        board = self.fe / "jt-queue" / "board.md"
+        board.write_text(board.read_text(encoding="utf-8").replace("path: ../be", "path: ../elsewhere"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "screen-check", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout, result.stdout)
+        self.assertFalse(gate._port_open(self.be_port))
+
+    def test_moving_a_path_is_refused_even_when_every_repo_is_no_suite(self) -> None:
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test="no-suite")
+        board = self.fe / "jt-queue" / "board.md"
+        board.write_text(board_text("- [ ] **12** login (feat)", test="no-suite", repos=repos), encoding="utf-8")
+        self.write_card(["fe:app.txt", "be:api.txt"])
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.assertIn("allowed", run_gate_raw(self.fe, "reach-review", "--id", "12").stdout)
+        board.write_text(board.read_text(encoding="utf-8").replace("path: ../be", "path: ../be/"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+
+    def test_reordering_repos_changes_where_click_runs_and_needs_approval(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        card = self.card_dir / "task.md"
+        card.write_text(card.read_text(encoding="utf-8").replace("repos: fe, be", "repos: be, fe"), encoding="utf-8")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
 
     def test_v22_card_commands_keep_their_digest_keys(self) -> None:
         commands = gate._card_commands(card_body(["a"], screen=True, start="npm start", port="3000", click="true"))

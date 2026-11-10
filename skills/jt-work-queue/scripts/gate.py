@@ -398,7 +398,7 @@ def repos_shape_problems(repos: list[RepoSpec]) -> list[str]:
     problems: list[str] = []
     names = [repo.name for repo in repos]
     for name in dict.fromkeys(names):
-        if not REPO_NAME_RE.match(name):
+        if not REPO_NAME_RE.match(name) or f"{name}:" in _STATUS_SET or name == "unknown":
             problems.append(f"{name or '(empty)'}.name")
         elif names.count(name) > 1:
             problems.append(f"{name}.duplicate")
@@ -1135,10 +1135,13 @@ def _card_commands(card_text: str) -> dict[str, str]:
     entries = start_entries(card_text)
     if entries:  # absent on a v22 card, so its approval digest does not change
         commands["start-repos"] = "\n".join(f"{name}: {command}" for name, command in entries)
+        commands["repos"] = _label(card_text, "repos")
     return commands
 
 
 def _board_runs_commands(commands: dict[str, str]) -> bool:
+    if any(name.startswith("repo:") for name in commands):
+        return True  # path: decides where every command and start line runs
     for name, value in commands.items():
         value = value.strip()
         if name.endswith("SETUP_CMD") and value:
@@ -1328,7 +1331,7 @@ def cmd_next(root: Path) -> int:
                 and card.status == "review:"
                 and valid_card_id(card.id)
             ):
-                across = landed_across(root, board.text, _read_card(root, card.id), card.id)
+                across = landed_across(root, board.text, _read_card(root, card.id), card.id, quick=True)
                 if across is not None:
                     if across[0]:
                         landed_ids.append(card.id)
@@ -1960,7 +1963,16 @@ def screen_check_main(argv: list[str] | None = None) -> int:
         card_start = _label(card, "start")
         if start and start.strip() != card_start.strip():
             return _refuse("commands-changed", detail="--start does not match card start")
-        unapproved = _commands_refusal(root, text, args.id, card, check_board=False)
+        multi = bool(start_entries(card))
+        if multi:
+            repos = parse_repos(text)
+            shape = repos_shape_problems(repos)
+            if shape:
+                return _refuse("repo-invalid", detail=", ".join(shape))
+            problem = check_repos(root, repos)
+            if problem:
+                return _refuse(problem[0], detail=", ".join(problem[1]))
+        unapproved = _commands_refusal(root, text, args.id, card, check_board=multi)
         if unapproved:
             return _refuse(unapproved[0], detail=unapproved[1])
         if not browser:
@@ -2224,7 +2236,9 @@ def land_order(card_text: str, repos: list[RepoSpec], names: list[str]) -> list[
     return list(dict.fromkeys(wanted + rest + [n for n in names if n not in wanted + rest]))
 
 
-def landed_across(root: Path, board_text: str, card_text: str, card_id: str) -> tuple[bool, list[str], str] | None:
+def landed_across(
+    root: Path, board_text: str, card_text: str, card_id: str, quick: bool = False
+) -> tuple[bool, list[str], str] | None:
     """Landed state of a task in every repo it lists, or None for a home-only task."""
     repos = parse_repos(board_text)
     names = list(dict.fromkeys(card_repo_names(card_text)))
@@ -2244,9 +2258,9 @@ def landed_across(root: Path, board_text: str, card_text: str, card_id: str) -> 
         if not target.root.is_dir():
             states[name] = "repo-missing"
             continue
-        via, detail = landed_via(target.root, card_id, target.queue)
+        via, detail = landed_via(target.root, card_id, target.queue, require_remote_for_gh=quick)
         states[name] = via or detail
-        if via:
+        if via and not quick:
             times[name] = _land_time(target.root, card_id, target.queue, via)
     lines = [f"landed-{name}: {states[name]}" for name in order]
     lines.append("land-order: " + ", ".join(order))
@@ -2557,9 +2571,11 @@ def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) 
 
 
 def outside_card_files(
-    root: Path, queue: str, card_id: str, card_text: str
+    root: Path, queue: str, card_id: str, card_text: str, repos: list[RepoSpec] | None = None
 ) -> list[str]:
-    declared = [f.strip().rstrip("/") for f in parse_files(card_text) if f.strip()]
+    home_name = next((repo.name for repo in repos or [] if repo.is_home), "")
+    listed = files_in_repo(card_text, home_name, home_name) if home_name else parse_files(card_text)
+    declared = [f.strip().rstrip("/") for f in listed if f.strip()]
     if not declared:
         return []
     changed = _diff_names(root, queue, card_id)
@@ -2918,7 +2934,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("merge: no")
     print(f"tier: {tier}")
     print(f"repo-review: {review_state}")
-    outside = outside_card_files(root, queue, card_id, card_text)
+    outside = outside_card_files(root, queue, card_id, card_text, repos)
     if outside:
         print("outside-files: " + ", ".join(outside))
     style_diff = style_changes(root, queue, card_id, text)
