@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -1117,8 +1117,25 @@ def _board_commands(board_text: str) -> dict[str, str]:
     return commands
 
 
+def start_entries(card_text: str) -> list[tuple[str, str]]:
+    """`start:` as a list, one `- <repo>: <command>` per repo, for a task across repos."""
+    entries: list[tuple[str, str]] = []
+    for line in _section_label(card_text, "start:").splitlines():
+        item = line.strip()
+        if not item.startswith("- "):
+            continue
+        head, sep, command = item[2:].partition(":")
+        if sep and REPO_NAME_RE.match(head.strip()) and command.strip():
+            entries.append((head.strip(), command.strip()))
+    return entries
+
+
 def _card_commands(card_text: str) -> dict[str, str]:
-    return {name: _label(card_text, name) for name in ("start", "port", "wait", "click")}
+    commands = {name: _label(card_text, name) for name in ("start", "port", "wait", "click")}
+    entries = start_entries(card_text)
+    if entries:  # absent on a v22 card, so its approval digest does not change
+        commands["start-repos"] = "\n".join(f"{name}: {command}" for name, command in entries)
+    return commands
 
 
 def _board_runs_commands(commands: dict[str, str]) -> bool:
@@ -1132,7 +1149,9 @@ def _board_runs_commands(commands: dict[str, str]) -> bool:
 
 
 def _card_runs_commands(card_text: str, commands: dict[str, str]) -> bool:
-    return bool(commands["start"].strip() or commands["click"].strip())
+    return bool(
+        commands["start"].strip() or commands["click"].strip() or commands.get("start-repos", "").strip()
+    )
 
 
 def _approval_path(root: Path) -> Path:
@@ -1673,36 +1692,112 @@ def _click_surface(work: Path, card_text: str, card_id: str = "") -> str | None:
     if not start or ports is None:
         raise GateError("start-down", detail="start: is empty or port: is missing or invalid in task.md")
 
-    def run() -> str | None:
-        if not click:
-            raise GateError("click-mismatch", detail="click: is empty in task.md")
-        try:
-            result = subprocess.run(
-                click,
-                # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
-                shell=True,  # nosec B602
-                cwd=work,
-                capture_output=True,
-                text=True,
-                env=_env_with_bin(work),
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired as exc:
-            partial = exc.output.decode("utf-8", "replace") if isinstance(exc.output, bytes) else (exc.output or "")
-            detail, log_path = _command_evidence(work, card_id, "click", partial, "click-timeout")
-            raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
-        if result.returncode != 0:
-            detail, log_path = _command_evidence(
-                work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "no output"
-            )
-            raise GateError(
-                "click-mismatch",
-                detail=f"click exited with code {result.returncode}\n{detail}",
-                log=log_path,
-            )
-        return None
+    return _run_while_up(work, start, ports, wait_seconds, lambda: _run_click(work, click, card_id), card_id)
 
-    return _run_while_up(work, start, ports, wait_seconds, run, card_id)
+
+def _run_click(work: Path, click: str, card_id: str) -> str | None:
+    if not click:
+        raise GateError("click-mismatch", detail="click: is empty in task.md")
+    try:
+        result = subprocess.run(
+            click,
+            # Intentional: command comes from the human-confirmed board/card (see SECURITY.md).
+            shell=True,  # nosec B602
+            cwd=work,
+            capture_output=True,
+            text=True,
+            env=_env_with_bin(work),
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.output.decode("utf-8", "replace") if isinstance(exc.output, bytes) else (exc.output or "")
+        detail, log_path = _command_evidence(work, card_id, "click", partial, "click-timeout")
+        raise GateError("click-mismatch", detail=f"click timed out after 300s\n{detail}", log=log_path)
+    if result.returncode != 0:
+        detail, log_path = _command_evidence(
+            work, card_id, "click", (result.stdout or "") + (result.stderr or ""), "no output"
+        )
+        raise GateError(
+            "click-mismatch",
+            detail=f"click exited with code {result.returncode}\n{detail}",
+            log=log_path,
+        )
+    return None
+
+
+def _run_all_while_up(
+    starts: list[tuple[str, Path, str]], ports: list[int], wait_seconds: int, run, card_id: str = ""
+) -> str | None:
+    """Start every (repo, cwd, command) in order, wait for all ports, run, then stop them all."""
+    with ExitStack() as stack:
+        procs: list[tuple[str, Path, subprocess.Popen[str], object]] = []
+        for name, cwd, command in starts:
+            sink = stack.enter_context(
+                tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+            )
+            proc = subprocess.Popen(
+                command,
+                # Intentional: command comes from the human-approved card (see SECURITY.md).
+                shell=True,  # nosec B602
+                cwd=cwd,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                env=_env_with_bin(cwd),
+            )
+            stack.callback(_stop_process, proc)
+            procs.append((name, cwd, proc, sink))
+        deadline = time.monotonic() + wait_seconds
+        down: tuple[str, Path, subprocess.Popen[str], object] | None = None
+        while not all(_port_open(port) for port in ports):
+            down = next((entry for entry in procs if entry[2].poll() is not None), None)
+            if down is not None or time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+        else:
+            return run()
+        name, cwd, proc, sink = down or procs[-1]
+        code = proc.poll()
+        state = (
+            f"repo {name}: start exited with code {code}"
+            if code is not None
+            else f"port(s) {', '.join(map(str, ports))} did not open within {wait_seconds}s"
+        )
+        sink.flush()  # type: ignore[attr-defined]
+        sink.seek(0)  # type: ignore[attr-defined]
+        detail, log_path = _command_evidence(cwd, card_id, f"{name}-start", sink.read(), "start-down")  # type: ignore[attr-defined]
+        raise GateError("start-down", detail=f"{state}\n{detail}", log=log_path)
+
+
+def _click_target(click: str, names: list[str]) -> tuple[str, str]:
+    """`click: fe: npx playwright test` runs in fe; without a repo prefix it runs in the first repo."""
+    head, sep, rest = click.partition(":")
+    if sep and head.strip() in names and rest.strip():
+        return head.strip(), rest.strip()
+    return (names[0] if names else ""), click
+
+
+def _starts_across(card_text: str, roots: dict[str, Path]) -> list[tuple[str, Path, str]]:
+    entries = start_entries(card_text)
+    if not entries:
+        raise GateError("start-down", detail="start: needs one '- <repo>: <command>' line per repo for a task across repos")
+    unknown = [name for name, _cmd in entries if name not in roots]
+    if unknown:
+        raise GateError("repo-invalid", detail="start: names a repo not under repos: " + ", ".join(unknown))
+    return [(name, roots[name], command) for name, command in entries]
+
+
+def _click_across(works: dict[str, Path], card_text: str, card_id: str) -> str | None:
+    starts = _starts_across(card_text, works)
+    ports = _parse_ports(_label(card_text, "port"))
+    if ports is None:
+        raise GateError("start-down", detail="port: is missing or invalid in task.md")
+    wait_text = _label(card_text, "wait")
+    wait_seconds = int(wait_text) if wait_text.isdigit() and int(wait_text) > 0 else 60
+    target, click = _click_target(_label(card_text, "click"), list(works))
+    work = works[target]
+    return _run_all_while_up(starts, ports, wait_seconds, lambda: _run_click(work, click, card_id), card_id)
 
 
 _BROWSER_ORDER = ("playwright", "cypress")
@@ -1792,6 +1887,7 @@ def run_screen_check(
     browser: str = "",
     no_start: bool = False,
     card_id: str = "",
+    starts: list[tuple[str, Path, str]] | None = None,
 ) -> int:
     def fail(reason: str, detail: str = "", log: str = "") -> int:
         print(f"screen-check: {reason}")
@@ -1807,7 +1903,7 @@ def run_screen_check(
     argv = resolve_browser_argv(root, browser)
     if argv is None:
         return fail("browser-missing")
-    if no_start or not start.strip():
+    if no_start or not (start.strip() or starts):
         if _run_argv(argv, root) != 0:
             return fail("browser-failed")
         print("screen-check: ok")
@@ -1823,7 +1919,10 @@ def run_screen_check(
         return None
 
     try:
-        reason = _run_while_up(root, start, parsed, wait_seconds, run, card_id)
+        if starts:
+            reason = _run_all_while_up(starts, parsed, wait_seconds, run, card_id)
+        else:
+            reason = _run_while_up(root, start, parsed, wait_seconds, run, card_id)
     except GateError as err:
         return fail(err.reason, err.detail, err.log)
     if reason:
@@ -1866,6 +1965,22 @@ def screen_check_main(argv: list[str] | None = None) -> int:
             return _refuse(unapproved[0], detail=unapproved[1])
         if not browser:
             browser = parse_field(text, "BROWSER_TOOL")
+        if start_entries(card):
+            # A task across repos starts each repo from its own checkout at path:.
+            try:
+                targets = card_targets(root, text, card) or []
+                starts = _starts_across(card, {t.name: t.root for t in targets})
+            except GateError as err:
+                return _refuse(err.reason, detail=err.detail)
+            return run_screen_check(
+                root,
+                ports=ports or _label(card, "port"),
+                wait=wait or _label(card, "wait"),
+                browser=browser,
+                no_start=args.no_start,
+                card_id=args.id,
+                starts=starts,
+            )
         if not start:
             start = card_start
         if not ports:
@@ -2612,24 +2727,34 @@ def _reach_review_multi(
     unapproved = _commands_refusal(root, text, card_id, card_text)
     if unapproved:
         return _refuse(unapproved[0], detail=unapproved[1])
-    if sees_screen(card_text):
-        return _refuse("repo-invalid", detail="screen: yes is not supported yet for a task across repos")
+    for target in targets:
+        if target.test_cmd.strip() == "":
+            return _refuse("test-cmd-empty", detail=f"repo {target.name}")
+    need_screen = sees_screen(card_text)
+    if need_screen and parse_field(text, "BROWSER_TOOL").strip() == "":
+        return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
+    need_work = need_screen or any(t.test_cmd.strip() != NO_SUITE for t in targets)
     current = ""
     try:
-        for target in targets:
-            current = target.name
-            if target.test_cmd.strip() == "":
-                return _refuse("test-cmd-empty", detail=f"repo {target.name}")
-            if target.test_cmd.strip() == NO_SUITE:
-                continue
-            with _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd) as work:
+        with ExitStack() as stack:
+            works: dict[str, Path] = {}
+            for target in targets if need_work else []:
+                current = target.name
+                works[target.name] = stack.enter_context(
+                    _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd)
+                )
+            current = ""
+            if need_screen:
+                _click_across(works, card_text, card_id)
+            for target in targets:
+                if target.test_cmd.strip() == NO_SUITE:
+                    continue
                 limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
-                code, out, timed_out = _run_shell(target.test_cmd, work, timeout=limit)
+                code, out, timed_out = _run_shell(target.test_cmd, works[target.name], timeout=limit)
                 if timed_out or code != 0:
                     detail, log_path = _record_command_log(root, card_id, f"{target.name}-test", out)
                     reason = "test-timeout" if timed_out else "test-failed"
                     return _refuse_round(root, card_id, reason, f"repo {target.name}:\n{detail}", log_path)
-        current = ""
         if write:
             links: list[str] = []
             for target in targets:

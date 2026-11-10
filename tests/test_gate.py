@@ -2576,8 +2576,8 @@ class ReposGitTests(unittest.TestCase):
         self.assertEqual(card["start"], "")
 
 
-class MultiRepoReachReviewTests(unittest.TestCase):
-    """A task with repos: fe, be reaches review only when both repos pass."""
+class MultiRepoFixture(unittest.TestCase):
+    """Two sibling repos, fe (home, holds the board) and be, each with work on task-12."""
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -2629,6 +2629,11 @@ class MultiRepoReachReviewTests(unittest.TestCase):
             f"- fe: {fe_sha[:9]}\n- be: {be_sha[:9]}\n- verdict: pass\n- checked: both sides\n",
             encoding="utf-8",
         )
+
+
+
+class MultiRepoReachReviewTests(MultiRepoFixture):
+    """A task with repos: fe, be reaches review only when both repos pass."""
 
     def test_both_repos_green_reach_review_and_run_each_test(self) -> None:
         self.write_plan()
@@ -2710,6 +2715,97 @@ class MultiRepoReachReviewTests(unittest.TestCase):
         result = run_gate(self.fe, "reach-review", "--id", "12")
         self.assertIn("allowed", result.stdout, result.stdout)
         self.assertNotIn("repos:", result.stdout)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class MultiRepoScreenTests(MultiRepoFixture):
+    """screen: yes across repos starts each repo from its own task worktree."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.be_port, self.fe_port = _free_port(), _free_port()
+        self.clicked = Path(self.tmp.name) / "clicked"
+        repos = repo_block("fe", ".") + "\n" + repo_block("be", "../be", test="python3 -c pass")
+        (self.fe / "jt-queue" / "board.md").write_text(
+            board_text("- [ ] **12** login (feat)", test="python3 -c pass", browser="playwright", repos=repos),
+            encoding="utf-8",
+        )
+        self.write_plan()
+
+    def screen_card(self, be_start: str | None = None, extra: str = "") -> None:
+        be_start = be_start or f"python3 -m http.server {self.be_port} --bind 127.0.0.1"
+        click = (
+            "fe: python3 -c \"import urllib.request as u; "
+            f"u.urlopen('http://127.0.0.1:{self.be_port}/api.txt'); "
+            f"u.urlopen('http://127.0.0.1:{self.fe_port}/app.txt'); "
+            f"open('{self.clicked}', 'w').write('ok')\""
+        )
+        (self.card_dir / "task.md").write_text(
+            "# 12 - login\n\nkind: feat\n\nscreen: yes\nstart:\n"
+            f"- be: {be_start}\n"
+            f"- fe: python3 -m http.server {self.fe_port} --bind 127.0.0.1\n{extra}"
+            f"port: {self.be_port}, {self.fe_port}\nwait: 20\nclick: {click}\n\n"
+            "do:\n- something\n\nout:\n- other\n\npass:\n- HEADER_TOKEN\n\n"
+            "files:\n- fe:app.txt\n- be:api.txt\n\nrepos: fe, be\n\nask:\n",
+            encoding="utf-8",
+        )
+
+    def test_click_reaches_both_task_branches(self) -> None:
+        self.screen_card()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+        self.assertTrue(self.clicked.exists(), "click did not reach both servers")
+        self.assertFalse(gate._port_open(self.be_port))
+        self.assertFalse(gate._port_open(self.fe_port))
+
+    def test_a_start_that_dies_names_its_repo(self) -> None:
+        self.screen_card(be_start="python3 -c 'import sys; sys.exit(4)'")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: start-down", result.stdout)
+        self.assertIn("repo be: start exited with code 4", result.stdout)
+        self.assertFalse(gate._port_open(self.fe_port))
+
+    def test_start_list_is_part_of_the_task_approval(self) -> None:
+        self.screen_card()
+        run_gate_raw(self.fe, "approve-commands", "--id", "12")
+        self.screen_card(be_start=f"touch {self.clicked}")
+        result = run_gate_raw(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: commands-changed", result.stdout)
+        self.assertFalse(self.clicked.exists())
+
+    def test_start_for_an_unlisted_repo_is_refused(self) -> None:
+        self.screen_card(extra="- api: python3 -c pass\n")
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("refused: repo-invalid", result.stdout)
+        self.assertIn("api", result.stdout)
+
+    def test_v22_card_commands_keep_their_digest_keys(self) -> None:
+        commands = gate._card_commands(card_body(["a"], screen=True, start="npm start", port="3000", click="true"))
+        self.assertEqual(sorted(commands), ["click", "port", "start", "wait"])
+
+    def test_cli_screen_check_starts_each_repo_from_its_checkout(self) -> None:
+        self.screen_card()
+        git(self.be, "checkout", "-q", "task-12")
+        git(self.fe, "checkout", "-q", "task-12")
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        fake = bin_dir / "playwright"
+        fake.write_text(
+            "#!/bin/sh\nexec python3 -c \"import urllib.request as u; "
+            f"u.urlopen('http://127.0.0.1:{self.be_port}/api.txt'); open('{self.clicked}', 'w')\"\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}:{env['PATH']}"
+        result = run_gate(self.fe, "screen-check", "--id", "12", env=env)
+        self.assertIn("screen-check: ok", result.stdout, result.stdout + result.stderr)
+        self.assertTrue(self.clicked.exists())
 
 
 if __name__ == "__main__":
