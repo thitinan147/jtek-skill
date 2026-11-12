@@ -27,7 +27,7 @@ How this is kept in check:
 ## What the skills do outside the repository
 
 - `gh` is called read-only (`gh pr view`, `gh pr list`) to find out whether a task branch has landed.
-- On handoff, `/jt-work-queue` **pushes `task-<id>` and opens a draft PR** (`gh pr create --draft`) when a git remote exists. With no remote it stays local. This sends your code to that remote on purpose; do not use the skill with a remote you do not want branches pushed to. A gitignored `jt-queue/` is not part of that push.
+- On handoff, `/jt-work-queue` **pushes the task branch `task-<id>-<slug>` and opens a draft PR** (`gh pr create --draft`) when a git remote exists. The branch slug and the PR title carry the task name; the PR body does not carry `do:` or `pass:`. With no remote it stays local. This sends your code to that remote on purpose; do not use the skill with a remote you do not want branches pushed to. A gitignored `jt-queue/` is not part of that push.
 - The skills never merge. `merge:` and `drop:` are written only by the human through `/jt-review-work`.
 - No network calls are made by the scripts apart from `gh` and a connection check against `127.0.0.1` for screen checks. Setup commands you configure (for example `npm install`) can of course use the network.
 

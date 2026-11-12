@@ -6,7 +6,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "22.1.0"
+  version: "22.2.0"
   short-description: Human-only review and board decision command
 ---
 
@@ -32,11 +32,11 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
 
 When inspecting a `review:` task `<id>`, present:
 1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, `files:`, `needs:`, `repos:`, and `land:` from `jt-queue/tasks/<id>/task.md`.
-2. Scope & style checks on `task-<id>` vs `<queue>`. When the task lists `repos:`, run each check in every listed repo (its `path:` and `queue:` from `## repos` in the board) and match `files:` entries prefixed `<repo>:`:
-   - Run `git diff --name-only <queue>...task-<id> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
-   - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...task-<id> -- . ':(exclude)jt-queue'` to report non-whitespace changes.
-3. Plan `## decisions`, `## review-diff`, and `## Done when` from `jt-queue/tasks/<id>/plan.md` in the working tree, or from `task-<id>:jt-queue/tasks/<id>/plan.md` when that file is tracked.
-4. `git diff <queue>...task-<id>` and test/screen evidence.
+2. Scope & style checks on the task branch (`<branch>`: the one branch from `git branch --list "task-<id>" "task-<id>-*"`) vs `<queue>`. When the task lists `repos:`, run each check in every listed repo (its `path:` and `queue:` from `## repos` in the board) and match `files:` entries prefixed `<repo>:`:
+   - Run `git diff --name-only <queue>...<branch> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
+   - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...<branch> -- . ':(exclude)jt-queue'` to report non-whitespace changes.
+3. Plan `## decisions`, `## review-diff`, and `## Done when` from `jt-queue/tasks/<id>/plan.md` in the working tree, or from `<branch>:jt-queue/tasks/<id>/plan.md` when that file is tracked.
+4. `git diff <queue>...<branch>` and test/screen evidence.
 5. Findings as a table `Severity | Location | Issue | Evidence`, then a recommendation (`merge:`, `send-back:`, or `drop:`) the human may override. For `screen: yes`, also cover the empty, loading, error, and long-text states. A send-back reason must cite a `pass:` bullet or a `file:line` (`<repo>:file:line` for a task across repos) so the next round can act on it.
 
 ## 3. Record the Human's Decision (on `<queue>` branch, clean tree)

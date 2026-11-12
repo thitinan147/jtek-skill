@@ -112,6 +112,46 @@ class LandedParityTests(unittest.TestCase):
         self.assertEqual(res_anc.returncode, 0)
         self.assertIn("landed: ancestor", res_anc.stdout)
 
+    def test_slug_branch_parity(self) -> None:
+        git(self.repo, "branch", "-m", "task-12", "task-12-login")
+        open_env = self._env_with_gh(
+            "bin-slug-open",
+            "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"OPEN\",\"headRefName\":\"task-12-login\"}'\n",
+        )
+        res_open = self._assert_parity(open_env)
+        self.assertIn("detail: pr-open", res_open.stdout)
+
+        git(self.repo, "merge", "--no-ff", "task-12-login", "-m", "merge task-12-login")
+        res_anc = self._assert_parity(self._env_with_gh("bin-slug-anc"))
+        self.assertEqual(res_anc.returncode, 0)
+        self.assertIn("landed: ancestor", res_anc.stdout)
+
+    def test_deleted_slug_branch_found_by_pull_request_parity(self) -> None:
+        git(self.repo, "branch", "-D", "task-12")
+        script = """#!/bin/sh
+case "$*" in
+  *view*) exit 1 ;;
+  *--head*) printf '%s\\n' '[]' ;;
+  *) printf '%s\\n' '[{"state":"MERGED","headRefName":"task-12-login"},{"state":"MERGED","headRefName":"task-123"}]' ;;
+esac
+"""
+        res = self._assert_parity(self._env_with_gh("bin-slug-gone", script))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("landed: squash", res.stdout)
+
+    def test_other_slug_pull_request_does_not_land_a_present_branch(self) -> None:
+        # task-12 is here and unmerged; an older merged PR for task-12-old must not count.
+        script = """#!/bin/sh
+case "$*" in
+  *view*) exit 1 ;;
+  *--head*) printf '%s\\n' '[]' ;;
+  *) printf '%s\\n' '[{"state":"MERGED","headRefName":"task-12-old"}]' ;;
+esac
+"""
+        res = self._assert_parity(self._env_with_gh("bin-other-slug", script))
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("detail: pr-missing", res.stdout)
+
     def test_standalone_review_skill_without_work_queue_runs_landed(self) -> None:
         git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
         with tempfile.TemporaryDirectory() as isolated:
