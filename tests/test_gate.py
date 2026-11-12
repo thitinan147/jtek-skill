@@ -1552,6 +1552,18 @@ class DraftPrReachTests(unittest.TestCase):
         self.assertNotIn("review: local", board)
         self.assertNotIn("merge:", board)
 
+    def test_slug_branch_draft_writes_the_url(self) -> None:
+        self._commit_check("0")
+        git(self.repo, "branch", "-m", "task-12", "task-12-fresh-start")
+        self._origin()
+        payload = (
+            '[{"url":"https://example.invalid/pull/8","isDraft":true,'
+            '"headRefName":"task-12-fresh-start","baseRefName":"main"}]'
+        )
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", env=self._json_gh(payload))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("review: https://example.invalid/pull/8", self._board())
+
     def test_ready_pull_request_is_not_review(self) -> None:
         self._commit_check("0")
         self._origin()
@@ -2686,6 +2698,14 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
         self.assertIn("refused: task-branch-missing", result.stdout)
         self.assertIn("repo be", result.stdout)
 
+    def test_slug_branches_across_repos_reach_review(self) -> None:
+        for repo in (self.fe, self.be):
+            git(repo, "branch", "-m", "task-12", "task-12-login")
+        self.write_plan()
+        result = run_gate(self.fe, "reach-review", "--id", "12")
+        self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
+        self.assertTrue(self.marker.exists(), "be TEST_CMD did not run in be")
+
     def test_commits_in_an_unlisted_repo_are_refused(self) -> None:
         self.write_card(["app.txt"], repos="fe")
         self.write_plan()
@@ -2908,7 +2928,8 @@ class TaskBranchNameTests(unittest.TestCase):
         git(self.repo, "branch", "task-12-login")
         self.assertEqual(gate.task_branch(self.repo, "12"), "task-12-login")
 
-    def test_bare_head_matches_slug_pull_requests(self) -> None:
-        self.assertTrue(gate._head_matches("task-12-login", "task-12"))
-        self.assertFalse(gate._head_matches("task-12-login", "task-12-other"))
-        self.assertFalse(gate._head_matches("task-123", "task-12"))
+    def test_bare_head_matches_slug_pull_requests_only_when_fuzzy(self) -> None:
+        self.assertTrue(gate._head_matches("task-12-login", "task-12", fuzzy=True))
+        self.assertFalse(gate._head_matches("task-12-login", "task-12"))
+        self.assertFalse(gate._head_matches("task-12-login", "task-12-other", fuzzy=True))
+        self.assertFalse(gate._head_matches("task-123", "task-12", fuzzy=True))

@@ -1416,7 +1416,8 @@ def cmd_next(root: Path) -> int:
             )
             if listed is not None and listed.returncode == 0:
                 for cid in pending_gh:
-                    if _payload_mark(listed.stdout, f"task-{cid}") == "merged":
+                    head = task_branch(root, cid)
+                    if _payload_mark(listed.stdout, head, fuzzy=task_branch_gone(root, cid)) == "merged":
                         landed_ids.append(cid)
         if landed_ids:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
@@ -2214,17 +2215,23 @@ def _gh(
 _BARE_TASK_HEAD_RE = re.compile(r"^task-(\d+(?:\.\d+)*)$")
 
 
-def _head_matches(name: object, head: str) -> bool:
-    """name is head; a bare task-<id> (branch gone from this clone) also matches task-<id>-<slug>."""
+def _head_matches(name: object, head: str, fuzzy: bool = False) -> bool:
+    """name is head; with fuzzy (no branch for the task in this clone), a bare task-<id> also matches task-<id>-<slug>."""
     if not isinstance(name, str):
         return False
     if name == head:
         return True
-    bare = _BARE_TASK_HEAD_RE.match(head)
+    bare = _BARE_TASK_HEAD_RE.match(head) if fuzzy else None
     return bool(bare) and is_task_head(name, bare.group(1))
 
 
-def _payload_mark(raw: str, head: str) -> str:
+def task_branch_gone(root: Path, card_id: str) -> bool:
+    """No local or remote-tracking branch for the task, so its slug is unknown here."""
+    local, remote = task_branch_names(root, card_id)
+    return not local and not remote
+
+
+def _payload_mark(raw: str, head: str, fuzzy: bool = False) -> str:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -2232,7 +2239,7 @@ def _payload_mark(raw: str, head: str) -> str:
     rows = data if isinstance(data, list) else [data]
     saw_open = False
     for row in rows:
-        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head):
+        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head, fuzzy):
             continue
         if row.get("state") == "MERGED":
             return "merged"
@@ -2243,6 +2250,7 @@ def _payload_mark(raw: str, head: str) -> str:
 
 def _github_mark(root: Path, card_id: str) -> str:
     head = task_branch(root, card_id)
+    fuzzy = task_branch_gone(root, card_id)
     view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -2263,15 +2271,15 @@ def _github_mark(root: Path, card_id: str) -> str:
     )
     if listed is not None and listed.returncode == 0:
         mark = _payload_mark(listed.stdout, head)
-        if mark != "missing" or not _BARE_TASK_HEAD_RE.match(head):
+        if mark != "missing" or not fuzzy:
             return mark
-    elif not _BARE_TASK_HEAD_RE.match(head):
+    elif not fuzzy:
         return "missing"
     # The branch is gone from this clone, so its slug is unknown: look for task-<id>-<slug> among recent PRs.
     recent = _gh(root, ["pr", "list", "--state", "all", "--limit", "200", "--json", "state,headRefName"])
     if recent is None or recent.returncode != 0:
         return "missing"
-    return _payload_mark(recent.stdout, head)
+    return _payload_mark(recent.stdout, head, fuzzy=True)
 
 
 def landed_via(
@@ -2287,8 +2295,8 @@ def landed_via(
     return "", "pr-open" if mark == "open" else "pr-missing"
 
 
-def _gh_merged_at(root: Path, head: str) -> int | None:
-    if _BARE_TASK_HEAD_RE.match(head):
+def _gh_merged_at(root: Path, head: str, fuzzy: bool = False) -> int | None:
+    if fuzzy:
         args = ["pr", "list", "--state", "merged", "--limit", "200", "--json", "mergedAt,headRefName"]
     else:
         args = ["pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"]
@@ -2300,7 +2308,7 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
     except json.JSONDecodeError:
         return None
     for row in rows if isinstance(rows, list) else [rows]:
-        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head) and isinstance(row.get("mergedAt"), str):
+        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head, fuzzy) and isinstance(row.get("mergedAt"), str):
             try:
                 return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
             except ValueError:
@@ -2311,7 +2319,7 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
 def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
     """When task-<id> reached queue: the first queue commit that contains it, or the PR merge time."""
     if via == "squash":
-        return _gh_merged_at(root, task_branch(root, card_id))
+        return _gh_merged_at(root, task_branch(root, card_id), fuzzy=task_branch_gone(root, card_id))
     tip = _run_git(root, ["rev-parse", task_branch(root, card_id)]).stdout.strip()
     path = _run_git(root, ["rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
     first = path.stdout.split()[0] if path.returncode == 0 and path.stdout.split() else tip

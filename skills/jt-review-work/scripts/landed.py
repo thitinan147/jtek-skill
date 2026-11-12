@@ -67,8 +67,10 @@ def _is_task_head(name: str, card_id: str) -> bool:
     return name.startswith(bare + "-") and bool(_TASK_SLUG_RE.fullmatch(name[len(bare) + 1 :]))
 
 
-def _task_branch(root: Path, card_id: str) -> str:
-    """The one local task-<id>[-<slug>], else the one on a remote, else task-<id> (same rule as gate.py)."""
+def _task_branch(root: Path, card_id: str) -> tuple[str, bool]:
+    """(branch, gone): the one local task-<id>[-<slug>], else the one on a remote, else task-<id>.
+
+    gone is True when no branch for the task is in this clone (same rule as gate.py)."""
     bare = f"task-{card_id}"
     proc = _run(
         root,
@@ -95,23 +97,24 @@ def _task_branch(root: Path, card_id: str) -> str:
             if _is_task_head(name, card_id):
                 bucket.add(name)
     remote -= local
+    gone = not local and not remote
     if len(local) == 1:
-        return next(iter(local))
+        return next(iter(local)), gone
     if not local and len(remote) == 1:
-        return next(iter(remote))
-    return bare
+        return next(iter(remote)), gone
+    return bare, gone
 
 
-def _head_matches(name: object, head: str) -> bool:
+def _head_matches(name: object, head: str, fuzzy: bool = False) -> bool:
     if not isinstance(name, str):
         return False
     if name == head:
         return True
-    bare = _BARE_TASK_HEAD_RE.match(head)
+    bare = _BARE_TASK_HEAD_RE.match(head) if fuzzy else None
     return bool(bare) and _is_task_head(name, bare.group(1))
 
 
-def _payload_mark(raw: str, head: str) -> str:
+def _payload_mark(raw: str, head: str, fuzzy: bool = False) -> str:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -119,7 +122,7 @@ def _payload_mark(raw: str, head: str) -> str:
     rows = data if isinstance(data, list) else [data]
     saw_open = False
     for row in rows:
-        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head):
+        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head, fuzzy):
             continue
         if row.get("state") == "MERGED":
             return "merged"
@@ -129,7 +132,7 @@ def _payload_mark(raw: str, head: str) -> str:
 
 
 def _github_mark(root: Path, card_id: str) -> str:
-    head = _task_branch(root, card_id)
+    head, fuzzy = _task_branch(root, card_id)
     view = _run(root, ["gh", "pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -141,14 +144,14 @@ def _github_mark(root: Path, card_id: str) -> str:
     )
     if listed is not None and listed.returncode == 0:
         mark = _payload_mark(listed.stdout, head)
-        if mark != "missing" or not _BARE_TASK_HEAD_RE.match(head):
+        if mark != "missing" or not fuzzy:
             return mark
-    elif not _BARE_TASK_HEAD_RE.match(head):
+    elif not fuzzy:
         return "missing"
     recent = _run(root, ["gh", "pr", "list", "--state", "all", "--limit", "200", "--json", "state,headRefName"])
     if recent is None or recent.returncode != 0:
         return "missing"
-    return _payload_mark(recent.stdout, head)
+    return _payload_mark(recent.stdout, head, fuzzy=True)
 
 
 def _home_lines(text: str) -> list[str]:
@@ -206,7 +209,7 @@ def _home_toplevel(root: Path) -> Path:
 
 
 def _landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
-    head = _task_branch(root, card_id)
+    head = _task_branch(root, card_id)[0]
     if _branch_exists(root, head) and _branch_exists(root, queue):
         anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
         if anc is not None and anc.returncode == 0:
@@ -217,8 +220,8 @@ def _landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
     return "", "pr-open" if mark == "open" else "pr-missing"
 
 
-def _gh_merged_at(root: Path, head: str) -> int | None:
-    if _BARE_TASK_HEAD_RE.match(head):
+def _gh_merged_at(root: Path, head: str, fuzzy: bool = False) -> int | None:
+    if fuzzy:
         argv = ["gh", "pr", "list", "--state", "merged", "--limit", "200", "--json", "mergedAt,headRefName"]
     else:
         argv = ["gh", "pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"]
@@ -230,7 +233,7 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
     except json.JSONDecodeError:
         return None
     for row in rows if isinstance(rows, list) else [rows]:
-        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head) and isinstance(row.get("mergedAt"), str):
+        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head, fuzzy) and isinstance(row.get("mergedAt"), str):
             try:
                 return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
             except ValueError:
@@ -240,8 +243,8 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
 
 def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
     if via == "squash":
-        return _gh_merged_at(root, _task_branch(root, card_id))
-    tip_proc = _run(root, ["git", "rev-parse", _task_branch(root, card_id)])
+        return _gh_merged_at(root, *_task_branch(root, card_id))
+    tip_proc = _run(root, ["git", "rev-parse", _task_branch(root, card_id)[0]])
     tip = tip_proc.stdout.strip() if tip_proc is not None else ""
     path = _run(root, ["git", "rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
     first = path.stdout.split()[0] if path is not None and path.returncode == 0 and path.stdout.split() else tip
@@ -338,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         print("landed: all")
         print("merge: no")
         return 0
-    head = _task_branch(root, card_id)
+    head = _task_branch(root, card_id)[0]
     if _branch_exists(root, head) and _branch_exists(root, queue):
         anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
         if anc is not None and anc.returncode == 0:

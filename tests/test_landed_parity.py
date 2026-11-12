@@ -139,6 +139,19 @@ esac
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("landed: squash", res.stdout)
 
+    def test_other_slug_pull_request_does_not_land_a_present_branch(self) -> None:
+        # task-12 is here and unmerged; an older merged PR for task-12-old must not count.
+        script = """#!/bin/sh
+case "$*" in
+  *view*) exit 1 ;;
+  *--head*) printf '%s\\n' '[]' ;;
+  *) printf '%s\\n' '[{"state":"MERGED","headRefName":"task-12-old"}]' ;;
+esac
+"""
+        res = self._assert_parity(self._env_with_gh("bin-other-slug", script))
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("detail: pr-missing", res.stdout)
+
     def test_standalone_review_skill_without_work_queue_runs_landed(self) -> None:
         git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
         with tempfile.TemporaryDirectory() as isolated:
