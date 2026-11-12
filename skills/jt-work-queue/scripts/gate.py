@@ -124,7 +124,7 @@ HINT_FOR = {
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
     "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
-    "task-branch-missing": "Commit the work on a branch named task-<id>, then run reach-review again.",
+    "task-branch-missing": "Commit the work on one branch named task-<id>-<slug> (or task-<id>), then run reach-review again.",
     "merge-refused": "This gate cannot merge. Stop and report to the human.",
     "related": "Link each same-layer task under refs: in task.md, or run gate.py ask.",
     "browser-empty": "<BROWSER_TOOL> is empty in jt-queue/board.md. A human sets it; run gate.py ask.",
@@ -893,6 +893,71 @@ def _branch_exists(root: Path, branch: str) -> bool:
     return _run_git(root, ["rev-parse", "--verify", "--quiet", branch]).returncode == 0
 
 
+_TASK_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def is_task_head(name: str, card_id: str) -> bool:
+    """True for task-<id> or task-<id>-<slug> (slug: lowercase words joined by '-')."""
+    bare = f"task-{card_id}"
+    if name == bare:
+        return True
+    return name.startswith(bare + "-") and bool(_TASK_SLUG_RE.fullmatch(name[len(bare) + 1 :]))
+
+
+def task_branch_names(root: Path, card_id: str) -> tuple[list[str], list[str]]:
+    """(local, remote-only) branch names that belong to the task, sorted."""
+    if not valid_card_id(card_id):
+        return [], []
+    bare = f"task-{card_id}"
+    proc = _run_git(
+        root,
+        [
+            "for-each-ref",
+            "--format=%(refname)",
+            f"refs/heads/{bare}",
+            f"refs/heads/{bare}-*",
+            f"refs/remotes/*/{bare}",
+            f"refs/remotes/*/{bare}-*",
+        ],
+    )
+    local: set[str] = set()
+    remote: set[str] = set()
+    if proc.returncode == 0:
+        for ref in proc.stdout.split():
+            if ref.startswith("refs/heads/"):
+                name, bucket = ref[len("refs/heads/") :], local
+            elif ref.startswith("refs/remotes/") and ref.count("/") >= 3:
+                name, bucket = ref.split("/", 3)[3], remote
+            else:
+                continue
+            if is_task_head(name, card_id):
+                bucket.add(name)
+    return sorted(local), sorted(remote - local)
+
+
+def task_branch(root: Path, card_id: str) -> str:
+    """The task's branch: the one local task-<id>[-<slug>], else the one on a remote, else task-<id>."""
+    local, remote = task_branch_names(root, card_id)
+    if len(local) == 1:
+        return local[0]
+    if not local and len(remote) == 1:
+        return remote[0]
+    return f"task-{card_id}"
+
+
+def has_one_task_branch(root: Path, card_id: str) -> bool:
+    local, _remote = task_branch_names(root, card_id)
+    return len(local) == 1
+
+
+def task_branch_missing_detail(root: Path, card_id: str, repo: str = "") -> str:
+    local, _remote = task_branch_names(root, card_id)
+    where = f"repo {repo}: " if repo else ""
+    if len(local) > 1:
+        return f"{where}more than one branch for this task ({', '.join(local)}); keep one"
+    return f"{where}no task-{card_id} or task-{card_id}-<slug> branch"
+
+
 def _git_show(root: Path, spec: str) -> str | None:
     proc = _run_git(root, ["show", spec])
     if proc.returncode != 0:
@@ -1336,7 +1401,7 @@ def cmd_next(root: Path) -> int:
                     if across[0]:
                         landed_ids.append(card.id)
                     continue
-                if _is_ancestor(root, f"task-{card.id}", board.queue_branch):
+                if _is_ancestor(root, task_branch(root, card.id), board.queue_branch):
                     landed_ids.append(card.id)
                 else:
                     pending_gh.append(card.id)
@@ -1483,7 +1548,7 @@ def _header_bullets(card_text: str) -> list[str]:
 def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
     if not queue:
         return None
-    proc = _run_git(root, ["log", "--format=%s", f"{queue}..task-{card_id}"])
+    proc = _run_git(root, ["log", "--format=%s", f"{queue}..{task_branch(root, card_id)}"])
     if proc.returncode != 0:
         return None
     kinds: list[str] = []
@@ -1505,7 +1570,7 @@ def _commit_kinds_outside_queue(
             "log",
             "--no-merges",
             "--format=%s",
-            f"{queue}..task-{card_id}",
+            f"{queue}..{task_branch(root, card_id)}",
             "--",
             ".",
             ":(exclude)jt-queue",
@@ -1539,9 +1604,9 @@ def card_kind_in_board(board_text: str, card_id: str) -> str:
 
 
 def card_kind_at_merge_base(root: Path, queue: str, card_id: str) -> str:
-    if not queue or not valid_card_id(card_id) or not _branch_exists(root, f"task-{card_id}"):
+    if not queue or not valid_card_id(card_id) or not _branch_exists(root, task_branch(root, card_id)):
         return ""
-    proc = _run_git(root, ["merge-base", queue, f"task-{card_id}"])
+    proc = _run_git(root, ["merge-base", queue, task_branch(root, card_id)])
     if proc.returncode != 0 or not proc.stdout.strip():
         return ""
     rel = _queue_rel("board.md")
@@ -1584,7 +1649,7 @@ def _code_diff_reviewable(root: Path, queue: str, card_id: str) -> bool:
         [
             "diff",
             "--name-only",
-            f"{queue}...task-{card_id}",
+            f"{queue}...{task_branch(root, card_id)}",
             "--",
             ".",
             ":(exclude)jt-queue",
@@ -2012,9 +2077,9 @@ def screen_check_main(argv: list[str] | None = None) -> int:
 
 @contextmanager
 def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
-    branch = f"task-{card_id}"
-    if not _branch_exists(root, branch):
-        raise GateError("task-branch-missing")
+    branch = task_branch(root, card_id)
+    if not has_one_task_branch(root, card_id):
+        raise GateError("task-branch-missing", detail=task_branch_missing_detail(root, card_id))
     if _current_branch(root) == branch:
         yield root
         return
@@ -2146,6 +2211,19 @@ def _gh(
         return None
 
 
+_BARE_TASK_HEAD_RE = re.compile(r"^task-(\d+(?:\.\d+)*)$")
+
+
+def _head_matches(name: object, head: str) -> bool:
+    """name is head; a bare task-<id> (branch gone from this clone) also matches task-<id>-<slug>."""
+    if not isinstance(name, str):
+        return False
+    if name == head:
+        return True
+    bare = _BARE_TASK_HEAD_RE.match(head)
+    return bool(bare) and is_task_head(name, bare.group(1))
+
+
 def _payload_mark(raw: str, head: str) -> str:
     try:
         data = json.loads(raw)
@@ -2154,7 +2232,7 @@ def _payload_mark(raw: str, head: str) -> str:
     rows = data if isinstance(data, list) else [data]
     saw_open = False
     for row in rows:
-        if not isinstance(row, dict) or row.get("headRefName") != head:
+        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head):
             continue
         if row.get("state") == "MERGED":
             return "merged"
@@ -2164,7 +2242,7 @@ def _payload_mark(raw: str, head: str) -> str:
 
 
 def _github_mark(root: Path, card_id: str) -> str:
-    head = f"task-{card_id}"
+    head = task_branch(root, card_id)
     view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -2183,15 +2261,23 @@ def _github_mark(root: Path, card_id: str) -> str:
             "state,headRefName",
         ],
     )
-    if listed is None or listed.returncode != 0:
+    if listed is not None and listed.returncode == 0:
+        mark = _payload_mark(listed.stdout, head)
+        if mark != "missing" or not _BARE_TASK_HEAD_RE.match(head):
+            return mark
+    elif not _BARE_TASK_HEAD_RE.match(head):
         return "missing"
-    return _payload_mark(listed.stdout, head)
+    # The branch is gone from this clone, so its slug is unknown: look for task-<id>-<slug> among recent PRs.
+    recent = _gh(root, ["pr", "list", "--state", "all", "--limit", "200", "--json", "state,headRefName"])
+    if recent is None or recent.returncode != 0:
+        return "missing"
+    return _payload_mark(recent.stdout, head)
 
 
 def landed_via(
     root: Path, card_id: str, queue: str, require_remote_for_gh: bool = False
 ) -> tuple[str, str]:
-    if _is_ancestor(root, f"task-{card_id}", queue):
+    if _is_ancestor(root, task_branch(root, card_id), queue):
         return "ancestor", ""
     if require_remote_for_gh and not _has_remote(root):
         return "", "pr-missing"
@@ -2202,7 +2288,11 @@ def landed_via(
 
 
 def _gh_merged_at(root: Path, head: str) -> int | None:
-    proc = _gh(root, ["pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"])
+    if _BARE_TASK_HEAD_RE.match(head):
+        args = ["pr", "list", "--state", "merged", "--limit", "200", "--json", "mergedAt,headRefName"]
+    else:
+        args = ["pr", "list", "--head", head, "--state", "merged", "--json", "mergedAt,headRefName"]
+    proc = _gh(root, args)
     if proc is None or proc.returncode != 0:
         return None
     try:
@@ -2210,7 +2300,7 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
     except json.JSONDecodeError:
         return None
     for row in rows if isinstance(rows, list) else [rows]:
-        if isinstance(row, dict) and row.get("headRefName") == head and isinstance(row.get("mergedAt"), str):
+        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head) and isinstance(row.get("mergedAt"), str):
             try:
                 return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
             except ValueError:
@@ -2221,8 +2311,8 @@ def _gh_merged_at(root: Path, head: str) -> int | None:
 def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
     """When task-<id> reached queue: the first queue commit that contains it, or the PR merge time."""
     if via == "squash":
-        return _gh_merged_at(root, f"task-{card_id}")
-    tip = _run_git(root, ["rev-parse", f"task-{card_id}"]).stdout.strip()
+        return _gh_merged_at(root, task_branch(root, card_id))
+    tip = _run_git(root, ["rev-parse", task_branch(root, card_id)]).stdout.strip()
     path = _run_git(root, ["rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
     first = path.stdout.split()[0] if path.returncode == 0 and path.stdout.split() else tip
     shown = _run_git(root, ["show", "-s", "--format=%ct", first])
@@ -2311,7 +2401,7 @@ def _code_tip_sha(root: Path, queue: str, card_id: str) -> str | None:
             "-1",
             "--no-merges",
             "--format=%H",
-            f"{queue}..task-{card_id}",
+            f"{queue}..{task_branch(root, card_id)}",
             "--",
             ".",
             ":(exclude)jt-queue",
@@ -2323,7 +2413,7 @@ def _code_tip_sha(root: Path, queue: str, card_id: str) -> str | None:
 
 
 def _card_worktree_drift(root: Path, card_id: str) -> bool:
-    if _current_branch(root) != f"task-{card_id}":
+    if _current_branch(root) != task_branch(root, card_id):
         return False
     proc = _run_git(
         root,
@@ -2456,11 +2546,11 @@ def _repo_sha_cited(section: str, name: str, sha: str) -> bool:
 def multi_review_detail(home: Path, card_id: str, targets: list[Target]) -> tuple[str, str]:
     """(status, repo) for a task across repos; repo names the one that failed, if any."""
     for target in targets:
-        if not target.queue or not _branch_exists(target.root, f"task-{card_id}"):
+        if not target.queue or not _branch_exists(target.root, task_branch(target.root, card_id)):
             return "no-review", target.name
         if _card_worktree_drift(target.root, card_id):
             return "stale-review", target.name
-    plan = _read_queue_file(home, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+    plan = _read_queue_file(home, task_branch(home, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
     section = _section_h2(plan, "review-diff")
     if not section.strip():
         return "no-review", ""
@@ -2495,7 +2585,7 @@ def diff_review_detail(root: Path, card_id: str) -> str:
     if targets is not None:
         return multi_review_detail(root, card_id, targets)[0]
     queue = parse_queue(board_text)
-    branch = f"task-{card_id}"
+    branch = task_branch(root, card_id)
     if not queue or not _branch_exists(root, branch):
         return "no-review"
     if not _code_diff_reviewable(root, queue, card_id):
@@ -2558,12 +2648,12 @@ def _cards_from_text(root: Path, board_text: str) -> list[Card]:
 
 
 def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) -> list[str] | None:
-    if not queue or not _branch_exists(root, f"task-{card_id}"):
+    if not queue or not _branch_exists(root, task_branch(root, card_id)):
         return None
     args = ["diff", "--name-only"]
     if added_only:
         args.append("--diff-filter=A")
-    args.extend([f"{queue}...task-{card_id}", "--", ".", ":(exclude)jt-queue"])
+    args.extend([f"{queue}...{task_branch(root, card_id)}", "--", ".", ":(exclude)jt-queue"])
     proc = _run_git(root, args)
     if proc.returncode != 0:
         return None
@@ -2592,7 +2682,7 @@ def outside_card_files(
 def style_changes(
     root: Path, queue: str, card_id: str, board_text: str = ""
 ) -> list[str]:
-    if not queue or not _branch_exists(root, f"task-{card_id}"):
+    if not queue or not _branch_exists(root, task_branch(root, card_id)):
         return []
     kind = card_kind_at_merge_base(root, queue, card_id) or card_kind_in_board(
         board_text, card_id
@@ -2606,7 +2696,7 @@ def style_changes(
             "-w",
             "--ignore-blank-lines",
             "--numstat",
-            f"{queue}...task-{card_id}",
+            f"{queue}...{task_branch(root, card_id)}",
             "--",
             ".",
             ":(exclude)jt-queue",
@@ -2722,8 +2812,8 @@ def _reach_review_multi(
     if extra:
         return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
     for target in targets:
-        if not _branch_exists(target.root, f"task-{card_id}"):
-            return _refuse("task-branch-missing", detail=f"repo {target.name}: no task-{card_id} branch")
+        if not has_one_task_branch(target.root, card_id):
+            return _refuse("task-branch-missing", detail=task_branch_missing_detail(target.root, card_id, target.name))
         if not _code_diff_reviewable(target.root, target.queue, card_id):
             return _refuse("review-diff", detail=f"repo {target.name}: no diff outside jt-queue/ to review")
     status, failed = multi_review_detail(root, card_id, targets)
@@ -2731,7 +2821,7 @@ def _reach_review_multi(
         where = f"repo {failed}: " if failed else ""
         note = f"{where}{status}: {REVIEW_DETAIL.get(status, 'review-diff is not recorded')}"
         if status == "evidence-missing":
-            plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+            plan = _read_queue_file(root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
             note += ": " + "; ".join(evidence_gaps(root, card_id, plan))
         return _refuse("review-diff", detail=note)
     for target in targets:
@@ -2775,7 +2865,7 @@ def _reach_review_multi(
             links: list[str] = []
             for target in targets:
                 current = target.name
-                kind, value = lookup_draft_pr(target.root, f"task-{card_id}", target.queue)
+                kind, value = lookup_draft_pr(target.root, task_branch(target.root, card_id), target.queue)
                 if kind == "ask":
                     return _refuse(value, detail=f"repo {target.name}")
                 links.append(f"{target.name}:{value if kind == 'ok' else (link.strip() or 'local')}")
@@ -2861,8 +2951,8 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         extra = undeclared_repos(root, text, card_id, [home_name])
         if extra:
             return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
-    if not _branch_exists(root, f"task-{card_id}"):
-        return _refuse("task-branch-missing")
+    if not has_one_task_branch(root, card_id):
+        return _refuse("task-branch-missing", detail=task_branch_missing_detail(root, card_id))
     tier = card_tier(root, queue, card_id, card_text, text)
     kinds = _commit_kinds(root, queue, card_id)
     if kinds is None:
@@ -2877,11 +2967,11 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if review_err:
             note = f"{review_err}: {REVIEW_DETAIL.get(review_err, 'review-diff is not recorded')}"
             if review_err == "no-verdict":
-                plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+                plan = _read_queue_file(root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
                 seen = _VERDICT_LINE.findall(_section_h2(plan, "review-diff"))
                 note += " (found: " + (", ".join(repr(v) for v in seen) or "no verdict line") + ")"
             if review_err == "evidence-missing":
-                plan = _read_queue_file(root, f"task-{card_id}", _queue_rel("tasks", card_id, "plan.md")) or ""
+                plan = _read_queue_file(root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
                 note += ": " + "; ".join(evidence_gaps(root, card_id, plan))
             return _refuse("review-diff", detail=note)
         review_state = "open"
@@ -2916,7 +3006,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         else:
             code = 0
         if write:
-            kind, value = lookup_draft_pr(root, f"task-{card_id}", queue)
+            kind, value = lookup_draft_pr(root, task_branch(root, card_id), queue)
             if kind == "ask":
                 return _refuse(value)
             if kind == "ok":

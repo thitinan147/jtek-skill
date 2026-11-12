@@ -19,7 +19,7 @@ You type the slash commands. The agent runs `gate.py` for you; the commands are 
 | **task** | `jt-queue/tasks/<id>/task.md`: what to do (`do:`), what not to touch (`out:`), how to tell it is done (`pass:`), and which files it may change (`files:`). |
 | **kind** | The type of task in brackets on the board line: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. |
 | **queue branch** | The branch named on the `queue:` line of the board, usually `main`. Work lands here. |
-| **`task-<id>`** | The branch the agent commits a task's code on. |
+| **`task-<id>-<slug>`** | The branch the agent commits a task's code on, such as `task-1-readme-usage`. One per task. |
 | **gate** | `gate.py`, a Python script that decides whether a task may go to review. The agent cannot mark `review:` without it. |
 | **Quick / Standard** | The gate's tier, worked out from the kind. **Quick** (`docs`, plain `style`) needs passing tests. **Standard** (everything else) also needs `plan.md` with evidence for every `pass:` line and a review of the diff. |
 | **plan.md** | `jt-queue/tasks/<id>/plan.md`: the agent's notes for a Standard task, including the `## evidence` table and `## review-diff`. |
@@ -118,7 +118,7 @@ Each `pass:` line is something you can run. The board now lists both tasks:
 
 ### 3. A Quick task, and approving the test command
 
-Run `/jt-work-queue` again. The gate picks task 1, a `docs` task. The agent commits the README change on `task-1`, then asks the gate:
+Run `/jt-work-queue` again. The gate picks task 1, a `docs` task. The agent commits the README change on `task-1-readme-usage`, then asks the gate:
 
 ```text
 $ gate.py reach-review --root . --id 1
@@ -144,7 +144,7 @@ approved card 1 commands:
 merge: no
 ```
 
-The approval is stored in `.git/`, outside every branch, so a pull request cannot bring its own approval. You approve the board's commands once on each machine; a task that sets its own `start`/`click` commands (for screen checks) needs its own approval too. If anyone changes an approved command, the gate refuses again until you approve the new one. Now the gate runs the tests on `task-1` and lets it through:
+The approval is stored in `.git/`, outside every branch, so a pull request cannot bring its own approval. You approve the board's commands once on each machine; a task that sets its own `start`/`click` commands (for screen checks) needs its own approval too. If anyone changes an approved command, the gate refuses again until you approve the new one. Now the gate runs the tests on `task-1-readme-usage` and lets it through:
 
 ```text
 $ gate.py reach-review --root . --id 1
@@ -154,7 +154,7 @@ tier: quick
 repo-review: skip
 ```
 
-With no Git remote, the agent records it with `--write --link local`. With a remote, it pushes `task-1` and opens a draft PR first. The board line becomes:
+With no Git remote, the agent records it with `--write --link local`. With a remote, it pushes `task-1-readme-usage` and opens a draft PR first. The board line becomes:
 
 ```markdown
 - [ ] **1** add usage to README (docs) review: local
@@ -162,7 +162,7 @@ With no Git remote, the agent records it with `--write --link local`. With a rem
 
 ### 4. A Standard task, and a refusal
 
-Task 2 is a `fix`, so it is Standard. The agent reproduces the bug (`c_to_f(100)` prints `203.0`), adds tests, fixes the offset, commits on `task-2`, and writes `plan.md`. The test command is already approved, so there is no stop this time.
+Task 2 is a `fix`, so it is Standard. The agent reproduces the bug (`c_to_f(100)` prints `203.0`), adds tests, fixes the offset, commits on `task-2-fix-c-to-f`, and writes `plan.md`. The test command is already approved, so there is no stop this time.
 
 The agent's plan forgot the second `pass:` line. The gate catches it:
 
@@ -207,7 +207,7 @@ tier: standard
 repo-review: open
 ```
 
-The `sha:` must be the latest commit on `task-2`. If the agent commits again, its old review no longer counts.
+The `sha:` must be the latest commit on `task-2-fix-c-to-f`. If the agent commits again, its old review no longer counts.
 
 ### 5. When the tests fail
 

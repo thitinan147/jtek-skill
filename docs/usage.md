@@ -50,7 +50,7 @@ Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a hum
 python3 skills/jt-work-queue/scripts/gate.py approve-commands --root . --id 001
 ```
 
-Commit code on `task-<id>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push `task-<id>` and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>`). `reach-review --write` refuses with `pr-missing` until that open draft PR has head `task-<id>` and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
+Commit code on the task branch `task-<id>-<slug>` (for example `task-12-login-rate-limit`; a plain `task-<id>` still works), not `jt-queue/`. Keep one branch per task: the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push the branch and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>-<slug> --title "<id>: <name>" --body "Task <id> from jt-queue."`). `reach-review --write` refuses with `pr-missing` until that open draft PR has the task branch as head and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
 
 ## 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
 When one or more tasks reach `review:`, the human runs:

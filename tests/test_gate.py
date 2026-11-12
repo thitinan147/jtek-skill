@@ -535,6 +535,25 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: task-branch-missing", result.stdout)
         self.assertNotIn("review:", updated)
 
+    def test_slug_branch_reaches_review(self) -> None:
+        self._set_card_check("0")
+        git(self.repo, "branch", "-m", "task-12", "task-12-fresh-start")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+        self.assertIn("review: local", board)
+
+    def test_two_branches_for_one_task_are_refused(self) -> None:
+        self._set_card_check("0")
+        git(self.repo, "branch", "task-12-fresh-start", "task-12")
+        result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
+        board = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: task-branch-missing", result.stdout)
+        self.assertIn("task-12, task-12-fresh-start", result.stdout)
+        self.assertNotIn("review:", board)
+
     def test_write_off_the_queue_branch_is_refused(self) -> None:
         self._set_card_check("0")
         git(self.repo, "checkout", "task-12")
@@ -2843,3 +2862,53 @@ class MultiRepoScreenTests(MultiRepoFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TaskBranchNameTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / "app.py").write_text("VALUE = 0\n", encoding="utf-8")
+        commit_all(self.repo, "chore: init")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_task_head_names(self) -> None:
+        self.assertTrue(gate.is_task_head("task-12", "12"))
+        self.assertTrue(gate.is_task_head("task-12-login-rate-limit", "12"))
+        self.assertTrue(gate.is_task_head("task-1.1-split", "1.1"))
+        self.assertFalse(gate.is_task_head("task-12-", "12"))
+        self.assertFalse(gate.is_task_head("task-12-Login", "12"))
+        self.assertFalse(gate.is_task_head("task-12--x", "12"))
+        self.assertFalse(gate.is_task_head("task-123", "12"))
+        self.assertFalse(gate.is_task_head("task-1.1-split", "1"))
+        self.assertFalse(gate.is_task_head("task-12-a/b", "12"))
+
+    def test_bare_name_when_no_branch(self) -> None:
+        self.assertEqual(gate.task_branch(self.repo, "12"), "task-12")
+        self.assertFalse(gate.has_one_task_branch(self.repo, "12"))
+
+    def test_one_slug_branch_is_the_task_branch(self) -> None:
+        git(self.repo, "branch", "task-12-login")
+        git(self.repo, "branch", "task-123-other")
+        self.assertEqual(gate.task_branch(self.repo, "12"), "task-12-login")
+        self.assertTrue(gate.has_one_task_branch(self.repo, "12"))
+
+    def test_remote_only_branch_is_found(self) -> None:
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        git(self.repo, "update-ref", "refs/remotes/origin/task-12-login", head)
+        self.assertEqual(gate.task_branch(self.repo, "12"), "task-12-login")
+        self.assertFalse(gate.has_one_task_branch(self.repo, "12"))
+
+    def test_local_branch_wins_over_a_stale_remote(self) -> None:
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        git(self.repo, "update-ref", "refs/remotes/origin/task-12", head)
+        git(self.repo, "branch", "task-12-login")
+        self.assertEqual(gate.task_branch(self.repo, "12"), "task-12-login")
+
+    def test_bare_head_matches_slug_pull_requests(self) -> None:
+        self.assertTrue(gate._head_matches("task-12-login", "task-12"))
+        self.assertFalse(gate._head_matches("task-12-login", "task-12-other"))
+        self.assertFalse(gate._head_matches("task-123", "task-12"))

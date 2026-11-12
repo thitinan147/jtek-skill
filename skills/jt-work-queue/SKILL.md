@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "22.1.0"
+  version: "22.2.0"
   short-description: Work the task queue in jt-queue/board.md
 ---
 
@@ -59,5 +59,6 @@ Choose your own implementation method (TDD, planning, subagents, worktrees are o
 - **Send-back (`reason: send-back`):** Read the `send-back:` note on the board line, copy every point into `## send-back` of `plan.md`, fix each one, and cite each point in the new `## review-diff` before you run `reach-review` again.
 - **Excuses:** If you catch yourself skipping a check, reread [references/red-flags.md](references/red-flags.md).
 - **Continuous Improvement:** On recurring failures across tasks, propose a new `chore` task with evidence for human approval. Never modify rule files (`SKILL.md` or `gate.py`) in the current task's diff.
-- **Across repos:** Use branch `task-<id>` in every repo under `repos:` and no other; commits in an unlisted repo refuse with `repo-undeclared`. `## review-diff` cites each repo as `<repo>: <sha>`. Push and open one draft PR per repo; `reach-review --write` records them all.
-- **Handoff:** Commit code on `task-<id>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When `allowed`: if no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `task-<id>`, open one draft PR (`gh pr create --draft --base <queue> --head task-<id>`), and run `reach-review --root . --id <id> --write`, then loop to the next task.
+- **Task branch:** Name it `task-<id>-<slug>`, where `<slug>` is two to five lowercase words from the task name joined by `-` (for example `task-12-login-rate-limit`). Keep exactly one branch per task; the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. Below, `<branch>` is that name.
+- **Across repos:** Use the same `<branch>` in every repo under `repos:` and no other; commits in an unlisted repo refuse with `repo-undeclared`. `## review-diff` cites each repo as `<repo>: <sha>`. Push and open one draft PR per repo; `reach-review --write` records them all.
+- **Handoff:** Commit code on `<branch>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When `allowed`: if no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `<branch>`, open one draft PR (`gh pr create --draft --base <queue> --head <branch> --title "<id>: <name>" --body "Task <id> from jt-queue."`; always pass `--title` and `--body`, because `gh` cannot prompt here, and keep `do:`/`pass:` text out of the body), and run `reach-review --root . --id <id> --write`, then loop to the next task.

@@ -1,7 +1,7 @@
 {
   "name": "jtek",
   "description": "Outcome-gated work queue for coding agents: the agent works tasks from a board, a deterministic gate checks tests and evidence before review, and only a human can merge.",
-  "version": "22.1.0",
+  "version": "22.2.0",
   "author": {
     "name": "Thitinan"
   },

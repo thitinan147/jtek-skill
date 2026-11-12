@@ -6,7 +6,7 @@ The agent's working notes. The human does not accept a plan before review opens.
 - kind:
 - round: 1
 - round-status: working
-- Branch: task-<id>
+- Branch: task-<id>-<slug>
 - Commit:
 
 ## Goal

@@ -20,7 +20,7 @@ Pick **one** method. Installing both gives you every skill twice.
 
 ```bash
 # Pin a release so later changes cannot reach you unreviewed (recommended)
-npx skills add thitinan147/jtek-skill#v22.1.0
+npx skills add thitinan147/jtek-skill#v22.2.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 
 ```text
 # Pinned to a release (recommended)
-/plugin marketplace add thitinan147/jtek-skill#v22.1.0
+/plugin marketplace add thitinan147/jtek-skill#v22.2.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v22.1.0` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
+Without `#v22.2.0` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
 
 As a plugin, the commands are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`. Use those names if another skill has the same short name.
 
@@ -78,7 +78,7 @@ Human + Agent (/jt-work-queue)                          Human only (/jt-review-w
 +----------------------------------------------------+  +------------------------------+
 ```
 
-1. **Queue files stay local; code lives on `task-<id>`.** `jt-queue/` is gitignored, so your board is not committed or pushed.
+1. **Queue files stay local; code lives on `task-<id>-<slug>`.** `jt-queue/` is gitignored, so your board is not committed or pushed.
 2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks also need a `plan.md` whose evidence covers every `pass:` line and whose review cites the latest commit. After three failed rounds the gate tells the agent to ask you.
 3. **You hold the merge key.** Only `/jt-review-work`, run by a human, can close or send back a task, and `merge:` is written only after the branch has landed.
 
