@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.0.0
+npx skills add thitinan147/jtek-skill#v24.1.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.0.0
+/plugin marketplace add thitinan147/jtek-skill#v24.1.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.0.0` the marketplace follows the default branch.
+Without `#v24.1.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.0.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.1.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -107,10 +107,10 @@ Spec (human types the command)          Queue
 
 ## Names
 
-A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion id are all fine. The skills require an id and do not check its shape.
+A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion id are all fine. The skills require an id on `ticket:` and do not check its shape.
 
 - Commit and pull request title: `type(scope): summary (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. The type is the task kind (`feat`, `fix`, `refactor`, `test`, `docs`, `chore`, and the other kinds the board already uses). Scope is optional.
-- Branch to aim for: `type/<ticket-id>-short-slug`, for example `feat/BOOK-12-room-search` (type and slug are lowercase, with hyphens; the ticket id is copied as written). `gate.py` still only finds `task-<id>` or `task-<id>-<slug>`, so `/jt-work` still creates that branch. Teaching the gate the conventional branch name is a later change.
+- Task branch: `type/<ticket-id>-short-slug`, for example `feat/BOOK-12-room-search` (type and slug are lowercase, with hyphens; the ticket id is copied as written). Legacy `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` when it finds one. Quote ticket ids in the shell when needed, for example `/jt-work '#45'`.
 
 ## Use together with
 

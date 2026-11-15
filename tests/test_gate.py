@@ -3210,10 +3210,33 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertFalse(gate.is_task_head("task-123", "12"))
         self.assertFalse(gate.is_task_head("task-1.1-split", "1"))
         self.assertFalse(gate.is_task_head("task-12-a/b", "12"))
+        self.assertTrue(gate.is_task_head("feat/BOOK-12-room-search", "12", "BOOK-12"))
+        self.assertTrue(gate.is_task_head("feat/BOOK-12", "12", "BOOK-12"))
+        self.assertTrue(gate.is_task_head("feat/#45-login-fix", "12", "#45"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-12-room-search", "12", "BOOK-99"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-99-room-search", "12", "BOOK-12"))
 
     def test_bare_name_when_no_branch(self) -> None:
         self.assertEqual(gate.task_branch(self.repo, "12"), "task-12")
         self.assertFalse(gate.has_one_task_branch(self.repo, "12"))
+
+    def test_default_conventional_name_when_ticket_present(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text(
+            "# 12 - x\n\nticket: BOOK-12\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.task_branch(self.repo, "12"), "feat/BOOK-12")
+
+    def test_conventional_branch_is_the_task_branch(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text("# 12\n\nticket: BOOK-12\n", encoding="utf-8")
+        git(self.repo, "branch", "feat/BOOK-12-room-search")
+        git(self.repo, "branch", "task-123-other")
+        self.assertEqual(gate.task_branch(self.repo, "12"), "feat/BOOK-12-room-search")
+        self.assertTrue(gate.has_one_task_branch(self.repo, "12"))
 
     def test_one_slug_branch_is_the_task_branch(self) -> None:
         git(self.repo, "branch", "task-12-login")
@@ -3238,3 +3261,11 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertFalse(gate._head_matches("task-12-login", "task-12"))
         self.assertFalse(gate._head_matches("task-12-login", "task-12-other", fuzzy=True))
         self.assertFalse(gate._head_matches("task-123", "task-12", fuzzy=True))
+        self.assertTrue(
+            gate._head_matches(
+                "feat/BOOK-12-room-search",
+                "feat/BOOK-12",
+                fuzzy=True,
+                ticket_id="BOOK-12",
+            )
+        )

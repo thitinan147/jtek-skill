@@ -6,10 +6,10 @@ The agent's working notes. The human does not accept a plan before review opens.
 - kind:
 - round: 1
 - round-status: working
-- Branch: task-<id>-<slug>
+- Branch: type/<ticket-id>-<slug>
 - Commit: <type>(<scope>): <summary> (<ticket-id>)
 
-The gate finds `task-<id>-<slug>` only. `feat/BOOK-12-room-search` is the conventional branch name and is not created for a queue task yet. `<ticket-id>` is copied from the ticket (`BOOK-12`, `#45`, a Notion id).
+`<ticket-id>` is copied from the ticket (`BOOK-12`, `#45`, a Notion id). The gate looks up `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works.
 
 ## Goal
 
