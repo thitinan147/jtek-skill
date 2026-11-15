@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
+GATE_PATH = REPO / "skills" / "jt-work" / "scripts" / "gate.py"
 
 
 def load_gate():
@@ -127,7 +127,7 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(decision.action, "do-task")
         self.assertEqual(decision.id, "13")
         self.assertEqual(decision.reason, "send-back")
-        self.assertEqual(decision.command, "/jt-work-queue")
+        self.assertEqual(decision.command, "/jt-work")
         self.assertNotEqual(decision.action, "merge")
 
     def test_cleared_question_comes_before_a_fresh_card(self) -> None:
@@ -295,9 +295,20 @@ class ApplyReviewTests(unittest.TestCase):
         with self.assertRaises(gate.GateError) as caught:
             gate.apply_waiting_review(text, "12", 0)
         self.assertEqual(caught.exception.reason, "task-closed")
-        self.assertIn("/jt-work-queue", gate.COMMAND_FOR.values())
+        self.assertEqual(
+            gate.COMMAND_FOR,
+            {
+                "setup-board": "/jt-setup",
+                "brief": "/jt-add-task",
+                "add-task": "/jt-add-task",
+                "do-task": "/jt-work",
+                "wait": "",
+                "stop": "",
+            },
+        )
         self.assertNotIn("open-review", gate.ALLOWED_ACTIONS)
         self.assertNotIn("/jt-do-card", gate.COMMAND_FOR.values())
+        self.assertNotIn("/jt-work-queue", gate.COMMAND_FOR.values())
         self.assertIn("/jt-merge", gate.MERGE_ARGV)
 
     def test_open_question_is_not_marked(self) -> None:
@@ -894,7 +905,7 @@ class ReachReviewGitTests(unittest.TestCase):
         after = (self.repo / "jt-queue" / "board.md").read_bytes()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("action: do-task", result.stdout)
-        self.assertIn("command: /jt-work-queue", result.stdout)
+        self.assertIn("command: /jt-work", result.stdout)
         self.assertIn("id: 12", result.stdout)
         self.assertIn("merge: no", result.stdout)
         self.assertEqual(after, before)
@@ -1195,7 +1206,7 @@ class ReachReviewGitTests(unittest.TestCase):
         before = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
         result = run_gate(self.repo, "reach-review", "--id", "12", "--write", "--link", "local")
         after = (self.repo / "jt-queue" / "board.md").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-work" / "references" / "contract.md").read_text(encoding="utf-8")
         source = GATE_PATH.read_text(encoding="utf-8")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refused: browser-empty", result.stdout)
@@ -1228,7 +1239,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         self.assertIn("start-down", GATE_PATH.read_text(encoding="utf-8"))
-        loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-work" / "references" / "contract.md").read_text(encoding="utf-8")
         self.assertNotIn("start-down", loop)
 
     def test_screen_click_that_misses_the_header_cannot_reach_review(self) -> None:
@@ -1249,7 +1260,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertNotIn("review:", after)
         self.assertIn("click-mismatch", GATE_PATH.read_text(encoding="utf-8"))
-        loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-work" / "references" / "contract.md").read_text(encoding="utf-8")
         self.assertNotIn("click-mismatch", loop)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and port_open(port):

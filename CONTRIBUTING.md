@@ -13,7 +13,7 @@ Thanks for helping. Issues and pull requests are welcome.
 1. Fork, then branch from `main`.
 2. Run the tests: `python3 -m unittest discover -s tests` (Python 3.10+, standard library only; the suite takes a couple of minutes).
 3. Keep the skills dependency-free. `gate.py` and `landed.py` use only the standard library.
-4. If you change gate behaviour or a file format, update `skills/jt-work-queue/references/contract.md`, the affected `SKILL.md`, and `CHANGELOG.md`, and add or adjust a test.
+4. If you change gate behaviour or a queue file format, update `skills/jt-work/references/contract.md`, the affected `SKILL.md`, and `CHANGELOG.md`, and add or adjust a test. Then copy that contract and `skills/jt-work/scripts/gate.py` into `jt-setup` and `jt-add-task` so the three copies stay byte-identical. `specdoc.py` and `check.py` live in `skills/jt-spec-ac/scripts/`; copy them (and `references/rules.md` and `references/input.md`) into every spec skill that ships them, and copy `specdoc.py` into `jt-board`. `board.py` lives only in `skills/jt-board/scripts/`. The installer skips a symlink that points outside the skill, so these are real copies. If you change a heading, table column, or marker that `check.py` reads, update the skill that writes it and the fixtures in `evals/files/`.
 5. Open a pull request that says what changed and why. CI runs the tests, `bandit`, Agent Skills spec validation, and a SkillSpector scan. Any new SkillSpector suppression in `.skillspector-baseline.yaml` needs a written reason.
 
-Commit messages follow `type(scope): summary` (for example `fix(gate): ...`).
+Commit messages follow `type(scope): summary` (for example `fix(gate): ...`). When the change has a ticket id, put that id at the end: `feat(booking): add room search API (BOOK-12)`. Copy the id the ticket already has. Do not invent one.

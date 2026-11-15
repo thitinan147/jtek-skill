@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
+GATE_PATH = REPO / "skills" / "jt-work" / "scripts" / "gate.py"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:

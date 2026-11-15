@@ -1,0 +1,6 @@
+interface:
+  display_name: "JT Spec AC"
+  short_description: "Human-only: draft acceptance criteria from the code"
+
+policy:
+  allow_implicit_invocation: false
