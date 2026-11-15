@@ -1,0 +1,6 @@
+interface:
+  display_name: "JT Board"
+  short_description: "Human-only: open a FigJam-style spec board"
+
+policy:
+  allow_implicit_invocation: false

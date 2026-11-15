@@ -6,7 +6,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 ## Trust model (read before installing)
 
-`jtek-skill` is a work queue for coding agents. It is **not a sandbox**. Its Python gate (`skills/jt-work-queue/scripts/gate.py`) runs shell commands on your machine, so these commands are code that you are trusting:
+`jtek-skill` is a work queue for coding agents. It is **not a sandbox**. Its Python gate (`skills/jt-work/scripts/gate.py`, the same file linked from `jt-setup` and `jt-add-task`) runs shell commands on your machine, so these commands are code that you are trusting:
 
 | Command | Where it is declared | Run by |
 |---|---|---|
@@ -29,17 +29,20 @@ How this is kept in check:
 ## What the skills do outside the repository
 
 - `gh` is called read-only (`gh pr view`, `gh pr list`) to find out whether a task branch has landed.
-- On handoff, `/jt-work-queue` **pushes the task branch `task-<id>-<slug>` and opens a draft PR** (`gh pr create --draft`) when a git remote exists. The branch slug and the PR title carry the task name; the PR body does not carry `do:` or `pass:`. With no remote it stays local. This sends your code to that remote on purpose; do not use the skill with a remote you do not want branches pushed to. A gitignored `jt-queue/` is not part of that push.
-- The skills never merge. `merge:` and `drop:` are written only by the human through `/jt-review-work`.
-- No network calls are made by the scripts apart from `gh` and a connection check against `127.0.0.1` for screen checks. Setup commands you configure (for example `npm install`) can of course use the network.
+- On handoff, `/jt-work` **pushes the task branch `task-<id>-<slug>` and opens a draft PR** (`gh pr create --draft`) when a git remote exists. The PR title is `type(scope): summary (<ticket-id>)`. The PR body does not carry `do:` or `pass:`. With no remote it stays local. This sends your code to that remote on purpose; do not use the skill with a remote you do not want branches pushed to. A gitignored `jt-queue/` is not part of that push.
+- The skills never merge. `merge:` and `drop:` are written only by the human through `/jt-review`.
+- No network calls are made by the queue scripts apart from `gh` and a connection check against `127.0.0.1` for screen checks. Setup commands you configure (for example `npm install`) can of course use the network.
+- **`scripts/check.py`** (the same file, copied into `jt-spec-ac`, `jt-spec-split`, and `jt-spec-handoff`) reads Markdown files you pass it and prints a report. It never writes or deletes files, runs no subprocess, and makes no network calls.
+- **`scripts/board.py`** reads that Markdown and writes `board.html` (or the path given with `--output`). It does not modify the Markdown. With `--open` it opens that file in the default browser. `board.py` itself makes no network calls. The HTML loads [Google Fonts](https://fonts.googleapis.com/) from `fonts.googleapis.com` and `fonts.gstatic.com` each time someone opens it.
+- The spec commands tell the agent to read the repos in `code_roots` and write Markdown under `docs_root`. They do not commit, push, delete, or move files. `pdftotext` and `pdftoppm` run only on a PDF the user gave, when it is too large to read directly.
 
 ## Treating repository text as data
 
-Both skills tell the agent to treat board, task, plan, diff, commit and PR text as data and never as instructions. This is an instruction to the model, not a technical control: a model can still be fooled. The human review in `/jt-review-work` is the real control.
+The skills tell the agent to treat board, task, plan, spec, diff, commit and PR text as data and never as instructions. This is an instruction to the model, not a technical control: a model can still be fooled. The human review in `/jt-review`, and the person who approves each spec decision, are the real controls.
 
-## Human-only command
+## Human-only commands
 
-`/jt-review-work` is marked human-only with `disable-model-invocation: true` (Claude Code) and `allow_implicit_invocation: false` (Codex, `agents/openai.yaml`). Other agents do not read those fields; there the rule rests on the skill text alone. That field is outside the Agent Skills specification, so `skills-ref validate` reports it for this skill.
+`/jt-review`, `/jt-spec-split`, `/jt-spec-ac`, `/jt-spec-handoff`, and `/jt-board` are marked human-only with `disable-model-invocation: true` (Claude Code) and `allow_implicit_invocation: false` (Codex, `agents/openai.yaml`). Other agents do not read those fields; there the rule rests on the skill text alone (`HUMAN-ONLY COMMAND.` at the start of the description). Those fields are outside the Agent Skills specification, so CI validates a copy with them removed.
 
 ## Scanning
 

@@ -2,26 +2,26 @@
 
 Full walkthrough of the queue. For a short start see the [README](../README.md).
 
-## 1. Start a project or a new round (`setup` → `brief` → `add-task`)
-Run `/jt-work-queue` in any Git repository:
+## 1. Start a project or a new round (`/jt-setup` → `/jt-add-task`)
+Run `/jt-setup` in any Git repository:
 
 ```text
-/jt-work-queue
+/jt-setup
 ```
 
-- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, and `<STACK_LOCK>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-work-queue/assets/board.template.md`](../skills/jt-work-queue/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
-- **Empty board and no `jt-queue/brief.md` (`brief`):** The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-work-queue/assets/brief.template.md`](../skills/jt-work-queue/assets/brief.template.md)).
-- **Brief ready (`add-task`):** The agent drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-work-queue/assets/task.template.md`](../skills/jt-work-queue/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
+- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, and `<STACK_LOCK>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-setup/assets/board.template.md`](../skills/jt-setup/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
+- **Empty board and no `jt-queue/brief.md` (`brief`):** Run `/jt-add-task`. The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-add-task/assets/brief.template.md`](../skills/jt-add-task/assets/brief.template.md)).
+- **Brief ready (`add-task`):** `/jt-add-task` drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-add-task/assets/task.template.md`](../skills/jt-add-task/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
 
 ## 2. Add one or multiple tasks at once
-Pass your task directly to `/jt-work-queue`:
+Pass your task directly to `/jt-add-task`:
 
 ```text
 # Add a single task
-/jt-work-queue Add rate limiting to POST /api/login
+/jt-add-task Add rate limiting to POST /api/login
 
 # Break a feature into several tasks
-/jt-work-queue Break user authentication into 3 tasks:
+/jt-add-task Break user authentication into 3 tasks:
 1. Database migration and User model (first)
 2. POST /api/login and session middleware (main)
 3. Login form UI and E2E check (main, screen: yes)
@@ -33,39 +33,40 @@ Pass your task directly to `/jt-work-queue`:
 - **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
 - **Same topic:** Tasks that share `layer:` link each other under `refs:`.
 - **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
-- **Verification tiers:** See [`skills/jt-work-queue/references/contract.md`](../skills/jt-work-queue/references/contract.md).
+- **Verification tiers:** See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md).
   - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
-  - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work-queue/assets/plan.template.md`](../skills/jt-work-queue/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
+  - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work/assets/plan.template.md`](../skills/jt-work/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
 
 ## 3. Work the queue (`do-task`)
-Each invocation of `/jt-work-queue` follows `gate.py next`: a `send-back:` task first, then an `ask:` whose question is cleared, then the first ready task in `first`, then `main`, then `later`.
+`/jt-work` is one command. There is no `--loop` flag. With no argument it keeps following `gate.py next` until `next` is `wait` or `stop`: a `send-back:` task first, then an `ask:` whose question is cleared, then ready tasks in `first`, then `main`, then `later`. A task whose files overlap an open `review:` or `send-back:` is skipped. `/jt-work <ticket-id>` works only that ticket (the `ticket:` line, or the board id) and then stops.
 
 ```text
-/jt-work-queue
+/jt-work
+/jt-work BOOK-12
 ```
 
 Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a human approves the exact command strings:
 
 ```bash
-python3 skills/jt-work-queue/scripts/gate.py approve-commands --root . --id 001
+python3 skills/jt-work/scripts/gate.py approve-commands --root . --id 001
 ```
 
-Commit code on the task branch `task-<id>-<slug>` (for example `task-12-login-rate-limit`; the slug is ASCII `a-z0-9` words joined by `-`; a plain `task-<id>` still works), not `jt-queue/`. Keep one branch per task: the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push the branch and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>-<slug> --title '<id>: <name>' --body 'Task <id> from jt-queue.'`). `reach-review --write` refuses with `pr-missing` until that open draft PR has the task branch as head and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
+Commit code on the task branch `task-<id>-<slug>` (for example `task-12-login-rate-limit`; the slug is ASCII `a-z0-9` words joined by `-`; a plain `task-<id>` still works), not `jt-queue/`. Keep one branch per task: the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. The conventional branch `feat/BOOK-12-room-search` is the name to aim for later; this version of the gate does not look it up, so `/jt-work` does not create it. The commit subject and the PR title are `type(scope): summary (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. The ticket id is copied from the ticket. The type is the task kind. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push the branch and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>-<slug> --title 'feat(booking): add room search API (BOOK-12)' --body 'Task <id> from jt-queue.'`). `reach-review --write` refuses with `pr-missing` until that open draft PR has the task branch as head and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
 
 ## 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
 When one or more tasks reach `review:`, the human runs:
 
 ```text
-/jt-review-work
+/jt-review
 ```
 
 Or to inspect a specific task directly:
 
 ```text
-/jt-review-work 001
+/jt-review 001
 ```
 
-`/jt-review-work` reads `jt-queue/board.md` from the working tree (from the `<queue>` branch only when that file is tracked). It flags files touched outside `files:` and non-whitespace changes on `style` tasks, checks whether `task-<id>` has landed, and records the decision on the board only:
+`/jt-review` reads `jt-queue/board.md` from the working tree (from the `<queue>` branch only when that file is tracked). It flags files touched outside `files:` and non-whitespace changes on `style` tasks, checks whether `task-<id>` has landed, and records the decision on the board only:
 - **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`.
 - **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`.
 - **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging.
@@ -82,7 +83,7 @@ Clone the repos side by side and keep the board in the one you open most (the ho
 Tell the agent about the other repo:
 
 ```text
-/jt-work-queue add repo be ../app-be
+/jt-setup add repo be ../app-be
 ```
 
 It runs `gate.py detect --root ../app-be`, shows you this block, and writes it after you confirm:
@@ -129,11 +130,11 @@ land: be, fe
 
 - The agent commits on `task-<id>` in both repos. `reach-review` runs each repo's `TEST_CMD` in its own worktree, starts both apps from the task branches for the screen check, and needs `## review-diff` to cite `fe: <sha>` and `be: <sha>`.
 - `--write` records both PRs: `review: fe:<url> be:<url>`.
-- In `/jt-review-work`, `landed.py` prints each repo's state in `land:` order. `merge:` needs `landed: all`. If the frontend landed before the backend it prints `order-warning:` so you can check nothing broke.
+- In `/jt-review`, `landed.py` prints each repo's state in `land:` order. `merge:` needs `landed: all`. If the frontend landed before the backend it prints `order-warning:` so you can check nothing broke.
 
 ## Repository Artifacts (`jt-queue/`)
 
-See [`skills/jt-work-queue/references/contract.md`](../skills/jt-work-queue/references/contract.md) for the complete file and gate contract:
+See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md) for the complete file and gate contract:
 
 ```text
 jt-queue/

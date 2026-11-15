@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
-LANDED_PATH = REPO / "skills" / "jt-review-work" / "scripts" / "landed.py"
+GATE_PATH = REPO / "skills" / "jt-work" / "scripts" / "gate.py"
+LANDED_PATH = REPO / "skills" / "jt-review" / "scripts" / "landed.py"
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -155,8 +155,8 @@ esac
     def test_standalone_review_skill_without_work_queue_runs_landed(self) -> None:
         git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
         with tempfile.TemporaryDirectory() as isolated:
-            dest = Path(isolated) / "skills" / "jt-review-work"
-            shutil.copytree(REPO / "skills" / "jt-review-work", dest)
+            dest = Path(isolated) / "skills" / "jt-review"
+            shutil.copytree(REPO / "skills" / "jt-review", dest)
             res = subprocess.run(
                 [sys.executable, str(dest / "scripts" / "landed.py"), "--root", str(self.repo), "--id", "12"],
                 cwd=self.repo,

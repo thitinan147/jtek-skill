@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-GATE_PATH = REPO / "skills" / "jt-work-queue" / "scripts" / "gate.py"
+GATE_PATH = REPO / "skills" / "jt-work" / "scripts" / "gate.py"
 
 
 def load_gate():
@@ -230,8 +230,8 @@ class ScreenCheckCliTests(unittest.TestCase):
 
 class ScreenCheckDocTests(unittest.TestCase):
     def test_skills_prefer_the_fixed_cli_and_still_refuse_one_off_checkers(self) -> None:
-        work = (REPO / "skills" / "jt-work-queue" / "SKILL.md").read_text(encoding="utf-8")
-        loop = (REPO / "skills" / "jt-work-queue" / "references" / "contract.md").read_text(
+        work = (REPO / "skills" / "jt-work" / "SKILL.md").read_text(encoding="utf-8")
+        loop = (REPO / "skills" / "jt-work" / "references" / "contract.md").read_text(
             encoding="utf-8"
         )
         for text in (work, loop):

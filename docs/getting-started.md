@@ -19,7 +19,8 @@ You type the slash commands. The agent runs `gate.py` for you; the commands are 
 | **task** | `jt-queue/tasks/<id>/task.md`: what to do (`do:`), what not to touch (`out:`), how to tell it is done (`pass:`), and which files it may change (`files:`). |
 | **kind** | The type of task in brackets on the board line: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. |
 | **queue branch** | The branch named on the `queue:` line of the board, usually `main`. Work lands here. |
-| **`task-<id>-<slug>`** | The branch the agent commits a task's code on, such as `task-1-readme-usage`. One per task. |
+| **`task-<id>-<slug>`** | The branch the agent commits a task's code on, such as `task-1-readme-usage`. One per task. The gate finds only this name. The conventional branch `feat/BOOK-12-room-search` is documented and not created yet. |
+| **ticket id** | The id the ticket already has (`BOOK-12`, `#45`, a Notion id). It is copied onto the commit and the PR title: `feat(booking): add room search API (BOOK-12)`. It is not the board id, and its shape is not checked. |
 | **gate** | `gate.py`, a Python script that decides whether a task may go to review. The agent cannot mark `review:` without it. |
 | **Quick / Standard** | The gate's tier, worked out from the kind. **Quick** (`docs`, plain `style`) needs passing tests. **Standard** (everything else) also needs `plan.md` with evidence for every `pass:` line and a review of the diff. |
 | **plan.md** | `jt-queue/tasks/<id>/plan.md`: the agent's notes for a Standard task, including the `## evidence` table and `## review-diff`. |
@@ -49,7 +50,7 @@ def c_to_f(celsius: float) -> float:
 ### 1. Set up the board
 
 ```text
-/jt-work-queue
+/jt-setup
 ```
 
 The agent asks the gate what to do next:
@@ -57,7 +58,7 @@ The agent asks the gate what to do next:
 ```text
 $ gate.py next --root .
 action: setup-board
-command: /jt-work-queue
+command: /jt-setup
 id:
 reason: no-board
 merge: no
@@ -84,6 +85,10 @@ queue: main
 ```
 
 ### 2. Agree the brief, then the tasks
+
+```text
+/jt-add-task
+```
 
 The gate now answers `action: brief`. The agent reads the code, asks you only what the code cannot answer, and writes `jt-queue/brief.md` after you agree. Next it answers `action: add-task`, and the agent drafts one `task.md` per task for your approval. This is part of task 2 (empty fields left out):
 
@@ -118,7 +123,7 @@ Each `pass:` line is something you can run. The board now lists both tasks:
 
 ### 3. A Quick task, and approving the test command
 
-Run `/jt-work-queue` again. The gate picks task 1, a `docs` task. The agent commits the README change on `task-1-readme-usage`, then asks the gate:
+Run `/jt-work`. The gate picks task 1, a `docs` task. The agent commits the README change on `task-1-readme-usage`, then asks the gate:
 
 ```text
 $ gate.py reach-review --root . --id 1
@@ -255,7 +260,7 @@ line: - [ ] **1** add usage to README (docs) review: local
 ```
 
 ```text
-/jt-review-work
+/jt-review
 ```
 
 This command is for humans only; the agent is not allowed to start it. It shows each `review:` task with its `pass:` lines, the plan's evidence and review, the diff, and any file changed outside `files:`. You decide:
@@ -286,10 +291,11 @@ reason: queue-clear
 merge: no
 ```
 
-The round is done. Start the next one with `/jt-work-queue`.
+The round is done. Start the next one with `/jt-add-task`.
 
 ## Where to go next
 
 - [Usage guide](usage.md): priorities (`first`, `main`, `later`), splitting work into tasks, screen checks, and work across two repos.
-- [File and gate contract](../skills/jt-work-queue/references/contract.md): every field and rule the gate reads.
+- [File and gate contract](../skills/jt-work/references/contract.md): every field and rule the gate reads.
+- [Spec documents](spec.md): acceptance criteria and test steps, when you want a draft before the queue.
 - [SECURITY.md](../SECURITY.md): what runs on your machine and what leaves it.

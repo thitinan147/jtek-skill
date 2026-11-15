@@ -33,12 +33,15 @@ jobs:
         run: uvx bandit -r skills -s B404,B603,B607,B105
       - name: Agent Skills spec validation
         run: |
-          uvx --from skills-ref agentskills validate skills/jt-work-queue
-          # jt-review-work uses disable-model-invocation (Claude Code), which is outside the spec.
-          # Validate a copy without that one field so any other problem still fails.
-          rm -rf /tmp/spec && mkdir /tmp/spec && cp -R skills/jt-review-work /tmp/spec/jt-review-work
-          sed -i '/^disable-model-invocation:/d' /tmp/spec/jt-review-work/SKILL.md
-          uvx --from skills-ref agentskills validate /tmp/spec/jt-review-work
+          # disable-model-invocation and argument-hint are Claude Code fields outside the spec.
+          # Validate a dereferenced copy without them so any other problem still fails.
+          rm -rf /tmp/spec && mkdir /tmp/spec
+          for skill in skills/*/; do
+            name=$(basename "$skill")
+            cp -RL "$skill" "/tmp/spec/$name"
+            sed -i -e '/^disable-model-invocation:/d' -e '/^argument-hint:/d' "/tmp/spec/$name/SKILL.md"
+            uvx --from skills-ref agentskills validate "/tmp/spec/$name"
+          done
 
   skillspector:
     # Blocks on HIGH/CRITICAL findings; uploads SARIF to the Security tab.
@@ -47,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        skill: [jt-work-queue, jt-review-work]
+        skill: [jt-add-task, jt-board, jt-help, jt-review, jt-setup, jt-spec-ac, jt-spec-handoff, jt-spec-split, jt-work]
     permissions:
       contents: read
       security-events: write
