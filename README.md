@@ -2,7 +2,7 @@
 
 **Let your coding agent work through a task queue, and let a script, not the agent, decide when work is ready for you to review.**
 
-`jtek-skill` is a pair of [Agent Skills](https://agentskills.io/) for one Git repository, or for a frontend and a backend in two repos driven from one board. The agent takes tasks from a board, commits its work on a branch, and asks a deterministic Python gate ([`gate.py`](skills/jt-work-queue/scripts/gate.py)) to check the result: the diff, a passing test run, and review notes. Only when the gate agrees does the task move to `review:`. You hold the merge key: the agent can never merge.
+`jtek-skill` is a pair of [Agent Skills](https://agentskills.io/) for one Git repository, or for a frontend and a backend in two repos driven from one board. The agent takes tasks from a board, commits its work on a branch, and asks a deterministic Python gate ([`gate.py`](skills/jt-work-queue/scripts/gate.py)) to check the result: the diff, a passing test run, lint and typecheck when the board sets them, and review notes. Only when the gate agrees does the task move to `review:`. You hold the merge key: the agent can never merge.
 
 *Constrain the outcome, not the agent.*
 
@@ -20,7 +20,7 @@ Pick **one** method. Installing both gives you every skill twice.
 
 ```bash
 # Pin a release so later changes cannot reach you unreviewed (recommended)
-npx skills add thitinan147/jtek-skill#v22.2.0
+npx skills add thitinan147/jtek-skill#v23.0.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 
 ```text
 # Pinned to a release (recommended)
-/plugin marketplace add thitinan147/jtek-skill#v22.2.0
+/plugin marketplace add thitinan147/jtek-skill#v23.0.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v22.2.0` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
+Without `#v23.0.0` the marketplace follows the default branch, and `/plugin update jtek@jtek-skill` pulls the latest.
 
 As a plugin, the commands are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`. Use those names if another skill has the same short name.
 
@@ -79,7 +79,7 @@ Human + Agent (/jt-work-queue)                          Human only (/jt-review-w
 ```
 
 1. **Queue files stay local; code lives on `task-<id>-<slug>`.** `jt-queue/` is gitignored, so your board is not committed or pushed.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks also need a `plan.md` whose evidence covers every `pass:` line and whose review cites the latest commit. After three failed rounds the gate tells the agent to ask you.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. When the board sets `<LINT_CMD>` or `<TYPECHECK_CMD>`, those must pass too. An added secret file stops the gate. `allowed` prints a `gates:` line in a fixed order. After three failed rounds the gate tells the agent to ask you.
 3. **You hold the merge key.** Only `/jt-review-work`, run by a human, can close or send back a task, and `merge:` is written only after the branch has landed.
 
 | Command | Who | What it does |
@@ -108,7 +108,7 @@ Needs `git` and Python 3.10 or later (standard library only). The GitHub CLI (`g
 
 ## Security
 
-`jtek-skill` runs shell commands on your machine (your test command and any task `start`/`click`). It is not a sandbox. A human must approve those exact commands with `gate.py approve-commands` first, and the gate refuses if they change. See [SECURITY.md](SECURITY.md) for the trust model, what leaves your machine, and how to report a vulnerability.
+`jtek-skill` runs shell commands on your machine (your test, lint, and typecheck commands, and any task `start`/`click`). It is not a sandbox. A human must approve those exact commands with `gate.py approve-commands` first, and the gate refuses if they change. See [SECURITY.md](SECURITY.md) for the trust model, what leaves your machine, and how to report a vulnerability.
 
 ## Contributing
 

@@ -84,6 +84,10 @@ def _env_timeout(name: str, default: float) -> float:
 NEXT_FOR = {
     "test-failed": "retry",
     "test-timeout": "retry",
+    "lint-failed": "retry",
+    "lint-timeout": "retry",
+    "typecheck-failed": "retry",
+    "typecheck-timeout": "retry",
     "setup-failed": "retry",
     "review-diff": "retry",
     "one-off-checker": "retry",
@@ -117,10 +121,15 @@ NEXT_FOR = {
     "repo-missing": "stop",
     "repo-invalid": "stop",
     "repo-undeclared": "ask",
+    "secret-suspect": "ask",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
     "test-timeout": "The test command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "lint-failed": "Read log:, fix the lint failure on task-<id>, commit, then run reach-review again.",
+    "lint-timeout": "The lint command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "typecheck-failed": "Read log:, fix the typecheck failure on task-<id>, commit, then run reach-review again.",
+    "typecheck-timeout": "The typecheck command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
     "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
@@ -154,9 +163,46 @@ HINT_FOR = {
     "repo-missing": "A repo under '## repos' in board.md is not a git repository at its path:. Clone it there or fix path:, then run again.",
     "repo-undeclared": "task-<id> has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
     "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
+    "secret-suspect": "Remove the named file from the branch and do not print its contents. If it must stay, run gate.py ask.",
 }
 MAX_ROUNDS = 3
-ROUND_REASONS = frozenset({"test-failed", "test-timeout", "setup-failed"})
+ROUND_REASONS = frozenset(
+    {
+        "test-failed",
+        "test-timeout",
+        "setup-failed",
+        "lint-failed",
+        "lint-timeout",
+        "typecheck-failed",
+        "typecheck-timeout",
+    }
+)
+# Printed on allowed, in this order, so a reader does not have to guess which checks ran.
+GATE_REPORT = (
+    "tests",
+    "lint",
+    "typecheck",
+    "screen",
+    "review-diff",
+    "security",
+    "test-weakening",
+)
+_CHECK_FAIL = {
+    "test": "test-failed",
+    "lint": "lint-failed",
+    "typecheck": "typecheck-failed",
+}
+_CHECK_TIMEOUT = {
+    "test": "test-timeout",
+    "lint": "lint-timeout",
+    "typecheck": "typecheck-timeout",
+}
+_PRIVATE_KEY_LINE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+_SKIP_MARKER = re.compile(
+    r"(?:\.skip\b|\.only\b|\bxit\s*\(|\bxdescribe\s*\(|\bxcontext\s*\(|"
+    r"@pytest\.mark\.skip\b|@skip\b|\bpytest\.mark\.xfail\b|\bxfail\b|unittest\.skip\b)"
+)
+_PRIVATE_KEY_STEMS = frozenset({"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"})
 _VERDICT_LINE = re.compile(r"^[\s>*-]*verdict:[ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 _CHECKED_LINE = re.compile(r"^[\s>*-]*checked:[ \t]*\S", re.IGNORECASE | re.MULTILINE)
 REVIEW_DETAIL = {
@@ -1166,11 +1212,16 @@ def _digest(parts: dict[str, str]) -> str:
 
 
 def _board_commands(board_text: str) -> dict[str, str]:
-    # Without `## repos` this must stay exactly the v22 dict, so existing approvals still match.
+    # Empty LINT_CMD and TYPECHECK_CMD stay out, so a v22 approval of TEST/SETUP still matches.
+    # A non-empty value is part of the hash: setting or editing it is commands-changed.
     commands = {
         "TEST_CMD": parse_field(board_text, "TEST_CMD"),
         "SETUP_CMD": parse_field(board_text, "SETUP_CMD"),
     }
+    for name in ("TYPECHECK_CMD", "LINT_CMD"):
+        value = parse_field(board_text, name)
+        if value.strip():
+            commands[name] = value
     for repo in parse_repos(board_text):
         if repo.is_home:
             continue
@@ -1179,6 +1230,10 @@ def _board_commands(board_text: str) -> dict[str, str]:
         commands[f"repo:{repo.name}:queue"] = repo.queue
         commands[f"repo:{repo.name}:TEST_CMD"] = repo.values.get("TEST_CMD", "")
         commands[f"repo:{repo.name}:SETUP_CMD"] = repo.values.get("SETUP_CMD", "")
+        for name in ("TYPECHECK_CMD", "LINT_CMD"):
+            value = repo.values.get(name, "")
+            if value.strip():
+                commands[f"repo:{repo.name}:{name}"] = value
     return commands
 
 
@@ -1209,7 +1264,7 @@ def _board_runs_commands(commands: dict[str, str]) -> bool:
         return True  # path: decides where every command and start line runs
     for name, value in commands.items():
         value = value.strip()
-        if name.endswith("SETUP_CMD") and value:
+        if name.endswith(("SETUP_CMD", "LINT_CMD", "TYPECHECK_CMD")) and value:
             return True
         if name.endswith("TEST_CMD") and value not in ("", NO_SUITE):
             return True
@@ -1246,12 +1301,12 @@ def _commands_refusal(
         known = approvals.get("board")
         if not known:
             return "commands-unapproved", (
-                "TEST_CMD/SETUP_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
+                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(board_cmds):
             return "commands-changed", (
-                "TEST_CMD/SETUP_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
+                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     card_cmds = _card_commands(card_text)
@@ -1355,6 +1410,25 @@ def _run_shell(
                 partial = partial.decode("utf-8", errors="replace")
             out = partial or ""
     return (proc.returncode if not timed_out else -1, out or "", timed_out)
+
+
+def _run_check(
+    root: Path, card_id: str, work: Path, slug: str, command: str, repo: str = ""
+) -> int | None:
+    """Run one approved command. Return a refusal exit code, or None when it exits 0."""
+    limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
+    code, out, timed_out = _run_shell(command, work, timeout=limit)
+    if not timed_out and code == 0:
+        return None
+    log_slug = f"{repo}-{slug}" if repo else slug
+    detail, log_path = _record_command_log(root, card_id, log_slug, out)
+    reason = _CHECK_TIMEOUT[slug] if timed_out else _CHECK_FAIL[slug]
+    note = f"repo {repo}:\n{detail}" if repo else detail
+    return _refuse_round(root, card_id, reason, note, log_path)
+
+
+def _gates_line(results: dict[str, str]) -> str:
+    return "gates: " + " · ".join(f"{name} {results[name]}" for name in GATE_REPORT)
 
 
 def emit(decision: Decision, extra: list[str] | None = None) -> None:
@@ -2483,6 +2557,8 @@ class Target:
     queue: str
     test_cmd: str
     setup_cmd: str
+    lint_cmd: str = ""
+    typecheck_cmd: str = ""
 
 
 def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
@@ -2493,6 +2569,8 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
             parse_queue(board_text),
             parse_field(board_text, "TEST_CMD"),
             parse_field(board_text, "SETUP_CMD"),
+            parse_field(board_text, "LINT_CMD"),
+            parse_field(board_text, "TYPECHECK_CMD"),
         )
     return Target(
         repo.name,
@@ -2500,6 +2578,8 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
         repo.queue,
         repo.values.get("TEST_CMD", ""),
         repo.values.get("SETUP_CMD", ""),
+        repo.values.get("LINT_CMD", ""),
+        repo.values.get("TYPECHECK_CMD", ""),
     )
 
 
@@ -2668,6 +2748,124 @@ def _diff_names(root: Path, queue: str, card_id: str, added_only: bool = False) 
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
+def _range_diff(root: Path, queue: str, card_id: str, extra: list[str]) -> str | None:
+    if not queue or not _branch_exists(root, task_branch(root, card_id)):
+        return None
+    proc = _run_git(
+        root,
+        ["diff", *extra, f"{queue}...{task_branch(root, card_id)}", "--", ".", ":(exclude)jt-queue"],
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def _is_secret_env_name(name: str) -> bool:
+    return name != ".env.example" and name.startswith(".env")
+
+
+def _is_private_key_name(name: str) -> bool:
+    if name.endswith(".pub"):
+        return False
+    if name.endswith(".pem"):
+        return True
+    return name.split(".", 1)[0] in _PRIVATE_KEY_STEMS
+
+
+def _added_paths(diff_status: str) -> list[str]:
+    paths: list[str] = []
+    for line in diff_status.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[0]:
+            continue
+        path = parts[-1].strip()
+        if path and path != "/dev/null":
+            paths.append(path)
+    return paths
+
+
+def secret_suspects(root: Path, queue: str, card_id: str) -> list[str] | None:
+    """Added secret files and private-key lines. Paths only: never file contents."""
+    listed = _range_diff(root, queue, card_id, ["--name-status", "--diff-filter=ACR"])
+    if listed is None:
+        return None
+    names = [
+        path
+        for path in _added_paths(listed)
+        if _is_secret_env_name(path.rsplit("/", 1)[-1]) or _is_private_key_name(path.rsplit("/", 1)[-1])
+    ]
+    body = _range_diff(root, queue, card_id, ["--unified=0", "--no-color"])
+    if body is None:
+        return None
+    named = set(names)
+    hits: list[str] = []
+    path = ""
+    new_line = 0
+    for line in body.splitlines():
+        if line.startswith("+++ "):
+            raw = line[4:]
+            if raw.startswith("b/"):
+                raw = raw[2:]
+            path = "" if raw == "/dev/null" else raw
+            continue
+        if line.startswith("@@"):
+            match = re.search(r"\+(\d+)", line)
+            new_line = int(match.group(1)) if match else 0
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            if path and path not in named and new_line and _PRIVATE_KEY_LINE.search(line):
+                hits.append(f"{path}:{new_line}")
+            if new_line:
+                new_line += 1
+    return sorted(set(names) | set(hits))
+
+
+def _is_test_path(path: str) -> bool:
+    pure = PurePosixPath(path)
+    if any(part in {"test", "tests", "__tests__"} for part in pure.parts[:-1]):
+        return True
+    name = pure.name
+    if name.startswith("test_") and name.endswith(".py"):
+        return True
+    if name.endswith("_test.py") or name.endswith("_test.go"):
+        return True
+    return ".test." in name or ".spec." in name
+
+
+def test_weakening(root: Path, queue: str, card_id: str) -> list[str] | None:
+    """Deleted test files and added skip/only markers. Locations only, not the line text."""
+    deleted = _range_diff(root, queue, card_id, ["--name-only", "--diff-filter=D"])
+    if deleted is None:
+        return None
+    found = [
+        f"deleted:{path.strip()}"
+        for path in deleted.splitlines()
+        if path.strip() and _is_test_path(path.strip())
+    ]
+    body = _range_diff(root, queue, card_id, ["--unified=0", "--no-color"])
+    if body is None:
+        return None
+    path = ""
+    new_line = 0
+    for line in body.splitlines():
+        if line.startswith("+++ "):
+            raw = line[4:]
+            if raw.startswith("b/"):
+                raw = raw[2:]
+            path = "" if raw == "/dev/null" else raw
+            continue
+        if line.startswith("@@"):
+            match = re.search(r"\+(\d+)", line)
+            new_line = int(match.group(1)) if match else 0
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            if path and new_line and _SKIP_MARKER.search(line):
+                found.append(f"marker:{path}:{new_line}")
+            if new_line:
+                new_line += 1
+    return sorted(set(found))
+
+
 def outside_card_files(
     root: Path, queue: str, card_id: str, card_text: str, repos: list[RepoSpec] | None = None
 ) -> list[str]:
@@ -2824,6 +3022,14 @@ def _reach_review_multi(
             return _refuse("task-branch-missing", detail=task_branch_missing_detail(target.root, card_id, target.name))
         if not _code_diff_reviewable(target.root, target.queue, card_id):
             return _refuse("review-diff", detail=f"repo {target.name}: no diff outside jt-queue/ to review")
+    suspects: list[str] = []
+    for target in targets:
+        found = secret_suspects(target.root, target.queue, card_id)
+        if found is None:
+            return _refuse("review-diff", detail=f"repo {target.name}: could not read the diff on task-<id>")
+        suspects.extend(f"{target.name}:{item}" for item in found)
+    if suspects:
+        return _refuse("secret-suspect", detail=", ".join(suspects))
     status, failed = multi_review_detail(root, card_id, targets)
     if status != "ok":
         where = f"repo {failed}: " if failed else ""
@@ -2847,7 +3053,10 @@ def _reach_review_multi(
     need_screen = sees_screen(card_text)
     if need_screen and parse_field(text, "BROWSER_TOOL").strip() == "":
         return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-    need_work = need_screen or any(t.test_cmd.strip() != NO_SUITE for t in targets)
+    ran_test = any(t.test_cmd.strip() not in ("", NO_SUITE) for t in targets)
+    ran_lint = any(t.lint_cmd.strip() for t in targets)
+    ran_type = any(t.typecheck_cmd.strip() for t in targets)
+    need_work = need_screen or ran_test or ran_lint or ran_type
     current = ""
     try:
         with ExitStack() as stack:
@@ -2861,14 +3070,24 @@ def _reach_review_multi(
             if need_screen:
                 _click_across(works, card_text, card_id)
             for target in targets:
-                if target.test_cmd.strip() == NO_SUITE:
-                    continue
-                limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
-                code, out, timed_out = _run_shell(target.test_cmd, works[target.name], timeout=limit)
-                if timed_out or code != 0:
-                    detail, log_path = _record_command_log(root, card_id, f"{target.name}-test", out)
-                    reason = "test-timeout" if timed_out else "test-failed"
-                    return _refuse_round(root, card_id, reason, f"repo {target.name}:\n{detail}", log_path)
+                if target.test_cmd.strip() not in ("", NO_SUITE):
+                    refused = _run_check(
+                        root, card_id, works[target.name], "test", target.test_cmd, target.name
+                    )
+                    if refused is not None:
+                        return refused
+                if target.lint_cmd.strip():
+                    refused = _run_check(
+                        root, card_id, works[target.name], "lint", target.lint_cmd, target.name
+                    )
+                    if refused is not None:
+                        return refused
+                if target.typecheck_cmd.strip():
+                    refused = _run_check(
+                        root, card_id, works[target.name], "typecheck", target.typecheck_cmd, target.name
+                    )
+                    if refused is not None:
+                        return refused
         if write:
             links: list[str] = []
             for target in targets:
@@ -2893,6 +3112,26 @@ def _reach_review_multi(
     print("tier: standard")
     print("repo-review: open")
     print("repos: " + ", ".join(names))
+    weak_bits: list[str] = []
+    for target in targets:
+        weak_bits.extend(
+            f"{target.name}:{item}"
+            for item in (test_weakening(target.root, target.queue, card_id) or [])
+        )
+    weak = ",".join(weak_bits) if weak_bits else "none"
+    print(
+        _gates_line(
+            {
+                "tests": "ok" if ran_test else "skip",
+                "lint": "ok" if ran_lint else "skip",
+                "typecheck": "ok" if ran_type else "skip",
+                "screen": "ok" if need_screen else "skip",
+                "review-diff": "open",
+                "security": "ok",
+                "test-weakening": weak,
+            }
+        )
+    )
     home_name = next((repo.name for repo in parse_repos(text) if repo.is_home), "")
     outside: list[str] = []
     for target in targets:
@@ -2908,6 +3147,8 @@ def _reach_review_multi(
     needs = parse_needs(card_text)
     if needs:
         print("needs: " + "; ".join(needs))
+    if weak != "none":
+        print("test-weakening: " + weak)
     return 0
 
 
@@ -2962,13 +3203,14 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if not has_one_task_branch(root, card_id):
         return _refuse("task-branch-missing", detail=task_branch_missing_detail(root, card_id))
     tier = card_tier(root, queue, card_id, card_text, text)
-    kinds = _commit_kinds(root, queue, card_id)
-    if kinds is None:
+    if _commit_kinds(root, queue, card_id) is None:
         return _refuse("review-diff", detail="could not read the commits on task-<id> against queue:")
-    if tier == "standard" and (
-        _code_diff_reviewable(root, queue, card_id)
-        or any(opens_repo_review(kind) for kind in kinds)
-    ):
+    suspects = secret_suspects(root, queue, card_id)
+    if suspects is None:
+        return _refuse("review-diff", detail="could not read the diff on task-<id> against queue:")
+    if suspects:
+        return _refuse("secret-suspect", detail=", ".join(suspects))
+    if tier == "standard":
         if not _code_diff_reviewable(root, queue, card_id):
             return _refuse("review-diff", detail="no diff outside jt-queue/ to review")
         review_err = _review_recorded(root, queue, card_id)
@@ -2989,30 +3231,34 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     unapproved = _commands_refusal(root, text, card_id, card_text)
     if unapproved:
         return _refuse(unapproved[0], detail=unapproved[1])
+    lint_cmd = parse_field(text, "LINT_CMD")
+    type_cmd = parse_field(text, "TYPECHECK_CMD")
+    extra_checks: list[tuple[str, str]] = []
+    if tier == "standard":
+        if lint_cmd.strip():
+            extra_checks.append(("lint", lint_cmd.strip()))
+        if type_cmd.strip():
+            extra_checks.append(("typecheck", type_cmd.strip()))
     try:
         need_screen = sees_screen(card_text)
-        need_test = (test_cmd.strip() != NO_SUITE)
+        need_test = test_cmd.strip() != NO_SUITE
         if need_screen:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
                 return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-        if need_screen or need_test:
+        if need_screen or need_test or extra_checks:
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 if need_screen:
                     _click_surface(work, card_text, card_id)
                 if need_test:
-                    limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
-                    code, out, timed_out = _run_shell(test_cmd, work, timeout=limit)
-                    if timed_out:
-                        detail, log_path = _record_command_log(root, card_id, "test", out)
-                        return _refuse_round(root, card_id, "test-timeout", detail, log_path)
-                    if code != 0:
-                        detail, log_path = _record_command_log(root, card_id, "test", out)
-                        return _refuse_round(root, card_id, "test-failed", detail, log_path)
-                else:
-                    code = 0
-        else:
-            code = 0
+                    refused = _run_check(root, card_id, work, "test", test_cmd)
+                    if refused is not None:
+                        return refused
+                for slug, command in extra_checks:
+                    refused = _run_check(root, card_id, work, slug, command)
+                    if refused is not None:
+                        return refused
+        code = 0
         if write:
             kind, value = lookup_draft_pr(root, task_branch(root, card_id), queue)
             if kind == "ask":
@@ -3032,6 +3278,21 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("merge: no")
     print(f"tier: {tier}")
     print(f"repo-review: {review_state}")
+    found = test_weakening(root, queue, card_id) or []
+    weak = ",".join(found) if found else "none"
+    print(
+        _gates_line(
+            {
+                "tests": "ok" if need_test else "skip",
+                "lint": "ok" if any(slug == "lint" for slug, _cmd in extra_checks) else "skip",
+                "typecheck": "ok" if any(slug == "typecheck" for slug, _cmd in extra_checks) else "skip",
+                "screen": "ok" if need_screen else "skip",
+                "review-diff": "open" if review_state == "open" else "skip",
+                "security": "ok",
+                "test-weakening": weak,
+            }
+        )
+    )
     outside = outside_card_files(root, queue, card_id, card_text, repos)
     if outside:
         print("outside-files: " + ", ".join(outside))
@@ -3041,6 +3302,8 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     needs = parse_needs(card_text)
     if needs:
         print("needs: " + "; ".join(needs))
+    if weak != "none":
+        print("test-weakening: " + weak)
     return 0
 
 

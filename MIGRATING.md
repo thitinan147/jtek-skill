@@ -2,6 +2,16 @@
 
 Upgrade notes for older queues. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v22 to v23
+
+- **Re-approve when lint or typecheck is set.** `LINT_CMD` and `TYPECHECK_CMD` are part of the `approve-commands` hash when the cell is not empty (the home table and each `## repos` block). A board that already has either command filled in refuses with `commands-changed` until a human runs `gate.py approve-commands` again. An empty cell is left out of the hash, so a board that never set them keeps its v22 approval.
+- **Standard with no diff does not pass.** A Standard task whose branch has no diff outside `jt-queue/` is refused (`review-diff`, `no diff outside jt-queue/ to review`). It no longer answers `allowed` with `repo-review: skip`.
+- **Lint and typecheck run on Standard.** A non-empty `LINT_CMD` or `TYPECHECK_CMD` runs in the task worktree after `TEST_CMD` and must exit 0. A failure counts as a round (`lint-failed`, `typecheck-failed`, `lint-timeout`, `typecheck-timeout`). Quick tier does not run them. An empty cell is `skip`.
+- **`gates:` line.** `allowed` prints `tests`, `lint`, `typecheck`, `screen`, `review-diff`, `security`, `test-weakening` in that order.
+- **Secrets stop the gate.** An added `.env` file (not `.env.example`), a private-key file, or an added `PRIVATE KEY` block refuses with `secret-suspect` and `next: ask`. The output names the file and never the value.
+- **`test-weakening` is a report.** A deleted test file or an added `.skip` / `.only` / `xit` / `@skip` marker is printed on `allowed`. It does not refuse.
+- **Lessons.** Copy the `enforced by` column from [`skills/jt-work-queue/assets/lessons.template.md`](skills/jt-work-queue/assets/lessons.template.md). The second time the same lesson appears, add a `chore` task whose `pass:` is a lint rule, a test, or a check, and cite it in that column.
+
 ## Migrating from v21 to v22
 
 - **`plan.md` needs more before `review:` (Standard tier):** copy [`skills/jt-work-queue/assets/plan.template.md`](skills/jt-work-queue/assets/plan.template.md). `## review-diff` needs `sha:` (the latest code commit), `verdict: pass`, and at least one `checked:` line. `## evidence` needs one filled row `| pass line | command | result |` for every `pass:` line of the task. A v21 plan is refused with a `detail:` that says what is missing.
