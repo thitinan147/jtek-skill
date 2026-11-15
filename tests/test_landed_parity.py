@@ -10,6 +10,25 @@ REPO = Path(__file__).resolve().parents[1]
 GATE_PATH = REPO / "skills" / "jt-work" / "scripts" / "gate.py"
 LANDED_PATH = REPO / "skills" / "jt-review" / "scripts" / "landed.py"
 
+import importlib.util
+
+
+def _load_module(path: Path, name: str):
+    prev = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.dont_write_bytecode = prev
+
+
+landed_mod = _load_module(LANDED_PATH, "landed_mod")
+gate = _load_module(GATE_PATH, "tek_gate")
+
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -138,6 +157,20 @@ esac
         res = self._assert_parity(self._env_with_gh("bin-slug-gone", script))
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("landed: squash", res.stdout)
+
+    def test_default_task_branch_matches_gate_board_kind(self) -> None:
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            "ticket: BOOK-12\n", encoding="utf-8"
+        )
+        (self.repo / "jt-queue" / "board.md").write_text(
+            "# Board\n\nqueue: main\n\n## first\n\n- [ ] **12** item (style) review: local\n",
+            encoding="utf-8",
+        )
+        git(self.repo, "branch", "-D", "task-12")
+        head, _gone = landed_mod._task_branch(self.repo, "12")
+        self.assertTrue(_gone)
+        self.assertEqual(head, "style/BOOK-12")
+        self.assertEqual(gate.task_branch(self.repo, "12"), head)
 
     def test_other_slug_pull_request_does_not_land_a_present_branch(self) -> None:
         # task-12 is here and unmerged; an older merged PR for task-12-old must not count.

@@ -239,7 +239,7 @@ Ran 3 tests in 0.000s
 FAILED (failures=1)
 round 1 of 3
 log: ~/code/tempconv/.git/jt-queue/logs/3-test.log
-hint: Read log:, fix the cause on task-<id>, commit, then run reach-review again.
+hint: Read log:, fix the cause on the task branch, commit, then run reach-review again.
 ```
 
 On the third failed round the gate answers `next: ask`, and the agent writes you a question with what it tried instead of trying again.

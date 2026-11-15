@@ -58,8 +58,34 @@ def _branch_exists(root: Path, branch: str) -> bool:
 _TASK_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _BARE_TASK_HEAD_RE = re.compile(r"^task-(\d+(?:\.\d+)*)$")
 _BRANCH_TYPES = frozenset(
-    {"feat", "fix", "chore", "docs", "refactor", "test", "perf", "ci", "build"}
+    {
+        "feat",
+        "fix",
+        "chore",
+        "docs",
+        "refactor",
+        "test",
+        "perf",
+        "ci",
+        "build",
+        "style",
+        "revert",
+    }
 )
+_KIND_PAREN = re.compile(r"\(([a-z]+)\)")
+_COLON_TOKEN = re.compile(r"(?<!\S)([^\s:]+):")
+_STATUS_SET = frozenset(
+    {"ask:", "review:", "send-back:", "merge:", "drop:", "unknown:"}
+)
+
+
+def _normalize_ticket_id(value: str) -> str:
+    value = value.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value
 
 
 def _ticket_id(root: Path, card_id: str) -> str:
@@ -69,8 +95,42 @@ def _ticket_id(root: Path, card_id: str) -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if stripped.startswith("ticket:"):
-            return stripped.split(":", 1)[1].strip()
+            return _normalize_ticket_id(stripped.split(":", 1)[1])
     return ""
+
+
+def _read_board(root: Path) -> str:
+    path = root / "jt-queue" / "board.md"
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _cut_known_status(text: str) -> str:
+    for found in _COLON_TOKEN.finditer(text):
+        token = f"{found.group(1)}:"
+        if token in _STATUS_SET:
+            return text[: found.start()]
+    return text
+
+
+def _card_kind_in_board(board_text: str, card_id: str) -> str:
+    if not re.match(r"^\d+(\.\d+)*$", card_id):
+        return ""
+    pattern = re.compile(
+        rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*\s*(.*)$",
+        re.M,
+    )
+    found = list(pattern.finditer(board_text))
+    if len(found) != 1:
+        return ""
+    rest = _cut_known_status(found[0].group(1))
+    match = _KIND_PAREN.search(rest)
+    return match.group(1) if match else ""
+
+
+def _branch_type(kind: str) -> str:
+    return kind if kind in _BRANCH_TYPES else "feat"
 
 
 def _legacy_task_head(name: str, card_id: str) -> bool:
@@ -104,7 +164,8 @@ def _is_task_head(name: str, card_id: str, ticket_id: str = "") -> bool:
 
 def _default_task_branch(root: Path, card_id: str, ticket_id: str) -> str:
     if ticket_id:
-        return f"feat/{ticket_id}"
+        kind = _branch_type(_card_kind_in_board(_read_board(root), card_id))
+        return f"{kind}/{ticket_id}"
     return f"task-{card_id}"
 
 

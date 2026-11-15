@@ -941,15 +941,36 @@ def _branch_exists(root: Path, branch: str) -> bool:
 
 _TASK_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _BRANCH_TYPES = frozenset(
-    {"feat", "fix", "chore", "docs", "refactor", "test", "perf", "ci", "build"}
+    {
+        "feat",
+        "fix",
+        "chore",
+        "docs",
+        "refactor",
+        "test",
+        "perf",
+        "ci",
+        "build",
+        "style",
+        "revert",
+    }
 )
+
+
+def _normalize_ticket_id(value: str) -> str:
+    value = value.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value
 
 
 def ticket_id_in_card(card_text: str) -> str:
     for line in card_text.splitlines():
         stripped = line.strip()
         if stripped.startswith("ticket:"):
-            return stripped.split(":", 1)[1].strip()
+            return _normalize_ticket_id(stripped.split(":", 1)[1])
     return ""
 
 

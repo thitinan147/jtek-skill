@@ -3215,6 +3215,37 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertTrue(gate.is_task_head("feat/#45-login-fix", "12", "#45"))
         self.assertFalse(gate.is_task_head("feat/BOOK-12-room-search", "12", "BOOK-99"))
         self.assertFalse(gate.is_task_head("feat/BOOK-99-room-search", "12", "BOOK-12"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-12-room", "12", "BOOK-1"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-1-room", "12", "BOOK-12"))
+        self.assertFalse(gate.is_task_head("feat/#45-fix", "12", "#4"))
+        self.assertFalse(gate.is_task_head("feat/#4-fix", "12", "#45"))
+        self.assertTrue(gate.is_task_head("style/BOOK-12-format", "12", "BOOK-12"))
+
+    def test_ticket_id_normalization(self) -> None:
+        text = "ticket: 'BOOK-12'  # Jira\n"
+        self.assertEqual(gate.ticket_id_in_card(text), "BOOK-12")
+        self.assertEqual(gate.ticket_id_in_card('ticket: "#45"\n'), "#45")
+        self.assertEqual(gate.ticket_id_in_card("ticket: BOOK-12  # note\n"), "BOOK-12")
+
+    def test_default_branch_uses_board_kind(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text("# 12\n\nticket: BOOK-12\n", encoding="utf-8")
+        (self.repo / "jt-queue" / "board.md").write_text(
+            "# Board\n\nqueue: main\n\n## main\n\n- [ ] **12** format (style)\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.task_branch(self.repo, "12"), "style/BOOK-12")
+
+    def test_branch_deprecated_note_for_legacy_branch(self) -> None:
+        git(self.repo, "branch", "task-12-login")
+        note = gate.task_branch_deprecation_note(self.repo, "12")
+        self.assertIn("branch-deprecated:", note)
+        self.assertIn("legacy task-<id>", note)
+
+    def test_ticket_id_in_card(self) -> None:
+        self.assertEqual(gate.ticket_id_in_card(""), "")
+        self.assertEqual(gate.ticket_id_in_card("do: x\n"), "")
 
     def test_bare_name_when_no_branch(self) -> None:
         self.assertEqual(gate.task_branch(self.repo, "12"), "task-12")

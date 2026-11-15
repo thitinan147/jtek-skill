@@ -9,7 +9,7 @@ This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `
 - `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, and `## decisions`.
 
-`jt-queue/` is gitignored by default, so the gate reads these paths from the working tree and they are never part of a commit or a push. Only when a path is tracked is it read from a branch: the board, brief, and `task.md` from `<queue>`, and `plan.md` from `task-<id>`.
+`jt-queue/` is gitignored by default, so the gate reads these paths from the working tree and they are never part of a commit or a push. Only when a path is tracked is it read from a branch: the board, brief, and `task.md` from `<queue>`, and `plan.md` from the task branch.
 
 ## 2. Board Line Format & Status Permissions
 
@@ -27,11 +27,11 @@ This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `
 
 ## 3. Adaptive Gate Tiers (`Quick` vs `Standard`)
 
-The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A tracked board uses the kind at `git merge-base <queue> task-<id>`. A different kind on the current line raises the tier to `Standard`, and that tier does not return to `Quick`. A gitignored or untracked board uses the kind in the working tree, so editing `(<kind>)` there can raise or lower the tier.
+The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A tracked board uses the kind at `git merge-base <queue> <branch>` (the task branch). A different kind on the current line raises the tier to `Standard`, and that tier does not return to `Quick`. A gitignored or untracked board uses the kind in the working tree, so editing `(<kind>)` there can raise or lower the tier.
 
 - **Quick Tier** requires all 5 conditions:
   1. Task kind is `docs` or `style`: the merge-base kind when the board is tracked, otherwise the kind in the working tree.
-  2. Every commit on `task-<id>` outside `jt-queue/` has commit kind matching the task kind.
+  2. Every commit on the task branch outside `jt-queue/` has commit kind matching the task kind.
   3. Task does not set `screen: yes`.
   4. If `docs`: every changed file outside `jt-queue/` is a documentation file (`.md`, `.rst`, `.adoc`, or extensionless/doc-extension `README`, `LICENSE`, `CHANGELOG`, `NOTICE`, `AUTHORS`, `CONTRIBUTING`).
   5. If `style`: code files may change; non-whitespace changes (`git diff -w --ignore-blank-lines`) are reported in `style-changes:`.
@@ -58,7 +58,7 @@ The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A trac
 - **Diff review:** On `Standard` tier, review this task's diff yourself before `review:` and record it in `## review-diff`. A Standard task with no diff outside `jt-queue/` is refused. `docs` on the Quick tier does not need that review. Do not skip a review that the tier requires; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
 - **Ticket id:** Copy the id the ticket already has onto `ticket:` in `task.md` (`BOOK-12`, `#45`, a Notion id). Require one. Do not invent one and do not check its shape. The gate reads `ticket:` only to find the task branch.
 - **Commit and PR title:** `<type>(<scope>): <summary> (<ticket-id>)`. `<type>` is the task kind (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`). `<scope>` is optional. Example: `feat(booking): add room search API (BOOK-12)`. The kind before `(` or `:` is what the gate matches.
-- **Task branch:** `type/<ticket-id>-<slug>` (example `feat/BOOK-12-room-search`). `<type>` is the task kind (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `build`). `<slug>` is two to five words from the task name in ASCII `a-z0-9` only, joined by `-`. `<ticket-id>` is copied as written from `ticket:`. Legacy `task-<id>` or `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` on `allowed` when it finds one. Exactly one branch per task; two refuse with `task-branch-missing`. Renaming the task later does not rename the branch.
+- **Task branch:** `type/<ticket-id>-<slug>` (example `feat/BOOK-12-room-search`). `<type>` is the task kind (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `build`, `style`, `revert`). `<slug>` is two to five words from the task name in ASCII `a-z0-9` only, joined by `-`. `<ticket-id>` is copied from `ticket:` (surrounding quotes and a trailing ` # comment` are stripped). Legacy `task-<id>` or `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` on `allowed` when it finds one. Exactly one branch per task; two refuse with `task-branch-missing`. Renaming the task later does not rename the branch.
 - **Draft PR handoff:** When a git remote exists, push the task branch and open a draft PR with `gh pr create --draft --base <queue> --head <branch> --title '<type>(<scope>): <summary> (<ticket-id>)' --body 'Task <id> from jt-queue.'`. Pass `--title` and `--body` every time; `gh` cannot prompt for them when an agent runs it. Keep the title in single quotes and drop any `'` from it. If the draft PR cannot be opened, run `gate.py ask`. The line must not be `review:`. The gate refuses.
 
 ## 5. Repos (opt-in, for frontend + backend)
@@ -80,5 +80,5 @@ queue: main
 - One `### <name>` block per repo (`[a-z][a-z0-9-]*`, not a status word such as `merge`). Exactly one has `path: .` and nothing else: the home repo, whose commands stay in the main table. Every other `path:` is relative to home's main worktree and must be the top of its own git repo. `next` stops with `repo-invalid`, `not-ready` (`be.TEST_CMD`), or `repo-missing`.
 - `approve-commands` covers each repo's `path:`, `queue:`, `TEST_CMD`, and `SETUP_CMD`, plus `LINT_CMD` and `TYPECHECK_CMD` when that cell is not empty, and a task's per-repo screen-check commands. Changing any of them refuses with `commands-changed`. An empty lint or typecheck cell is left out of the hash, so a v22 approval still matches until one of those cells is set.
 - `task.md`: `repos: fe, be` names the repos; none, or only home, keeps the single-repo rules. `files:` entries are `<repo>:<path>` (no prefix means home). `land: be, fe` is the landing order (default: `## repos` order). The screen-check commands take one line per repo, as `task.template.md` shows.
-- `reach-review` on such a task is always `Standard`: `task-<id>` in every listed repo, each repo's `TEST_CMD` in its own worktree (a failure counts one round), `## review-diff` with one `<repo>: <sha>` line per repo, and `outside-files:` per repo. A `task-<id>` with code in an unlisted repo refuses with `repo-undeclared`. `--write` writes `review: fe:<url|local> be:<url|local>`.
+- `reach-review` on such a task is always `Standard`: the task branch in every listed repo, each repo's `TEST_CMD` in its own worktree (a failure counts one round), `## review-diff` with one `<repo>: <sha>` line per repo, and `outside-files:` per repo. A task branch with code in an unlisted repo refuses with `repo-undeclared`. `--write` writes `review: fe:<url|local> be:<url|local>`.
 - `landed.py` prints `landed-<repo>:` for each repo and `landed: all` only when every repo has landed; it adds `order-warning:` when a repo landed before one earlier in `land:`. `merge:` needs `landed: all`.
