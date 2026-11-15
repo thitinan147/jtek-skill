@@ -130,6 +130,17 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("marketplace.json", versions, "plugin missing from marketplace.json")
         self.assertEqual(len(set(versions.values())), 1, f"versions differ: {versions}")
 
+    def test_second_lesson_must_name_what_enforces_it(self) -> None:
+        template = (SKILLS_DIR / "jt-work-queue" / "assets" / "lessons.template.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("| symptom | cause | prevention | enforced by |", template)
+        skill = (SKILLS_DIR / "jt-work-queue" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("enforced by", skill)
+        self.assertIn("second time", skill)
+        self.assertIn("chore", skill)
+        self.assertIn("lint rule", skill)
+
     def test_readme_links_and_skill_paths_exist(self) -> None:
         readme_path = REPO / "README.md"
         self.assertTrue(readme_path.is_file())

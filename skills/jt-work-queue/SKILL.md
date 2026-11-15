@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "22.2.0"
+  version: "23.0.0"
   short-description: Work the task queue in jt-queue/board.md
 ---
 
@@ -41,24 +41,24 @@ Choose your own implementation method (TDD, planning, subagents, worktrees are o
 | Gate tier | Task kinds | Minimum evidence checked by `gate.py` |
 |---|---|---|
 | **Quick** | `docs` (doc files only), or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. No `plan.md` or `diff-check` needed. |
-| **Standard** | `fix`, `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, and any escalated `docs`/`style` | `jt-queue/tasks/<id>/plan.md` (from [assets/plan.template.md](assets/plan.template.md)) with an `## evidence` row for every `pass:` line, `<TEST_CMD>` green, your review of the diff recorded in `## review-diff` against the latest code SHA (`gate.py diff-check`), and the JTek `gate.py screen-check` when `screen: yes`. |
+| **Standard** | `fix`, `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, and any escalated `docs`/`style` | A diff outside `jt-queue/` (none is refused), `plan.md` (from [assets/plan.template.md](assets/plan.template.md)) with an `## evidence` row for every `pass:` line, `## review-diff` against the latest code SHA (`gate.py diff-check`), `<TEST_CMD>` green, `<LINT_CMD>` and `<TYPECHECK_CMD>` green when that cell is not empty, and the JTek `gate.py screen-check` when `screen: yes`. |
 
-- **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review.
+- **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review. A Standard branch with no diff outside `jt-queue/` does not pass.
+- **Gate report:** `allowed` prints one `gates:` line, always `tests`, `lint`, `typecheck`, `screen`, `review-diff`, `security`, `test-weakening`. An added `.env*` file other than `.env.example`, or private-key material, is `secret-suspect` and `next: ask`; the output names the file and never the value. A deleted test file or an added `.skip` / `.only` / `xit` / `@skip` marker is `test-weakening` on `allowed` (reported, not a refusal: it can be a rename or a real skip).
 - **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
 
 ## 3. Scope, Failure & Recovery, and Handoff
 
 - **Queue files:** Keep `jt-queue/` gitignored. Write the board, brief, and each `tasks/<id>/task.md` and `plan.md` there and do not commit that folder. The gate reads it from the working tree.
-- **Lessons:** Before you start a task, read `jt-queue/lessons.md` if it exists. After a send-back or an answered `ask:`, add a row for it (start the file from [assets/lessons.template.md](assets/lessons.template.md)). Keep it in `jt-queue/` and do not commit it.
+- **Lessons:** Before a task, read `jt-queue/lessons.md` if it exists. After a send-back or an answered `ask:`, add a row from [assets/lessons.template.md](assets/lessons.template.md). The first time, `enforced by` is `—`. The second time the same lesson appears, add a `chore` task for human approval whose `pass:` is a lint rule, a test, or a gate check, and cite that check in `enforced by`. Keep the file in `jt-queue/` and do not commit it. Never modify `SKILL.md` or `gate.py` in the current task's diff.
 - **Scope Control:** Stay inside `do:` and never cross `out:`. Use `files:` as your starting point without reading the whole repo. Use the existing check commands on the board; never create a new check script unless `do:` orders it.
 - **Failure & Recovery:** When `gate.py` refuses, obey `next:`:
   - `next: retry`: Read `detail:` and `log:`, fix the cause, and retry (at most **3 rounds** per task). After 3 failed rounds, run `gate.py ask` recording what was tried in all 3 rounds, leave `jt-queue/` uncommitted, and move to the next task.
   - `next: ask`: Run `gate.py ask` with the blocker from `detail:`, leave `jt-queue/` uncommitted, and move to the next task.
   - `next: stop`: Stop the entire queue and report to the human.
-  - `refused: commands-unapproved` or `commands-changed`: the `TEST_CMD`/`SETUP_CMD` in `jt-queue/board.md`, or the `start`/`click` in the task, are not what a human approved on this machine. Stop, show the human the commands and what changed, and ask them to review and run `approve-commands` themselves. **Never run `approve-commands` and never edit those commands to get past the refusal.**
+  - `refused: commands-unapproved` or `commands-changed`: the `TEST_CMD`/`SETUP_CMD`/`LINT_CMD`/`TYPECHECK_CMD` in `jt-queue/board.md`, or the `start`/`click` in the task, are not what a human approved on this machine. Stop, show the human the commands and what changed, and ask them to review and run `approve-commands` themselves. **Never run `approve-commands` and never edit those commands to get past the refusal.** An empty lint or typecheck cell is not part of the approval; setting one is `commands-changed` until a human approves it.
 - **Send-back (`reason: send-back`):** Read the `send-back:` note on the board line, copy every point into `## send-back` of `plan.md`, fix each one, and cite each point in the new `## review-diff` before you run `reach-review` again.
 - **Excuses:** If you catch yourself skipping a check, reread [references/red-flags.md](references/red-flags.md).
-- **Continuous Improvement:** On recurring failures across tasks, propose a new `chore` task with evidence for human approval. Never modify rule files (`SKILL.md` or `gate.py`) in the current task's diff.
 - **Task branch:** Name it `task-<id>-<slug>`, where `<slug>` is two to five words from the task name in ASCII `a-z0-9` only, joined by `-` (translate a non-English name) (for example `task-12-login-rate-limit`). Keep exactly one branch per task; the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. Below, `<branch>` is that name.
 - **Across repos:** Use the same `<branch>` in every repo under `repos:` and no other; commits in an unlisted repo refuse with `repo-undeclared`. `## review-diff` cites each repo as `<repo>: <sha>`. Push and open one draft PR per repo; `reach-review --write` records them all.
 - **Handoff:** Commit code on `<branch>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When `allowed`: if no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `<branch>`, open one draft PR (`gh pr create --draft --base <queue> --head <branch> --title '<id>: <name>' --body 'Task <id> from jt-queue.'`; always pass `--title` and `--body`, because `gh` cannot prompt here; keep the single quotes, drop any `'` from `<name>`, and keep `do:`/`pass:` text out of the body), and run `reach-review --root . --id <id> --write`, then loop to the next task.

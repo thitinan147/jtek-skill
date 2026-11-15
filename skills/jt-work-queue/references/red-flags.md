@@ -12,14 +12,14 @@ When you catch yourself thinking the left column, do the right column.
 | "I will clean it up later." | There is no later. Do it in this task or add a `chore` task. |
 | "It should work now." | Run the `Done when` lines in this turn and read the output. |
 | "I will run `approve-commands` to get unblocked." | Never. Only the human runs it. |
-| "I will edit the test to match my code." | Change the code. Edit a test only when `do:` says the test is wrong. |
+| "I will edit the test to match my code." | Change the code. Edit a test only when `do:` says the test is wrong. Deleting a test file or adding `.skip`, `.only`, `xit`, or `@skip` is reported as `test-weakening`. |
 | "The reviewer will catch it." | `verdict: pass` is your claim. Make it true. |
 
 ## Red flags
 
 Stop and re-read the task when you see any of these in your own work.
 
-- You changed an assertion, deleted a test, or added `skip` or `xfail` to get green.
+- You changed an assertion, deleted a test, or added `skip` or `xfail` to get green. `reach-review` reports that as `test-weakening` on `allowed` and does not refuse: a rename or a skip the task asked for looks the same, and the human judges it at review. If the task did not ask for it, run `gate.py ask` before handoff.
 - A new `check_*`, `lint_*`, or `verify_*` script appeared in the diff.
 - Files outside `files:` changed.
 - `jt-queue/` is in a commit.

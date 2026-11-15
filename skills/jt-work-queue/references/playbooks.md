@@ -29,7 +29,7 @@ Subtract before you add: inside `files:`, delete dead code and merge duplicates 
 
 ## Many tasks in a row
 
-Long sessions forget early constraints. For each task, start from `gate.py next`, re-read `task.md`, `jt-queue/lessons.md`, and the template for `plan.md`, and do not rely on what you remember of the last task. When you can, run each task in a fresh agent session or subagent.
+Long sessions forget early constraints. For each task, start from `gate.py next`, re-read `task.md`, `jt-queue/lessons.md`, and the template for `plan.md`, and do not rely on what you remember of the last task. When you can, run each task in a fresh agent session or subagent. The second time the same lesson appears, the next task is a `chore` whose `pass:` adds a lint rule, a test, or a check, and that check is cited in the lesson's `enforced by` column.
 
 ## Reading the diff before `review:`
 
