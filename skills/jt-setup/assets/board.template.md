@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.2. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.4. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`.
 
 queue:
 

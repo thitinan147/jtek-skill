@@ -38,7 +38,7 @@ roles: PO, Dev, QA
 6. **Apply answers at once** (from chat, or an Answer cell someone filled in):
    - add `- **D<n>** <what was decided> · <name> · <YYYY-MM-DD>` to Decisions and delete the question's row
    - fix every section it affects, replacing the old text; grep other specs in `<docs_root>` for the same rule and fix them too, each with its own D starting `per <work> D<n>:`
-   - approval: a change that follows a D keeps a ✅ and appends `(incl. D<n>)`. Any other change to Rules or AC sets `**approve:** ❌ waiting for PO (changed <YYYY-MM-DD>)`
+   - approval: a change that follows a D keeps a ✅ and appends `(incl. D<n>)`. Any other change to Rules or AC sets `**approve:** ❌ waiting for PO (changed <YYYY-MM-DD>)`. An open question that Blocks `dev` or `AC` fails a ✅
    - "use the proposal for now": start the D with `assumption:` and keep the row with Answer `⚠️ D<n>` until the asked role confirms
 7. **Reply** in this format plus any line the command adds, never the whole document:
 

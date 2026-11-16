@@ -28,6 +28,7 @@ MARKERS = (
     "## Decisions",
     "## Test steps",
     "| # | Given | When | Then |",
+    "| # | Given | When | Then | Guards |",
     "| # | Question | Ask | Blocks | Answer |",
 )
 
@@ -115,7 +116,7 @@ class SpecContractTests(unittest.TestCase):
         readme = (REPO / "README.md").read_text(encoding="utf-8")
         security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
         self.assertNotIn("Three commands", readme)
-        self.assertIn("v24.3.0", readme)
+        self.assertIn("v24.4.0", readme)
         self.assertIn("board.py", security)
         self.assertIn("Google Fonts", security)
         self.assertIn("fonts.googleapis.com", security)

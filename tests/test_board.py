@@ -180,7 +180,7 @@ class BoardTests(unittest.TestCase):
             ready_spec.parent.mkdir()
             ready_spec.write_text(ready, encoding="utf-8")
 
-            def both(path: Path) -> tuple[str, str]:
+            def both(path: Path, check_code: int) -> tuple[str, str]:
                 checked = subprocess.run(
                     [sys.executable, "-I", str(CHECK), str(path)],
                     capture_output=True, text=True, encoding="utf-8",
@@ -190,13 +190,15 @@ class BoardTests(unittest.TestCase):
                     [sys.executable, "-I", str(BOARD), str(path.parent), "-o", str(out_file)],
                     capture_output=True, text=True, encoding="utf-8",
                 )
-                self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+                self.assertEqual(checked.returncode, check_code, checked.stdout + checked.stderr)
                 self.assertEqual(board.returncode, 0, board.stderr)
                 return checked.stdout, out_file.read_text(encoding="utf-8")
 
-            blocking_out, blocking_html = both(blocking_spec)
-            ready_out, ready_html = both(ready_spec)
+            # A ✅ while Q2 blocks ac fails the approval. The board still shows the same blockers.
+            blocking_out, blocking_html = both(blocking_spec, 1)
+            ready_out, ready_html = both(ready_spec, 0)
 
+        self.assertIn("approval is blocked while Q2 blocks ac", blocking_out)
         self.assertIn("blocking: Q1 (tasks · BE), Q2 (ac · PO)", blocking_out)
         self.assertNotIn("READY FOR SPRINT", blocking_html)
         self.assertIn("2 BLOCKER QUESTION", blocking_html)

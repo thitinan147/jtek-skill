@@ -1,5 +1,14 @@
 # Changelog
 
+## 24.4.0 - one spec approval, traced to the task
+
+- `check.py` fails a `✅` approval while an open question Blocks `dev` or `AC`. A question that Blocks `later` does not. A spec still waiting for the PO does not fail for that reason.
+- Acceptance Criteria gains a `Guards` column. Each EC names the AC it guards. An empty link, or a link to an AC that is not in the table, is an error. A table without that column prints `migration:` and still checks.
+- A task with `spec:` must copy each `pass:` line from that row (`- <id>: <Then>`). The gate refuses `pass-ac` when the id or the Then does not match, and `spec-unapproved` when the spec is not approved. Tasks with no `spec:` line are unchanged. Size tiers are unchanged.
+- One spec approval covers the tasks derived from it. `/jt-add-task` does not ask again for those tasks. `/jt-work` does not ask the human to approve each of them or their pass lines. `/jt-review` stays human-only. Shell commands still need the one-time `approve-commands` on each machine.
+- Commit the queue files a teammate needs: `jt-queue/board.md`, `brief.md`, `tasks/<id>/task.md`, and `plan.md` (including `## decisions`). Leave local files uncommitted: `lessons.md` (notes for this agent, not the task); `.git/jt-queue/approved-commands.json` (permission to run shell commands; it must not travel in a commit); `.git/jt-queue/logs/` (command output can hold secrets); `.git/jt-queue/attempts.json` (this machine's round counter); `.env` files and private keys.
+- Pin installs with `v24.4.0`. Skill and plugin metadata are `24.4.0`.
+
 ## 24.3.0 - compose external method skills
 
 - `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; [playbooks.md](skills/jt-work/references/playbooks.md) is a short gate-habits fallback instead of inlined TDD and per-kind method text.

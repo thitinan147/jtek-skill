@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.3.0"
+  version: "24.4.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -25,7 +25,7 @@ Install one skill with `npx skills add thitinan147/jtek-skill --skill <name>` (a
 | `/jt-spec-handoff <work>` | **human-only** | Test steps for the tester, once no question blocks AC. |
 | `/jt-board [<flow>]` | **human-only** | FigJam-style `board.html`. Does not edit the specs. |
 | `/jt-setup` | human confirms | Write `jt-queue/board.md` after the human confirms every command. |
-| `/jt-add-task` | human approves | Agree `brief.md`, then draft tasks. The gate's `brief` and `add-task` actions both use this command. |
+| `/jt-add-task` | spec approval covers derived tasks | Agree `brief.md`, then draft tasks. The gate's `brief` and `add-task` actions both use this command. |
 | `/jt-work` | agent | Work ready tasks in board order, or one ticket id. No `--loop` flag. Cannot merge. |
 | `/jt-review` | **human-only** | Inspect `review:` tasks. Write `merge:`, `send-back:`, or `drop:`. |
 
@@ -63,7 +63,7 @@ Files: `<docs_root>/<work>/spec.md` (default `docs_root` is `scrum-spec`, becaus
 
 ## Queue files
 
-`jt-queue/` stays gitignored: `board.md`, `brief.md`, and `tasks/<id>/task.md`. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges.
+Commit the queue files a teammate needs: `board.md`, `brief.md`, `tasks/<id>/task.md`, and `tasks/<id>/plan.md` (its `## decisions`). Leave local files uncommitted: `lessons.md` (notes for this agent), `.env` and private keys, and `.git/jt-queue/` (`approved-commands.json` must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter). Humans approve the spec and the merge. One spec approval covers the tasks derived from it. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges.
 
 `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. With one ticket id it works only that task.
 

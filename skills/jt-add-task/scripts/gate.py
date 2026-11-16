@@ -123,6 +123,8 @@ NEXT_FOR = {
     "repo-invalid": "stop",
     "repo-undeclared": "ask",
     "secret-suspect": "ask",
+    "pass-ac": "retry",
+    "spec-unapproved": "stop",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
@@ -165,6 +167,8 @@ HINT_FOR = {
     "repo-undeclared": "The task branch (type/<ticket-id>-<slug>) has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
     "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
     "secret-suspect": "Remove the named file from the branch and do not print its contents. If it must stay, run gate.py ask.",
+    "pass-ac": "Write each pass: line as '- <id>: <Then>' copied from that AC or EC in spec:.",
+    "spec-unapproved": "A human approves the spec (✅ name · date) after questions that block dev or AC are closed. Do not approve it yourself.",
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset(
@@ -1726,6 +1730,182 @@ def _header_bullets(card_text: str) -> list[str]:
         if item and item != "-":
             bullets.append(item)
     return bullets
+
+
+_SPEC_MARKER = "<!-- scrum-spec"
+_PASS_AC_LINE = re.compile(r"^((?:AC|EC)\d+)\s*:\s*(.*)$")
+_SPEC_APPROVED = re.compile(r"^✅\s+(.+?)\s+·\s+(\d{4}-\d{2}-\d{2})\b")
+_SPEC_AI = re.compile(r"\bAI\b|\b(?i:claude|chatgpt|gpt|copilot|gemini|codex|assistant)\b")
+_QUEUE_TASK_FILE = re.compile(r"^jt-queue/tasks/(\d+(?:\.\d+)*)/(task|plan)\.md$")
+_COMMIT_QUEUE = frozenset({"jt-queue/board.md", "jt-queue/brief.md"})
+_OPEN_ANSWER = frozenset({"", "-", "–"})
+
+
+def blocks_dev_or_ac(blocks: str) -> bool:
+    """Same rule as check.py: Blocks names dev or AC."""
+    return bool({"ac", "dev"} & set(re.findall(r"[A-Za-z]+", blocks.lower())))
+
+
+def queue_context_class(rel: str) -> str:
+    """How a queue path is shared: 'commit', 'local', or 'outside'.
+
+    Commit the files a teammate needs to resume: board.md, brief.md,
+    tasks/<id>/task.md, and tasks/<id>/plan.md (its ## decisions).
+    Everything else under jt-queue/ or .git/jt-queue/ stays local:
+    lessons.md (notes for this agent, not the task), approved-commands.json
+    (permission to run shell commands; a commit must not carry it),
+    logs/ (command output can hold secrets), attempts.json (this machine's
+    round counter), plus any .env or private key that landed in the folder.
+    """
+    norm = rel.replace("\\", "/").strip()
+    while norm.startswith("./"):
+        norm = norm[2:]
+    if norm in _COMMIT_QUEUE or _QUEUE_TASK_FILE.match(norm):
+        return "commit"
+    if norm.startswith("jt-queue/") or norm.startswith(".git/jt-queue/") or "/jt-queue/" in f"/{norm}":
+        return "local"
+    return "outside"
+
+
+def _md_cells(line: str) -> list[str]:
+    body = line.strip()
+    if body.startswith("|"):
+        body = body[1:]
+    if body.endswith("|"):
+        body = body[:-1]
+    return [part.strip().replace("\\|", "|") for part in re.split(r"(?<!\\)\|", body)]
+
+
+def _md_separator(line: str) -> bool:
+    return bool(re.fullmatch(r"\|[\s:|-]+\|?", line.strip())) and "-" in line
+
+
+def _norm_cell(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _spec_raw(card_text: str) -> str:
+    raw = _label(card_text, "spec").split("#", 1)[0].strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "`\"'":
+        raw = raw[1:-1].strip()
+    if raw in {"", "-", "–", "—"}:
+        return ""
+    return raw
+
+
+def _spec_inside(root: Path, raw: str) -> Path | None:
+    candidate = Path(raw)
+    try:
+        full = (candidate if candidate.is_absolute() else root / candidate).resolve()
+        full.relative_to(root.resolve())
+    except (OSError, ValueError):
+        return None
+    return full
+
+
+def _read_spec_facts(text: str) -> tuple[str, dict[str, str], list[tuple[str, str]]]:
+    """Approval value, id → Then, and open questions that block dev or AC."""
+    lines = text.splitlines()
+    section, fence = "", False
+    approve = ""
+    thens: dict[str, str] = {}
+    blocking: list[tuple[str, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            i += 1
+            continue
+        if not fence and line.startswith("## "):
+            section = line[3:].strip()
+            i += 1
+            continue
+        if not fence and section == "Acceptance Criteria" and line.startswith("**approve:**"):
+            approve = line.split("**approve:**", 1)[1].strip()
+        if not fence and line.lstrip().startswith("|") and i + 1 < len(lines) and _md_separator(lines[i + 1]):
+            header = _md_cells(line)
+            i += 2
+            rows: list[list[str]] = []
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                rows.append(_md_cells(lines[i]))
+                i += 1
+            if section == "Acceptance Criteria":
+                then_at = header.index("Then") if "Then" in header else 3
+                for row in rows:
+                    if not row or not re.fullmatch(r"(?:AC|EC)\d+", row[0]):
+                        continue
+                    thens[row[0]] = row[then_at] if then_at < len(row) else ""
+            elif section == "Questions" and "Answer" in header:
+                answer_at = header.index("Answer")
+                blocks_at = header.index("Blocks") if "Blocks" in header else None
+                for row in rows:
+                    if not row:
+                        continue
+                    answer = row[answer_at] if answer_at < len(row) else ""
+                    blocks = row[blocks_at] if blocks_at is not None and blocks_at < len(row) else ""
+                    if answer in _OPEN_ANSWER and blocks_dev_or_ac(blocks):
+                        blocking.append((row[0], blocks.strip()))
+            continue
+        i += 1
+    return approve, thens, blocking
+
+
+def trace_spec_pass(root: Path, card_text: str) -> dict[str, object] | tuple[str, str] | None:
+    """Trace pass: lines to a spec, or None when the task has no spec:.
+
+    A dict means the spec is approved and every pass line quotes an AC or EC Then.
+    A (reason, detail) pair is pass-ac or spec-unapproved.
+    """
+    raw = _spec_raw(card_text)
+    if not raw:
+        return None
+    full = _spec_inside(root, raw)
+    if full is None or not full.is_file():
+        return ("spec-unapproved", "spec: must be a file inside this repository")
+    try:
+        text = full.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ("spec-unapproved", "spec: must be a file inside this repository")
+    spec_lines = text.splitlines()
+    if not spec_lines or not spec_lines[0].startswith(_SPEC_MARKER):
+        return ("spec-unapproved", "spec must start with <!-- scrum-spec -->")
+    approve, thens, blocking = _read_spec_facts(text)
+    who = _SPEC_APPROVED.match(approve)
+    if not approve.startswith("✅"):
+        return ("spec-unapproved", "spec is not approved")
+    if who is None:
+        return ("spec-unapproved", "approval must read ✅ <name> · YYYY-MM-DD")
+    if _SPEC_AI.search(who.group(1)):
+        return ("spec-unapproved", "approval must come from a person, not an AI")
+    if blocking:
+        detail = "; ".join(f"approval is blocked while {qid} blocks {blocks}" for qid, blocks in blocking)
+        return ("spec-unapproved", detail)
+    bullets = _header_bullets(card_text)
+    if not bullets:
+        return ("pass-ac", "spec: is set but pass: has no line to trace")
+    ids: list[str] = []
+    for bullet in bullets:
+        match = _PASS_AC_LINE.match(bullet)
+        if match is None:
+            return ("pass-ac", f"pass: line {bullet!r} does not name an AC id")
+        ac_id, rest = match.group(1), _norm_cell(match.group(2))
+        if ac_id not in thens:
+            return ("pass-ac", f"pass: {ac_id} is not an AC or EC in {raw}")
+        expected = _norm_cell(thens[ac_id])
+        if rest != expected:
+            return ("pass-ac", f"pass: {ac_id} must quote its Then ({expected!r})")
+        ids.append(ac_id)
+    return {"approval": f"{who.group(1)} · {who.group(2)}", "ids": ids}
+
+
+def _print_spec_trace(root: Path, card_text: str) -> None:
+    traced = trace_spec_pass(root, card_text)
+    if not isinstance(traced, dict):
+        return
+    print(f"spec-approval: {traced['approval']}")
+    ids = traced["ids"]
+    print("pass-ac: " + ", ".join(ids if isinstance(ids, list) else []))
 
 
 def _commit_kinds(root: Path, queue: str, card_id: str) -> list[str] | None:
@@ -3532,6 +3712,7 @@ def _reach_review_multi(
         print("needs: " + "; ".join(needs))
     if weak != "none":
         print("test-weakening: " + weak)
+    _print_spec_trace(root, card_text)
     return 0
 
 
@@ -3554,6 +3735,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     question_empty = question_text(card_text) == ""
     if not question_empty:
         return _refuse("question-open")
+    traced = trace_spec_pass(root, card_text)
+    if isinstance(traced, tuple):
+        return _refuse(traced[0], detail=traced[1])
     cards = _cards_from_text(root, text)
     current = next((card for card in cards if card.id == card_id), None)
     stopped = _related_stop(current, cards) if current is not None else None
@@ -3703,6 +3887,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         print("needs: " + "; ".join(needs))
     if weak != "none":
         print("test-weakening: " + weak)
+    _print_spec_trace(root, card_text)
     return 0
 
 
