@@ -8,6 +8,7 @@ Write `plan.md` from the template, keep changes inside `files:` and `do:`, run `
 
 ## Gate habits (always)
 
+- Never cut security, input validation at a trust boundary, or error handling to save effort.
 - Start each task from `gate.py next`; re-read `task.md` and `jt-queue/lessons.md`. Prefer a fresh session per task when you can.
 - Inside `files:`, remove dead code before adding; do not tidy files outside `files:`.
 - Review the diff against `files:` and `out:` before `review:`; write what you checked in `## review-diff` (not your memory of the change).
