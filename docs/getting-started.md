@@ -19,7 +19,7 @@ You type the slash commands. The agent runs `gate.py` for you; the commands are 
 | **task** | `jt-queue/tasks/<id>/task.md`: what to do (`do:`), what not to touch (`out:`), how to tell it is done (`pass:`), and which files it may change (`files:`). |
 | **kind** | The type of task in brackets on the board line: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. |
 | **queue branch** | The branch named on the `queue:` line of the board, usually `main`. Work lands here. |
-| **`task-<id>-<slug>`** | The branch the agent commits a task's code on, such as `task-1-readme-usage`. One per task. The gate finds only this name. The conventional branch `feat/BOOK-12-room-search` is documented and not created yet. |
+| **`type/<ticket-id>-<slug>`** | The branch the agent commits a task's code on, such as `docs/BOOK-1-readme-usage`. One per task. Legacy `task-<id>-<slug>` still works. |
 | **ticket id** | The id the ticket already has (`BOOK-12`, `#45`, a Notion id). It is copied onto the commit and the PR title: `feat(booking): add room search API (BOOK-12)`. It is not the board id, and its shape is not checked. |
 | **gate** | `gate.py`, a Python script that decides whether a task may go to review. The agent cannot mark `review:` without it. |
 | **Quick / Standard** | The gate's tier, worked out from the kind. **Quick** (`docs`, plain `style`) needs passing tests. **Standard** (everything else) also needs `plan.md` with evidence for every `pass:` line and a review of the diff. |
@@ -123,7 +123,7 @@ Each `pass:` line is something you can run. The board now lists both tasks:
 
 ### 3. A Quick task, and approving the test command
 
-Run `/jt-work`. The gate picks task 1, a `docs` task. The agent commits the README change on `task-1-readme-usage`, then asks the gate:
+Run `/jt-work`. The gate picks task 1, a `docs` task. The agent commits the README change on `docs/BOOK-1-readme-usage`, then asks the gate:
 
 ```text
 $ gate.py reach-review --root . --id 1
@@ -149,7 +149,7 @@ approved card 1 commands:
 merge: no
 ```
 
-The approval is stored in `.git/`, outside every branch, so a pull request cannot bring its own approval. You approve the board's commands once on each machine; a task that sets its own `start`/`click` commands (for screen checks) needs its own approval too. If anyone changes an approved command, the gate refuses again until you approve the new one. Now the gate runs the tests on `task-1-readme-usage` and lets it through:
+The approval is stored in `.git/`, outside every branch, so a pull request cannot bring its own approval. You approve the board's commands once on each machine; a task that sets its own `start`/`click` commands (for screen checks) needs its own approval too. If anyone changes an approved command, the gate refuses again until you approve the new one. Now the gate runs the tests on `docs/BOOK-1-readme-usage` and lets it through:
 
 ```text
 $ gate.py reach-review --root . --id 1
@@ -160,7 +160,7 @@ repo-review: skip
 gates: tests ok · lint skip · typecheck skip · screen skip · review-diff skip · security ok · test-weakening none
 ```
 
-With no Git remote, the agent records it with `--write --link local`. With a remote, it pushes `task-1-readme-usage` and opens a draft PR first. The board line becomes:
+With no Git remote, the agent records it with `--write --link local`. With a remote, it pushes `docs/BOOK-1-readme-usage` and opens a draft PR first. The board line becomes:
 
 ```markdown
 - [ ] **1** add usage to README (docs) review: local
@@ -230,7 +230,7 @@ detail: ..F
 FAIL: test_boiling_point (test_tempconv.FToCTests.test_boiling_point)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/tmp/jt-work-queue-7gzuwf51/card/test_tempconv.py", line 8, in test_boiling_point
+  File "/tmp/jt-work-7gzuwf51/card/test_tempconv.py", line 8, in test_boiling_point
     self.assertEqual(f_to_c(212), 100)
     ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
 AssertionError: 105.0 != 100
@@ -239,7 +239,7 @@ Ran 3 tests in 0.000s
 FAILED (failures=1)
 round 1 of 3
 log: ~/code/tempconv/.git/jt-queue/logs/3-test.log
-hint: Read log:, fix the cause on task-<id>, commit, then run reach-review again.
+hint: Read log:, fix the cause on the task branch, commit, then run reach-review again.
 ```
 
 On the third failed round the gate answers `next: ask`, and the agent writes you a question with what it tried instead of trying again.

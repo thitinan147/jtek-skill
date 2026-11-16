@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.0.0"
+  version: "24.1.0"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
@@ -62,6 +62,6 @@ Choose your own implementation method (TDD, planning, subagents, worktrees are o
 - **Send-back (`reason: send-back`):** Read the `send-back:` note on the board line, copy every point into `## send-back` of `plan.md`, fix each one, and cite each point in the new `## review-diff` before you run `reach-review` again.
 - **Excuses:** If you catch yourself skipping a check, reread [references/red-flags.md](references/red-flags.md).
 - **Names:** Copy the id the ticket already has onto `ticket:` (`BOOK-12`, `#45`, a Notion id). Do not invent one and do not check its shape. If `ticket:` is empty, ask once. Commit subject and draft PR title: `<type>(<scope>): <summary> (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. `<type>` is the task kind. `<scope>` may be omitted.
-- **Task branch:** Name it `task-<id>-<slug>`, where `<slug>` is two to five words from the task name in ASCII `a-z0-9` only, joined by `-` (translate a non-English name) (for example `task-12-login-rate-limit`). Keep exactly one branch per task; the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. Below, `<branch>` is that name. The conventional branch `type/<ticket-id>-short-slug` (for example `feat/BOOK-12-room-search`) is not what the gate looks up yet, so do not create it for this task.
+- **Task branch:** Name it `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`), where `<type>` is the task kind (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `build`, `style`, `revert`), `<ticket-id>` is copied from `ticket:` (quotes and a trailing ` # comment` are stripped), and `<slug>` is two to five words from the task name in ASCII `a-z0-9` only, joined by `-` (translate a non-English name). Legacy `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` when it finds one. Keep exactly one branch per task; the gate refuses `task-branch-missing` when there are two. Below, `<branch>` is that name.
 - **Across repos:** Use the same `<branch>` in every repo under `repos:` and no other; commits in an unlisted repo refuse with `repo-undeclared`. `## review-diff` cites each repo as `<repo>: <sha>`. Push and open one draft PR per repo; `reach-review --write` records them all.
 - **Handoff:** Commit code on `<branch>`, not `jt-queue/`. On `<queue>`, run `reach-review --root . --id <id>`. When `allowed`: if no remote, run `reach-review --root . --id <id> --write --link local`; if a remote exists, push `<branch>`, open one draft PR (`gh pr create --draft --base <queue> --head <branch> --title '<type>(<scope>): <summary> (<ticket-id>)' --body 'Task <id> from jt-queue.'`; always pass `--title` and `--body`, because `gh` cannot prompt here; keep the single quotes, drop any `'` from the title, and keep `do:`/`pass:` text out of the body), and run `reach-review --root . --id <id> --write`. Unless the user named one ticket, run `next` again.

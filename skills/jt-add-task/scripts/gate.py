@@ -133,7 +133,7 @@ HINT_FOR = {
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
     "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
-    "task-branch-missing": "Commit the work on one branch named task-<id>-<slug> (or task-<id>), then run reach-review again.",
+    "task-branch-missing": "Commit the work on one branch named type/<ticket-id>-<slug> (legacy task-<id>-<slug> still works), then run reach-review again.",
     "merge-refused": "This gate cannot merge. Stop and report to the human.",
     "related": "Link each same-layer task under refs: in task.md, or run gate.py ask.",
     "browser-empty": "<BROWSER_TOOL> is empty in jt-queue/board.md. A human sets it; run gate.py ask.",
@@ -940,31 +940,92 @@ def _branch_exists(root: Path, branch: str) -> bool:
 
 
 _TASK_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_BRANCH_TYPES = frozenset(
+    {
+        "feat",
+        "fix",
+        "chore",
+        "docs",
+        "refactor",
+        "test",
+        "perf",
+        "ci",
+        "build",
+        "style",
+        "revert",
+    }
+)
 
 
-def is_task_head(name: str, card_id: str) -> bool:
-    """True for task-<id> or task-<id>-<slug> (slug: lowercase words joined by '-')."""
+def _normalize_ticket_id(value: str) -> str:
+    value = value.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value
+
+
+def ticket_id_in_card(card_text: str) -> str:
+    for line in card_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("ticket:"):
+            return _normalize_ticket_id(stripped.split(":", 1)[1])
+    return ""
+
+
+def _legacy_task_head(name: str, card_id: str) -> bool:
+    """True for deprecated task-<id> or task-<id>-<slug> (slug: lowercase words joined by '-')."""
     bare = f"task-{card_id}"
     if name == bare:
         return True
     return name.startswith(bare + "-") and bool(_TASK_SLUG_RE.fullmatch(name[len(bare) + 1 :]))
 
 
+def _conventional_task_head(name: str, ticket_id: str) -> bool:
+    """True for type/<ticket-id>-<slug> or bare type/<ticket-id>."""
+    if "/" not in name or not ticket_id:
+        return False
+    type_part, rest = name.split("/", 1)
+    if type_part not in _BRANCH_TYPES:
+        return False
+    if rest == ticket_id:
+        return True
+    prefix = ticket_id + "-"
+    if not rest.startswith(prefix):
+        return False
+    slug = rest[len(prefix) :]
+    return bool(slug) and bool(_TASK_SLUG_RE.fullmatch(slug))
+
+
+def is_task_head(name: str, card_id: str, ticket_id: str = "") -> bool:
+    """Conventional type/<ticket-id>-<slug>, or legacy task-<id>[-<slug>]."""
+    if _legacy_task_head(name, card_id):
+        return True
+    return _conventional_task_head(name, ticket_id)
+
+
+def _branch_type(kind: str) -> str:
+    return kind if kind in _BRANCH_TYPES else "feat"
+
+
+def _default_task_branch(root: Path, card_id: str) -> str:
+    ticket = ticket_id_in_card(_read_card(root, card_id))
+    if ticket:
+        board = read_board_text(root) or ""
+        kind = _branch_type(card_kind_in_board(board, card_id))
+        return f"{kind}/{ticket}"
+    return f"task-{card_id}"
+
+
 def task_branch_names(root: Path, card_id: str) -> tuple[list[str], list[str]]:
     """(local, remote-only) branch names that belong to the task, sorted."""
     if not valid_card_id(card_id):
         return [], []
-    bare = f"task-{card_id}"
+    ticket_id = ticket_id_in_card(_read_card(root, card_id))
     proc = _run_git(
         root,
-        [
-            "for-each-ref",
-            "--format=%(refname)",
-            f"refs/heads/{bare}",
-            f"refs/heads/{bare}-*",
-            f"refs/remotes/*/{bare}",
-            f"refs/remotes/*/{bare}-*",
-        ],
+        ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
     )
     local: set[str] = set()
     remote: set[str] = set()
@@ -976,19 +1037,19 @@ def task_branch_names(root: Path, card_id: str) -> tuple[list[str], list[str]]:
                 name, bucket = ref.split("/", 3)[3], remote
             else:
                 continue
-            if is_task_head(name, card_id):
+            if is_task_head(name, card_id, ticket_id):
                 bucket.add(name)
     return sorted(local), sorted(remote - local)
 
 
 def task_branch(root: Path, card_id: str) -> str:
-    """The task's branch: the one local task-<id>[-<slug>], else the one on a remote, else task-<id>."""
+    """The task's branch: one local match, else one remote, else the conventional default."""
     local, remote = task_branch_names(root, card_id)
     if len(local) == 1:
         return local[0]
     if not local and len(remote) == 1:
         return remote[0]
-    return f"task-{card_id}"
+    return _default_task_branch(root, card_id)
 
 
 def has_one_task_branch(root: Path, card_id: str) -> bool:
@@ -996,11 +1057,27 @@ def has_one_task_branch(root: Path, card_id: str) -> bool:
     return len(local) == 1
 
 
+def task_branch_deprecation_note(root: Path, card_id: str) -> str:
+    branch = task_branch(root, card_id)
+    if _legacy_task_head(branch, card_id):
+        return (
+            "branch-deprecated: legacy task-<id> branch; "
+            "prefer type/<ticket-id>-short-slug (see SKILL.md)"
+        )
+    return ""
+
+
 def task_branch_missing_detail(root: Path, card_id: str, repo: str = "") -> str:
     local, _remote = task_branch_names(root, card_id)
     where = f"repo {repo}: " if repo else ""
+    ticket = ticket_id_in_card(_read_card(root, card_id))
     if len(local) > 1:
         return f"{where}more than one branch for this task ({', '.join(local)}); keep one"
+    if ticket:
+        return (
+            f"{where}no type/<ticket-id>-<slug> branch for ticket {ticket!r} "
+            f"(legacy task-{card_id} or task-{card_id}-<slug> still accepted)"
+        )
     return f"{where}no task-{card_id} or task-{card_id}-<slug> branch"
 
 
@@ -1491,7 +1568,16 @@ def cmd_next(root: Path) -> int:
             if listed is not None and listed.returncode == 0:
                 for cid in pending_gh:
                     head = task_branch(root, cid)
-                    if _payload_mark(listed.stdout, head, fuzzy=task_branch_gone(root, cid)) == "merged":
+                    ticket_id = ticket_id_in_card(_read_card(root, cid))
+                    if (
+                        _payload_mark(
+                            listed.stdout,
+                            head,
+                            fuzzy=task_branch_gone(root, cid),
+                            ticket_id=ticket_id,
+                        )
+                        == "merged"
+                    ):
                         landed_ids.append(cid)
         if landed_ids:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
@@ -2158,7 +2244,7 @@ def _card_worktree(root: Path, card_id: str, setup_cmd: str = ""):
     if _current_branch(root) == branch:
         yield root
         return
-    parent = Path(tempfile.mkdtemp(prefix="jt-work-queue-"))
+    parent = Path(tempfile.mkdtemp(prefix="jt-work-"))
     worktree = parent / "card"
     try:
         added = _run_git(root, ["worktree", "add", "--detach", str(worktree), branch])
@@ -2289,14 +2375,25 @@ def _gh(
 _BARE_TASK_HEAD_RE = re.compile(r"^task-(\d+(?:\.\d+)*)$")
 
 
-def _head_matches(name: object, head: str, fuzzy: bool = False) -> bool:
-    """name is head; with fuzzy (no branch for the task in this clone), a bare task-<id> also matches task-<id>-<slug>."""
+def _head_matches(
+    name: object, head: str, fuzzy: bool = False, *, ticket_id: str = ""
+) -> bool:
+    """name is head; with fuzzy, a bare head also matches the same task's slug branch."""
     if not isinstance(name, str):
         return False
     if name == head:
         return True
-    bare = _BARE_TASK_HEAD_RE.match(head) if fuzzy else None
-    return bool(bare) and is_task_head(name, bare.group(1))
+    if not fuzzy:
+        return False
+    bare = _BARE_TASK_HEAD_RE.match(head)
+    if bare and is_task_head(name, bare.group(1), ticket_id):
+        return True
+    return (
+        bool(ticket_id)
+        and head.count("/") == 1
+        and name.startswith(head + "-")
+        and _conventional_task_head(name, ticket_id)
+    )
 
 
 def task_branch_gone(root: Path, card_id: str) -> bool:
@@ -2305,7 +2402,7 @@ def task_branch_gone(root: Path, card_id: str) -> bool:
     return not local and not remote
 
 
-def _payload_mark(raw: str, head: str, fuzzy: bool = False) -> str:
+def _payload_mark(raw: str, head: str, fuzzy: bool = False, *, ticket_id: str = "") -> str:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -2313,7 +2410,9 @@ def _payload_mark(raw: str, head: str, fuzzy: bool = False) -> str:
     rows = data if isinstance(data, list) else [data]
     saw_open = False
     for row in rows:
-        if not isinstance(row, dict) or not _head_matches(row.get("headRefName"), head, fuzzy):
+        if not isinstance(row, dict) or not _head_matches(
+            row.get("headRefName"), head, fuzzy, ticket_id=ticket_id
+        ):
             continue
         if row.get("state") == "MERGED":
             return "merged"
@@ -2325,6 +2424,7 @@ def _payload_mark(raw: str, head: str, fuzzy: bool = False) -> str:
 def _github_mark(root: Path, card_id: str) -> str:
     head = task_branch(root, card_id)
     fuzzy = task_branch_gone(root, card_id)
+    ticket_id = ticket_id_in_card(_read_card(root, card_id))
     view = _gh(root, ["pr", "view", head, "--json", "state,headRefName"])
     if view is not None and view.returncode == 0:
         mark = _payload_mark(view.stdout, head)
@@ -2353,7 +2453,7 @@ def _github_mark(root: Path, card_id: str) -> str:
     recent = _gh(root, ["pr", "list", "--state", "all", "--limit", "200", "--json", "state,headRefName"])
     if recent is None or recent.returncode != 0:
         return "missing"
-    return _payload_mark(recent.stdout, head, fuzzy=True)
+    return _payload_mark(recent.stdout, head, fuzzy=True, ticket_id=ticket_id)
 
 
 def landed_via(
@@ -2369,7 +2469,7 @@ def landed_via(
     return "", "pr-open" if mark == "open" else "pr-missing"
 
 
-def _gh_merged_at(root: Path, head: str, fuzzy: bool = False) -> int | None:
+def _gh_merged_at(root: Path, head: str, fuzzy: bool = False, *, ticket_id: str = "") -> int | None:
     if fuzzy:
         args = ["pr", "list", "--state", "merged", "--limit", "200", "--json", "mergedAt,headRefName"]
     else:
@@ -2382,7 +2482,11 @@ def _gh_merged_at(root: Path, head: str, fuzzy: bool = False) -> int | None:
     except json.JSONDecodeError:
         return None
     for row in rows if isinstance(rows, list) else [rows]:
-        if isinstance(row, dict) and _head_matches(row.get("headRefName"), head, fuzzy) and isinstance(row.get("mergedAt"), str):
+        if (
+            isinstance(row, dict)
+            and _head_matches(row.get("headRefName"), head, fuzzy, ticket_id=ticket_id)
+            and isinstance(row.get("mergedAt"), str)
+        ):
             try:
                 return int(datetime.fromisoformat(row["mergedAt"].replace("Z", "+00:00")).timestamp())
             except ValueError:
@@ -2393,7 +2497,13 @@ def _gh_merged_at(root: Path, head: str, fuzzy: bool = False) -> int | None:
 def _land_time(root: Path, card_id: str, queue: str, via: str) -> int | None:
     """When task-<id> reached queue: the first queue commit that contains it, or the PR merge time."""
     if via == "squash":
-        return _gh_merged_at(root, task_branch(root, card_id), fuzzy=task_branch_gone(root, card_id))
+        ticket_id = ticket_id_in_card(_read_card(root, card_id))
+        return _gh_merged_at(
+            root,
+            task_branch(root, card_id),
+            fuzzy=task_branch_gone(root, card_id),
+            ticket_id=ticket_id,
+        )
     tip = _run_git(root, ["rev-parse", task_branch(root, card_id)]).stdout.strip()
     path = _run_git(root, ["rev-list", "--first-parent", "--ancestry-path", "--reverse", f"{tip}..{queue}"])
     first = path.stdout.split()[0] if path.returncode == 0 and path.stdout.split() else tip
@@ -3108,6 +3218,9 @@ def _reach_review_multi(
         return _refuse(err.reason, detail=detail, log=err.log)
     reset_rounds(root, card_id)
     print("allowed")
+    note = task_branch_deprecation_note(root, card_id)
+    if note:
+        print(note)
     print("merge: no")
     print("tier: standard")
     print("repo-review: open")
@@ -3275,6 +3388,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         return _refuse(err.reason, detail=err.detail, log=err.log)
     reset_rounds(root, card_id)
     print("allowed")
+    note = task_branch_deprecation_note(root, card_id)
+    if note:
+        print(note)
     print("merge: no")
     print(f"tier: {tier}")
     print(f"repo-review: {review_state}")

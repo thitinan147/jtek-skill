@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.0.0"
+  version: "24.1.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -67,4 +67,4 @@ Files: `<docs_root>/<work>/spec.md` (default `docs_root` is `scrum-spec`, becaus
 
 `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. With one ticket id it works only that task.
 
-A ticket id is copied from its source (`BOOK-12`, `#45`, a Notion id). The skills require one and do not check its shape. Commits and PR titles are `<type>(<scope>): <summary> (<ticket-id>)`. The queue branch the gate finds is still `task-<id>-<slug>`. The conventional branch `type/<ticket-id>-short-slug` (for example `feat/BOOK-12-room-search`) is not created for a queue task yet.
+A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion id). The skills require one and do not check its shape. Commits and PR titles are `<type>(<scope>): <summary> (<ticket-id>)`. The task branch is `type/<ticket-id>-short-slug` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works.
