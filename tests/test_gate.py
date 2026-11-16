@@ -41,6 +41,9 @@ def board_text(
     typecheck: str = "",
     diff_limit: str | None = None,
     affected: str | None = None,
+    security: str | None = None,
+    verify: str | None = None,
+    denylist: str | None = None,
 ) -> str:
     pair_line = "" if pair is None else f"pair: {pair}\n\n"
     repos_block = f"## repos\n\n{repos}\n\n" if repos else ""
@@ -58,6 +61,9 @@ def board_text(
         f"| `<STACK_LOCK>` | {stack} |\n"
         + ("" if diff_limit is None else f"| `<DIFF_LIMIT>` | {diff_limit} |\n")
         + ("" if affected is None else f"| `<AFFECTED_TEST_CMD>` | {affected} |\n")
+        + ("" if security is None else f"| `<SECURITY_CMD>` | {security} |\n")
+        + ("" if verify is None else f"| `<VERIFY_CMD>` | {verify} |\n")
+        + ("" if denylist is None else f"| `<DENYLIST>` | {denylist} |\n")
         + "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
         f"{repos_block}"
@@ -463,8 +469,8 @@ class ReachReviewGitTests(unittest.TestCase):
         empty = run_gate(self.repo, "reach-review", "--id", "12")
         self.assertEqual(empty.returncode, 0, empty.stdout + empty.stderr)
         self.assertIn(
-            "gates: tests ok · lint skip · typecheck skip · screen skip · "
-            "review-diff open · security ok · test-weakening none",
+            "gates: secret ok · denylist skip · typecheck skip · lint skip · tests ok · "
+            "verify skip · screen skip · review-diff open · test-weakening none",
             empty.stdout,
         )
         self.assertNotIn("test-weakening:", empty.stdout)
@@ -483,9 +489,11 @@ class ReachReviewGitTests(unittest.TestCase):
         )
         lint_failed = run_gate(self.repo, "reach-review", "--id", "12")
         self.assertIn("refused: lint-failed", lint_failed.stdout)
+        self.assertIn("step: lint", lint_failed.stdout)
+        self.assertIn("skipped: tests", lint_failed.stdout)
         self.assertIn("next: retry", lint_failed.stdout)
         self.assertIn("round 1 of 3", lint_failed.stdout)
-        self.assertFalse(type_marker.exists())
+        self.assertTrue(type_marker.exists())
 
         (self.repo / "jt-queue" / "board.md").write_text(
             board_text(
@@ -496,11 +504,13 @@ class ReachReviewGitTests(unittest.TestCase):
             encoding="utf-8",
         )
         type_failed = run_gate(self.repo, "reach-review", "--id", "12")
-        self.assertTrue(lint_marker.exists())
+        self.assertFalse(lint_marker.exists())
         self.assertIn("refused: typecheck-failed", type_failed.stdout)
+        self.assertIn("step: typecheck", type_failed.stdout)
+        self.assertIn("skipped: lint", type_failed.stdout)
         self.assertIn("round 2 of 3", type_failed.stdout)
 
-        lint_marker.unlink()
+        lint_marker.unlink(missing_ok=True)
         (self.repo / "jt-queue" / "board.md").write_text(
             board_text(
                 "- [ ] **12** fresh (feat)",
@@ -512,8 +522,8 @@ class ReachReviewGitTests(unittest.TestCase):
         passed = run_gate(self.repo, "reach-review", "--id", "12")
         self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
         self.assertIn(
-            "gates: tests ok · lint ok · typecheck ok · screen skip · "
-            "review-diff open · security ok · test-weakening none",
+            "gates: secret ok · denylist skip · typecheck ok · lint ok · tests ok · "
+            "verify skip · screen skip · review-diff open · test-weakening none",
             passed.stdout,
         )
         self.assertTrue(lint_marker.exists())
@@ -542,8 +552,8 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("tier: quick", result.stdout)
         self.assertIn(
-            "gates: tests skip · lint skip · typecheck skip · screen skip · "
-            "review-diff skip · security ok · test-weakening none",
+            "gates: secret ok · denylist skip · typecheck skip · lint skip · tests skip · "
+            "verify skip · screen skip · review-diff skip · test-weakening none",
             result.stdout,
         )
         self.assertFalse(marker.exists())
@@ -589,6 +599,8 @@ class ReachReviewGitTests(unittest.TestCase):
 
         env = land(".env", f"TOKEN={token}\n")
         self.assertIn("refused: secret-suspect", env.stdout)
+        self.assertIn("step: secret", env.stdout)
+        self.assertIn("skipped: denylist", env.stdout)
         self.assertIn("next: ask", env.stdout)
         self.assertIn(".env", env.stdout)
         self.assertNotIn(token, env.stdout)
@@ -627,6 +639,229 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertNotIn(token, lined.stdout + lined.stderr)
         self.assertNotIn("BEGIN", lined.stdout)
         self.assertNotIn("PRIVATE", lined.stdout)
+
+    def test_fail_fast_stops_at_the_first_cheap_step(self) -> None:
+        self.assertEqual(
+            gate.FAIL_FAST,
+            ("secret", "denylist", "typecheck", "lint", "tests", "verify"),
+        )
+        base = self.repo.parent
+        markers = {
+            name: base / f"{self.repo.name}-{name}"
+            for name in ("type", "lint", "test", "verify")
+        }
+        for path in markers.values():
+            path.unlink(missing_ok=True)
+        self._set_card_check("0")
+
+        def write(**kwargs: str) -> None:
+            (self.repo / "jt-queue" / "board.md").write_text(
+                board_text("- [ ] **12** fresh (feat)", **kwargs),
+                encoding="utf-8",
+            )
+
+        write(
+            typecheck="python3 -c 'import sys; sys.exit(2)'",
+            lint=f"touch {markers['lint']}",
+            test=f"touch {markers['test']}",
+            verify=f"touch {markers['verify']}",
+        )
+        type_failed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: typecheck-failed", type_failed.stdout)
+        self.assertIn("step: typecheck", type_failed.stdout)
+        self.assertIn("skipped: lint", type_failed.stdout)
+        self.assertFalse(markers["lint"].exists())
+        self.assertFalse(markers["test"].exists())
+        self.assertFalse(markers["verify"].exists())
+
+        write(
+            typecheck=f"touch {markers['type']}",
+            lint="python3 -c 'import sys; sys.exit(2)'",
+            test=f"touch {markers['test']}",
+            verify=f"touch {markers['verify']}",
+        )
+        lint_failed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: lint-failed", lint_failed.stdout)
+        self.assertIn("step: lint", lint_failed.stdout)
+        self.assertIn("skipped: tests", lint_failed.stdout)
+        self.assertTrue(markers["type"].exists())
+        self.assertFalse(markers["test"].exists())
+        self.assertFalse(markers["verify"].exists())
+
+        for path in markers.values():
+            path.unlink(missing_ok=True)
+        write(
+            typecheck=f"touch {markers['type']}",
+            lint=f"touch {markers['lint']}",
+            test="python3 -c 'import sys; sys.exit(1)'",
+            verify=f"touch {markers['verify']}",
+        )
+        test_failed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: test-failed", test_failed.stdout)
+        self.assertIn("step: tests", test_failed.stdout)
+        self.assertIn("skipped: verify", test_failed.stdout)
+        self.assertTrue(markers["type"].exists())
+        self.assertTrue(markers["lint"].exists())
+        self.assertFalse(markers["verify"].exists())
+
+        for path in markers.values():
+            path.unlink(missing_ok=True)
+        write(
+            typecheck=f"touch {markers['type']}",
+            lint=f"touch {markers['lint']}",
+            test=f"touch {markers['test']}",
+            verify=f"touch {markers['verify']}",
+        )
+        passed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+        self.assertIn(
+            "gates: secret ok · denylist skip · typecheck ok · lint ok · tests ok · "
+            "verify ok · screen skip · review-diff open · test-weakening none",
+            passed.stdout,
+        )
+        self.assertTrue(all(path.exists() for path in markers.values()))
+
+        for path in markers.values():
+            path.unlink(missing_ok=True)
+        write(
+            typecheck=f"touch {markers['type']}",
+            lint=f"touch {markers['lint']}",
+            test=f"touch {markers['test']}",
+            verify="python3 -c 'import sys; sys.exit(1)'",
+        )
+        verify_failed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: verify-failed", verify_failed.stdout)
+        self.assertIn("step: verify", verify_failed.stdout)
+        self.assertIn("skipped: none", verify_failed.stdout)
+        self.assertTrue(markers["test"].exists())
+        for path in markers.values():
+            path.unlink(missing_ok=True)
+
+    def test_denylist_hit_names_the_replacement_and_a_miss_does_not(self) -> None:
+        secret = "ZZSECRETZZ"
+        marker = self.repo.parent / f"{self.repo.name}-after-denylist"
+        marker.unlink(missing_ok=True)
+        self._set_card_check("0")
+
+        def plant(body: str) -> None:
+            git(self.repo, "checkout", "-q", "task-12")
+            (self.repo / "app.py").write_text(body, encoding="utf-8")
+            commit_all(self.repo, "feat: rename a symbol")
+            git(self.repo, "checkout", "-q", "main")
+            self._record_review("12")
+
+        def use_slot() -> None:
+            (self.repo / "jt-queue" / "board.md").write_text(
+                board_text(
+                    "- [ ] **12** fresh (feat)",
+                    typecheck=f"touch {marker}",
+                    denylist="dmedasset -> MediaAsset",
+                ),
+                encoding="utf-8",
+            )
+
+        plant(f"name = 'dmedassets'\nnote = '{secret}'\n")
+        use_slot()
+        missed = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertEqual(missed.returncode, 0, missed.stdout + missed.stderr)
+        self.assertIn("denylist ok", missed.stdout)
+        self.assertNotIn("deprecated-name", missed.stdout)
+        self.assertTrue(marker.exists())
+        marker.unlink()
+
+        plant(f"name = 'dmedasset'\nnote = '{secret}'\n")
+        use_slot()
+        hit = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: deprecated-name", hit.stdout)
+        self.assertIn("step: denylist", hit.stdout)
+        self.assertIn("skipped: typecheck", hit.stdout)
+        self.assertIn("dmedasset -> MediaAsset", hit.stdout)
+        self.assertIn("app.py:", hit.stdout)
+        self.assertNotIn(secret, hit.stdout + hit.stderr)
+        self.assertFalse(marker.exists())
+
+        (self.repo / "jt-queue" / "denylist.txt").write_text(
+            "# retired names\ndmedasset -> MediaAsset\n",
+            encoding="utf-8",
+        )
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", typecheck=f"touch {marker}"),
+            encoding="utf-8",
+        )
+        from_file = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: deprecated-name", from_file.stdout)
+        self.assertIn("MediaAsset", from_file.stdout)
+        self.assertNotIn(secret, from_file.stdout + from_file.stderr)
+        self.assertFalse(marker.exists())
+        marker.unlink(missing_ok=True)
+
+    def test_security_cmd_hides_the_value_and_falls_back_when_missing(self) -> None:
+        token = "ZZSECRETZZ"
+        later = self.repo.parent / f"{self.repo.name}-after-secret"
+        later.unlink(missing_ok=True)
+        ran = self.repo.parent / f"{self.repo.name}-scanner-ran"
+        ran.unlink(missing_ok=True)
+        bin_dir = self.repo.parent / f"{self.repo.name}-bin"
+        if bin_dir.exists():
+            shutil.rmtree(bin_dir)
+        bin_dir.mkdir()
+        scanner = bin_dir / "trufflehog"
+        scanner.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            f"pathlib.Path({str(ran)!r}).write_text('ran', encoding='utf-8')\n"
+            f"sys.stdout.write({token!r} + '\\n')\n"
+            "raise SystemExit(3)\n",
+            encoding="utf-8",
+        )
+        scanner.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+        self._set_card_check("0")
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text(
+                "- [ ] **12** fresh (feat)",
+                security="trufflehog filesystem .",
+                typecheck=f"touch {later}",
+            ),
+            encoding="utf-8",
+        )
+        failed = run_gate(self.repo, "reach-review", "--id", "12", env=env)
+        self.assertIn("refused: secret-failed", failed.stdout)
+        self.assertIn("step: secret", failed.stdout)
+        self.assertIn("skipped: denylist", failed.stdout)
+        self.assertNotIn(token, failed.stdout + failed.stderr)
+        self.assertTrue(ran.exists())
+        self.assertFalse(later.exists())
+        log_dir = self.repo / ".git" / "jt-queue" / "logs"
+        if log_dir.is_dir():
+            for log in log_dir.iterdir():
+                self.assertNotIn(token, log.read_text(encoding="utf-8"))
+        ran.unlink()
+
+        git(self.repo, "checkout", "-q", "task-12")
+        (self.repo / ".env").write_text(f"TOKEN={token}\n", encoding="utf-8")
+        commit_all(self.repo, "feat: add env")
+        git(self.repo, "checkout", "-q", "main")
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text(
+                "- [ ] **12** fresh (feat)",
+                security="trufflehog filesystem .",
+                typecheck=f"touch {later}",
+            ),
+            encoding="utf-8",
+        )
+        fallback = run_gate(self.repo, "reach-review", "--id", "12")
+        self.assertIn("refused: secret-suspect", fallback.stdout)
+        self.assertIn(".env", fallback.stdout)
+        self.assertIn("step: secret", fallback.stdout)
+        self.assertIn("skipped: denylist", fallback.stdout)
+        self.assertNotIn(token, fallback.stdout + fallback.stderr)
+        self.assertFalse(ran.exists())
+        self.assertFalse(later.exists())
+        later.unlink(missing_ok=True)
+        ran.unlink(missing_ok=True)
+        shutil.rmtree(bin_dir, ignore_errors=True)
 
     def test_deleted_test_and_skip_marker_are_reported(self) -> None:
         (self.repo / "tests").mkdir()
@@ -2945,8 +3180,8 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
         self.assertIn("allowed", result.stdout, result.stdout + result.stderr)
         self.assertIn("repos: fe, be", result.stdout)
         self.assertIn(
-            "gates: tests ok · lint skip · typecheck skip · screen skip · "
-            "review-diff open · security ok · test-weakening none",
+            "gates: secret ok · denylist skip · typecheck skip · lint skip · tests ok · "
+            "verify skip · screen skip · review-diff open · test-weakening none",
             result.stdout,
         )
         self.assertTrue(self.marker.exists(), "be TEST_CMD did not run in be")
@@ -2969,8 +3204,8 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
         self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
         self.assertTrue(marker.exists())
         self.assertIn(
-            "gates: tests ok · lint ok · typecheck skip · screen skip · "
-            "review-diff open · security ok · test-weakening none",
+            "gates: secret ok · denylist skip · typecheck skip · lint ok · tests ok · "
+            "verify skip · screen skip · review-diff open · test-weakening none",
             passed.stdout,
         )
         marker.unlink()

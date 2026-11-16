@@ -24,10 +24,10 @@ Copy-paste install commands live in the repo README; here, the Install column is
 | Vitest affected | https://vitest.dev/guide/cli.html | `/jt-setup` | Example: `npx vitest --changed` in `AFFECTED_TEST_CMD` for `small` tasks | `AFFECTED_TEST_CMD` |
 | Jest related | https://jestjs.io/docs/cli | `/jt-setup` | Example: `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` | `AFFECTED_TEST_CMD` |
 | pytest-testmon | https://pypi.org/project/pytest-testmon/ | `/jt-setup` | Example: `pytest --testmon` in `AFFECTED_TEST_CMD` | `AFFECTED_TEST_CMD` |
-| TruffleHog | https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation | `/jt-setup` | Secret scan on commits or CI | `SECURITY_CMD` |
+| TruffleHog | https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation | `/jt-setup` | Secret scan. The gate runs `SECURITY_CMD` when that program is installed; otherwise the built-in check. It never prints the value | `SECURITY_CMD` |
 | Semgrep | https://docs.semgrep.dev/getting-started/cli | `/jt-setup` | Static analysis; gate runs non-empty `LINT_CMD` on Standard tasks | `LINT_CMD` or `SECURITY_CMD` |
 | OSV-Scanner | https://google.github.io/osv-scanner/installation/ | `/jt-setup` | Dependency CVEs from OSV | `SECURITY_CMD` |
-| Knip | https://knip.dev/overview/getting-started | `/jt-setup` | Dead exports and unused deps | `VERIFY_CMD` |
+| Knip | https://knip.dev/overview/getting-started | `/jt-setup` | Dead exports and unused deps. The gate runs `VERIFY_CMD` after tests when the cell is set | `VERIFY_CMD` |
 | commitlint | https://commitlint.js.org/guides/getting-started | `/jt-work` | Conventional commit messages locally | — |
 | action-semantic-pull-request | https://github.com/amannn/action-semantic-pull-request#installation | `/jt-review` | Enforce semantic PR titles on GitHub | — |
 | release-please | https://github.com/googleapis/release-please-action#basic-configuration | after merge | Conventional-commit releases | — |

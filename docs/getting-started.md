@@ -131,7 +131,7 @@ $ gate.py reach-review --root . --id 1
 refused: commands-unapproved
 merge: no
 next: stop
-detail: TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. A human must review them, then run: gate.py approve-commands --root . --id 1
+detail: TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD/AFFECTED_TEST_CMD/SECURITY_CMD/VERIFY_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. A human must review them, then run: gate.py approve-commands --root . --id 1
 hint: Stop. A human must review the commands and run approve-commands. Never run it yourself.
 ```
 
@@ -158,7 +158,7 @@ allowed
 merge: no
 tier: quick
 repo-review: skip
-gates: tests ok · lint skip · typecheck skip · screen skip · review-diff skip · security ok · test-weakening none
+gates: secret ok · denylist skip · typecheck skip · lint skip · tests ok · verify skip · screen skip · review-diff skip · test-weakening none
 ```
 
 With no Git remote, the agent records it with `--write --link local`. With a remote, it pushes `docs/BOOK-1-readme-usage` and opens a draft PR first. The board line becomes:
@@ -212,7 +212,7 @@ allowed
 merge: no
 tier: standard
 repo-review: open
-gates: tests ok · lint skip · typecheck skip · screen skip · review-diff open · security ok · test-weakening none
+gates: secret ok · denylist skip · typecheck skip · lint skip · tests ok · verify skip · screen skip · review-diff open · test-weakening none
 ```
 
 The `sha:` must be the latest commit on `task-2-fix-c-to-f`. If the agent commits again, its old review no longer counts.

@@ -68,7 +68,7 @@ One row per line under `pass:` in task.md. Quote the `pass:` line, name the comm
 - No Escape line is true.
 - Every `pass:` line has an `## evidence` row.
 - `<TEST_CMD>` passes when the value is not `no-suite` (the gate runs it for every tier)
-- On Standard, the gate runs `<LINT_CMD>` and `<TYPECHECK_CMD>` when that cell has a command. An empty cell is a skip
+- The gate stops at the first failure: secret scan, denylist, then on Standard `<TYPECHECK_CMD>` and `<LINT_CMD>`, then tests, then `<VERIFY_CMD>`. An empty cell is a skip
 - Work that touches code has a `## review-diff` that cites the latest code commit, and `python3 <jt-work skill folder>/scripts/gate.py diff-check` exits 0
 - Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-work skill folder>/scripts/gate.py screen-check` or a check command already on the board
 - Use the check commands already on the board. Do not create a new check script unless `do` says to create it

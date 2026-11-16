@@ -2,6 +2,14 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.4 to v24.5
+
+- **Check order.** `reach-review` fails fast: secret scan, denylist, typecheck, lint, tests, verify. A failure prints `step:` and `skipped:` (the next step) so the cheapest problem is fixed first. Typecheck and lint run before tests. They still run only on Standard, and only when the cell is set.
+- **Optional cells.** `<SECURITY_CMD>` is the secret scan when that program is installed (otherwise the built-in `secret-suspect` check, which still never prints the value). `<VERIFY_CMD>` runs after tests. `<DENYLIST>` or `jt-queue/denylist.txt` is `old -> replacement`. Empty means that step is skipped.
+- **Approval.** Setting `<SECURITY_CMD>` or `<VERIFY_CMD>` is `commands-changed` until a human runs `approve-commands`. Leaving them empty keeps the current approval. `<DENYLIST>` is not a command.
+- **Size.** `small`, `medium`, `large`, and `<AFFECTED_TEST_CMD>` are unchanged.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.5.0 --skill jt-work`.
+
 ## Migrating from v24.3 to v24.4
 
 - **Guards column.** New specs use `| # | Given | When | Then | Guards |`. Each EC's Guards cell names the AC it guards (`AC1`, or `AC1 AC2`). `check.py` errors when that cell is empty or names an AC that is not in the table. A spec that still has the old four columns does not fail: `check.py` prints `migration: Acceptance Criteria has no Guards column` and skips the link check. Add the column when you next edit the spec.
