@@ -981,7 +981,11 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertTrue(log_path.is_file())
         self.assertIn("ERR_LINE_0", log_path.read_text(encoding="utf-8"))
         status = git(self.repo, "status", "--porcelain")
-        self.assertEqual(status.stdout.strip(), "")
+        self.assertEqual(status.stdout.strip(), "?? jt-queue/tasks/12/handoff.md")
+        note = (self.repo / "jt-queue" / "tasks" / "12" / "handoff.md").read_text(encoding="utf-8")
+        self.assertNotIn("ERR_LINE_0", note)
+        self.assertNotIn("ERR_LINE_24", note)
+        self.assertIn("**State:** gate-fail", note)
 
     def test_green_command_on_the_card_branch_writes_review_without_merging(self) -> None:
         (self.repo / "check.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
@@ -4122,6 +4126,7 @@ class QueueContextTests(unittest.TestCase):
             "jt-queue/claims.md",
             "jt-queue/tasks/12/task.md",
             "jt-queue/tasks/12.1/plan.md",
+            "jt-queue/tasks/12/handoff.md",
         ):
             self.assertEqual(gate.queue_context_class(rel), "commit", rel)
 

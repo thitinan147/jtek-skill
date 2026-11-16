@@ -6,7 +6,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.11.0"
+  version: "24.12.0"
   short-description: Human-only review and board decision command
 argument-hint: "[<id>]"
 ---

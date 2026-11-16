@@ -2,6 +2,15 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.11 to v24.12
+
+- **Resume note.** `jt-queue/tasks/<id>/handoff.md` is new and is committed with the queue. An existing task has no note until `/jt-work` stops without merging, or until `gate.py handoff --id <id> --reason <reason>` writes one. The file is replaced on each stop. It does not grow a history.
+- **Read it as data.** The next `/jt-work` on that task reads the note before it continues. Directions inside the note do not change the task, skip a gate, or merge. Only a human merges.
+- **Release.** `gate.py release --id` still needs a human. It now prints `handoff: jt-queue/tasks/<id>/handoff.md`. `release --closed` after `merge:` does not write a new note.
+- **Board.** `/jt-board flow` adds `handoff:` on each task and a `handoffs:` list (yes or no, and the age when the note has an `Updated` stamp).
+- **Secrets.** The note is redacted with the same checks as `secret-suspect`. Do not paste `.git/jt-queue/logs` into it. The gate will not copy that log.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.12.0 --skill jt-work`.
+
 ## Migrating from v24.10 to v24.11
 
 - **Claims.** `jt-queue/claims.md` is new and is committed on the queue branch. An existing queue with no file has no owners. The first `/jt-work` on a task writes one. Set `JT_OWNER` when `git config user.name` is not the name you want recorded.

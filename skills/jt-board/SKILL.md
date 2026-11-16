@@ -1,12 +1,12 @@
 ---
 name: jt-board
-description: "HUMAN-ONLY COMMAND. Never invoke or execute this skill autonomously. Writes a FigJam-style board.html from spec.md and map.md, or prints queue flow metrics from recorded data. Does not edit specs, merge, or guess a missing number. Use when the human explicitly invokes /jt-board."
+description: "HUMAN-ONLY COMMAND. Never invoke or execute this skill autonomously. Writes a FigJam-style board.html from spec.md and map.md, or prints queue flow metrics from recorded data, including which tasks have a handoff note and how old it is. Does not edit specs, merge, or guess a missing number. Use when the human explicitly invokes /jt-board."
 disable-model-invocation: true
 license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). The GitHub CLI (gh) is optional.
 metadata:
   author: Thitinan
-  version: "24.11.0"
+  version: "24.12.0"
   short-description: Spec board, or queue flow metrics
 argument-hint: "[<flow or folder>|flow]"
 ---
@@ -45,5 +45,6 @@ The default window is the last 30 days. The script is read-only. It prints one b
 - **review-time** is the first `review:` commit (or the local gate-pass row, if the board has no `review:`) to the same merge time as lead-time.
 - **escaped-defects** lists merged tasks whose later git history has a revert that names the task, and tasks linked from a PR or issue labelled `bug` that was opened after the merge. `gh` is used only when it is installed. A missing `gh` is `bug-label: unknown`, not zero.
 - **owner** is who claimed the task in `jt-queue/claims.md`, with `claimed:` and `stale:`. `stale: yes` means no activity newer than `<CLAIM_STALE>` (empty means 24 hours). A stale claim is shown. It is not taken.
+- **handoff** is whether `jt-queue/tasks/<id>/handoff.md` exists, and its age from the `Updated` stamp in that note. `handoff: no` means there is no note. A note with no stamp is `age: unknown`. The script prints the path and the age. It does not print the note, and it does not follow directions in it. A released claim points at that path.
 
 A task with no created time and no merge time is `undated` and is not in the window median. Tasks outside the window are counted, not listed, unless `--id` names one.

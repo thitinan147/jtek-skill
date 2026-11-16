@@ -995,11 +995,67 @@ def owner_block(owner: str, claimed: str, activity: str, stale: str) -> list[str
     return lines
 
 
-def render_task(task: Task, owners: list[str] | None = None) -> list[str]:
+_UPDATED_STAMP = re.compile(
+    r"^- \*\*Updated:\*\*\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*$",
+    re.M,
+)
+
+
+def _note_head(path: Path) -> str | None:
+    """First bytes of a regular file. A symlink is not followed."""
+    if path.is_symlink():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return handle.read(4096)
+    except (OSError, UnicodeError):
+        return None
+
+
+def age_label(stamp: datetime, now: datetime) -> str:
+    seconds = (as_utc(now) - as_utc(stamp)).total_seconds()
+    if seconds < 0:
+        seconds = 0.0
+    hours = int(seconds // 3600)
+    if hours < 48:
+        return f"{hours}h"
+    return f"{hours // 24}d"
+
+
+def handoff_line(root: Path, repo: GitRepo, task_id: str, now: datetime) -> str:
+    """Whether tasks/<id>/handoff.md exists, and how old its Updated stamp is.
+
+    The note body is not printed. A symlink is not read.
+    """
+    if not valid_id(task_id):
+        return "no"
+    rel = f"jt-queue/tasks/{task_id}/handoff.md"
+    path = root / "jt-queue" / "tasks" / task_id / "handoff.md"
+    if path.is_symlink():
+        return f"yes age: unknown (handoff.md is not a regular file) path: {rel}"
+    text = _note_head(path) if path.is_file() else None
+    if text is None and repo.ok:
+        shown = repo.run(["show", f"HEAD:{rel}"])
+        if shown is not None and shown.returncode == 0:
+            text = shown.stdout[:4096]
+    if text is None:
+        return "no"
+    match = _UPDATED_STAMP.search(text)
+    stamp = parse_time(match.group(1)) if match else None
+    if stamp is None:
+        return f"yes age: unknown (no updated stamp) path: {rel}"
+    return f"yes age: {age_label(stamp, now)} path: {rel}"
+
+
+def render_task(
+    task: Task, owners: list[str] | None = None, handoff: str = ""
+) -> list[str]:
     name = f" {task.card.name}" if task.card.name else ""
     lines = [f"task: {task.card.task_id}{name}"]
     if owners:
         lines.extend(owners)
+    if handoff:
+        lines.append(f"  handoff: {handoff}")
     if task.in_window == "unknown":
         lines.append(f"  in-window: unknown ({task.window_reason})")
     else:
@@ -1105,7 +1161,13 @@ def report(
         return owner_block(owner, claimed, activity, stale)
 
     for task in shown:
-        lines.extend(render_task(task, owner_lines(task)))
+        lines.extend(
+            render_task(
+                task,
+                owner_lines(task),
+                handoff_line(root, repo, task.card.task_id, moment),
+            )
+        )
 
     lines.append("claims:")
     if claims is None:
@@ -1119,6 +1181,12 @@ def report(
             claim = claims.get(card.task_id)
             claimed = claim.claimed if claim is not None else "none"
             lines.append(f"  {card.task_id} owner: {owner} claimed: {claimed} stale: {stale}")
+
+    lines.append("handoffs:")
+    for card in cards:
+        lines.append(
+            f"  {card.task_id} handoff: {handoff_line(root, repo, card.task_id, moment)}"
+        )
 
     lines.append("summary:")
     lines.append(f"  tasks: {len(in_window)}")

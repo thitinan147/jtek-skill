@@ -571,6 +571,9 @@ class GateRunLogTests(unittest.TestCase):
         log = self.repo / ".git" / "jt-queue" / "gate-runs.jsonl"
         body = log.read_text(encoding="utf-8")
         self.assertNotIn("SENTINEL_GATE_OUTPUT", body)
+        note = (self.repo / "jt-queue" / "tasks" / "12" / "handoff.md").read_text(encoding="utf-8")
+        self.assertNotIn("SENTINEL_GATE_OUTPUT", note)
+        self.assertIn("**State:** gate-fail", note)
         row = json.loads(body.strip().splitlines()[-1])
         self.assertEqual(row["id"], "12")
         self.assertEqual(row["result"], "fail")
