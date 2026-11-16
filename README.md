@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.6.0
+npx skills add thitinan147/jtek-skill#v24.7.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.6.0
+/plugin marketplace add thitinan147/jtek-skill#v24.7.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.6.0` the marketplace follows the default branch.
+Without `#v24.7.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.6.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.7.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -90,7 +90,7 @@ Spec (human types the command)          Queue
 ```
 
 1. **Commit the queue context; keep secrets local.** Commit `jt-queue/board.md`, `brief.md`, `tasks/<id>/task.md`, and `plan.md` (including `## decisions`) so another machine can resume. Leave `lessons.md` uncommitted (notes for this agent, not the task). Leave `.git/jt-queue/` uncommitted: `approved-commands.json` is permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. Also leave `.env` files and private keys out. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word. A human approves the spec once; that covers the tasks derived from it. `/jt-review` is still the only merge.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it. On Standard, `medium` and `large` also need `## ai-review` in `plan.md` before review. `small` and Quick skip it. `/jt-work` asks one fresh-context reviewer (`/interrogate`, else `/pr`, else `/ponytail-review` on high-risk). That reviewer does not approve or merge.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. Pre-commit hooks, when installed, are an earlier warning and are not one of those checks. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it. On Standard, `medium` and `large` also need `## ai-review` in `plan.md` before review. `small` and Quick skip it. `/jt-work` asks one fresh-context reviewer (`/interrogate`, else `/pr`, else `/ponytail-review` on high-risk). That reviewer does not approve or merge.
 3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
 
 | Command | Who | What it does |
@@ -133,7 +133,7 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | pstack [`interrogate`](https://www.skills.sh/backnotprop/pstack/interrogate) | `npx skills add backnotprop/pstack --skill interrogate` | [`/jt-work`](skills/jt-work/SKILL.md) after the gate passes | The one fresh-context reviewer when this skill is installed | — |
 | pstack [`maintain-verification-skill`](https://www.skills.sh/backnotprop/pstack/maintain-verification-skill) | `npx skills add backnotprop/pstack --skill maintain-verification-skill` | after large code changes | Re-align verify skill with the app | — |
 | [mise](https://mise.jdx.dev/installing-mise.html) | `curl -fsSL https://mise.run \| sh` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Pin tool versions; detect can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
-| [pre-commit](https://pre-commit.com/#install) + [typos](https://github.com/crate-ci/typos) / [actionlint](https://github.com/rhysd/actionlint) / [zizmor](https://docs.zizmor.sh/integrations/) | `python3 -m pip install pre-commit` then `pre-commit install` (hooks in `.pre-commit-config.yaml`) | on `git commit` | Typos, workflow lint, Actions security before the gate | — |
+| [pre-commit](https://pre-commit.com/#install) + [typos](https://github.com/crate-ci/typos) / [actionlint](https://github.com/rhysd/actionlint) / [zizmor](https://docs.zizmor.sh/integrations/) | `python3 -m pip install pre-commit` then `pre-commit install` | on `git commit` | `/jt-setup` proposes a pinned `.pre-commit-config.yaml` and waits. Typos, workflow lint, and Actions security run on commit. The gate does not fail if pre-commit is absent | — |
 | [reviewdog](https://github.com/reviewdog/reviewdog#installation) | `go install github.com/reviewdog/reviewdog/cmd/reviewdog@latest` | [`/jt-review`](skills/jt-review/SKILL.md) | Post lint or check annotations on PR lines | — |
 | Vitest affected | `npx vitest --changed` in `AFFECTED_TEST_CMD` (requires Vitest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Narrow tests on `small` tasks | `AFFECTED_TEST_CMD` |
 | Jest related | `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` (requires Jest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Related tests on `small` tasks | `AFFECTED_TEST_CMD` |

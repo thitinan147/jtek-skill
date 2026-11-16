@@ -901,7 +901,7 @@ class ReachReviewGitTests(unittest.TestCase):
             ".skip(",
             ".only(",
             "xit(",
-            "xdescribe(",
+            "xdescribe(",  # Jasmine skip marker the gate must still see  # spellchecker:disable-line
             "@skip",
             "@pytest.mark.skip",
             "xfail",
@@ -2583,7 +2583,8 @@ class DiffCheckTests(unittest.TestCase):
 
 class StatusBoundaryTests(unittest.TestCase):
     def test_unknown_status_stops_instead_of_starting_work(self) -> None:
-        for token in ("wip:", "reveiw:", "รอรีวิว:", "ปิด:", "closed:"):
+        # The second token is not a status word. It stays misspelled so the gate rejects it.
+        for token in ("wip:", "reveiw:", "รอรีวิว:", "ปิด:", "closed:"):  # spellchecker:disable-line
             text = board_text(f"- [ ] **13** bad (feat) {token}")
             decision = decide_board(text, {"13": card_body(["src/b.py"])})
             self.assertEqual(decision.action, "stop", token)
@@ -4137,3 +4138,340 @@ class QueueContextTests(unittest.TestCase):
         for rel in local:
             self.assertEqual(gate.queue_context_class(rel), "local", rel)
         self.assertEqual(gate.queue_context_class("src/app.py"), "outside")
+
+
+def _hook_yaml(stdout: str) -> str:
+    return stdout.split("\n---\n", 1)[1].rsplit("\n---\n", 1)[0]
+
+
+class PreCommitHookTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_proposal_is_pinned_and_writes_nothing(self) -> None:
+        result = run_gate_raw(self.repo, "hooks")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("typos = https://github.com/crate-ci/typos @ v1.52.2  [source: spelling]", result.stdout)
+        self.assertIn("actionlint = (not added)  [source: no .github/workflows]", result.stdout)
+        self.assertIn("zizmor = (not added)  [source: no .github/workflows]", result.stdout)
+        self.assertIn("conventional-pre-commit @ v4.5.0", result.stdout)
+        self.assertIn("wrote: no", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertIn("hooks-file: .pre-commit-config.yaml  [create]", result.stdout)
+        self.assertFalse((self.repo / ".pre-commit-config.yaml").exists())
+        yaml = _hook_yaml(result.stdout)
+        self.assertIn("rev: v1.52.2", yaml)
+        self.assertNotIn("actionlint", yaml)
+        self.assertNotIn("zizmor", yaml)
+        self.assertIn("stages: [commit-msg]", yaml)
+
+    def test_workflows_and_cheap_board_commands_are_proposed(self) -> None:
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".github" / "workflows" / "ci.yml").write_text("name: ci\n", encoding="utf-8")
+        (self.repo / "jt-queue").mkdir()
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text("no items", lint="python3 -m ruff check", security="trufflehog filesystem ."),
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "hooks")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("jtek-lint = python3 -m ruff check  [source: LINT_CMD, cheap]", result.stdout)
+        self.assertIn("jtek-secret = trufflehog filesystem .  [source: SECURITY_CMD, cheap]", result.stdout)
+        yaml = _hook_yaml(result.stdout)
+        self.assertIn("https://github.com/rhysd/actionlint", yaml)
+        self.assertIn("rev: v1.7.12", yaml)
+        self.assertIn("https://github.com/zizmorcore/zizmor-pre-commit", yaml)
+        self.assertIn("rev: v1.32.0", yaml)
+        self.assertIn("id: jtek-lint", yaml)
+        self.assertIn("id: jtek-secret", yaml)
+        self.assertIn("pass_filenames: false", yaml)
+        self.assertFalse((self.repo / ".pre-commit-config.yaml").exists())
+
+    def test_expensive_commands_are_left_out(self) -> None:
+        result = run_gate_raw(
+            self.repo, "hooks", "--lint", "npm run lint", "--security", "osv-scanner scan ."
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("jtek-lint = (not added)", result.stdout)
+        self.assertIn("jtek-secret = (not added)", result.stdout)
+        yaml = _hook_yaml(result.stdout)
+        self.assertNotIn("jtek-lint", yaml)
+        self.assertNotIn("osv-scanner", yaml)
+        self.assertNotIn("npm run lint", yaml)
+        self.assertEqual(gate.command_tool("npx eslint ."), "eslint")
+        self.assertEqual(gate.command_tool("npx --yes eslint"), "")
+        self.assertFalse(gate._is_cheap_tool("semgrep scan", gate._CHEAP_LINT_TOOLS))
+        self.assertFalse(gate._is_cheap_tool("uvx ruff check", gate._CHEAP_LINT_TOOLS))
+        self.assertTrue(gate._is_cheap_tool("npx eslint .", gate._CHEAP_LINT_TOOLS))
+
+    def test_commitlint_config_selects_that_hook(self) -> None:
+        (self.repo / "commitlint.config.js").write_text(
+            "module.exports = {extends: ['@commitlint/config-conventional']};\n",
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "hooks")
+        self.assertIn("[source: commitlint.config.js]", result.stdout)
+        self.assertIn("@ v9.27.0", result.stdout)
+        yaml = _hook_yaml(result.stdout)
+        self.assertIn("id: commitlint", yaml)
+        self.assertNotIn("conventional-pre-commit", yaml)
+
+    def test_merge_keeps_existing_hooks_and_a_second_write_matches(self) -> None:
+        existing = (
+            "# team hooks\n"
+            "exclude: ^(vendor|dist)/\n"
+            "repos:\n"
+            "  - repo: https://github.com/crate-ci/typos\n"
+            "    rev: v1.0.0\n"
+            "    hooks:\n"
+            "      - id: typos\n"
+            '        args: ["--force-exclude"]\n'
+            "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"
+            "    rev: v5.0.0\n"
+            "    hooks:\n"
+            "      - id: trailing-whitespace\n"
+            "        args: [--markdown-linebreak-ext=md]\n"
+            "fail_fast: true\n"
+        )
+        path = self.repo / ".pre-commit-config.yaml"
+        path.write_text(existing, encoding="utf-8")
+        result = run_gate_raw(self.repo, "hooks", "--write", "--lint", "ruff check")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("typos = (kept)", result.stdout)
+        merged = path.read_text(encoding="utf-8")
+        self.assertIn("# team hooks", merged)
+        self.assertIn("exclude: ^(vendor|dist)/", merged)
+        self.assertIn("rev: v1.0.0", merged)
+        self.assertIn('args: ["--force-exclude"]', merged)
+        self.assertIn("id: trailing-whitespace", merged)
+        self.assertIn("args: [--markdown-linebreak-ext=md]", merged)
+        self.assertIn("fail_fast: true", merged)
+        self.assertEqual(merged.count("id: typos"), 1)
+        self.assertNotIn("rev: v1.52.2", merged)
+        self.assertIn("id: jtek-lint", merged)
+        self.assertIn('entry: "ruff check"', merged)
+        self.assertIn("id: conventional-pre-commit", merged)
+        self.assertNotIn("actionlint", merged)
+        again = run_gate_raw(self.repo, "hooks", "--write", "--lint", "ruff check")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(path.read_text(encoding="utf-8"), merged)
+
+    def test_a_missing_hook_id_keeps_the_existing_rev(self) -> None:
+        path = self.repo / ".pre-commit-config.yaml"
+        path.write_text(
+            "repos:\n"
+            "  - repo: https://github.com/crate-ci/typos\n"
+            "    rev: v1.0.0\n"
+            "    hooks:\n"
+            "      - id: typos-src\n",
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "hooks", "--write")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merged = path.read_text(encoding="utf-8")
+        self.assertIn("rev: v1.0.0", merged)
+        self.assertIn("id: typos-src", merged)
+        self.assertIn("id: typos", merged)
+        self.assertNotIn("rev: v1.52.2", merged)
+
+    def test_an_existing_hook_id_is_not_added_again_from_a_fork(self) -> None:
+        path = self.repo / ".pre-commit-config.yaml"
+        path.write_text(
+            "repos:\n"
+            "  - repo: https://example.invalid/typos-fork\n"
+            "    rev: deadbeef\n"
+            "    hooks:\n"
+            "      - id: typos\n",
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "hooks", "--write")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merged = path.read_text(encoding="utf-8")
+        self.assertEqual(merged.count("id: typos"), 1)
+        self.assertIn("rev: deadbeef", merged)
+        self.assertNotIn("crate-ci/typos", merged)
+        self.assertIn("example.invalid/typos-fork", merged)
+
+    def test_unparsed_config_is_not_overwritten(self) -> None:
+        path = self.repo / ".pre-commit-config.yaml"
+        original = "repos:\n\t- repo: https://github.com/crate-ci/typos\n"
+        path.write_text(original, encoding="utf-8")
+        preview = run_gate_raw(self.repo, "hooks")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn("[unparsed]", preview.stdout)
+        self.assertIn("wrote: no", preview.stdout)
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+        written = run_gate_raw(self.repo, "hooks", "--write")
+        self.assertEqual(written.returncode, 2)
+        self.assertIn("wrote: no", written.stdout)
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_local_hooks_are_appended_not_replaced(self) -> None:
+        path = self.repo / ".pre-commit-config.yaml"
+        path.write_text(
+            "repos:\n  - repo: local\n    hooks:\n      - id: mine\n        entry: echo hi\n",
+            encoding="utf-8",
+        )
+        result = run_gate_raw(self.repo, "hooks", "--write", "--lint", "eslint .")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merged = path.read_text(encoding="utf-8")
+        self.assertIn("id: mine", merged)
+        self.assertIn("entry: echo hi", merged)
+        self.assertIn("id: jtek-lint", merged)
+        self.assertEqual(merged.count("repo: local"), 1)
+
+    def test_create_then_write_is_idempotent(self) -> None:
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        first = run_gate_raw(self.repo, "hooks", "--write")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        path = self.repo / ".pre-commit-config.yaml"
+        body = path.read_text(encoding="utf-8")
+        self.assertIn("rev: v1.52.2", body)
+        self.assertIn("rev: v1.7.12", body)
+        self.assertIn("rev: v1.32.0", body)
+        self.assertIn("rev: v4.5.0", body)
+        again = run_gate_raw(self.repo, "hooks", "--write")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(path.read_text(encoding="utf-8"), body)
+        self.assertIn("typos = (kept)", again.stdout)
+
+    def _docs_repo(self) -> None:
+        init_repo(self.repo)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text("- [ ] **12** readme (docs)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["README.md"], kind="docs"),
+            encoding="utf-8",
+        )
+        (self.repo / "README.md").write_text("# Docs\n", encoding="utf-8")
+        commit_all(self.repo, "docs: board")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
+        (self.repo / "README.md").write_text("# Docs\n\nMore.\n", encoding="utf-8")
+        commit_all(self.repo, "docs: readme")
+        git(self.repo, "checkout", "main")
+
+    def _path_env(self, precommit: bool) -> dict[str, str]:
+        bin_dir = self.repo / "fake-bin"
+        bin_dir.mkdir()
+        git_bin = shutil.which("git")
+        self.assertIsNotNone(git_bin)
+        os.symlink(git_bin, bin_dir / "git")
+        if precommit:
+            script = bin_dir / "pre-commit"
+            script.write_text('#!/bin/sh\ntouch "$HOOK_RAN"\nexit 1\n', encoding="utf-8")
+            script.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(bin_dir)
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["HOOK_RAN"] = str(self.repo / "hook-ran")
+        return env
+
+    def test_allowed_notes_missing_hooks_and_does_not_run_precommit(self) -> None:
+        self._docs_repo()
+        result = run_gate_env(self.repo, self._path_env(True), "reach-review", "--id", "12")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowed", result.stdout)
+        self.assertIn("hooks: missing", result.stdout)
+        self.assertIn("ai-review: skip", result.stdout)
+        self.assertIn("tier: quick", result.stdout)
+        self.assertFalse((self.repo / "hook-ran").exists())
+
+    def test_allowed_notes_ok_when_the_git_hooks_exist(self) -> None:
+        self._docs_repo()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "default_install_hook_types:\n"
+            "  - pre-commit\n"
+            "  - commit-msg\n"
+            "repos:\n"
+            "  - repo: local\n"
+            "    hooks:\n"
+            "      - id: conventional-pre-commit\n"
+            "        stages: [commit-msg]\n",
+            encoding="utf-8",
+        )
+        hooks = Path(git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())
+        if not hooks.is_absolute():
+            hooks = self.repo / hooks
+        hooks.mkdir(parents=True, exist_ok=True)
+        for name in ("pre-commit", "commit-msg"):
+            (hooks / name).write_text("#!/bin/sh\n# File generated by pre-commit\nexit 0\n", encoding="utf-8")
+        result = run_gate_env(self.repo, self._path_env(True), "reach-review", "--id", "12")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hooks: ok", result.stdout)
+        self.assertFalse((self.repo / "hook-ran").exists())
+
+    def test_commit_msg_hook_missing_is_not_ok(self) -> None:
+        self._docs_repo()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n"
+            "  - repo: local\n"
+            "    hooks:\n"
+            "      - id: conventional-pre-commit\n"
+            "        stages: [commit-msg]\n",
+            encoding="utf-8",
+        )
+        hooks = Path(git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())
+        if not hooks.is_absolute():
+            hooks = self.repo / hooks
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\n# pre-commit\n", encoding="utf-8")
+        result = run_gate_env(self.repo, self._path_env(True), "reach-review", "--id", "12")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hooks: missing", result.stdout)
+
+    def test_no_precommit_program_prints_no_hooks_line(self) -> None:
+        self._docs_repo()
+        result = run_gate_env(self.repo, self._path_env(False), "reach-review", "--id", "12")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("\nhooks:", "\n" + result.stdout)
+        self.assertIn("ai-review: skip", result.stdout)
+        self.assertIn("gates: secret ok", result.stdout)
+
+    def test_a_failing_check_still_refuses_when_precommit_is_installed(self) -> None:
+        init_repo(self.repo)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text(
+                "- [ ] **12** readme (docs)",
+                test="python3 -c 'import sys; sys.exit(1)'",
+            ),
+            encoding="utf-8",
+        )
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["README.md"], kind="docs"),
+            encoding="utf-8",
+        )
+        (self.repo / "README.md").write_text("# Docs\n", encoding="utf-8")
+        commit_all(self.repo, "docs: board")
+        git(self.repo, "branch", "task-12")
+        git(self.repo, "checkout", "task-12")
+        (self.repo / "README.md").write_text("# Docs\n\nMore.\n", encoding="utf-8")
+        commit_all(self.repo, "docs: readme")
+        git(self.repo, "checkout", "main")
+        env = self._path_env(True)
+        python_bin = shutil.which("python3")
+        self.assertIsNotNone(python_bin)
+        os.symlink(python_bin, self.repo / "fake-bin" / "python3")
+        result = run_gate_env(self.repo, env, "reach-review", "--id", "12")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertNotIn("hooks:", result.stdout)
+        self.assertFalse((self.repo / "hook-ran").exists())
+
+    def test_fail_fast_order_and_size_hooks_stay(self) -> None:
+        self.assertEqual(
+            gate.FAIL_FAST, ("secret", "denylist", "typecheck", "lint", "tests", "verify")
+        )
+        self.assertEqual(
+            gate.LARGE_SIZE_HOOKS,
+            ("worktree-rounds", "fresh-context-review", "high-risk"),
+        )
+        self.assertEqual(gate.GATE_REPORT[:6], gate.FAIL_FAST)

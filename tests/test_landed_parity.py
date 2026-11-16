@@ -126,10 +126,10 @@ class LandedParityTests(unittest.TestCase):
         self.assertIn("landed: squash", res_squash.stdout)
 
         git(self.repo, "merge", "--no-ff", "task-12", "-m", "merge task-12")
-        anc_env = self._env_with_gh("bin-anc")
-        res_anc = self._assert_parity(anc_env)
-        self.assertEqual(res_anc.returncode, 0)
-        self.assertIn("landed: ancestor", res_anc.stdout)
+        ancestor_env = self._env_with_gh("bin-ancestor")
+        ancestor_result = self._assert_parity(ancestor_env)
+        self.assertEqual(ancestor_result.returncode, 0)
+        self.assertIn("landed: ancestor", ancestor_result.stdout)
 
     def test_slug_branch_parity(self) -> None:
         git(self.repo, "branch", "-m", "task-12", "task-12-login")
@@ -141,9 +141,9 @@ class LandedParityTests(unittest.TestCase):
         self.assertIn("detail: pr-open", res_open.stdout)
 
         git(self.repo, "merge", "--no-ff", "task-12-login", "-m", "merge task-12-login")
-        res_anc = self._assert_parity(self._env_with_gh("bin-slug-anc"))
-        self.assertEqual(res_anc.returncode, 0)
-        self.assertIn("landed: ancestor", res_anc.stdout)
+        ancestor_result = self._assert_parity(self._env_with_gh("bin-slug-ancestor"))
+        self.assertEqual(ancestor_result.returncode, 0)
+        self.assertIn("landed: ancestor", ancestor_result.stdout)
 
     def test_deleted_slug_branch_found_by_pull_request_parity(self) -> None:
         git(self.repo, "branch", "-D", "task-12")

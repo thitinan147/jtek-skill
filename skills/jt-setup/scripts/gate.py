@@ -2813,6 +2813,641 @@ def repo_test_cmd(root: Path) -> str:
     return detect_test_cmd(root)[0]
 
 
+# Pinned tags for the hooks /jt-setup proposes. A later release does not move these.
+PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
+TYPOS_REPO = "https://github.com/crate-ci/typos"
+TYPOS_REV = "v1.52.2"
+ACTIONLINT_REPO = "https://github.com/rhysd/actionlint"
+ACTIONLINT_REV = "v1.7.12"
+ZIZMOR_REPO = "https://github.com/zizmorcore/zizmor-pre-commit"
+ZIZMOR_REV = "v1.32.0"
+CONVENTIONAL_REPO = "https://github.com/compilerla/conventional-pre-commit"
+CONVENTIONAL_REV = "v4.5.0"
+COMMITLINT_REPO = "https://github.com/alessandrojcm/commitlint-pre-commit-hook"
+COMMITLINT_REV = "v9.27.0"
+CONVENTIONAL_TYPES = (
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+)
+# Cheap means a linter already on PATH. A command that downloads a package, or a heavy scanner, stays out of the hook file.
+_CHEAP_LINT_TOOLS = frozenset(
+    {
+        "ruff",
+        "flake8",
+        "black",
+        "isort",
+        "eslint",
+        "biome",
+        "prettier",
+        "golangci-lint",
+        "staticcheck",
+        "shellcheck",
+        "yamllint",
+        "markdownlint",
+        "markdownlint-cli2",
+        "stylelint",
+        "pylint",
+        "pyflakes",
+    }
+)
+_CHEAP_SECRET_TOOLS = frozenset({"gitleaks", "detect-secrets", "trufflehog"})
+_COMMAND_WRAPPERS = frozenset(
+    {
+        ("python3", "-m"),
+        ("python", "-m"),
+        ("py", "-m"),
+        ("poetry", "run"),
+        ("uv", "run"),
+        ("pipx", "run"),
+        ("pnpm", "exec"),
+        ("yarn", "exec"),
+    }
+)
+_COMMITLINT_FILES = (
+    "commitlint.config.js",
+    "commitlint.config.cjs",
+    "commitlint.config.mjs",
+    "commitlint.config.ts",
+    "commitlint.config.json",
+    ".commitlintrc",
+    ".commitlintrc.json",
+    ".commitlintrc.yaml",
+    ".commitlintrc.yml",
+    ".commitlintrc.js",
+    ".commitlintrc.cjs",
+)
+_LABEL_IDS = {
+    "typos": frozenset({"typos"}),
+    "actionlint": frozenset({"actionlint"}),
+    "zizmor": frozenset({"zizmor"}),
+    "jtek-lint": frozenset({"jtek-lint"}),
+    "jtek-secret": frozenset({"jtek-secret"}),
+    "commit-msg": frozenset({"conventional-pre-commit", "commitlint"}),
+}
+_HOOK_KEYS = (
+    "name",
+    "entry",
+    "language",
+    "args",
+    "stages",
+    "additional_dependencies",
+    "pass_filenames",
+)
+_TOP_KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$")
+_REPO_ITEM = re.compile(r"^(\s*)-\s+repo:\s*(.*?)\s*$")
+_REV_ITEM = re.compile(r"^(\s*)rev:\s*(.*?)\s*$")
+_HOOKS_KEY = re.compile(r"^(\s*)hooks:\s*$")
+
+
+@dataclass
+class _RepoBlock:
+    repo: str
+    rev: str
+    hook_ids: list[str]
+    start: int
+    end: int
+    hooks_at: int | None
+    item_indent: str
+    hook_indent: str
+    opaque: bool = False
+
+
+@dataclass
+class _HookFile:
+    blocks: list[_RepoBlock]
+    repos_line: int | None
+    repos_end: int | None
+    error: str
+
+
+def _yaml_scalar(value: str) -> str:
+    text = value.split(" #", 1)[0].strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1]
+    return text
+
+
+def _yaml_quote(value: str) -> str:
+    if re.fullmatch(r"[A-Za-z0-9_./:@+-]+", value):
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def command_tool(command: str) -> str:
+    """The program a board command runs, after local wrappers such as `python3 -m`."""
+    try:
+        parts = shlex.split(command, posix=True)
+    except ValueError:
+        return ""
+    while parts:
+        pair = (parts[0], parts[1] if len(parts) > 1 else "")
+        if pair in _COMMAND_WRAPPERS:
+            parts = parts[2:]
+            continue
+        if parts[0] in {"npx", "bunx"}:
+            rest = parts[1:]
+            if any(token in {"-y", "--yes"} for token in rest):
+                return ""
+            while rest and rest[0].startswith("-"):
+                rest = rest[1:]
+            if not rest or ("@" in rest[0] and not rest[0].startswith("@")):
+                return ""
+            parts = rest
+            continue
+        break
+    if not parts:
+        return ""
+    program = Path(parts[0]).name
+    if program.lower().endswith(".exe"):
+        program = program[:-4]
+    return program.lower()
+
+
+def _is_cheap_tool(command: str, allowed: frozenset[str]) -> bool:
+    return bool(command.strip()) and command_tool(command) in allowed
+
+
+def _commitlint_source(root: Path) -> str:
+    for name in _COMMITLINT_FILES:
+        if (root / name).is_file():
+            return name
+    package = root / "package.json"
+    if not package.is_file():
+        return ""
+    try:
+        data = json.loads(package.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if isinstance(data, dict) and isinstance(data.get("commitlint"), dict):
+        return "package.json commitlint"
+    return ""
+
+
+def _hook_lines(indent: str, hook: dict) -> list[str]:
+    lines = [f"{indent}- id: {hook['id']}"]
+    nested = indent + "  "
+    for key in _HOOK_KEYS:
+        if key not in hook:
+            continue
+        value = hook[key]
+        if isinstance(value, bool):
+            lines.append(f"{nested}{key}: {'true' if value else 'false'}")
+        elif isinstance(value, list):
+            if not value:
+                lines.append(f"{nested}{key}: []")
+            else:
+                rendered = ", ".join(_yaml_quote(str(item)) for item in value)
+                lines.append(f"{nested}{key}: [{rendered}]")
+        else:
+            lines.append(f"{nested}{key}: {_yaml_quote(str(value))}")
+    return lines
+
+
+def _repo_block_lines(repo: dict, item_indent: str) -> list[str]:
+    key_indent = item_indent + "  "
+    hook_indent = item_indent + "    "
+    lines = [f"{item_indent}- repo: {repo['repo']}"]
+    if repo.get("rev"):
+        lines.append(f"{key_indent}rev: {repo['rev']}")
+    lines.append(f"{key_indent}hooks:")
+    for hook in repo["hooks"]:
+        lines.extend(_hook_lines(hook_indent, hook))
+    return lines
+
+
+def _render_new(proposed: list[dict]) -> str:
+    lines = [
+        "# Proposed by /jt-setup. Early warning only; gate.py stays the judge.",
+        "default_install_hook_types:",
+        "  - pre-commit",
+        "  - commit-msg",
+        "repos:",
+    ]
+    for repo in proposed:
+        lines.extend(_repo_block_lines(repo, "  "))
+    return "\n".join(lines) + "\n"
+
+
+def _parse_hook_file(text: str) -> _HookFile:
+    """Read repo URLs and hook ids. Refuse shapes we would have to rewrite blindly."""
+    if "\t" in text or "\r" in text:
+        return _HookFile([], None, None, "unparsed")
+    lines = text.splitlines()
+    repos_line = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped in {"---", "..."}:
+            continue
+        match = _TOP_KEY.match(line)
+        if not match:
+            continue
+        if match.group(1) != "repos":
+            continue
+        if match.group(2).strip() not in {"", "[]"}:
+            return _HookFile([], index, None, "unparsed")
+        repos_line = index
+        break
+    if repos_line is None:
+        return _HookFile([], None, len(lines), "")
+    blocks: list[_RepoBlock] = []
+    current: _RepoBlock | None = None
+    repos_end = len(lines)
+    for index in range(repos_line + 1, len(lines)):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped in {"---", "..."}:
+            return _HookFile([], repos_line, None, "unparsed")
+        if _TOP_KEY.match(line) and not line.startswith(" ") and not line.startswith("-"):
+            repos_end = index
+            break
+        repo_match = _REPO_ITEM.match(line)
+        if repo_match and len(repo_match.group(1)) <= 2:
+            if current is not None:
+                current.end = index
+                blocks.append(current)
+            current = _RepoBlock(
+                repo=_yaml_scalar(repo_match.group(2)),
+                rev="",
+                hook_ids=[],
+                start=index,
+                end=len(lines),
+                hooks_at=None,
+                item_indent=repo_match.group(1),
+                hook_indent=repo_match.group(1) + "    ",
+            )
+            continue
+        if current is None:
+            if stripped.startswith("- "):
+                return _HookFile([], repos_line, None, "unparsed")
+            continue
+        rev_match = _REV_ITEM.match(line)
+        if rev_match and not current.rev and len(rev_match.group(1)) > len(current.item_indent):
+            current.rev = _yaml_scalar(rev_match.group(2))
+            continue
+        if _HOOKS_KEY.match(line):
+            current.hooks_at = index
+            continue
+        list_item = re.match(r"^(\s*)-\s+(\S.*?)\s*$", line)
+        if not list_item:
+            continue
+        indent, rest = list_item.group(1), list_item.group(2)
+        if rest.startswith("id:"):
+            current.hook_ids.append(_yaml_scalar(rest.split(":", 1)[1]))
+            current.hook_indent = indent
+            continue
+        if current.hooks_at is not None and len(indent) > len(current.item_indent):
+            if not (current.hook_indent and len(indent) > len(current.hook_indent)):
+                current.opaque = True
+    if current is not None:
+        current.end = repos_end
+        blocks.append(current)
+    for block, nxt in zip(blocks, [*blocks[1:], None]):
+        limit = nxt.start if nxt is not None else repos_end
+        end = limit
+        while end > block.start + 1 and not lines[end - 1].strip():
+            end -= 1
+        block.end = end
+    return _HookFile(blocks, repos_line, repos_end, "")
+
+
+def _hook_ids(text: str) -> set[str]:
+    parsed = _parse_hook_file(text)
+    if parsed.error:
+        return set()
+    return {hook_id for block in parsed.blocks for hook_id in block.hook_ids}
+
+
+def _config_wants_commit_msg(text: str) -> bool:
+    if re.search(r"(?m)^default_install_hook_types:\s*\[[^\]]*commit-msg", text):
+        return True
+    if re.search(r"(?m)^\s*-\s+commit-msg\s*$", text):
+        return True
+    return bool(re.search(r"(?m)^\s*stages:\s*\[[^\]]*commit-msg", text))
+
+
+def _ensure_hook_types(text: str, needed: list[str]) -> str:
+    lines = text.splitlines()
+    key_index = next((i for i, line in enumerate(lines) if line.startswith("default_install_hook_types:")), None)
+    if key_index is None:
+        block = ["default_install_hook_types:", *[f"  - {name}" for name in needed]]
+        repos_index = next((i for i, line in enumerate(lines) if line.startswith("repos:")), None)
+        if repos_index is None:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.extend(block)
+        else:
+            lines[repos_index:repos_index] = block
+        return "\n".join(lines) + "\n"
+    rest = lines[key_index].split(":", 1)[1].strip()
+    if rest.startswith("[") and rest.endswith("]"):
+        inner = rest[1:-1].strip()
+        items = [_yaml_scalar(part) for part in inner.split(",") if part.strip()] if inner else []
+        if all(name in items for name in needed):
+            return text
+        for name in needed:
+            if name not in items:
+                items.append(name)
+        lines[key_index] = "default_install_hook_types: [" + ", ".join(items) + "]"
+        return "\n".join(lines) + "\n"
+    if rest:
+        return text
+    indent = "  "
+    seen: list[str] = []
+    index = key_index + 1
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            break
+        if line.lstrip().startswith("#"):
+            index += 1
+            continue
+        item = re.match(r"^(\s*)-\s+(\S.*?)\s*$", line)
+        if not item:
+            break
+        indent = item.group(1)
+        seen.append(_yaml_scalar(item.group(2)))
+        index += 1
+    addition = [f"{indent}- {name}" for name in needed if name not in seen]
+    if not addition:
+        return text
+    lines[index:index] = addition
+    return "\n".join(lines) + "\n"
+
+
+def _insert_hook_lines(text: str, block: _RepoBlock, hooks: list[dict]) -> str:
+    lines = text.splitlines()
+    indent = block.hook_indent
+    addition: list[str] = []
+    if block.hooks_at is None:
+        addition.append(f"{block.item_indent}  hooks:")
+        indent = block.item_indent + "    "
+    for hook in hooks:
+        addition.extend(_hook_lines(indent, hook))
+    lines[block.end : block.end] = addition
+    return "\n".join(lines) + "\n"
+
+
+def _append_repo_block(text: str, repo: dict) -> str:
+    parsed = _parse_hook_file(text)
+    if parsed.error:
+        return text
+    lines = text.splitlines()
+    item_indent = parsed.blocks[0].item_indent if parsed.blocks else "  "
+    block_lines = _repo_block_lines(repo, item_indent)
+    if parsed.repos_line is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("repos:")
+        lines.extend(block_lines)
+    elif lines[parsed.repos_line].strip() == "repos: []":
+        lines[parsed.repos_line] = "repos:"
+        lines[parsed.repos_line + 1 : parsed.repos_line + 1] = block_lines
+    else:
+        insert_at = parsed.repos_end if parsed.repos_end is not None else len(lines)
+        lines[insert_at:insert_at] = block_lines
+    return "\n".join(lines) + "\n"
+
+
+def _add_repo(text: str, repo: dict) -> str:
+    parsed = _parse_hook_file(text)
+    if parsed.error:
+        return text
+    present = {hook_id for block in parsed.blocks for hook_id in block.hook_ids}
+    missing = [hook for hook in repo["hooks"] if hook["id"] not in present]
+    if not missing:
+        return text
+    same = next((block for block in parsed.blocks if block.repo.rstrip("/") == repo["repo"].rstrip("/")), None)
+    if same is None:
+        return _append_repo_block(text, {**repo, "hooks": missing})
+    if same.opaque:
+        return text
+    return _insert_hook_lines(text, same, missing)
+
+
+def merge_precommit_text(existing: str | None, proposed: list[dict]) -> tuple[str, str]:
+    """Merge proposed repos into an existing config. Return (text, create|merge|unparsed).
+
+    Existing repos, revs, hook ids, and surrounding lines stay. A shape this cannot
+    read is returned unchanged with status unparsed, so --write does not clobber it.
+    """
+    if existing is None or not existing.strip():
+        return _render_new(proposed), "create"
+    if _parse_hook_file(existing).error:
+        return existing, "unparsed"
+    wants_msg = _config_wants_commit_msg(existing) or any(
+        hook["id"] in {"conventional-pre-commit", "commitlint"}
+        for repo in proposed
+        for hook in repo["hooks"]
+    )
+    needed = ["pre-commit", *(["commit-msg"] if wants_msg else [])]
+    text = _ensure_hook_types(existing, needed)
+    for repo in proposed:
+        text = _add_repo(text, repo)
+    if text == existing:
+        return existing, "merge"
+    if not text.endswith("\n"):
+        text += "\n"
+    return text, "merge"
+
+
+def propose_hook_repos(root: Path, lint_cmd: str = "", security_cmd: str = "") -> tuple[list[dict], list[str]]:
+    """Hooks /jt-setup would add, cheapest first, each with the source a human can check."""
+    repos: list[dict] = []
+    sources: list[str] = []
+    repos.append({"repo": TYPOS_REPO, "rev": TYPOS_REV, "hooks": [{"id": "typos", "args": []}]})
+    sources.append(f"typos = {TYPOS_REPO} @ {TYPOS_REV}  [source: spelling]")
+    if (root / ".github" / "workflows").is_dir():
+        repos.append({"repo": ACTIONLINT_REPO, "rev": ACTIONLINT_REV, "hooks": [{"id": "actionlint"}]})
+        sources.append(f"actionlint = {ACTIONLINT_REPO} @ {ACTIONLINT_REV}  [source: .github/workflows]")
+        repos.append({"repo": ZIZMOR_REPO, "rev": ZIZMOR_REV, "hooks": [{"id": "zizmor"}]})
+        sources.append(f"zizmor = {ZIZMOR_REPO} @ {ZIZMOR_REV}  [source: .github/workflows]")
+    else:
+        sources.append("actionlint = (not added)  [source: no .github/workflows]")
+        sources.append("zizmor = (not added)  [source: no .github/workflows]")
+    local: list[dict] = []
+    lint_text = lint_cmd.strip()
+    if _is_cheap_tool(lint_text, _CHEAP_LINT_TOOLS):
+        local.append(
+            {
+                "id": "jtek-lint",
+                "name": "board LINT_CMD",
+                "entry": lint_text,
+                "language": "system",
+                "pass_filenames": False,
+            }
+        )
+        sources.append(f"jtek-lint = {lint_text}  [source: LINT_CMD, cheap]")
+    elif lint_text:
+        sources.append("jtek-lint = (not added)  [source: LINT_CMD is not a cheap local linter]")
+    else:
+        sources.append("jtek-lint = (not added)  [source: LINT_CMD empty]")
+    secret_text = security_cmd.strip()
+    if _is_cheap_tool(secret_text, _CHEAP_SECRET_TOOLS):
+        local.append(
+            {
+                "id": "jtek-secret",
+                "name": "board SECURITY_CMD",
+                "entry": secret_text,
+                "language": "system",
+                "pass_filenames": False,
+            }
+        )
+        sources.append(f"jtek-secret = {secret_text}  [source: SECURITY_CMD, cheap]")
+    elif secret_text:
+        sources.append("jtek-secret = (not added)  [source: SECURITY_CMD is not a cheap local scanner]")
+    else:
+        sources.append("jtek-secret = (not added)  [source: SECURITY_CMD empty]")
+    if local:
+        repos.append({"repo": "local", "rev": "", "hooks": local})
+    commitlint = _commitlint_source(root)
+    if commitlint:
+        repos.append(
+            {
+                "repo": COMMITLINT_REPO,
+                "rev": COMMITLINT_REV,
+                "hooks": [
+                    {
+                        "id": "commitlint",
+                        "stages": ["commit-msg"],
+                        "additional_dependencies": ["@commitlint/config-conventional"],
+                    }
+                ],
+            }
+        )
+        sources.append(f"commit-msg = {COMMITLINT_REPO} @ {COMMITLINT_REV}  [source: {commitlint}]")
+    else:
+        repos.append(
+            {
+                "repo": CONVENTIONAL_REPO,
+                "rev": CONVENTIONAL_REV,
+                "hooks": [
+                    {
+                        "id": "conventional-pre-commit",
+                        "stages": ["commit-msg"],
+                        "args": list(CONVENTIONAL_TYPES),
+                    }
+                ],
+            }
+        )
+        sources.append(
+            f"commit-msg = {CONVENTIONAL_REPO} @ {CONVENTIONAL_REV}  [source: conventional commits]"
+        )
+    return repos, sources
+
+
+def _sources_after_merge(sources: list[str], existing_ids: set[str], merged_ids: set[str]) -> list[str]:
+    noted: list[str] = []
+    for line in sources:
+        label = line.split(" = ", 1)[0]
+        hook_ids = _LABEL_IDS.get(label, frozenset())
+        if hook_ids & existing_ids:
+            noted.append(f"{label} = (kept)  [source: .pre-commit-config.yaml]")
+        elif "(not added)" not in line and existing_ids and not (hook_ids & merged_ids):
+            noted.append(f"{label} = (not changed)  [source: existing repo block left as-is]")
+        else:
+            noted.append(line)
+    return noted
+
+
+def cmd_hooks(root: Path, write: bool, lint: str | None, security: str | None) -> int:
+    """Print a .pre-commit-config.yaml and its sources. --write merges; it never replaces."""
+    board = ""
+    if lint is None or security is None:
+        board = read_board_text(root) or ""
+    lint_cmd = parse_field(board, "LINT_CMD") if lint is None else lint
+    security_cmd = parse_field(board, "SECURITY_CMD") if security is None else security
+    proposed, sources = propose_hook_repos(root, lint_cmd, security_cmd)
+    path = root / PRECOMMIT_CONFIG
+    existing = path.read_text(encoding="utf-8") if path.is_file() else None
+    merged, status = merge_precommit_text(existing, proposed)
+    existing_ids = _hook_ids(existing or "")
+    merged_ids = existing_ids if status == "unparsed" else _hook_ids(merged)
+    for line in _sources_after_merge(sources, existing_ids, merged_ids):
+        print(line)
+    print(f"hooks-file: {PRECOMMIT_CONFIG}  [{status}]")
+    print("---")
+    shown = _render_new(proposed) if status == "unparsed" else merged
+    print(shown, end="" if shown.endswith("\n") else "\n")
+    print("---")
+    if write and status == "unparsed":
+        print("wrote: no")
+        print("merge: no")
+        return 2
+    if write:
+        payload = merged if merged.endswith("\n") else merged + "\n"
+        if existing != payload:
+            path.write_text(payload, encoding="utf-8")
+        print(f"wrote: {PRECOMMIT_CONFIG}")
+    else:
+        print("wrote: no")
+    print("merge: no")
+    return 0
+
+
+def _is_precommit_hook(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return "pre-commit" in "\n".join(text.splitlines()[:30])
+
+
+def _git_hooks_dir(root: Path) -> Path | None:
+    proc = _run_git(root, ["rev-parse", "--git-path", "hooks"])
+    if proc.returncode != 0:
+        return None
+    printed = proc.stdout.strip()
+    if not printed:
+        return None
+    hooks = Path(printed)
+    if not hooks.is_absolute():
+        hooks = (root / hooks).resolve()
+    return hooks
+
+
+def hooks_note(root: Path) -> str | None:
+    """`ok` or `missing` when pre-commit is installed. None when it is not.
+
+    The note is an early warning. Callers must not turn it into a refusal.
+    A missing git binary or an unreadable hook file yields None, not a refusal.
+    """
+    try:
+        if shutil.which("pre-commit") is None:
+            return None
+        config = root / PRECOMMIT_CONFIG
+        if not config.is_file():
+            return "missing"
+        text = config.read_text(encoding="utf-8", errors="replace")
+        hooks = _git_hooks_dir(root)
+        if hooks is None or not _is_precommit_hook(hooks / "pre-commit"):
+            return "missing"
+        if _config_wants_commit_msg(text) and not _is_precommit_hook(hooks / "commit-msg"):
+            return "missing"
+        return "ok"
+    except OSError:
+        return None
+
+
+def _print_hooks_note(root: Path) -> None:
+    note = hooks_note(root)
+    if note:
+        print(f"hooks: {note}")
+
+
 def cmd_detect(root: Path) -> int:
     """Read-only: print the commands this repo suggests, each with its source."""
     for name, (value, source) in (
@@ -4038,6 +4673,7 @@ def _reach_review_multi(
     print("tier: standard")
     print_size(floor, work_size, triggers, ", ".join(affected_notes))
     print(f"ai-review: {ai_state}")
+    _print_hooks_note(root)
     print("repo-review: open")
     print("repos: " + ", ".join(names))
     weak_bits: list[str] = []
@@ -4243,6 +4879,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print(f"tier: {tier}")
     print_size(floor, work_size, triggers, affected_note)
     print(f"ai-review: {ai_state}")
+    _print_hooks_note(root)
     print(f"repo-review: {review_state}")
     found = test_weakening(root, queue, card_id) or []
     weak = ",".join(found) if found else "none"
@@ -4315,6 +4952,10 @@ def main(argv: list[str] | None = None) -> int:
     approve = sub.add_parser("approve-commands", parents=[common])
     approve.add_argument("--id", default="")
     sub.add_parser("detect", parents=[common])
+    hooks = sub.add_parser("hooks", parents=[common])
+    hooks.add_argument("--write", action="store_true")
+    hooks.add_argument("--lint", default=None)
+    hooks.add_argument("--security", default=None)
     landed = sub.add_parser("landed", parents=[common])
     landed.add_argument("--id", required=True)
 
@@ -4330,6 +4971,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_approve_commands(root, parsed.id)
     if parsed.cmd == "detect":
         return cmd_detect(root)
+    if parsed.cmd == "hooks":
+        return cmd_hooks(root, parsed.write, parsed.lint, parsed.security)
     if parsed.cmd == "landed":
         return cmd_landed(root, parsed.id)
     return _refuse("merge")

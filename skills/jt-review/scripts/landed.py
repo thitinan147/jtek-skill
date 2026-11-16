@@ -315,8 +315,8 @@ def _home_toplevel(root: Path) -> Path:
 def _landed_via(root: Path, card_id: str, queue: str) -> tuple[str, str]:
     head = _task_branch(root, card_id)[0]
     if _branch_exists(root, head) and _branch_exists(root, queue):
-        anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
-        if anc is not None and anc.returncode == 0:
+        ancestor = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
+        if ancestor is not None and ancestor.returncode == 0:
             return "ancestor", ""
     mark = _github_mark(root, card_id)
     if mark == "merged":
@@ -453,8 +453,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     head = _task_branch(root, card_id)[0]
     if _branch_exists(root, head) and _branch_exists(root, queue):
-        anc = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
-        if anc is not None and anc.returncode == 0:
+        ancestor = _run(root, ["git", "merge-base", "--is-ancestor", head, queue])
+        if ancestor is not None and ancestor.returncode == 0:
             print("landed: ancestor")
             print("merge: no")
             return 0
