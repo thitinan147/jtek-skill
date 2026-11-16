@@ -1124,7 +1124,7 @@ def cmd_ask(root: Path, card_id: str, question: str, refused: str = "") -> int:
     reset_rounds(root, card_id)
     print(f"asked: {card_id}")
     _print_written(
-        _stop_handoff(root, card_id, "ask", left=question, error=refused, gate_token=refused)
+        _stop_handoff(root, card_id, "ask", left=question, error=refused, fail_reason=refused)
     )
     print("merge: no")
     return 0
@@ -1995,7 +1995,7 @@ def _refuse(
             kind,
             step=step or _GATE_STEP.get(reason, ""),
             error=detail,
-            gate_token=reason,
+            fail_reason=reason,
             from_log=bool(log),
         )
         if rel:
@@ -6863,12 +6863,12 @@ def _gate_field(step: str, summary: str) -> str:
     return _one_detail(step or summary or "–")
 
 
-def _summary_text(token: str, detail: str, from_log: bool) -> str:
+def _summary_text(fail_reason: str, detail: str, from_log: bool) -> str:
     if from_log:
-        return token
+        return fail_reason
     cleaned = redact_handoff_text(detail)
     if not cleaned or cleaned == "[redacted]":
-        return token or cleaned
+        return fail_reason or cleaned
     return cleaned
 
 
@@ -6889,7 +6889,7 @@ def _stop_handoff(
     error: str = "",
     files: str = "",
     next_cmd: str = "",
-    gate_token: str = "",
+    fail_reason: str = "",
     from_log: bool = False,
 ) -> str | None:
     """Replace tasks/<id>/handoff.md. Returns the repo-relative path."""
@@ -6911,7 +6911,7 @@ def _stop_handoff(
         left_text = _cite_left(card_id, reason)
     if not file_text:
         file_text = _cite_files(root, card_id) or "–"
-    summary = _summary_text(gate_token, error, from_log)
+    summary = _summary_text(fail_reason, error, from_log)
     if summary or step:
         gate = _gate_field(step, summary)
     elif previous and previous.gate:
@@ -7018,8 +7018,6 @@ def cmd_handoff(
         error=error,
         files=files,
         next_cmd=next_cmd,
-        gate_token="",
-        from_log=False,
     )
     if rel is None:
         return _refuse("handoff-reason", detail="could not write the note")
