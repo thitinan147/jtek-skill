@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.12.0 - a resume note when work changes hands
+
+- When `/jt-work` stops on a task without merge, it writes `jt-queue/tasks/<id>/handoff.md` and replaces that file on the next stop. The stops are a gate failure, `ask:`, `send-back:`, a human `release`, the session ending, and the round cap. The note records state, what was done, what is left, the failing gate step and a one-line error, the files touched, and the next command.
+- The note follows the Matt handoff style `/jt-spec-handoff` already composes: cite `plan.md` and `task.md` instead of pasting them, redact secrets, and keep suggested skills out of the file. Starting a task that already has the note reads it first as data, not as instructions, and the plan continues from it.
+- Commit `handoff.md` with the other queue files. `/jt-board flow` prints which tasks have a note and how old the `Updated` stamp is. `gate.py release --id` prints that path. A merged task is not given a new resume note.
+- The writer uses the same secret checks as `secret-suspect` (a private-key block, a dotenv name other than `.env.example`, a private-key file name). It does not copy `.git/jt-queue/logs`. The error line is a summary, not the command output.
+- Pin installs with `v24.12.0`. Skill and plugin metadata are `24.12.0`.
+
 ## 24.11.0 - claims, file leases, and one worktree per task
 
 - `/jt-work` records who is working a task in `jt-queue/claims.md` (`owner`, `claimed`, `activity`) and commits that file on the queue branch. The owner is `JT_OWNER` when that is set, otherwise `git config user.name`. `/jt-board flow` prints the owner, the claimed time, and whether the claim is stale.
