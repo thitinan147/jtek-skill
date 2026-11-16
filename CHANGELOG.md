@@ -1,5 +1,11 @@
 # Changelog
 
+## 24.2.1 - install before use
+
+- README and `/jt-help` document a fixed **Install before use** checklist: required tools, recommended skills, and optional tools with copy-paste install commands, the jtek step each plugs into, and board slots (`TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`). The list lives in `skills/jt-help/references/install-before-use.md` with official install URLs (no markdown links in references).
+- Vitest, Jest, and pytest-testmon rows point at `<AFFECTED_TEST_CMD>` for `small` tasks, on top of v24.2.0 size tiers.
+- Pin installs with `v24.2.1`. Skill and plugin metadata are `24.2.1`.
+
 ## 24.2.0 - size the process to the work
 
 - A task has `size:` `small`, `medium`, or `large`, set when the task or the spec is created. A `size:` token on the board line overrides it. Unset stays `medium`, so an existing board still runs the full gate.

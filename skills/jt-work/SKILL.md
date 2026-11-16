@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.2.0"
+  version: "24.2.1"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---

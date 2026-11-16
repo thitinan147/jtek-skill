@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.2.0"
+  version: "24.2.1"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -72,3 +72,7 @@ A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion
 ## Size
 
 `small`, `medium`, and `large` scale the process. The agent sets `size:` when it creates the task or the spec. A human can change it on the task or with `size:` on the board line. `small` skips the spec and uses `/jt-add-task`. It runs affected tests only when the board sets `<AFFECTED_TEST_CMD>` or `<TEST_CMD>` contains `{files}`; otherwise it runs the full suite. `medium` is a short spec and the full gate. `large` is a full spec. The gate may raise the size (`escalate:`). It never lowers it.
+
+## Install before use
+
+Show [references/install-before-use.md](references/install-before-use.md): official install links, jtek steps, and board slots. Copy-paste commands are in the repo README. Confirm at `/jt-setup`. Use one AI reviewer at a time (e.g. `/interrogate`); do not stack reviewers.
