@@ -2,6 +2,15 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.7 to v24.8
+
+- **Screen evidence.** A `screen: yes` task whose `pass:` line names an AC or EC id needs that id and a screenshot path in `## evidence` (`e2e/ac1.png`). A video or trace path is optional. Copy the rows in [`skills/jt-work/assets/plan.template.md`](skills/jt-work/assets/plan.template.md). A pass line with no AC id is unchanged.
+- **Console errors.** An uncaught error, a console error, or a failed network load recorded in that section is `finding:` in the result cell. A row that still says the screen passed is `console-error`.
+- **Snapshots.** `<VERIFY_CMD>` for a web app is `npx playwright test`. The gate does not run it when the command passes `--update-snapshots` or `-u`, or when the Playwright config would write missing snapshots. Set `updateSnapshots` to `none`. Updating baselines is a separate step you review. It is not part of the same task.
+- **Setup.** Run `gate.py playwright --root .` on a web app and confirm before `--write`. An existing Playwright config is left as it is. If `create-verification-skill` is installed, `/jt-setup` follows its feature map.
+- **Unchanged.** Fail-fast order (verify last), size tiers, `## ai-review`, and pre-commit hooks.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.8.0 --skill jt-work`. Playwright CLI: `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` (https://playwright.dev/docs/getting-started-cli and https://playwright.dev/agent-cli/skills).
+
 ## Migrating from v24.6 to v24.7
 
 - **Hooks.** Optional. Run `/jt-setup` again, or `gate.py hooks --root .`, and confirm before `--write`. An existing `.pre-commit-config.yaml` is merged. Revs you already pinned stay. A file the merger cannot read is left untouched (`unparsed`).

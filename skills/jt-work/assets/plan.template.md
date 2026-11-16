@@ -58,9 +58,12 @@ Keep only the part for this task's kind and delete the rest.
 
 One row per line under `pass:` in task.md. Quote the `pass:` line, name the command or artifact, and record the real result from this round.
 
+On `screen: yes`, a pass line that names an AC or EC id also lists a screenshot path in that row, tied to that id. A short video or trace path is optional. A console error or an uncaught error on that screen is `finding:` in the result, not `ok`.
+
 | pass line | command or artifact | result |
 |---|---|---|
-| | | |
+| AC1: the button shows | e2e/ac1.png | ok |
+| AC2: the form errors | e2e/ac2.png e2e/ac2.webm | finding: console error Uncaught TypeError |
 
 ## before review
 
@@ -71,7 +74,7 @@ One row per line under `pass:` in task.md. Quote the `pass:` line, name the comm
 - The gate stops at the first failure: secret scan, denylist, then on Standard `<TYPECHECK_CMD>` and `<LINT_CMD>`, then tests, then `<VERIFY_CMD>`. An empty cell is a skip
 - Standard medium and large have a filled `## ai-review`. Small and Quick omit it
 - Work that touches code has a `## review-diff` that cites the latest code commit, and `python3 <jt-work skill folder>/scripts/gate.py diff-check` exits 0
-- Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-work skill folder>/scripts/gate.py screen-check` or a check command already on the board
+- Screen work of every kind starts the real frontend and the real backend, then clicks what `pass` names, using the JTek screen command `python3 <jt-work skill folder>/scripts/gate.py screen-check` or a check command already on the board. Drive the app with `playwright-cli -s=<ticket-id>` (not Playwright MCP). Each AC row names a screenshot. The gate decides with `<VERIFY_CMD>` (`npx playwright test`, `toHaveScreenshot`) and does not update snapshots in this task
 - Use the check commands already on the board. Do not create a new check script unless `do` says to create it
 
 ## send-back

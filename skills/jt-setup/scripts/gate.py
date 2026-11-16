@@ -131,6 +131,8 @@ NEXT_FOR = {
     "verify-timeout": "retry",
     "pass-ac": "retry",
     "spec-unapproved": "stop",
+    "console-error": "retry",
+    "snapshot-update": "ask",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
@@ -186,6 +188,14 @@ HINT_FOR = {
     "verify-timeout": "The verify command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "pass-ac": "Write each pass: line as '- <id>: <Then>' copied from that AC or EC in spec:.",
     "spec-unapproved": "A human approves the spec (✅ name · date) after questions that block dev or AC are closed. Do not approve it yourself.",
+    "console-error": (
+        "An uncaught error or console error on a touched screen is a finding. "
+        "Put 'finding:' in that ## evidence result, with the screenshot path. Do not mark the row ok."
+    ),
+    "snapshot-update": (
+        "Do not pass --update-snapshots or -u in this task, and set updateSnapshots to none. "
+        "A baseline change is a separate step a human reviews."
+    ),
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset(
@@ -273,7 +283,12 @@ REVIEW_DETAIL = {
     "review-fix-needed": "'## review-diff' says verdict: fix-needed; fix the diff, commit, and review it again",
     "no-checked": "'## review-diff' needs at least one 'checked: <what you checked>' line",
     "no-repo-sha": "'## review-diff' needs one '<repo>: <sha>' line for each repo under repos:, citing that repo's latest code commit",
-    "evidence-missing": "every pass: line in task.md must be quoted in the first cell of a filled row (pass line | command | result) in '## evidence' of plan.md",
+    "evidence-missing": (
+        "every pass: line in task.md must be quoted in the first cell of a filled row "
+        "(pass line | command | result) in '## evidence' of plan.md; a screen pass line "
+        "that names an AC or EC id also needs a screenshot path in that row"
+    ),
+    "console-error": "a console or uncaught error in '## evidence' is a finding, not a pass",
 }
 MERGE_ARGV = {
     "merge",
@@ -2416,6 +2431,11 @@ def _click_surface(work: Path, card_text: str, card_id: str = "") -> str | None:
 def _run_click(work: Path, click: str, card_id: str) -> str | None:
     if not click:
         raise GateError("click-mismatch", detail="click: is empty in task.md")
+    if updates_snapshots(click):
+        raise GateError(
+            "snapshot-update",
+            detail="click updates snapshots; baselines change only in a reviewed step",
+        )
     try:
         result = subprocess.run(
             click,
@@ -3448,6 +3468,68 @@ def _print_hooks_note(root: Path) -> None:
         print(f"hooks: {note}")
 
 
+def detect_web_app(root: Path) -> tuple[bool, str]:
+    """A UI repo, not a library or an API with no page. Source names the signal."""
+    package = root / "package.json"
+    if package.is_file():
+        try:
+            data = json.loads(package.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict):
+            deps: set[str] = set()
+            for key in ("dependencies", "devDependencies", "peerDependencies"):
+                block = data.get(key)
+                if isinstance(block, dict):
+                    deps.update(str(name) for name in block)
+            hit = sorted(deps & _UI_PACKAGES)
+            if hit:
+                return True, f"package.json {hit[0]}"
+    for name in _WEB_CONFIG_FILES:
+        if (root / name).is_file():
+            return True, name
+    for name in _WEB_PAGE_FILES:
+        if (root / name).is_file():
+            return True, name
+    if (root / "index.html").is_file():
+        return True, "index.html"
+    return False, ""
+
+
+def detect_verify_cmd(root: Path) -> tuple[str, str]:
+    """VERIFY_CMD for a web app. Empty when the repo has no UI to open."""
+    web, source = detect_web_app(root)
+    if not web:
+        return "", ""
+    return "npx playwright test", source
+
+
+def _skill_roots(root: Path) -> list[Path]:
+    home = Path.home()
+    return [
+        root / ".agents" / "skills",
+        root / ".claude" / "skills",
+        root / ".cursor" / "skills",
+        home / ".agents" / "skills",
+        home / ".claude" / "skills",
+        home / ".cursor" / "skills",
+    ]
+
+
+def verification_skill_installed(root: Path) -> bool:
+    """pstack create-verification-skill, in this repo or the user skills dir."""
+    for base in _skill_roots(root):
+        if (base / _VERIFICATION_SKILL / "SKILL.md").is_file():
+            return True
+    return False
+
+
+def verification_feature_map(root: Path) -> str:
+    if verification_skill_installed(root):
+        return _VERIFICATION_SKILL
+    return "none"
+
+
 def cmd_detect(root: Path) -> int:
     """Read-only: print the commands this repo suggests, each with its source."""
     for name, (value, source) in (
@@ -3455,6 +3537,44 @@ def cmd_detect(root: Path) -> int:
         ("SETUP_CMD", detect_setup_cmd(root)),
     ):
         print(f"{name} = {value or '(empty)'}  [source: {source or 'none found'}]")
+    verify, vsource = detect_verify_cmd(root)
+    print(f"VERIFY_CMD = {verify or '(empty)'}  [source: {vsource or 'not a web app'}]")
+    if verify:
+        print(f"BROWSER_TOOL = playwright  [source: {vsource}]")
+        print(f"feature-map: {verification_feature_map(root)}")
+        status = "present" if playwright_config_file(root) else "propose"
+        print(f"playwright-config: {status}")
+    print("merge: no")
+    return 0
+
+
+def cmd_playwright(root: Path, write: bool) -> int:
+    """Show VERIFY_CMD and a minimal config. --write creates the file when it is absent."""
+    verify, source = detect_verify_cmd(root)
+    if not verify:
+        print("playwright: skip")
+        print("VERIFY_CMD = (empty)  [source: not a web app]")
+        print("merge: no")
+        return 0
+    existing = playwright_config_file(root)
+    status = "present" if existing else "propose"
+    print(f"VERIFY_CMD = {verify}  [source: {source}]")
+    print(f"BROWSER_TOOL = playwright  [source: {source}]")
+    print(f"feature-map: {verification_feature_map(root)}")
+    print(f"playwright-config: {status}")
+    if existing is not None:
+        print(f"config: {existing.name}")
+        print("merge: no")
+        return 0
+    print("---")
+    sys.stdout.write(MINIMAL_PLAYWRIGHT_CONFIG)
+    if not MINIMAL_PLAYWRIGHT_CONFIG.endswith("\n"):
+        print()
+    print("---")
+    if write:
+        dest = root / "playwright.config.ts"
+        dest.write_text(MINIMAL_PLAYWRIGHT_CONFIG, encoding="utf-8")
+        print("wrote: playwright.config.ts")
     print("merge: no")
     return 0
 
@@ -3813,14 +3933,221 @@ def _evidence_rows(plan: str) -> list[list[str]]:
     return rows
 
 
+_SHOT_PATH = re.compile(r"\S+\.(?:png|jpe?g|webp)\b", re.IGNORECASE)
+_AC_ID = re.compile(r"\b((?:AC|EC)\d+)\b")
+_CONSOLE_FINDING = re.compile(
+    r"(?i)(?:\[ERROR\]|console\s*error|page\s*error|uncaught(?:\s+exception)?|"
+    r"failed to load resource|net::ERR_)"
+)
+_UPDATE_FLAG = re.compile(r"(?:^|\s)--update-snapshots(?:\s|=|$)")
+_SHORT_UPDATE = re.compile(r"(?:^|\s)-u(?:\s|$)")
+_UPDATE_SETTING = re.compile(r"updateSnapshots\s*:\s*['\"]([^'\"]+)['\"]")
+_PLAYWRIGHT_CONFIGS = (
+    "playwright.config.ts",
+    "playwright.config.js",
+    "playwright.config.mjs",
+    "playwright.config.cjs",
+    "playwright.config.mts",
+    "playwright.config.cts",
+)
+_UI_PACKAGES = frozenset(
+    {
+        "next",
+        "react",
+        "react-dom",
+        "vue",
+        "nuxt",
+        "svelte",
+        "@sveltejs/kit",
+        "astro",
+        "vite",
+        "@angular/core",
+        "solid-js",
+        "preact",
+        "gatsby",
+        "lit",
+        "@remix-run/react",
+        "react-router",
+        "react-router-dom",
+    }
+)
+_WEB_CONFIG_FILES = (
+    "next.config.js",
+    "next.config.ts",
+    "next.config.mjs",
+    "vite.config.ts",
+    "vite.config.js",
+    "vite.config.mjs",
+    "astro.config.mjs",
+    "astro.config.ts",
+    "nuxt.config.ts",
+    "svelte.config.js",
+    "angular.json",
+)
+_WEB_PAGE_FILES = (
+    "app/page.tsx",
+    "app/page.jsx",
+    "src/app/page.tsx",
+    "src/app/page.jsx",
+    "pages/index.tsx",
+    "pages/index.jsx",
+    "src/pages/index.tsx",
+    "src/pages/index.vue",
+)
+_VERIFICATION_SKILL = "create-verification-skill"
+MINIMAL_PLAYWRIGHT_CONFIG = """\
+import { defineConfig, devices } from "@playwright/test";
+
+// Proposed by /jt-setup. The gate runs `npx playwright test`.
+// updateSnapshots is none so this task does not write baselines.
+// A baseline change is a separate step a human reviews.
+// When create-verification-skill is installed, follow its feature map.
+export default defineConfig({
+  testDir: "./e2e",
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  updateSnapshots: "none",
+  use: {
+    baseURL: "http://127.0.0.1:3000",
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
+  expect: {
+    toHaveScreenshot: { maxDiffPixels: 100 },
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+});
+"""
+
+
+def _matching_rows(plan: str, bullet: str) -> list[list[str]]:
+    needle = _norm(bullet)
+    return [row for row in _evidence_rows(plan) if needle in _norm(row[0])]
+
+
 def evidence_gaps(root: Path, card_id: str, plan: str) -> list[str]:
-    """pass: lines of the task that no '## evidence' row quotes in its first cell."""
-    firsts = [_norm(row[0]) for row in _evidence_rows(plan)]
-    return [
-        bullet
-        for bullet in _header_bullets(_read_card(root, card_id))
-        if not any(_norm(bullet) in first for first in firsts)
-    ]
+    """pass: lines with no evidence row, plus a screen AC row with no screenshot."""
+    card = _read_card(root, card_id)
+    screen = sees_screen(card)
+    gaps: list[str] = []
+    for bullet in _header_bullets(card):
+        matched = _matching_rows(plan, bullet)
+        if not matched:
+            gaps.append(bullet)
+            continue
+        if not screen:
+            continue
+        ac = _AC_ID.search(bullet)
+        if ac is None:
+            continue
+        blob = " ".join(" ".join(row) for row in matched)
+        if ac.group(1).casefold() not in blob.casefold():
+            gaps.append(f"{bullet} (AC id)")
+        if _SHOT_PATH.search(blob) is None:
+            gaps.append(f"{bullet} (screenshot)")
+    return gaps
+
+
+def console_findings(text: str) -> list[str]:
+    """Uncaught errors, console errors, and network failures in browser output."""
+    found: list[str] = []
+    for line in text.splitlines():
+        cleaned = line.strip()
+        if cleaned and _CONSOLE_FINDING.search(cleaned) and cleaned not in found:
+            found.append(cleaned)
+    return found
+
+
+def unrecorded_console_findings(plan: str) -> list[str]:
+    """Console or network errors in ## evidence that are not marked finding:."""
+    gaps: list[str] = []
+    section = _section_h2(plan, "evidence")
+    for row in _evidence_rows(plan):
+        result = row[2] if len(row) > 2 else ""
+        if "finding" in result.casefold():
+            continue
+        for hit in console_findings("\n".join(row)):
+            if hit not in gaps:
+                gaps.append(hit)
+    for line in section.splitlines():
+        if line.strip().startswith("|") or "finding" in line.casefold():
+            continue
+        for hit in console_findings(line):
+            if hit not in gaps:
+                gaps.append(hit)
+    return gaps
+
+
+def _playwright_test(command: str) -> bool:
+    try:
+        parts = shlex.split(command, posix=True)
+    except ValueError:
+        parts = command.split()
+    names = [Path(part).name.lower() for part in parts]
+    if names and names[0] in {"npx", "pnpm", "yarn", "bunx"}:
+        names = names[1:]
+        while names and names[0].startswith("-"):
+            names = names[1:]
+    return "playwright" in " ".join(names) and "test" in names
+
+
+def updates_snapshots(command: str) -> bool:
+    """True when a command would accept new or changed screenshot baselines."""
+    if _UPDATE_FLAG.search(command):
+        return True
+    return bool(_playwright_test(command) and _SHORT_UPDATE.search(command))
+
+
+def config_writes_snapshots(text: str) -> bool:
+    """Playwright's default updateSnapshots is 'missing', which writes new files."""
+    found = _UPDATE_SETTING.findall(text)
+    if not found:
+        return True
+    return any(value != "none" for value in found)
+
+
+def snapshot_block_reason(command: str, config_text: str | None) -> str:
+    """Why VERIFY_CMD must not run, or '' when it will not write baselines."""
+    if updates_snapshots(command):
+        return "VERIFY_CMD updates snapshots; baselines change only in a reviewed step"
+    if not _playwright_test(command):
+        return ""
+    if config_text is None:
+        return "playwright test would write missing snapshots; set updateSnapshots to none"
+    if config_writes_snapshots(config_text):
+        return "playwright config writes snapshots; set updateSnapshots to none"
+    return ""
+
+
+def playwright_config_file(root: Path) -> Path | None:
+    for name in _PLAYWRIGHT_CONFIGS:
+        path = root / name
+        if path.is_file():
+            return path
+    return None
+
+
+def snapshot_refusal(work: Path, command: str) -> int | None:
+    """Refuse before a verify command that would write screenshot baselines."""
+    if not command.strip():
+        return None
+    config = playwright_config_file(work)
+    text: str | None = None
+    if config is not None:
+        try:
+            text = config.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+    reason = snapshot_block_reason(command, text if config is not None else None)
+    if not reason:
+        return None
+    return _refuse("snapshot-update", detail=reason)
 
 
 def card_repo_names(card_text: str) -> list[str]:
@@ -3947,6 +4274,8 @@ def multi_review_detail(home: Path, card_id: str, targets: list[Target]) -> tupl
         return "no-checked", ""
     if evidence_gaps(home, card_id, plan):
         return "evidence-missing", ""
+    if sees_screen(_read_card(home, card_id)) and unrecorded_console_findings(plan):
+        return "console-error", ""
     return "ok", ""
 
 
@@ -3990,6 +4319,8 @@ def diff_review_detail(root: Path, card_id: str) -> str:
         return "no-checked"
     if evidence_gaps(root, card_id, plan):
         return "evidence-missing"
+    if sees_screen(_read_card(root, card_id)) and unrecorded_console_findings(plan):
+        return "console-error"
     return "ok"
 
 
@@ -4571,6 +4902,9 @@ def _reach_review_multi(
             return refused
     status, failed = multi_review_detail(root, card_id, targets)
     if status != "ok":
+        if status == "console-error":
+            plan = _read_queue_file(root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
+            return _refuse("console-error", detail="; ".join(unrecorded_console_findings(plan)))
         where = f"repo {failed}: " if failed else ""
         note = f"{where}{status}: {REVIEW_DETAIL.get(status, 'review-diff is not recorded')}"
         if status == "evidence-missing":
@@ -4636,6 +4970,10 @@ def _reach_review_multi(
                     }[slug]
                     if not command.strip():
                         continue
+                    if slug == "verify":
+                        blocked = snapshot_refusal(works[target.name], command)
+                        if blocked is not None:
+                            return blocked
                     refused = _run_check(
                         root, card_id, works[target.name], slug, command, target.name
                     )
@@ -4799,6 +5137,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         if not _code_diff_reviewable(root, queue, card_id):
             return _refuse("review-diff", detail="no diff outside jt-queue/ to review")
         review_err = _review_recorded(root, queue, card_id)
+        if review_err == "console-error":
+            plan = _read_queue_file(root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")) or ""
+            return _refuse("console-error", detail="; ".join(unrecorded_console_findings(plan)))
         if review_err:
             note = f"{review_err}: {REVIEW_DETAIL.get(review_err, 'review-diff is not recorded')}"
             if review_err == "no-verdict":
@@ -4847,6 +5188,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                     if refused is not None:
                         return refused
                 if verify_cmd.strip():
+                    blocked = snapshot_refusal(work, verify_cmd.strip())
+                    if blocked is not None:
+                        return blocked
                     refused = _run_check(root, card_id, work, "verify", verify_cmd.strip())
                     if refused is not None:
                         return refused
@@ -4952,6 +5296,8 @@ def main(argv: list[str] | None = None) -> int:
     approve = sub.add_parser("approve-commands", parents=[common])
     approve.add_argument("--id", default="")
     sub.add_parser("detect", parents=[common])
+    playwright = sub.add_parser("playwright", parents=[common])
+    playwright.add_argument("--write", action="store_true")
     hooks = sub.add_parser("hooks", parents=[common])
     hooks.add_argument("--write", action="store_true")
     hooks.add_argument("--lint", default=None)
@@ -4971,6 +5317,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_approve_commands(root, parsed.id)
     if parsed.cmd == "detect":
         return cmd_detect(root)
+    if parsed.cmd == "playwright":
+        return cmd_playwright(root, parsed.write)
     if parsed.cmd == "hooks":
         return cmd_hooks(root, parsed.write, parsed.lint, parsed.security)
     if parsed.cmd == "landed":

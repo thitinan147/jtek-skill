@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.7.0"
+  version: "24.8.0"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
@@ -50,6 +50,7 @@ On **Standard** tasks, invoke **executing-plans** then **test-driven-development
 - **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review. A Standard branch with no diff outside `jt-queue/` does not pass.
 - **Gate report:** `allowed` prints one `gates:` line, always `secret`, `denylist`, `typecheck`, `lint`, `tests`, `verify`, `screen`, `review-diff`, `test-weakening`. Reach-review stops at the first failure among secret, denylist, typecheck, lint, tests, and verify, and prints `step:` plus `skipped:` (the next of those). Secret scan runs `<SECURITY_CMD>` when that program is installed, otherwise `secret-suspect`; the output names the file and never the value. `<DENYLIST>` or `jt-queue/denylist.txt` (`old -> replacement`, for example `dmedasset -> dmecasset`) fails with `deprecated-name` and names the replacement. An empty list is `skip`. A deleted test file or an added `.skip` / `.only` / `xit` / `@skip` marker is `test-weakening` on `allowed` (reported, not a refusal: it can be a rename or a real skip).
 - **Pre-commit:** Not a gate. When `pre-commit` is installed, `allowed` may print `hooks: ok` or `hooks: missing`. That line does not change the result. Fail-fast order, size tiers, and `## ai-review` are unchanged.
+- **Screen:** Drive the app with `playwright-cli` (not Playwright MCP), one session per worktree: `playwright-cli -s=<ticket-id>`. Read console and network errors; an uncaught or console error on a touched screen is `finding:` in `## evidence`, next to a screenshot path for that AC id. The gate decides with `<VERIFY_CMD>` (`npx playwright test`, including `toHaveScreenshot`). Do not pass `--update-snapshots` or `-u`. Steps: [references/playbooks.md](references/playbooks.md).
 - **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
 
 ## 3. Scope, failure, and handoff
