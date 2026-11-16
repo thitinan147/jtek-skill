@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.2.1"
+  version: "24.3.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -75,4 +75,4 @@ A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion
 
 ## Install before use
 
-Show [references/install-before-use.md](references/install-before-use.md): official install links, jtek steps, and board slots. Copy-paste commands are in the repo README. Confirm at `/jt-setup`. Use one AI reviewer at a time (e.g. `/interrogate`); do not stack reviewers.
+Show [references/install-before-use.md](references/install-before-use.md): official install links, jtek steps, and board slots. Copy-paste commands are in the repo README. Required method skills (superpowers, grill-me) have one-line fallbacks in each jt- `SKILL.md` when missing. Confirm at `/jt-setup`. Use one AI reviewer at a time (e.g. `/interrogate`); do not stack reviewers.

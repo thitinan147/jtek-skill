@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.2.1
+npx skills add thitinan147/jtek-skill#v24.3.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.2.1
+/plugin marketplace add thitinan147/jtek-skill#v24.3.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.2.1` the marketplace follows the default branch.
+Without `#v24.3.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.2.1 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.3.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -116,12 +116,16 @@ A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion
 
 [jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md` (the shipped template includes the first two plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
 
-The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`.
+The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`. If a required **skill** is not installed, jt- commands still run using the one-line fallback in each `SKILL.md` (not the old long prompts).
 
 ### Required
 
 | Tool | Install | JTek step | Why | Board slot |
 | --- | --- | --- | --- | --- |
+| [superpowers `executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans) | `npx skills add obra/superpowers --skill executing-plans` | [`/jt-work`](skills/jt-work/SKILL.md) | Plan then execute Standard tasks; gate evidence unchanged | — |
+| [superpowers `test-driven-development`](https://www.skills.sh/obra/superpowers/test-driven-development) | `npx skills add obra/superpowers --skill test-driven-development` | [`/jt-work`](skills/jt-work/SKILL.md) | Red-green-refactor before `reach-review` | — |
+| [superpowers `brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming) | `npx skills add obra/superpowers --skill brainstorming` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | When the idea is unclear before drafting AC | — |
+| [grill-me](https://www.skills.sh/mattpocock/grill-me) | `npx skills add mattpocock/skills --skill grill-me` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Questions that unblock AC (`check.py` outcomes unchanged) | — |
 | [Playwright CLI](https://playwright.dev/docs/getting-started-cli) + [skills](https://playwright.dev/agent-cli/skills) | `npm install -g @playwright/cli@latest` then `playwright-cli install --skills -g` | [`/jt-work`](skills/jt-work/SKILL.md) | Agent clicks through AC (`playwright-cli open … -s=<ticket>` per worktree); gate still runs `npx playwright test` / `toHaveScreenshot` | agent + `TEST_CMD` |
 | pstack [`create-verification-skill`](https://www.skills.sh/backnotprop/pstack/create-verification-skill) | `npx skills add backnotprop/pstack --skill create-verification-skill` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Project-local verify skill for the real user surface | — |
 | pstack [`statechart`](https://www.skills.sh/backnotprop/pstack/statechart) | `npx skills add backnotprop/pstack --skill statechart` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Stateful systems: model states before AC freeze | — |
@@ -151,7 +155,7 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | Matt Pocock `/pr` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill pr` | [`/jt-work`](skills/jt-work/SKILL.md) (PR body) | Reviewable PR shape |
 | Matt Pocock `/retro` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill retro` | after [`/jt-review`](skills/jt-review/SKILL.md) | Retrospective on the agent environment |
 | [ponytail `/ponytail-review`](https://github.com/DietrichGebert/ponytail) | `npx skills add DietrichGebert/ponytail --skill ponytail-review` | high-risk PRs only | Extra review pass; human still merges |
-| [superpowers `brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming) | `npx skills add obra/superpowers --skill brainstorming` | [`/jt-add-task`](skills/jt-add-task/SKILL.md) / early [`/jt-work`](skills/jt-work/SKILL.md) | Shape the problem before coding |
+| [Matt Pocock `handoff`](https://www.skills.sh/mattpocock/handoff) | `npx skills add mattpocock/skills --skill handoff` | [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | Test steps without duplicating AC text |
 | [superpowers `systematic-debugging`](https://www.skills.sh/obra/superpowers/systematic-debugging) | `npx skills add obra/superpowers --skill systematic-debugging` | [`/jt-work`](skills/jt-work/SKILL.md) | Debug when the gate refuses |
 | [anthropics `webapp-testing`](https://github.com/anthropics/skills) | `npx skills add anthropics/skills --skill webapp-testing` | [`/jt-work`](skills/jt-work/SKILL.md) (local web) | Playwright helpers (`pip install playwright` + `playwright install chromium` when the skill runs Python scripts) |
 

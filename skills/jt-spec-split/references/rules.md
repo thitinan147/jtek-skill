@@ -34,11 +34,7 @@ roles: PO, Dev, QA
 2. **Gather facts yourself:** the input, then every `code_roots` path (screens, routes, APIs, permissions, fixtures); grep other specs instead of reading them whole. Ask people only for decisions and facts not in the repo. A contradiction: cite the path and ask.
 3. **Write only this command's sections,** plus edits a decision requires (item 6). An existing section is the base: change only what has new information. If a person's edit to Rules or AC left Test steps behind, update them and say so. Headings and columns exactly as the template; text in parentheses is an instruction.
 4. **Check:** run `python3 -I <this-skill-dir>/scripts/check.py <folder>` (`<this-skill-dir>` holds the SKILL.md you were given). Fix every `ERROR`, rerun; if it cannot run, say so.
-5. **Ask** in the same turn, never ending on a bare list:
-   - at most 4 at a time, most impact first, only ones that change scope, an AC or an API; the rest wait in the table for the next round
-   - each stands alone, says what it changes, offers a "(Recommended)" option with its reason, and "Don't know / ask <role>"
-   - ask only questions for the user's role (from this conversation, else ask it with the first questions); other roles' questions and "Don't know" stay in Questions for anyone to answer later in the Answer cell
-   - "use the recommendations" accepts every recommended option
+5. **Ask** in the same turn, never ending on a bare list. When **grill-me** is installed, invoke it (human-only) and keep these outcomes: at most 4 questions that change scope, an AC, or an API; each with a "(Recommended)" option and "Don't know / ask <role>"; the rest stay in the Questions table. When **brainstorming** is installed and the idea is unclear before drafting, invoke it first. When a skill is missing, ask one short round with those same outcomes yourself.
 6. **Apply answers at once** (from chat, or an Answer cell someone filled in):
    - add `- **D<n>** <what was decided> · <name> · <YYYY-MM-DD>` to Decisions and delete the question's row
    - fix every section it affects, replacing the old text; grep other specs in `<docs_root>` for the same rule and fix them too, each with its own D starting `per <work> D<n>:`

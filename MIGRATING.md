@@ -28,7 +28,7 @@ Command names changed. Queue files and spec files did not.
 - **No separate brief command.** When `gate.py next` prints `action: brief` or `action: add-task`, the command is `/jt-add-task`.
 - **Spec files stay where they are.** `check.py` still requires the first line `<!-- scrum-spec -->`, still reads `scrum-spec/config.md`, and still fails an approval or a D line that has no human name and date or is signed by an AI. Do not rename that folder to make the commands match.
 - **`jt-queue/` stays.** Boards, briefs, tasks, and command approvals in `.git/jt-queue/` keep working. You do not re-approve commands just because the skill was renamed.
-- **Install one skill, or the set.** `npx skills add thitinan147/jtek-skill#v24.2.1 --skill jt-work` (space before the name). The plugin install is still the whole set.
+- **Install one skill, or the set.** `npx skills add thitinan147/jtek-skill#v24.3.0 --skill jt-work` (space before the name). The plugin install is still the whole set.
 - **v24.1 task branches.** `/jt-work` creates `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` when it finds one.
 
 ## Migrating from v22 to v23

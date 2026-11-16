@@ -1,5 +1,12 @@
 # Changelog
 
+## 24.3.0 - compose external method skills
+
+- `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; [playbooks.md](skills/jt-work/references/playbooks.md) is a short gate-habits fallback instead of inlined TDD and per-kind method text.
+- Spec skills invoke Matt Pocock **grill-me** and superpowers **brainstorming** for questioning (outcomes unchanged: `check.py`, blocking questions, `(Recommended)` options). `/jt-spec-handoff` follows Matt Pocock **handoff** style; the `spec.md` template and checker rules stay.
+- README and `skills/jt-help/references/install-before-use.md` move superpowers (`executing-plans`, `test-driven-development`, `brainstorming`) and **grill-me** to **Required**; official install links only in the reference file.
+- Pin installs with `v24.3.0`. Skill and plugin metadata are `24.3.0`.
+
 ## 24.2.1 - install before use
 
 - README and `/jt-help` document a fixed **Install before use** checklist: required tools, recommended skills, and optional tools with copy-paste install commands, the jtek step each plugs into, and board slots (`TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`). The list lives in `skills/jt-help/references/install-before-use.md` with official install URLs (no markdown links in references).

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional.
 metadata:
   author: Thitinan
-  version: "24.2.1"
+  version: "24.3.0"
   short-description: Create jt-queue/board.md after the human confirms commands
 ---
 
