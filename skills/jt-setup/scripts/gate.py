@@ -123,6 +123,11 @@ NEXT_FOR = {
     "repo-invalid": "stop",
     "repo-undeclared": "ask",
     "secret-suspect": "ask",
+    "secret-failed": "ask",
+    "secret-timeout": "ask",
+    "deprecated-name": "retry",
+    "verify-failed": "retry",
+    "verify-timeout": "retry",
     "pass-ac": "retry",
     "spec-unapproved": "stop",
 }
@@ -167,6 +172,11 @@ HINT_FOR = {
     "repo-undeclared": "The task branch (type/<ticket-id>-<slug>) has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
     "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
     "secret-suspect": "Remove the named file from the branch and do not print its contents. If it must stay, run gate.py ask.",
+    "secret-failed": "The secret scan failed. Fix the finding and do not print the value. If it must stay, run gate.py ask.",
+    "secret-timeout": "The secret scan ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "deprecated-name": "Replace the retired name with the replacement named in detail:, then run reach-review again.",
+    "verify-failed": "Read log:, fix the verify failure on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
+    "verify-timeout": "The verify command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "pass-ac": "Write each pass: line as '- <id>: <Then>' copied from that AC or EC in spec:.",
     "spec-unapproved": "A human approves the spec (✅ name · date) after questions that block dev or AC are closed. Do not approve it yourself.",
 }
@@ -180,18 +190,24 @@ ROUND_REASONS = frozenset(
         "lint-timeout",
         "typecheck-failed",
         "typecheck-timeout",
+        "verify-failed",
+        "verify-timeout",
     }
 )
 # Printed on allowed, in this order, so a reader does not have to guess which checks ran.
+# The first six are the fail-fast steps: stop at the first failure and name the next one.
 GATE_REPORT = (
-    "tests",
-    "lint",
+    "secret",
+    "denylist",
     "typecheck",
+    "lint",
+    "tests",
+    "verify",
     "screen",
     "review-diff",
-    "security",
     "test-weakening",
 )
+FAIL_FAST = ("secret", "denylist", "typecheck", "lint", "tests", "verify")
 # Process size is separate from the quick/standard tier. reach-review records it
 # and may raise it. LARGE_SIZE_HOOKS names later features this version does not run.
 SIZES = ("small", "medium", "large")
@@ -209,12 +225,21 @@ _CHECK_FAIL = {
     "test": "test-failed",
     "lint": "lint-failed",
     "typecheck": "typecheck-failed",
+    "verify": "verify-failed",
 }
 _CHECK_TIMEOUT = {
     "test": "test-timeout",
     "lint": "lint-timeout",
     "typecheck": "typecheck-timeout",
+    "verify": "verify-timeout",
 }
+_STEP_FOR_CHECK = {
+    "test": "tests",
+    "lint": "lint",
+    "typecheck": "typecheck",
+    "verify": "verify",
+}
+_HASHED_WHEN_SET = ("TYPECHECK_CMD", "LINT_CMD", "AFFECTED_TEST_CMD", "SECURITY_CMD", "VERIFY_CMD")
 _PRIVATE_KEY_LINE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 _SKIP_MARKER = re.compile(
     r"(?:\.skip\b|\.only\b|\bxit\s*\(|\bxdescribe\s*\(|\bxcontext\s*\(|"
@@ -257,7 +282,17 @@ _REF_ID = re.compile(r"(?<![\w.])(\d+(?:\.\d+)*)")
 _CARD_ID_RE = re.compile(r"^\d+(\.\d+)*$")
 REPOS_SECTION = "repos"
 REPO_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-REPO_VALUES = ("TEST_CMD", "SETUP_CMD", "TYPECHECK_CMD", "LINT_CMD", "STACK_LOCK")
+REPO_VALUES = (
+    "TEST_CMD",
+    "SETUP_CMD",
+    "TYPECHECK_CMD",
+    "LINT_CMD",
+    "STACK_LOCK",
+    "AFFECTED_TEST_CMD",
+    "SECURITY_CMD",
+    "VERIFY_CMD",
+    "DENYLIST",
+)
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 _DOC_EXTS = (".md", ".rst", ".adoc")
 _DOC_PREFIXES = (
@@ -1321,7 +1356,7 @@ def _board_commands(board_text: str) -> dict[str, str]:
         "TEST_CMD": parse_field(board_text, "TEST_CMD"),
         "SETUP_CMD": parse_field(board_text, "SETUP_CMD"),
     }
-    for name in ("TYPECHECK_CMD", "LINT_CMD", "AFFECTED_TEST_CMD"):
+    for name in _HASHED_WHEN_SET:
         value = parse_field(board_text, name)
         if value.strip():
             commands[name] = value
@@ -1333,7 +1368,7 @@ def _board_commands(board_text: str) -> dict[str, str]:
         commands[f"repo:{repo.name}:queue"] = repo.queue
         commands[f"repo:{repo.name}:TEST_CMD"] = repo.values.get("TEST_CMD", "")
         commands[f"repo:{repo.name}:SETUP_CMD"] = repo.values.get("SETUP_CMD", "")
-        for name in ("TYPECHECK_CMD", "LINT_CMD", "AFFECTED_TEST_CMD"):
+        for name in _HASHED_WHEN_SET:
             value = repo.values.get(name, "")
             if value.strip():
                 commands[f"repo:{repo.name}:{name}"] = value
@@ -1367,7 +1402,7 @@ def _board_runs_commands(commands: dict[str, str]) -> bool:
         return True  # path: decides where every command and start line runs
     for name, value in commands.items():
         value = value.strip()
-        if name.endswith(("SETUP_CMD", "LINT_CMD", "TYPECHECK_CMD")) and value:
+        if name.endswith(("SETUP_CMD", "LINT_CMD", "TYPECHECK_CMD", "SECURITY_CMD", "VERIFY_CMD")) and value:
             return True
         if name.endswith("TEST_CMD") and value not in ("", NO_SUITE):
             return True
@@ -1404,12 +1439,12 @@ def _commands_refusal(
         known = approvals.get("board")
         if not known:
             return "commands-unapproved", (
-                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD/AFFECTED_TEST_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
+                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD/AFFECTED_TEST_CMD/SECURITY_CMD/VERIFY_CMD (and any '## repos' entry) in jt-queue/board.md have not been approved on this machine. "
                 "A human must review them, then run: gate.py approve-commands --root . --id " + card_id
             )
         if known != _digest(board_cmds):
             return "commands-changed", (
-                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD/AFFECTED_TEST_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
+                "TEST_CMD/SETUP_CMD/LINT_CMD/TYPECHECK_CMD/AFFECTED_TEST_CMD/SECURITY_CMD/VERIFY_CMD (or a '## repos' path:, queue:, or command) in jt-queue/board.md changed since a human approved them. "
                 "Review the change, then run: gate.py approve-commands --root . --id " + card_id
             )
     card_cmds = _card_commands(card_text)
@@ -1527,7 +1562,7 @@ def _run_check(
     detail, log_path = _record_command_log(root, card_id, log_slug, out)
     reason = _CHECK_TIMEOUT[slug] if timed_out else _CHECK_FAIL[slug]
     note = f"repo {repo}:\n{detail}" if repo else detail
-    return _refuse_round(root, card_id, reason, note, log_path)
+    return _refuse_round(root, card_id, reason, note, log_path, step=_STEP_FOR_CHECK[slug])
 
 
 def _gates_line(results: dict[str, str]) -> str:
@@ -1674,7 +1709,19 @@ def count_round(root: Path, card_id: str) -> int:
     return count
 
 
-def _refuse_round(root: Path, card_id: str, reason: str, detail: str = "", log: str = "") -> int:
+def _skipped_after(step: str) -> str:
+    try:
+        index = FAIL_FAST.index(step)
+    except ValueError:
+        return "none"
+    if index + 1 >= len(FAIL_FAST):
+        return "none"
+    return FAIL_FAST[index + 1]
+
+
+def _refuse_round(
+    root: Path, card_id: str, reason: str, detail: str = "", log: str = "", step: str = ""
+) -> int:
     rounds = count_round(root, card_id)
     note = f"round {min(rounds, MAX_ROUNDS)} of {MAX_ROUNDS}"
     if rounds >= MAX_ROUNDS:
@@ -1683,18 +1730,22 @@ def _refuse_round(root: Path, card_id: str, reason: str, detail: str = "", log: 
             detail=f"{detail}\n{note}: stop retrying and run gate.py ask with what each round tried".lstrip(),
             log=log,
             next_step="ask",
+            step=step,
         )
-    return _refuse(reason, detail=f"{detail}\n{note}".lstrip(), log=log)
+    return _refuse(reason, detail=f"{detail}\n{note}".lstrip(), log=log, step=step)
 
 
 def _refuse(
-    reason: str, detail: str = "", log: str = "", next_step: str = ""
+    reason: str, detail: str = "", log: str = "", next_step: str = "", step: str = ""
 ) -> int:
     print(f"refused: {reason}")
     print("merge: no")
     nxt = next_step or NEXT_FOR.get(reason)
     if nxt:
         print(f"next: {nxt}")
+    if step:
+        print(f"step: {step}")
+        print(f"skipped: {_skipped_after(step)}")
     if detail:
         print(f"detail: {detail}")
     if log:
@@ -3090,6 +3141,9 @@ class Target:
     lint_cmd: str = ""
     typecheck_cmd: str = ""
     affected_cmd: str = ""
+    security_cmd: str = ""
+    verify_cmd: str = ""
+    denylist: str = ""
 
 
 def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
@@ -3103,6 +3157,9 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
             parse_field(board_text, "LINT_CMD"),
             parse_field(board_text, "TYPECHECK_CMD"),
             parse_field(board_text, "AFFECTED_TEST_CMD"),
+            parse_field(board_text, "SECURITY_CMD"),
+            parse_field(board_text, "VERIFY_CMD"),
+            parse_field(board_text, "DENYLIST"),
         )
     return Target(
         repo.name,
@@ -3113,6 +3170,9 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
         repo.values.get("LINT_CMD", ""),
         repo.values.get("TYPECHECK_CMD", ""),
         repo.values.get("AFFECTED_TEST_CMD", ""),
+        repo.values.get("SECURITY_CMD", ""),
+        repo.values.get("VERIFY_CMD", ""),
+        repo.values.get("DENYLIST", ""),
     )
 
 
@@ -3353,6 +3413,241 @@ def secret_suspects(root: Path, queue: str, card_id: str) -> list[str] | None:
     return sorted(set(names) | set(hits))
 
 
+def _command_installed(command: str, root: Path | None = None) -> bool:
+    """True when SECURITY_CMD's program is on PATH or is an executable path."""
+    command = command.strip()
+    if not command:
+        return False
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if not argv:
+        return False
+    binary = argv[0]
+    if "/" in binary or binary.startswith("."):
+        path = Path(binary)
+        if root is not None and not path.is_absolute():
+            path = root / path
+        return path.is_file() and os.access(path, os.X_OK)
+    if shutil.which(binary) is not None:
+        return True
+    if root is None:
+        return False
+    local = root / "node_modules" / ".bin" / binary
+    return local.is_file() and os.access(local, os.X_OK)
+
+
+def _run_security_cmd(root: Path, card_id: str, command: str, repo: str = "") -> int | None:
+    """Run SECURITY_CMD. Drop its output so a secret value is never printed."""
+    limit = _env_timeout("JT_TEST_TIMEOUT", float(TEST_TIMEOUT))
+    code, output, timed_out = _run_shell(command, root, timeout=limit)
+    del output
+    if not timed_out and code == 0:
+        return None
+    reason = "secret-timeout" if timed_out else "secret-failed"
+    note = "secret scan failed"
+    if repo:
+        note = f"repo {repo}: {note}"
+    return _refuse(reason, detail=note, step="secret")
+
+
+def _suspect_refusal(
+    root: Path, queue: str, card_id: str, repo: str = "", against_queue: bool = False
+) -> int | None:
+    found = secret_suspects(root, queue, card_id)
+    if found is None:
+        tail = " against queue:" if against_queue else ""
+        where = f"repo {repo}: " if repo else ""
+        return _refuse(
+            "review-diff",
+            detail=f"{where}could not read the diff on the task branch (type/<ticket-id>-<slug>){tail}",
+        )
+    if found:
+        names = [f"{repo}:{item}" if repo else item for item in found]
+        return _refuse("secret-suspect", detail=", ".join(names), step="secret")
+    return None
+
+
+def _scan_secret(
+    root: Path,
+    queue: str,
+    card_id: str,
+    command: str,
+    repo: str = "",
+    against_queue: bool = False,
+) -> int | None:
+    """TruffleHog (or whatever SECURITY_CMD names) when that program is installed, else secret-suspect."""
+    if _command_installed(command, root):
+        return _run_security_cmd(root, card_id, command, repo)
+    return _suspect_refusal(root, queue, card_id, repo, against_queue)
+
+
+def parse_denylist_text(text: str) -> list[tuple[str, str]]:
+    """`old -> replacement` pairs. `;` separates pairs on one line. `#` starts a comment."""
+    pairs: list[tuple[str, str]] = []
+    for raw in text.replace(";", "\n").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if "->" not in line:
+            continue
+        old, _, new = line.partition("->")
+        old, new = old.strip().strip("`"), new.strip().strip("`")
+        if old and new:
+            pairs.append((old, new))
+    return pairs
+
+
+def _path_inside(root: Path, raw: str) -> Path | None:
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
+def _pairs_from_spec(root: Path, spec: str) -> tuple[list[tuple[str, str]], str]:
+    spec = spec.strip()
+    if not spec:
+        return [], ""
+    if "->" not in spec:
+        path = _path_inside(root, spec)
+        if path is None:
+            return [], "denylist path is outside the repo"
+        if not path.is_file():
+            return [], f"denylist file not found: {spec}"
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            return [], f"denylist file not readable: {spec}"
+        return parse_denylist_text(body), ""
+    return parse_denylist_text(spec), ""
+
+
+def load_denylist(
+    root: Path, board_text: str, repo_cell: str = "", repo_root: Path | None = None
+) -> tuple[list[tuple[str, str]], str]:
+    """Pairs from `<DENYLIST>` or `jt-queue/denylist.txt`. Empty list means the step is skipped.
+
+    A non-empty second value is an error message (missing file, path outside the repo).
+    """
+    pairs: list[tuple[str, str]] = []
+    cell = parse_field(board_text, "DENYLIST").strip()
+    if cell:
+        found, err = _pairs_from_spec(root, cell)
+        if err:
+            return [], err
+        pairs.extend(found)
+    else:
+        default = root / QUEUE_DIR / "denylist.txt"
+        if default.is_file():
+            found, err = _pairs_from_spec(root, f"{QUEUE_DIR}/denylist.txt")
+            if err:
+                return [], err
+            pairs.extend(found)
+    repo_cell = repo_cell.strip()
+    if repo_cell and repo_root is not None:
+        found, err = _pairs_from_spec(repo_root, repo_cell)
+        if err:
+            return [], err
+        pairs.extend(found)
+    unique: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pair in pairs:
+        if pair not in seen:
+            seen.add(pair)
+            unique.append(pair)
+    return unique, ""
+
+
+def denylist_hits(
+    root: Path, queue: str, card_id: str, pairs: list[tuple[str, str]]
+) -> list[str] | None:
+    """Added diff lines and new paths that contain a retired name. The line text is not returned."""
+    if not pairs:
+        return []
+    body = _range_diff(root, queue, card_id, ["--unified=0", "--no-color"])
+    if body is None:
+        return None
+    patterns = [
+        (
+            re.compile(rf"(?<![A-Za-z0-9_]){re.escape(old)}(?![A-Za-z0-9_])"),
+            old,
+            new,
+        )
+        for old, new in pairs
+    ]
+    hits: list[str] = []
+    seen: set[str] = set()
+    path = ""
+    new_line = 0
+
+    def add(where: str, old: str, new: str) -> None:
+        item = f"{old} -> {new} ({where})"
+        if item not in seen:
+            seen.add(item)
+            hits.append(item)
+
+    for line in body.splitlines():
+        if line.startswith("+++ "):
+            raw = line[4:]
+            if raw.startswith("b/"):
+                raw = raw[2:]
+            path = "" if raw == "/dev/null" else raw
+            if path:
+                for pattern, old, new in patterns:
+                    if pattern.search(path):
+                        add(path, old, new)
+            continue
+        if line.startswith("@@"):
+            match = re.search(r"\+(\d+)", line)
+            new_line = int(match.group(1)) if match else 0
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            added = line[1:]
+            if path and new_line:
+                for pattern, old, new in patterns:
+                    if pattern.search(added):
+                        add(f"{path}:{new_line}", old, new)
+            if new_line:
+                new_line += 1
+            continue
+        if line.startswith(" ") and new_line:
+            new_line += 1
+    return hits
+
+
+def _diff_unreadable(repo: str = "", against_queue: bool = False) -> int:
+    tail = " against queue:" if against_queue else ""
+    where = f"repo {repo}: " if repo else ""
+    return _refuse(
+        "review-diff",
+        detail=f"{where}could not read the diff on the task branch (type/<ticket-id>-<slug>){tail}",
+    )
+
+
+def _deny_step(
+    root: Path,
+    queue: str,
+    card_id: str,
+    pairs: list[tuple[str, str]],
+    repo: str = "",
+    against_queue: bool = False,
+) -> int | None:
+    if not pairs:
+        return None
+    hits = denylist_hits(root, queue, card_id, pairs)
+    if hits is None:
+        return _diff_unreadable(repo, against_queue)
+    if hits:
+        shown = [f"{repo}:{hit}" if repo else hit for hit in hits]
+        return _refuse("deprecated-name", detail="; ".join(shown), step="denylist")
+    return None
+
+
 def _is_test_path(path: str) -> bool:
     pure = PurePosixPath(path)
     if any(part in {"test", "tests", "__tests__"} for part in pure.parts[:-1]):
@@ -3558,17 +3853,25 @@ def _reach_review_multi(
             return _refuse("task-branch-missing", detail=task_branch_missing_detail(target.root, card_id, target.name))
         if not _code_diff_reviewable(target.root, target.queue, card_id):
             return _refuse("review-diff", detail=f"repo {target.name}: no diff outside jt-queue/ to review")
-    suspects: list[str] = []
+    if any(_command_installed(target.security_cmd, target.root) for target in targets):
+        unapproved = _commands_refusal(root, text, card_id, card_text)
+        if unapproved:
+            return _refuse(unapproved[0], detail=unapproved[1])
     for target in targets:
-        found = secret_suspects(target.root, target.queue, card_id)
-        if found is None:
-            return _refuse(
-                "review-diff",
-                detail=f"repo {target.name}: could not read the diff on the task branch (type/<ticket-id>-<slug>)",
-            )
-        suspects.extend(f"{target.name}:{item}" for item in found)
-    if suspects:
-        return _refuse("secret-suspect", detail=", ".join(suspects))
+        refused = _scan_secret(target.root, target.queue, card_id, target.security_cmd, target.name)
+        if refused is not None:
+            return refused
+    saw_denylist = False
+    for target in targets:
+        repo_cell = "" if target.root.resolve() == root.resolve() else target.denylist
+        pairs, deny_err = load_denylist(root, text, repo_cell, target.root)
+        if deny_err:
+            return _refuse("deprecated-name", detail=f"repo {target.name}: {deny_err}", step="denylist")
+        if pairs:
+            saw_denylist = True
+        refused = _deny_step(target.root, target.queue, card_id, pairs, target.name)
+        if refused is not None:
+            return refused
     status, failed = multi_review_detail(root, card_id, targets)
     if status != "ok":
         where = f"repo {failed}: " if failed else ""
@@ -3614,7 +3917,8 @@ def _reach_review_multi(
     ran_test = any(test_runs.values())
     ran_lint = any(t.lint_cmd.strip() for t in targets)
     ran_type = any(t.typecheck_cmd.strip() for t in targets)
-    need_work = need_screen or ran_test or ran_lint or ran_type
+    ran_verify = any(t.verify_cmd.strip() for t in targets)
+    need_work = need_screen or ran_test or ran_lint or ran_type or ran_verify
     current = ""
     try:
         with ExitStack() as stack:
@@ -3625,28 +3929,23 @@ def _reach_review_multi(
                     _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd)
                 )
             current = ""
+            for slug in ("typecheck", "lint", "test", "verify"):
+                for target in targets:
+                    command = {
+                        "typecheck": target.typecheck_cmd,
+                        "lint": target.lint_cmd,
+                        "test": test_runs[target.name] or "",
+                        "verify": target.verify_cmd,
+                    }[slug]
+                    if not command.strip():
+                        continue
+                    refused = _run_check(
+                        root, card_id, works[target.name], slug, command, target.name
+                    )
+                    if refused is not None:
+                        return refused
             if need_screen:
                 _click_across(works, card_text, card_id)
-            for target in targets:
-                command = test_runs[target.name]
-                if command:
-                    refused = _run_check(
-                        root, card_id, works[target.name], "test", command, target.name
-                    )
-                    if refused is not None:
-                        return refused
-                if target.lint_cmd.strip():
-                    refused = _run_check(
-                        root, card_id, works[target.name], "lint", target.lint_cmd, target.name
-                    )
-                    if refused is not None:
-                        return refused
-                if target.typecheck_cmd.strip():
-                    refused = _run_check(
-                        root, card_id, works[target.name], "typecheck", target.typecheck_cmd, target.name
-                    )
-                    if refused is not None:
-                        return refused
         if write:
             links: list[str] = []
             for target in targets:
@@ -3685,12 +3984,14 @@ def _reach_review_multi(
     print(
         _gates_line(
             {
-                "tests": "ok" if ran_test else "skip",
-                "lint": "ok" if ran_lint else "skip",
+                "secret": "ok",
+                "denylist": "ok" if saw_denylist else "skip",
                 "typecheck": "ok" if ran_type else "skip",
+                "lint": "ok" if ran_lint else "skip",
+                "tests": "ok" if ran_test else "skip",
+                "verify": "ok" if ran_verify else "skip",
                 "screen": "ok" if need_screen else "skip",
                 "review-diff": "open",
-                "security": "ok",
                 "test-weakening": weak,
             }
         )
@@ -3778,14 +4079,20 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             "review-diff",
             detail="could not read the commits on the task branch (type/<ticket-id>-<slug>) against queue:",
         )
-    suspects = secret_suspects(root, queue, card_id)
-    if suspects is None:
-        return _refuse(
-            "review-diff",
-            detail="could not read the diff on the task branch (type/<ticket-id>-<slug>) against queue:",
-        )
-    if suspects:
-        return _refuse("secret-suspect", detail=", ".join(suspects))
+    security_cmd = parse_field(text, "SECURITY_CMD")
+    if _command_installed(security_cmd, root):
+        unapproved = _commands_refusal(root, text, card_id, card_text)
+        if unapproved:
+            return _refuse(unapproved[0], detail=unapproved[1])
+    refused = _scan_secret(root, queue, card_id, security_cmd, against_queue=True)
+    if refused is not None:
+        return refused
+    deny_pairs, deny_err = load_denylist(root, text)
+    if deny_err:
+        return _refuse("deprecated-name", detail=deny_err, step="denylist")
+    refused = _deny_step(root, queue, card_id, deny_pairs, against_queue=True)
+    if refused is not None:
+        return refused
     if tier == "standard":
         if not _code_diff_reviewable(root, queue, card_id):
             return _refuse("review-diff", detail="no diff outside jt-queue/ to review")
@@ -3809,12 +4116,13 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         return _refuse(unapproved[0], detail=unapproved[1])
     lint_cmd = parse_field(text, "LINT_CMD")
     type_cmd = parse_field(text, "TYPECHECK_CMD")
+    verify_cmd = parse_field(text, "VERIFY_CMD")
     extra_checks: list[tuple[str, str]] = []
     if tier == "standard":
-        if lint_cmd.strip():
-            extra_checks.append(("lint", lint_cmd.strip()))
         if type_cmd.strip():
             extra_checks.append(("typecheck", type_cmd.strip()))
+        if lint_cmd.strip():
+            extra_checks.append(("lint", lint_cmd.strip()))
     floor, work_size, triggers, affected = collect_size(text, card_text, card_id, [("", root, queue)])
     test_to_run, affected_note = test_command_for(
         work_size, test_cmd, affected, parse_field(text, "AFFECTED_TEST_CMD")
@@ -3825,18 +4133,22 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
                 return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-        if need_screen or test_to_run or extra_checks:
+        if need_screen or test_to_run or extra_checks or verify_cmd.strip():
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
-                if need_screen:
-                    _click_surface(work, card_text, card_id)
-                if test_to_run:
-                    refused = _run_check(root, card_id, work, "test", test_to_run)
-                    if refused is not None:
-                        return refused
                 for slug, command in extra_checks:
                     refused = _run_check(root, card_id, work, slug, command)
                     if refused is not None:
                         return refused
+                if test_to_run:
+                    refused = _run_check(root, card_id, work, "test", test_to_run)
+                    if refused is not None:
+                        return refused
+                if verify_cmd.strip():
+                    refused = _run_check(root, card_id, work, "verify", verify_cmd.strip())
+                    if refused is not None:
+                        return refused
+                if need_screen:
+                    _click_surface(work, card_text, card_id)
         code = 0
         if write:
             kind, value = lookup_draft_pr(root, task_branch(root, card_id), queue)
@@ -3866,12 +4178,14 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print(
         _gates_line(
             {
-                "tests": "ok" if test_to_run else "skip",
-                "lint": "ok" if any(slug == "lint" for slug, _cmd in extra_checks) else "skip",
+                "secret": "ok",
+                "denylist": "ok" if deny_pairs else "skip",
                 "typecheck": "ok" if any(slug == "typecheck" for slug, _cmd in extra_checks) else "skip",
+                "lint": "ok" if any(slug == "lint" for slug, _cmd in extra_checks) else "skip",
+                "tests": "ok" if test_to_run else "skip",
+                "verify": "ok" if verify_cmd.strip() else "skip",
                 "screen": "ok" if need_screen else "skip",
                 "review-diff": "open" if review_state == "open" else "skip",
-                "security": "ok",
                 "test-weakening": weak,
             }
         )

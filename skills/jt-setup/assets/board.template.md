@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.4. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.5. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`.
 
 queue:
 
@@ -15,6 +15,9 @@ queue:
 | `<SETUP_CMD>` | |
 | `<TYPECHECK_CMD>` | |
 | `<LINT_CMD>` | |
+| `<SECURITY_CMD>` | |
+| `<VERIFY_CMD>` | |
+| `<DENYLIST>` | |
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
 | `<DIFF_LIMIT>` | |
@@ -30,6 +33,8 @@ Task kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `buil
 Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `size:`. A task line may say `size: small`, `size: medium`, or `size: large`; that overrides `size:` in the task. Empty means `medium`.
 
 Empty `<AFFECTED_TEST_CMD>` means `small` runs the full `<TEST_CMD>`. Set it to narrow that run (`npx vitest --changed`, `npx jest --findRelatedTests {files}`, `pytest --testmon`), or put `{files}` in `<TEST_CMD>`. `{files}` is the affected test paths. When none can be named, `small` still runs the full suite.
+
+The gate stops at the first failure: secret scan, denylist, typecheck, lint, tests, verify. Empty `<SECURITY_CMD>`, or a program that is not installed, keeps the built-in secret check and never prints a secret value. Empty `<VERIFY_CMD>` skips that step. Empty `<DENYLIST>` uses `jt-queue/denylist.txt` when that file exists; if both are empty the step is skipped. A denylist line is `old -> replacement`.
 
 Pick **first**, then **main**, then **later**.
 

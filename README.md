@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.4.0
+npx skills add thitinan147/jtek-skill#v24.5.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.4.0
+/plugin marketplace add thitinan147/jtek-skill#v24.5.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.4.0` the marketplace follows the default branch.
+Without `#v24.5.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.4.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.5.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -90,7 +90,7 @@ Spec (human types the command)          Queue
 ```
 
 1. **Commit the queue context; keep secrets local.** Commit `jt-queue/board.md`, `brief.md`, `tasks/<id>/task.md`, and `plan.md` (including `## decisions`) so another machine can resume. Leave `lessons.md` uncommitted (notes for this agent, not the task). Leave `.git/jt-queue/` uncommitted: `approved-commands.json` is permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. Also leave `.env` files and private keys out. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word. A human approves the spec once; that covers the tasks derived from it. `/jt-review` is still the only merge.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. When the board sets `<LINT_CMD>` or `<TYPECHECK_CMD>`, those must pass too. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it.
 3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
 
 | Command | Who | What it does |
@@ -114,7 +114,7 @@ A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion
 
 ## Install before use
 
-[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md` (the shipped template includes the first two plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
+[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
 
 The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`. If a required **skill** is not installed, jt- commands still run using the one-line fallback in each `SKILL.md` (not the old long prompts).
 
@@ -138,10 +138,10 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | Vitest affected | `npx vitest --changed` in `AFFECTED_TEST_CMD` (requires Vitest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Narrow tests on `small` tasks | `AFFECTED_TEST_CMD` |
 | Jest related | `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` (requires Jest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Related tests on `small` tasks | `AFFECTED_TEST_CMD` |
 | [pytest-testmon](https://pypi.org/project/pytest-testmon/) | `pytest --testmon` in `AFFECTED_TEST_CMD` after `pip install pytest-testmon` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Affected pytest modules on `small` tasks | `AFFECTED_TEST_CMD` |
-| [TruffleHog](https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation) | `curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \| sh -s -- -b /usr/local/bin` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Secret scan on commits or CI | `SECURITY_CMD` |
+| [TruffleHog](https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation) | `curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \| sh -s -- -b /usr/local/bin` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Secret scan. The gate runs `SECURITY_CMD` when that program is installed; otherwise it uses the built-in secret check and never prints the value | `SECURITY_CMD` |
 | [Semgrep](https://docs.semgrep.dev/getting-started/cli) | `python3 -m pip install semgrep` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Static analysis; gate runs non-empty `LINT_CMD` on Standard tasks | `LINT_CMD` or `SECURITY_CMD` |
 | [OSV-Scanner](https://google.github.io/osv-scanner/installation/) | `brew install osv-scanner` or `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Dependency CVEs from OSV | `SECURITY_CMD` |
-| [Knip](https://knip.dev/overview/getting-started) | `npm install -D knip typescript @types/node` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Unused exports and dependencies | `VERIFY_CMD` |
+| [Knip](https://knip.dev/overview/getting-started) | `npm install -D knip typescript @types/node` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Unused exports and dependencies. The gate runs `VERIFY_CMD` after tests when the cell is set | `VERIFY_CMD` |
 | [commitlint](https://commitlint.js.org/guides/getting-started) | `npm install -D @commitlint/cli @commitlint/config-conventional` | [`/jt-work`](skills/jt-work/SKILL.md) | Conventional commit messages locally | — |
 | [action-semantic-pull-request](https://github.com/amannn/action-semantic-pull-request#installation) | Add `uses: amannn/action-semantic-pull-request@v6` to a workflow | [`/jt-review`](skills/jt-review/SKILL.md) | Enforce semantic PR titles on GitHub | — |
 | [release-please](https://github.com/googleapis/release-please-action#basic-configuration) | Add `uses: googleapis/release-please-action@v4` to a workflow | after merge | Versioned releases from conventional commits | — |
