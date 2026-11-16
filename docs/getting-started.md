@@ -23,8 +23,8 @@ You type the slash commands. The agent runs `gate.py` for you; the commands are 
 | **ticket id** | The id the ticket already has (`BOOK-12`, `#45`, a Notion id). It is copied onto the commit and the PR title: `feat(booking): add room search API (BOOK-12)`. It is not the board id, and its shape is not checked. |
 | **gate** | `gate.py`, a Python script that decides whether a task may go to review. The agent cannot mark `review:` without it. |
 | **Quick / Standard** | The gate's tier, worked out from the kind. **Quick** (`docs`, plain `style`) needs passing tests. **Standard** (everything else) also needs `plan.md` with evidence for every `pass:` line and a review of the diff. |
-| **Size** | `small`, `medium`, or `large` on the task. **Small** needs no spec. It runs affected tests only when the board sets that; otherwise the full suite. **Medium** is a short spec and the full gate. **Large** is a full spec. You can override it on the board line. The gate may raise it and never lowers it. |
-| **plan.md** | `jt-queue/tasks/<id>/plan.md`: the agent's notes for a Standard task, including the `## evidence` table and `## review-diff`. |
+| **Size** | `small`, `medium`, or `large` on the task. **Small** needs no spec. It runs affected tests only when the board sets that; otherwise the full suite. **Medium** is a short spec and the full gate. **Large** is a full spec. You can override it on the board line. The gate may raise it and never lowers it. On Standard, medium and large also need `## ai-review` before you review. Small and Quick skip that. |
+| **plan.md** | `jt-queue/tasks/<id>/plan.md`: the agent's notes for a Standard task, including the `## evidence` table, `## review-diff`, and `## ai-review`. |
 | **approve-commands** | The step where **you** confirm the exact test command (and any app start/click commands). The gate will not run a command you have not approved. |
 | **round** | One attempt at passing the gate. After three failed test rounds the gate tells the agent to ask you instead of guessing. |
 

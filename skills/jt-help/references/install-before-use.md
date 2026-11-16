@@ -1,6 +1,6 @@
 # Install before use
 
-Install these on your machine or in the repo before jtek-skill. None replace `gate.py` or a human `/jt-review`. At `/jt-setup`, confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md`. Use one AI reviewer at a time (for example `/interrogate` after the gate passes); do not stack AI reviewers.
+Install these on your machine or in the repo before jtek-skill. None replace `gate.py` or a human `/jt-review`. At `/jt-setup`, confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md`. After the gate passes, `/jt-work` invokes one fresh-context reviewer for medium and large: `/interrogate` when installed, otherwise `/pr`, otherwise `/ponytail-review` when the task is high-risk. Do not stack AI reviewers. The AI does not approve or merge.
 
 Copy-paste install commands live in the repo README; here, the Install column is the official page to follow. If a required **skill** is not installed, jt- commands still run: each `SKILL.md` gives a one-line fallback, not the old long prompts.
 
@@ -16,7 +16,7 @@ Copy-paste install commands live in the repo README; here, the Install column is
 | pstack create-verification-skill | https://www.skills.sh/backnotprop/pstack/create-verification-skill | `/jt-setup` | Project-local verify skill for the real surface | — |
 | pstack statechart | https://www.skills.sh/backnotprop/pstack/statechart | `/jt-spec-ac` | Stateful flows: model states and rules before AC freeze | — |
 | pstack no-comments | https://www.skills.sh/backnotprop/pstack/no-comments | `/jt-work` (before PR) | Strip noise before human review | — |
-| pstack interrogate | https://www.skills.sh/backnotprop/pstack/interrogate | after gate passes | Adversarial review; keep only run-proven findings | — |
+| pstack interrogate | https://www.skills.sh/backnotprop/pstack/interrogate | `/jt-work` after the gate passes | The one fresh-context reviewer when this skill is installed | — |
 | pstack maintain-verification-skill | https://www.skills.sh/backnotprop/pstack/maintain-verification-skill | after large code changes | Re-align verify skill with the app | — |
 | mise | https://mise.jdx.dev/installing-mise.html | `/jt-setup` | Pin tool versions; `gate.py detect` can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
 | pre-commit, typos, actionlint, zizmor | https://pre-commit.com/#install ; https://github.com/crate-ci/typos ; https://github.com/rhysd/actionlint ; https://docs.zizmor.sh/integrations/ | on commit | Typos, workflow syntax, Actions security before the gate | — |
@@ -38,10 +38,10 @@ Copy-paste install commands live in the repo README; here, the Install column is
 
 | Skill | Official install | JTek step | Why |
 | --- | --- | --- | --- |
-| Matt Pocock /pr | https://www.skills.sh/mattpocock/skills/pr | `/jt-work` (PR body) | Reviewable PR shape |
+| Matt Pocock /pr | https://www.skills.sh/mattpocock/skills/pr | `/jt-work` when `/interrogate` is not installed | The one fresh-context reviewer in that case; also shapes the PR |
 | Matt Pocock handoff | https://www.skills.sh/mattpocock/skills/handoff | `/jt-spec-handoff` | Test steps without duplicating AC text |
 | Matt Pocock /retro | https://www.skills.sh/mattpocock/skills/retro | after `/jt-review` | Improve agent environment from the session |
-| ponytail /ponytail-review | https://github.com/DietrichGebert/ponytail | high-risk PRs only | Deep review; not a substitute for human merge |
+| ponytail /ponytail-review | https://github.com/DietrichGebert/ponytail | `/jt-work` only when the task is high-risk and neither reviewer above is installed | The one reviewer in that case; not a substitute for human merge |
 | superpowers systematic-debugging | https://www.skills.sh/obra/superpowers/systematic-debugging | `/jt-work` | Disciplined debug when the gate refuses |
 | anthropics webapp-testing | https://github.com/anthropics/skills (skill webapp-testing) | `/jt-work` (local web) | Playwright helpers; see skill for Python deps |
 

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.5.0"
+  version: "24.6.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -71,8 +71,8 @@ A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion
 
 ## Size
 
-`small`, `medium`, and `large` scale the process. The agent sets `size:` when it creates the task or the spec. A human can change it on the task or with `size:` on the board line. `small` skips the spec and uses `/jt-add-task`. It runs affected tests only when the board sets `<AFFECTED_TEST_CMD>` or `<TEST_CMD>` contains `{files}`; otherwise it runs the full suite. `medium` is a short spec and the full gate. `large` is a full spec. The gate may raise the size (`escalate:`). It never lowers it.
+`small`, `medium`, and `large` scale the process. The agent sets `size:` when it creates the task or the spec. A human can change it on the task or with `size:` on the board line. `small` skips the spec and uses `/jt-add-task`. It runs affected tests only when the board sets `<AFFECTED_TEST_CMD>` or `<TEST_CMD>` contains `{files}`; otherwise it runs the full suite. `medium` is a short spec and the full gate. `large` is a full spec. The gate may raise the size (`escalate:`). It never lowers it. Standard `medium` and `large` need `## ai-review` before a human review. `small` and Quick skip it.
 
 ## Install before use
 
-Show [references/install-before-use.md](references/install-before-use.md): official install links, jtek steps, and board slots. Copy-paste commands are in the repo README. Required method skills (superpowers, grill-me) have one-line fallbacks in each jt- `SKILL.md` when missing. Confirm at `/jt-setup`. Use one AI reviewer at a time (e.g. `/interrogate`); do not stack reviewers.
+Show [references/install-before-use.md](references/install-before-use.md): official install links, jtek steps, and board slots. Copy-paste commands are in the repo README. Required method skills (superpowers, grill-me) have one-line fallbacks in each jt- `SKILL.md` when missing. Confirm at `/jt-setup`. After the gate passes, `/jt-work` invokes one fresh-context reviewer (`/interrogate`, else `/pr`, else `/ponytail-review` on high-risk). Do not stack reviewers. The AI does not approve or merge.

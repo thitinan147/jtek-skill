@@ -91,6 +91,7 @@ NEXT_FOR = {
     "typecheck-timeout": "retry",
     "setup-failed": "retry",
     "review-diff": "retry",
+    "ai-review": "retry",
     "one-off-checker": "retry",
     "task-branch-missing": "retry",
     "merge-refused": "retry",
@@ -140,6 +141,12 @@ HINT_FOR = {
     "typecheck-timeout": "The typecheck command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
     "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
+    "ai-review": (
+        "Record one fresh-context review in '## ai-review' "
+        "(accepted: or rejected: with a reason, or "
+        "'fallback: no reviewer skill installed'), fix accepted findings, "
+        "then run reach-review again."
+    ),
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
     "task-branch-missing": "Commit the work on one branch named type/<ticket-id>-<slug> (legacy task-<id>-<slug> still works), then run reach-review again.",
     "merge-refused": "This gate cannot merge. Stop and report to the human.",
@@ -209,7 +216,8 @@ GATE_REPORT = (
 )
 FAIL_FAST = ("secret", "denylist", "typecheck", "lint", "tests", "verify")
 # Process size is separate from the quick/standard tier. reach-review records it
-# and may raise it. LARGE_SIZE_HOOKS names later features this version does not run.
+# and may raise it. fresh-context-review is the ## ai-review check. The other
+# two LARGE_SIZE_HOOKS names are still only printed.
 SIZES = ("small", "medium", "large")
 SIZE_RANK = {name: index for index, name in enumerate(SIZES)}
 DEFAULT_DIFF_LIMIT = 400
@@ -248,6 +256,15 @@ _SKIP_MARKER = re.compile(
 _PRIVATE_KEY_STEMS = frozenset({"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"})
 _VERDICT_LINE = re.compile(r"^[\s>*-]*verdict:[ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 _CHECKED_LINE = re.compile(r"^[\s>*-]*checked:[ \t]*\S", re.IGNORECASE | re.MULTILINE)
+_AI_REVIEW_LINE = re.compile(
+    r"^[\s>*-]*(accepted|rejected|fallback):[ \t]*(.*?)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+AI_REVIEW_FALLBACK = "no reviewer skill installed"
+AI_REVIEW_MISSING = (
+    "plan.md needs '## ai-review' with accepted: or rejected: plus a reason, "
+    "or 'fallback: no reviewer skill installed'"
+)
 REVIEW_DETAIL = {
     "no-review": "plan.md has no non-empty '## review-diff' section",
     "no-sha": "'## review-diff' does not cite any commit SHA",
@@ -2271,7 +2288,8 @@ def print_size(floor: str, size: str, triggers: list[str], affected_note: str) -
     if size == "small":
         print("affected: " + (affected_note or "none"))
     if size == "large":
-        # Hook only. Worktree rounds, a fresh-context review, and a high-risk label are later.
+        # worktree-rounds is recorded only. fresh-context-review is ## ai-review.
+        # high-risk names when /jt-work may use ponytail-review; this line does not run it.
         print("size-hooks: " + ", ".join(LARGE_SIZE_HOOKS))
 
 
@@ -3094,6 +3112,50 @@ def review_verdicts(section: str) -> list[str]:
         for value in _VERDICT_LINE.findall(section)
         if "|" not in value
     ]
+
+
+def ai_review_recorded(section: str) -> bool:
+    """True when ## ai-review has a real finding or the no-skill fallback.
+
+    A copied template line that still contains '<' or '|' does not count.
+    accepted and rejected need a reason after an em dash or ' - '.
+    """
+    for kind, rest in _AI_REVIEW_LINE.findall(section):
+        text = rest.strip()
+        if not text or "<" in text or "|" in text:
+            continue
+        if kind.casefold() == "fallback":
+            if text.casefold() == AI_REVIEW_FALLBACK:
+                return True
+            continue
+        if "—" in text:
+            reason = text.split("—", 1)[1]
+        elif " - " in text:
+            reason = text.split(" - ", 1)[1]
+        else:
+            continue
+        if reason.strip():
+            return True
+    return False
+
+
+def ai_review_state(root: Path, card_id: str, size: str, tier: str) -> str:
+    """'skip', 'open', or 'missing'.
+
+    Standard medium and large need the section. Small and Quick do not.
+    """
+    if tier != "standard" or size == "small":
+        return "skip"
+    plan = _read_queue_file(
+        root, task_branch(root, card_id), _queue_rel("tasks", card_id, "plan.md")
+    ) or ""
+    if ai_review_recorded(_section_h2(plan, "ai-review")):
+        return "open"
+    return "missing"
+
+
+def _refuse_ai_review(size: str) -> int:
+    return _refuse("ai-review", detail=f"no-ai-review: size {size}; {AI_REVIEW_MISSING}")
 
 
 def _norm(text: str) -> str:
@@ -3946,6 +4008,9 @@ def _reach_review_multi(
                         return refused
             if need_screen:
                 _click_across(works, card_text, card_id)
+        ai_state = ai_review_state(root, card_id, work_size, "standard")
+        if ai_state == "missing":
+            return _refuse_ai_review(work_size)
         if write:
             links: list[str] = []
             for target in targets:
@@ -3972,6 +4037,7 @@ def _reach_review_multi(
     print("merge: no")
     print("tier: standard")
     print_size(floor, work_size, triggers, ", ".join(affected_notes))
+    print(f"ai-review: {ai_state}")
     print("repo-review: open")
     print("repos: " + ", ".join(names))
     weak_bits: list[str] = []
@@ -4117,6 +4183,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     lint_cmd = parse_field(text, "LINT_CMD")
     type_cmd = parse_field(text, "TYPECHECK_CMD")
     verify_cmd = parse_field(text, "VERIFY_CMD")
+    ai_state = "skip"
     extra_checks: list[tuple[str, str]] = []
     if tier == "standard":
         if type_cmd.strip():
@@ -4149,6 +4216,9 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
                         return refused
                 if need_screen:
                     _click_surface(work, card_text, card_id)
+        ai_state = ai_review_state(root, card_id, work_size, tier)
+        if ai_state == "missing":
+            return _refuse_ai_review(work_size)
         code = 0
         if write:
             kind, value = lookup_draft_pr(root, task_branch(root, card_id), queue)
@@ -4172,6 +4242,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("merge: no")
     print(f"tier: {tier}")
     print_size(floor, work_size, triggers, affected_note)
+    print(f"ai-review: {ai_state}")
     print(f"repo-review: {review_state}")
     found = test_weakening(root, queue, card_id) or []
     weak = ",".join(found) if found else "none"

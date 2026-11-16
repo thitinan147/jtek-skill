@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.5.0"
+  version: "24.6.0"
   short-description: Write test steps for the tester
 argument-hint: "<work>"
 ---
