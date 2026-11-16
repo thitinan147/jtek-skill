@@ -2,6 +2,13 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.8 to v24.9
+
+- **Agent instructions.** Run `/jt-setup` again, or `gate.py agents --root .`, and confirm before `--write`. `AGENTS.md` is the single source. `CLAUDE.md` imports it (`@AGENTS.md`) and does not copy the section. Text you already wrote stays. The jtek section is the part between `::: jtek:start` and `::: jtek:end`.
+- **Commands.** `detect` fills lint, typecheck, security, verify, and affected-test only when a script, a tool table, a Makefile or justfile target, or a CI `run` line already says so. An unknown slot stays empty. Confirm the table before it is written to the board or to `AGENTS.md`.
+- **Board.** The command table is not rewritten. A short pointer to `AGENTS.md` is added at the end when you confirm. Re-running prints no further diff.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.9.0 --skill jt-work`.
+
 ## Migrating from v24.7 to v24.8
 
 - **Screen evidence.** A `screen: yes` task whose `pass:` line names an AC or EC id needs that id and a screenshot path in `## evidence` (`e2e/ac1.png`). A video or trace path is optional. Copy the rows in [`skills/jt-work/assets/plan.template.md`](skills/jt-work/assets/plan.template.md). A pass line with no AC id is unchanged.

@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.8.0
+npx skills add thitinan147/jtek-skill#v24.9.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.8.0
+/plugin marketplace add thitinan147/jtek-skill#v24.9.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.8.0` the marketplace follows the default branch.
+Without `#v24.9.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.8.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.9.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -83,7 +83,7 @@ A story, before or beside the queue:
 
 ```text
 Spec (human types the command)          Queue
-/jt-spec-split   flow → story map        /jt-setup      board.md, human confirms commands
+/jt-spec-split   flow → story map        /jt-setup      board.md and AGENTS.md, human confirms commands
 /jt-spec-ac      story, rules, AC        /jt-add-task   brief, then tasks
 /jt-spec-handoff test steps              /jt-work       ready tasks, in order
 /jt-board        board.html              /jt-review     human: merge / send-back / drop
@@ -100,7 +100,7 @@ Spec (human types the command)          Queue
 | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | **human-only** | Draft story, rules, acceptance criteria, and questions. |
 | [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | **human-only** | Write test steps once nothing blocks the AC. |
 | [`/jt-board`](skills/jt-board/SKILL.md) | **human-only** | Write a FigJam-style `board.html`. |
-| [`/jt-setup`](skills/jt-setup/SKILL.md) | human confirms | Write `jt-queue/board.md`. |
+| [`/jt-setup`](skills/jt-setup/SKILL.md) | human confirms | Write `jt-queue/board.md` and `AGENTS.md`. An existing file is merged. |
 | [`/jt-add-task`](skills/jt-add-task/SKILL.md) | spec approval covers derived tasks | Agree the brief, then add tasks. |
 | [`/jt-work`](skills/jt-work/SKILL.md) | agent | Work ready tasks in order, or one ticket id. Cannot merge. |
 | [`/jt-review`](skills/jt-review/SKILL.md) | **human-only** | Inspect `review:` and write `merge:`, `send-back:`, or `drop:`. |
@@ -114,7 +114,7 @@ A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion
 
 ## Install before use
 
-[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). After the gate passes, `/jt-work` uses **one** fresh-context reviewer (`/interrogate`, else Matt `/pr`, else `/ponytail-review` on high-risk). Do not stack AI reviewers. The AI does not approve or merge.
+[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). The same step writes `AGENTS.md`: those commands, the flow spec -> tasks -> work -> gate -> human merge, the house rules, and where `jt-queue/` files live. `CLAUDE.md` imports that file (`@AGENTS.md`) and does not copy it. An existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board is merged, not replaced. After the gate passes, `/jt-work` uses **one** fresh-context reviewer (`/interrogate`, else Matt `/pr`, else `/ponytail-review` on high-risk). Do not stack AI reviewers. The AI does not approve or merge.
 
 The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`. If a required **skill** is not installed, jt- commands still run using the one-line fallback in each `SKILL.md` (not the old long prompts).
 

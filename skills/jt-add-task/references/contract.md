@@ -1,10 +1,11 @@
-# Task Queue Contract, version 24.8
+# Task Queue Contract, version 24.9
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
 ## 1. Files & Branch Locations
 
 - `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<AFFECTED_TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<SECURITY_CMD>`, `<VERIFY_CMD>`, `<DENYLIST>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`). An empty `<DENYLIST>` uses `jt-queue/denylist.txt` when that file exists.
+- `AGENTS.md` at the repo root is the agent instructions `/jt-setup` writes (those commands, the flow, the house rules, and these paths). `CLAUDE.md` is `@AGENTS.md` and does not repeat that file. An existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board keeps its text; only the `::: jtek:start` section is added.
 - `jt-queue/brief.md`: Optional round brief accepted by the human.
 - `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `size:`, `spec:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, `## ai-review`, and `## decisions`.
