@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.9.0"
+  version: "24.10.0"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
@@ -55,7 +55,7 @@ On **Standard** tasks, invoke **executing-plans** then **test-driven-development
 
 ## 3. Scope, failure, and handoff
 
-- **Queue files:** Commit the files a teammate needs: `jt-queue/board.md`, `jt-queue/brief.md`, and `jt-queue/tasks/<id>/task.md` on `<queue>`, and `jt-queue/tasks/<id>/plan.md` (including `## decisions`) on `<branch>`. Leave local-only files uncommitted: `jt-queue/lessons.md` (notes for this agent, not the task), any `.env` or private key, and `.git/jt-queue/` (`approved-commands.json` is permission to run shell commands and must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter). A gitignored queue still runs from the working tree.
+- **Queue files:** Commit the files a teammate needs: `jt-queue/board.md`, `jt-queue/brief.md`, and `jt-queue/tasks/<id>/task.md` on `<queue>`, and `jt-queue/tasks/<id>/plan.md` (including `## decisions`) on `<branch>`. Leave local-only files uncommitted: `jt-queue/lessons.md` (notes for this agent, not the task), any `.env` or private key, and `.git/jt-queue/` (`approved-commands.json` is permission to run shell commands and must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter; `gate-runs.jsonl` is this machine's gate pass/fail log and stores no command output). A gitignored queue still runs from the working tree.
 - **Spec approval covers the task.** When `spec:` is set, the gate traces each `pass:` line to that AC or EC and refuses if the spec is not approved. Do not ask the human to approve that task or those lines again. One spec approval covers every task derived from it. `/jt-review` is still the only merge.
 - **Lessons:** Before a task, read `jt-queue/lessons.md` if it exists. After a send-back or an answered `ask:`, add a row from [assets/lessons.template.md](assets/lessons.template.md). The first time, `enforced by` is `—`. The second time the same lesson appears, add a `chore` task for human approval whose `pass:` is a lint rule, a test, or a gate check, and cite that check in `enforced by`. Keep `lessons.md` uncommitted. Never modify `SKILL.md` or `gate.py` in the current task's diff.
 - **Scope Control:** Stay inside `do:` and never cross `out:`. Use `files:` as your starting point without reading the whole repo. Use the existing check commands on the board; never create a new check script unless `do:` orders it.

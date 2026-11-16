@@ -1,6 +1,6 @@
 # Spec rules
 
-These rules apply to `/jt-spec-split`, `/jt-spec-ac`, and `/jt-spec-handoff`. `/jt-help` lists every command and the order. `/jt-board` only draws the board.
+These rules apply to `/jt-spec-split`, `/jt-spec-ac`, and `/jt-spec-handoff`. `/jt-help` lists every command and the order. `/jt-board` draws the spec board; `flow` prints queue metrics.
 
 Goal: remove waiting. The PO edits a draft instead of a blank page, dev start from AC with the code found, the tester has test steps on day one. Write what someone acts on; each fact lives in one place.
 

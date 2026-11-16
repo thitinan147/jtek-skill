@@ -136,7 +136,7 @@ board: skip
 +- jt-queue/brief.md holds the round brief.
 +- jt-queue/tasks/<id>/task.md holds the task contract.
 +- jt-queue/tasks/<id>/plan.md holds the plan, the evidence, and the review notes.
-+- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json).
++- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl).
 +::: jtek:end
 --- end
 --- diff CLAUDE.md
@@ -368,6 +368,10 @@ merge: no
 ```
 
 The round is done. Start the next one with `/jt-add-task`.
+
+## Where work got stuck
+
+After a few tasks have merged, `/jt-board flow` prints lead time, gate fails, rework, review time, and escaped defects for the last 30 days. A missing source is `unknown` with the reason. The spec picture is still `/jt-board <flow>`.
 
 ## Where to go next
 

@@ -4130,6 +4130,7 @@ class QueueContextTests(unittest.TestCase):
             ".git/jt-queue/approved-commands.json": "permission to run shell commands",
             ".git/jt-queue/logs/12-test.log": "command output can hold secrets",
             ".git/jt-queue/attempts.json": "this machine's round counter",
+            ".git/jt-queue/gate-runs.jsonl": "this machine's gate pass/fail log",
             "jt-queue/.env": "secrets",
             "jt-queue/tasks/12/id_rsa": "private key",
             "jt-queue/secrets/key.pem": "private key",

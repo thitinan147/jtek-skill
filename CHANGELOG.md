@@ -1,5 +1,14 @@
 # Changelog
 
+## 24.10.0 - queue flow metrics on /jt-board
+
+- `/jt-board flow` prints, per task and as a summary, lead time, gate fails, rework, and review time for a window (default the last 30 days). Each value names its source. A missing source prints `unknown` and the reason. The script does not guess.
+- Lead time is the first git commit of `task.md` to the merge (`gh` `mergedAt` when exactly one merged PR matches, otherwise the commit that wrote `merge:`). Review time is the first `review:` commit, or the local gate-pass row, to that same merge. Rework is `plan.md` `round:` minus one, checked against how many times the board line entered `send-back:`. When those counts differ, rework is `unknown`.
+- Gate fails count failed `reach-review` runs recorded in `.git/jt-queue/gate-runs.jsonl`. `reach-review` appends one row per pass or gate failure (id, time, result, reason). It does not store command output. The file stays on this machine, with `attempts.json`. Older tasks have no rows, so their gate fails stay `unknown`.
+- Escaped defects list merged tasks that a later git revert names, and tasks linked from a PR or issue labelled `bug` opened after the merge. `gh` is used only when it is installed. If it is missing, `bug-label` is `unknown` rather than zero.
+- The spec `board.html` command is unchanged. The gate checks, who may merge, and which queue files are committed are unchanged.
+- Pin installs with `v24.10.0`. Skill and plugin metadata are `24.10.0`.
+
 ## 24.9.0 - AGENTS.md is the repo's agent instructions
 
 - `/jt-setup` writes `AGENTS.md` at the repo root. It lists `TEST_CMD`, `LINT_CMD`, `TYPECHECK_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `AFFECTED_TEST_CMD`, the flow spec -> tasks -> work -> gate -> human merge, the house rules, and where `jt-queue/` files live.

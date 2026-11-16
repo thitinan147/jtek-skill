@@ -134,6 +134,25 @@ land: be, fe
 - `--write` records both PRs: `review: fe:<url> be:<url>`.
 - In `/jt-review`, `landed.py` prints each repo's state in `land:` order. `merge:` needs `landed: all`. If the frontend landed before the backend it prints `order-warning:` so you can check nothing broke.
 
+## 6. Where work gets stuck (`/jt-board flow`)
+
+```text
+/jt-board flow
+```
+
+Or, for one task or another window:
+
+```bash
+python3 -I <jt-board skill folder>/scripts/flow.py --root . --days 30
+python3 -I <jt-board skill folder>/scripts/flow.py --root . --since 2026-10-01 --until 2026-10-31 --id 12
+```
+
+The script prints lead time (task created to merged), gate fails, rework, and review time (gate pass or `review:` to the human merge), then a summary for the window. The default window is the last 30 days. Each line names the source: git, `plan.md`, `.git/jt-queue/gate-runs.jsonl`, or `gh`. When that source is missing the line is `unknown` and says why. It does not estimate the number.
+
+Escaped defects are merged tasks a later git revert names, and tasks linked from a PR or issue labelled `bug` that was opened after the merge. `gh` is optional. If it is not installed, `bug-label` is `unknown`.
+
+`gate-runs.jsonl` is written by `reach-review` on this machine. It stores the task id, time, result, and reason. It does not store command output, and it is not committed. `flow.py` only reads.
+
 ## Repository Artifacts (`jt-queue/`)
 
 See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md) for the complete file and gate contract:
@@ -148,4 +167,4 @@ jt-queue/
         └── plan.md          # Standard-tier notes, including review-diff
 ```
 
-Commit `board.md`, `brief.md`, `task.md`, and `plan.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output and command approvals stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. `jt-queue/lessons.md` stays uncommitted too.
+Commit `board.md`, `brief.md`, `task.md`, and `plan.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output and command approvals stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, `attempts.json` is this machine's round counter, and `gate-runs.jsonl` is this machine's gate pass/fail log (never command output). `jt-queue/lessons.md` stays uncommitted too.

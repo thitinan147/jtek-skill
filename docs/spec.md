@@ -21,6 +21,7 @@ The PO gets a draft instead of a blank page, dev get acceptance criteria with th
 /jt-spec-ac <work>        story, rules, acceptance criteria, questions
 /jt-spec-handoff <work>   test steps, once no question blocks AC
 /jt-board [<flow>]        FigJam-style board.html
+/jt-board flow            queue lead time, gate fails, rework, review time
 /jt-help                  every jt- command, the order, and which are human-only
 ```
 
@@ -64,3 +65,5 @@ python3 -I <jt-board skill folder>/scripts/board.py scrum-spec/ --open
 ```
 
 Writes `board.html`. A question is blocking there when `check.py` would report it as blocking, because both scripts use the same `specdoc.py`. Opening the file loads Google Fonts. See [SECURITY.md](../SECURITY.md).
+
+`/jt-board flow` is a different report. It prints queue metrics and does not write `board.html`. See [Usage](usage.md#6-where-work-gets-stuck-jt-board-flow).

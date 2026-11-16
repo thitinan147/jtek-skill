@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextvars
 import difflib
 import hashlib
 import json
@@ -18,7 +19,7 @@ import tempfile
 import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 try:  # POSIX only; without it the round counter is unlocked
@@ -211,6 +212,41 @@ ROUND_REASONS = frozenset(
         "verify-failed",
         "verify-timeout",
     }
+)
+# Failed reach-review runs worth counting as gate fails. Operational stops
+# (missing board, unapproved commands, an open question) are not in this set.
+# The log stores only these tokens, never command output.
+_GATE_FAIL_REASONS = ROUND_REASONS | {
+    "secret-suspect",
+    "secret-failed",
+    "secret-timeout",
+    "deprecated-name",
+    "console-error",
+    "snapshot-update",
+    "review-diff",
+    "ai-review",
+}
+_GATE_STEP = {
+    "secret-suspect": "secret",
+    "secret-failed": "secret",
+    "secret-timeout": "secret",
+    "deprecated-name": "denylist",
+    "test-failed": "tests",
+    "test-timeout": "tests",
+    "lint-failed": "lint",
+    "lint-timeout": "lint",
+    "typecheck-failed": "typecheck",
+    "typecheck-timeout": "typecheck",
+    "verify-failed": "verify",
+    "verify-timeout": "verify",
+    "setup-failed": "setup",
+    "review-diff": "review-diff",
+    "ai-review": "ai-review",
+    "console-error": "screen",
+    "snapshot-update": "verify",
+}
+_gate_record: contextvars.ContextVar[tuple[Path, str] | None] = contextvars.ContextVar(
+    "jt_gate_record", default=None
 )
 # Printed on allowed, in this order, so a reader does not have to guess which checks ran.
 # The first six are the fail-fast steps: stop at the first failure and name the next one.
@@ -1731,6 +1767,44 @@ def prune_rounds(root: Path, open_ids: set[str]) -> None:
             _save_attempts(root, kept)
 
 
+def _gate_runs_path(root: Path) -> Path:
+    return _git_common_dir(root) / "jt-queue" / "gate-runs.jsonl"
+
+
+def record_gate_run(root: Path, card_id: str, result: str, reason: str = "") -> None:
+    """Append one pass/fail row under .git/jt-queue/. No command output, paths, or env."""
+    if result not in {"fail", "pass"} or not valid_card_id(card_id):
+        return
+    if result == "fail" and reason not in _GATE_FAIL_REASONS:
+        return
+    row: dict[str, str] = {
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "id": card_id,
+        "result": result,
+    }
+    if result == "fail":
+        row["reason"] = reason
+        step = _GATE_STEP.get(reason, "")
+        if step:
+            row["step"] = step
+    line = json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+    try:
+        path = _gate_runs_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock = path.with_suffix(".lock")
+        with open(lock, "a+", encoding="utf-8") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                with path.open("a", encoding="utf-8") as out:
+                    out.write(line)
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+    except OSError:
+        return
+
+
 def count_round(root: Path, card_id: str) -> int:
     """Every failed reach-review run is a round, so retrying an unchanged commit still counts."""
     with _attempts_lock(root):
@@ -1771,6 +1845,9 @@ def _refuse_round(
 def _refuse(
     reason: str, detail: str = "", log: str = "", next_step: str = "", step: str = ""
 ) -> int:
+    ctx = _gate_record.get()
+    if ctx is not None and reason in _GATE_FAIL_REASONS:
+        record_gate_run(ctx[0], ctx[1], "fail", reason)
     print(f"refused: {reason}")
     print("merge: no")
     nxt = next_step or NEXT_FOR.get(reason)
@@ -1839,7 +1916,8 @@ def queue_context_class(rel: str) -> str:
     lessons.md (notes for this agent, not the task), approved-commands.json
     (permission to run shell commands; a commit must not carry it),
     logs/ (command output can hold secrets), attempts.json (this machine's
-    round counter), plus any .env or private key that landed in the folder.
+    round counter), gate-runs.jsonl (this machine's gate pass/fail log; id,
+    time, result, and reason only), plus any .env or private key in the folder.
     """
     norm = rel.replace("\\", "/").strip()
     while norm.startswith("./"):
@@ -4009,7 +4087,7 @@ def render_agents_body(slots: dict[str, tuple[str, str]]) -> str:
             "- jt-queue/brief.md holds the round brief.",
             "- jt-queue/tasks/<id>/task.md holds the task contract.",
             "- jt-queue/tasks/<id>/plan.md holds the plan, the evidence, and the review notes.",
-            "- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json).",
+            "- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl).",
         ]
     )
     return "\n".join(lines)
@@ -5638,6 +5716,7 @@ def _reach_review_multi(
             return _refuse_round(root, card_id, err.reason, detail, err.log)
         return _refuse(err.reason, detail=detail, log=err.log)
     reset_rounds(root, card_id)
+    record_gate_run(root, card_id, "pass")
     print("allowed")
     note = task_branch_deprecation_note(root, card_id)
     if note:
@@ -5695,6 +5774,14 @@ def _reach_review_multi(
 def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     if not valid_card_id(card_id):
         return _refuse("invalid-id")
+    token = _gate_record.set((root, card_id))
+    try:
+        return _reach_review_recorded(root, card_id, write, link)
+    finally:
+        _gate_record.reset(token)
+
+
+def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> int:
     text = read_board_text(root)
     if text is None:
         return _refuse("board-missing")
@@ -5850,6 +5937,7 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             return _refuse_round(root, card_id, err.reason, err.detail, err.log)
         return _refuse(err.reason, detail=err.detail, log=err.log)
     reset_rounds(root, card_id)
+    record_gate_run(root, card_id, "pass")
     print("allowed")
     note = task_branch_deprecation_note(root, card_id)
     if note:

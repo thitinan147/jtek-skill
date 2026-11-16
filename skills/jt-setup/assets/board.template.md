@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.9. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.10. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
 
 queue:
 
