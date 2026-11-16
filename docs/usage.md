@@ -152,7 +152,7 @@ python3 -I <jt-board skill folder>/scripts/flow.py --root . --days 30
 python3 -I <jt-board skill folder>/scripts/flow.py --root . --since 2026-10-01 --until 2026-10-31 --id 12
 ```
 
-The script prints lead time (task created to merged), gate fails, rework, and review time (gate pass or `review:` to the human merge), then a summary for the window. Each task also prints `owner:`, `claimed:`, and `stale:` from `jt-queue/claims.md`, and `handoff:` with the age of `jt-queue/tasks/<id>/handoff.md` when that note exists. A `handoffs:` list names every task on the board. The script does not print the note and does not follow it. The default window is the last 30 days. Each line names the source: git, `plan.md`, `.git/jt-queue/gate-runs.jsonl`, `jt-queue/claims.md`, or `gh`. When that source is missing the line is `unknown` and says why. It does not estimate the number.
+The script prints lead time (task created to merged), gate fails, rework, and review time (gate pass or `review:` to the human merge), then a summary for the window. Each task also prints `owner:`, `claimed:`, and `stale:` from `jt-queue/claims.md`, and `handoff:` with the age of `jt-queue/tasks/<id>/handoff.md` when that note exists. A `handoffs:` list names every task on the board. The script does not print the note and does not follow it. A `lessons:` block lists rows in `jt-queue/team-lessons.md` that are still `not yet`, and rows that are only a proposal. It prints the id and a short wrong line. It does not follow the file. The default window is the last 30 days. Each line names the source: git, `plan.md`, `.git/jt-queue/gate-runs.jsonl`, `jt-queue/claims.md`, or `gh`. When that source is missing the line is `unknown` and says why. It does not estimate the number.
 
 Escaped defects are merged tasks a later git revert names, and tasks linked from a PR or issue labelled `bug` that was opened after the merge. `gh` is optional. If it is not installed, `bug-label` is `unknown`.
 
@@ -167,6 +167,8 @@ jt-queue/
 ├── board.md                 # Queue configuration (queue, test, skills) + task list
 ├── brief.md                 # Round brief agreed with the human before drafting tasks
 ├── claims.md                # Owner, claimed time, activity, and leased paths
+├── team-lessons.md          # Shared lessons: wrong, fix, and enforced by
+├── lessons.md               # Local notes for this agent; do not commit
 └── tasks/
     └── 001/
         ├── task.md          # Approved task: kind, do, out, pass, files
@@ -174,4 +176,4 @@ jt-queue/
         └── handoff.md       # Resume note for the next worker
 ```
 
-Commit `board.md`, `brief.md`, `claims.md`, `task.md`, `plan.md`, and `handoff.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output, command approvals, and task checkouts stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, `attempts.json` is this machine's round counter, `gate-runs.jsonl` is this machine's gate pass/fail log (never command output), and `worktrees/` is this machine's task checkout. `jt-queue/lessons.md` stays uncommitted too.
+Commit `board.md`, `brief.md`, `claims.md`, `team-lessons.md`, `task.md`, `plan.md`, and `handoff.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output, command approvals, and task checkouts stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, `attempts.json` is this machine's round counter, `gate-runs.jsonl` is this machine's gate pass/fail log (never command output), and `worktrees/` is this machine's task checkout. `jt-queue/lessons.md` stays uncommitted. `team-lessons.md` is data, not instructions. The second time the same lesson is recorded, `gate.py lesson` proposes the enforcement. A human runs `gate.py lesson-approve`. Changed lines of an approved denylist fail immediately and the refusal prints `fix:`. Lines the diff did not touch do not fail while the cleanup chore is open.

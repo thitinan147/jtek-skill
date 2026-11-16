@@ -1067,6 +1067,47 @@ def render_task(
     return lines
 
 
+def lesson_report(root: Path) -> list[str]:
+    """Lessons whose enforced-by cell is still `not yet`. The file is data."""
+    path = root / "jt-queue" / "team-lessons.md"
+    if not path.exists():
+        return ["lessons:", "  not-yet: none (jt-queue/team-lessons.md is absent)"]
+    text = read_text(path)
+    if text is None or not path.is_file():
+        return ["lessons:", "  not-yet: unknown (jt-queue/team-lessons.md could not be read)"]
+    header: list[str] | None = None
+    pending: list[str] = []
+    proposed: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [part.strip() for part in line.strip().strip("|").split("|")]
+        folded = [cell.casefold() for cell in cells]
+        if header is None:
+            if "id" in folded and "enforced by" in folded and "wrong" in folded:
+                header = folded
+            continue
+        if cells and all(set(cell) <= set("-: ") and cell for cell in cells):
+            continue
+        if len(cells) < len(header):
+            continue
+        data = {header[index]: cells[index] for index in range(len(header))}
+        ident = one_line(data.get("id", ""), 40)
+        wrong = one_line(data.get("wrong", ""), 80)
+        enforced = " ".join(data.get("enforced by", "").split())
+        if not ident:
+            continue
+        if enforced == "not yet":
+            pending.append(f"  not-yet: {ident} wrong: {wrong}")
+        elif enforced.startswith("proposed:"):
+            proposal = one_line(enforced[len("proposed:") :], 80)
+            proposed.append(f"  proposed: {ident} {proposal}")
+    lines = ["lessons:"]
+    lines.extend(pending or ["  not-yet: none"])
+    lines.extend(proposed)
+    return lines
+
+
 def report(
     root: Path,
     *,
@@ -1111,6 +1152,7 @@ def report(
         lines.append("escaped-defects: 0")
         lines.append("revert: unknown (jt-queue/board.md is missing)")
         lines.append("bug-label: unknown (jt-queue/board.md is missing)")
+        lines.extend(lesson_report(root))
         return "\n".join(lines) + "\n"
 
     cards, dupes = parse_board(text)
@@ -1126,6 +1168,7 @@ def report(
             lines.append("escaped-defects: 0")
             lines.append("revert: ok")
             lines.append("bug-label: unknown (no board line for this id)")
+            lines.extend(lesson_report(root))
             return "\n".join(lines) + "\n"
 
     hist_state, history = board_history(repo) if repo.ok else ("skipped", [])
@@ -1241,6 +1284,7 @@ def report(
         lines.append(f"bug-label: unknown ({bug_state})")
     if board_from == "HEAD":
         lines.append("board-from: HEAD (jt-queue/board.md is not in the worktree)")
+    lines.extend(lesson_report(root))
     return "\n".join(lines) + "\n"
 
 
