@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.1. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
 
 queue:
 
@@ -16,6 +16,7 @@ queue:
 | `<LINT_CMD>` | |
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
+| `<DIFF_LIMIT>` | |
 
 Frontend and backend in separate repos: add a `## repos` section that names each repo and its path (see `contract.md` section 5). Without it the board covers this repo only.
 
@@ -24,6 +25,8 @@ Frontend and backend in separate repos: add a `## repos` section that names each
 `- [ ]` is open (`ask:`, `review:`, `send-back:`). `- [x]` is closed (`merge:` or `drop:`).
 
 Task kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
+
+Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `size:`. A task line may say `size: small`, `size: medium`, or `size: large`; that overrides `size:` in the task. Empty means `medium`.
 
 Pick **first**, then **main**, then **later**.
 

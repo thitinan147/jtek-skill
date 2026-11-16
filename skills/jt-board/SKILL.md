@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only).
 metadata:
   author: Thitinan
-  version: "24.0.0"
+  version: "24.1.0"
   short-description: Open a FigJam-style board of the specs
 argument-hint: "[<flow or folder>]"
 ---

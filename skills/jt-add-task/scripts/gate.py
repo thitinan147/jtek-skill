@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -124,16 +125,16 @@ NEXT_FOR = {
     "secret-suspect": "ask",
 }
 HINT_FOR = {
-    "test-failed": "Read log:, fix the cause on task-<id>, commit, then run reach-review again.",
+    "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
     "test-timeout": "The test command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
-    "lint-failed": "Read log:, fix the lint failure on task-<id>, commit, then run reach-review again.",
+    "lint-failed": "Read log:, fix the lint failure on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
     "lint-timeout": "The lint command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
-    "typecheck-failed": "Read log:, fix the typecheck failure on task-<id>, commit, then run reach-review again.",
+    "typecheck-failed": "Read log:, fix the typecheck failure on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
     "typecheck-timeout": "The typecheck command ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
     "setup-failed": "SETUP_CMD failed in the task worktree. Read log:, then fix the command or the dependencies.",
     "review-diff": "Fix what detail: names in plan.md ('## review-diff' citing the latest code commit, or a missing '## evidence' row), then run gate.py diff-check.",
     "one-off-checker": "Delete the new check script, or name it in do:. Use the check commands already on the board.",
-    "task-branch-missing": "Commit the work on one branch named task-<id>-<slug> (or task-<id>), then run reach-review again.",
+    "task-branch-missing": "Commit the work on one task branch named type/<ticket-id>-<slug> (the gate also accepts task-<id> or task-<id>-<slug>), then run reach-review again.",
     "merge-refused": "This gate cannot merge. Stop and report to the human.",
     "related": "Link each same-layer task under refs: in task.md, or run gate.py ask.",
     "browser-empty": "<BROWSER_TOOL> is empty in jt-queue/board.md. A human sets it; run gate.py ask.",
@@ -141,9 +142,9 @@ HINT_FOR = {
     "browser-failed": "The browser command failed. Read its output above, fix the screen or the check, then retry.",
     "start-down": "Check start:, port:, and wait: in task.md and read log:. The app must listen on every port in port:.",
     "click-mismatch": "The click: command failed or is empty. Read log:, then fix the screen or the command.",
-    "worktree-failed": "Git could not create a worktree for task-<id>. Resolve it, or run gate.py ask.",
-    "pr-missing": "Push task-<id> and open one draft pull request (head task-<id>, base <queue>); see Handoff in SKILL.md.",
-    "pr-duplicate": "Close the extra open PRs whose head is task-<id> so exactly one remains.",
+    "worktree-failed": "Git could not create a worktree for the task branch (type/<ticket-id>-<slug>). Resolve it, or run gate.py ask.",
+    "pr-missing": "Push the task branch (type/<ticket-id>-<slug>) and open one draft pull request (head type/<ticket-id>-<slug>, base <queue>); see Handoff in SKILL.md.",
+    "pr-duplicate": "Close the extra open PRs whose head is the task branch (type/<ticket-id>-<slug>) so exactly one remains.",
     "pr-base": "Retarget the open PR to the queue branch.",
     "pr-not-draft": "Convert the PR back to a draft, then run reach-review --write again.",
     "pr-failed": "gh could not list PRs. Check gh auth and network, or run gate.py ask.",
@@ -161,7 +162,7 @@ HINT_FOR = {
     "git-status-failed": "git status failed. Fix the repository state, then run the command again.",
     "invalid-id": "Task ids look like 1 or 1.2 and nothing else.",
     "repo-missing": "A repo under '## repos' in board.md is not a git repository at its path:. Clone it there or fix path:, then run again.",
-    "repo-undeclared": "task-<id> has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
+    "repo-undeclared": "The task branch (type/<ticket-id>-<slug>) has commits in a repo the task does not list under repos:. Remove them, or run gate.py ask to add that repo to the task.",
     "repo-invalid": "Fix '## repos' in board.md: one '### <name>' per repo, exactly one with 'path: .' and nothing else, every other path: relative and distinct.",
     "secret-suspect": "Remove the named file from the branch and do not print its contents. If it must stay, run gate.py ask.",
 }
@@ -187,6 +188,19 @@ GATE_REPORT = (
     "security",
     "test-weakening",
 )
+# Process size is separate from the quick/standard tier. reach-review records it
+# and may raise it. LARGE_SIZE_HOOKS names later features this version does not run.
+SIZES = ("small", "medium", "large")
+SIZE_RANK = {name: index for index, name in enumerate(SIZES)}
+DEFAULT_DIFF_LIMIT = 400
+LARGE_SIZE_HOOKS = ("worktree-rounds", "fresh-context-review", "high-risk")
+_SIZE_TOKEN = re.compile(r"(?<!\S)size:\s*(small|medium|large)\b", re.IGNORECASE)
+_AUTH_TOKEN = re.compile(
+    r"^(?:auth(?:entication|enticat\w*)?|logins?|logouts?|sessions?|passwords?|passwds?|"
+    r"credentials?|oauth|oidc|jwt|rbac|permissions?|acls?|signins?|signouts?|signups?)$",
+    re.IGNORECASE,
+)
+_DATA_PARTS = frozenset({"migrations", "migration", "alembic", "flyway", "liquibase", "migrate"})
 _CHECK_FAIL = {
     "test": "test-failed",
     "lint": "lint-failed",
@@ -267,11 +281,20 @@ def valid_card_id(card_id: str) -> bool:
     return bool(_CARD_ID_RE.match(card_id))
 
 
+def _status_in(text: str) -> tuple[str | None, re.Match[str] | None]:
+    """First status token, skipping a size: override on the same line."""
+    for found in _COLON_TOKEN.finditer(text):
+        token = f"{found.group(1)}:"
+        if token == "size:":
+            continue
+        return token, found
+    return None, None
+
+
 def status_on_line(text: str) -> str | None:
-    match = _COLON_TOKEN.search(text)
-    if not match:
+    token, _found = _status_in(text)
+    if token is None:
         return None
-    token = f"{match.group(1)}:"
     if token in _STATUS_SET:
         return token
     return UNKNOWN_STATUS
@@ -290,10 +313,9 @@ def _status_span(line: str) -> tuple[str | None, int, int]:
         return None, 0, 0
     suffix, suffix_at_rest = _after_kind(match.group(3))
     suffix_at = match.start(3) + suffix_at_rest
-    found = _COLON_TOKEN.search(suffix)
-    if not found:
+    token, found = _status_in(suffix)
+    if token is None or found is None:
         return None, suffix_at, suffix_at
-    token = f"{found.group(1)}:"
     start = suffix_at + found.start()
     end = start + len(token)
     if token not in _STATUS_SET:
@@ -1718,6 +1740,203 @@ def card_tier(
     return "quick"
 
 
+def _path_tokens(path: str) -> list[str]:
+    return [token for token in re.split(r"[^A-Za-z0-9]+", path) if token]
+
+
+def touches_auth(paths: list[str]) -> bool:
+    """A changed path names auth. `author` does not."""
+    return any(_AUTH_TOKEN.match(token) for path in paths for token in _path_tokens(path))
+
+
+def touches_data(paths: list[str]) -> bool:
+    """A migration directory, a migration filename, `.sql`, or `schema.prisma`."""
+    for path in paths:
+        pure = PurePosixPath(path)
+        if pure.suffix.lower() == ".sql" or pure.name.lower() == "schema.prisma":
+            return True
+        parts = [part.lower() for part in pure.parts]
+        if any(part in _DATA_PARTS for part in parts):
+            return True
+        tokens = [token.lower() for token in _path_tokens(pure.name)]
+        if any(token in {"migration", "migrations"} for token in tokens):
+            return True
+    return False
+
+
+def task_recorded_size(card_text: str) -> str:
+    raw = _label(card_text, "size").lower()
+    return raw if raw in SIZE_RANK else ""
+
+
+def board_recorded_size(board_text: str, card_id: str) -> str:
+    """The human override on the board line, if it names small, medium, or large."""
+    if not valid_card_id(card_id):
+        return ""
+    found = re.search(rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*.*$", board_text, re.M)
+    if not found:
+        return ""
+    match = _SIZE_TOKEN.search(found.group(0))
+    return match.group(1).lower() if match else ""
+
+
+def size_floor(card_text: str, board_text: str, card_id: str) -> str:
+    """Board `size:` overrides the task. Unset stays medium, which is today's full gate."""
+    return board_recorded_size(board_text, card_id) or task_recorded_size(card_text) or "medium"
+
+
+def diff_limit(board_text: str) -> int:
+    raw = parse_field(board_text, "DIFF_LIMIT").strip()
+    if raw.isdigit():
+        return int(raw)
+    return DEFAULT_DIFF_LIMIT
+
+
+def diff_line_count(root: Path, queue: str, card_id: str) -> int | None:
+    text = _range_diff(root, queue, card_id, ["--numstat"])
+    if text is None:
+        return None
+    total = 0
+    for line in text.splitlines():
+        added, deleted, _path = (line.split("\t", 2) + ["", ""])[:3]
+        if added.isdigit() and deleted.isdigit():
+            total += int(added) + int(deleted)
+    return total
+
+
+def path_triggers(paths: list[str], line_count: int, limit: int) -> list[str]:
+    found: list[str] = []
+    if touches_auth(paths):
+        found.append("auth")
+    if touches_data(paths):
+        found.append("migrations")
+    if line_count > limit:
+        found.append("diff")
+    return found
+
+
+def raised_size(floor: str, triggers: list[str]) -> tuple[str, list[str]]:
+    """Raise one step per trigger, never above large, and never below the floor."""
+    rank = SIZE_RANK[floor]
+    if not triggers or rank >= SIZE_RANK["large"]:
+        return floor, []
+    return SIZES[min(SIZE_RANK["large"], rank + len(triggers))], list(triggers)
+
+
+def _source_stems(path: str) -> list[str]:
+    stem = PurePosixPath(path).stem
+    keys = [stem]
+    if stem.endswith(".test"):
+        keys.append(stem[: -len(".test")])
+    elif stem.endswith(".spec"):
+        keys.append(stem[: -len(".spec")])
+    return keys
+
+
+def affected_test_paths(changed: list[str], existing: list[str]) -> list[str]:
+    """Test files in the diff, plus tests whose name matches a changed source file."""
+    existing_set = set(existing)
+    by_stem: dict[str, list[str]] = {}
+    for path in existing:
+        if not _is_test_path(path):
+            continue
+        for key in _source_stems(path):
+            by_stem.setdefault(key, []).append(path)
+    chosen: list[str] = []
+    seen: set[str] = set()
+
+    def take(path: str) -> None:
+        if path in existing_set and path not in seen:
+            seen.add(path)
+            chosen.append(path)
+
+    for path in changed:
+        if _is_test_path(path):
+            take(path)
+            continue
+        for key in _source_stems(path):
+            for stem in (key, f"test_{key}", f"{key}_test", f"{key}.test", f"{key}.spec"):
+                for candidate in by_stem.get(stem, []):
+                    take(candidate)
+    return chosen
+
+
+def _tree_files(root: Path, card_id: str) -> list[str] | None:
+    branch = task_branch(root, card_id)
+    if not _branch_exists(root, branch):
+        return None
+    proc = _run_git(root, ["ls-tree", "-r", "--name-only", branch])
+    if proc.returncode != 0:
+        return None
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def affected_test_command(test_cmd: str, paths: list[str]) -> str:
+    quoted = " ".join(shlex.quote(path) for path in paths)
+    if "{files}" in test_cmd:
+        return test_cmd.replace("{files}", quoted)
+    return f"{test_cmd} {quoted}".strip()
+
+
+def test_command_for(size: str, test_cmd: str, paths: list[str]) -> str | None:
+    """Full `<TEST_CMD>` above small. Small runs it only against the affected paths."""
+    command = test_cmd.strip()
+    if command in ("", NO_SUITE):
+        return None
+    if size != "small":
+        return command
+    if not paths:
+        return None
+    return affected_test_command(command, paths)
+
+
+def collect_size(
+    board_text: str,
+    card_text: str,
+    card_id: str,
+    repos: list[tuple[str, Path, str]],
+) -> tuple[str, str, list[str], list[str]]:
+    """Floor, effective size, triggers that raised it, and affected test paths.
+
+    With more than one repo, affected paths are prefixed `<repo>:`.
+    """
+    paths: list[str] = []
+    total = 0
+    for _name, root, queue in repos:
+        paths.extend(_diff_names(root, queue, card_id) or [])
+        total += diff_line_count(root, queue, card_id) or 0
+    floor = size_floor(card_text, board_text, card_id)
+    size, triggers = raised_size(floor, path_triggers(paths, total, diff_limit(board_text)))
+    affected: list[str] = []
+    if size == "small":
+        many = len(repos) > 1
+        for name, root, queue in repos:
+            changed = _diff_names(root, queue, card_id) or []
+            existing = _tree_files(root, card_id) or []
+            for path in affected_test_paths(changed, existing):
+                affected.append(f"{name}:{path}" if many and name else path)
+    return floor, size, triggers, affected
+
+
+def affected_for(affected: list[str], name: str, many: bool) -> list[str]:
+    if not many:
+        return affected
+    prefix = f"{name}:"
+    return [path[len(prefix) :] for path in affected if path.startswith(prefix)]
+
+
+def print_size(floor: str, size: str, triggers: list[str], affected: list[str]) -> None:
+    print(f"size: {size}")
+    if triggers:
+        print(f"size-from: {floor}")
+        print("escalate: " + ", ".join(triggers))
+    if size == "small":
+        print("affected: " + (", ".join(affected) if affected else "none"))
+    if size == "large":
+        # Hook only. Worktree rounds, a fresh-context review, and a high-risk label are later.
+        print("size-hooks: " + ", ".join(LARGE_SIZE_HOOKS))
+
+
 def _code_diff_reviewable(root: Path, queue: str, card_id: str) -> bool:
     proc = _run_git(
         root,
@@ -3016,7 +3235,10 @@ def _reach_review_multi(
     names = [target.name for target in targets]
     extra = undeclared_repos(root, text, card_id, names)
     if extra:
-        return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
+        return _refuse(
+            "repo-undeclared",
+            detail="the task branch (type/<ticket-id>-<slug>) changes code in: " + ", ".join(extra),
+        )
     for target in targets:
         if not has_one_task_branch(target.root, card_id):
             return _refuse("task-branch-missing", detail=task_branch_missing_detail(target.root, card_id, target.name))
@@ -3026,7 +3248,10 @@ def _reach_review_multi(
     for target in targets:
         found = secret_suspects(target.root, target.queue, card_id)
         if found is None:
-            return _refuse("review-diff", detail=f"repo {target.name}: could not read the diff on task-<id>")
+            return _refuse(
+                "review-diff",
+                detail=f"repo {target.name}: could not read the diff on the task branch (type/<ticket-id>-<slug>)",
+            )
         suspects.extend(f"{target.name}:{item}" for item in found)
     if suspects:
         return _refuse("secret-suspect", detail=", ".join(suspects))
@@ -3053,7 +3278,20 @@ def _reach_review_multi(
     need_screen = sees_screen(card_text)
     if need_screen and parse_field(text, "BROWSER_TOOL").strip() == "":
         return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-    ran_test = any(t.test_cmd.strip() not in ("", NO_SUITE) for t in targets)
+    floor, work_size, triggers, affected = collect_size(
+        text,
+        card_text,
+        card_id,
+        [(target.name, target.root, target.queue) for target in targets],
+    )
+    many = len(targets) > 1
+    test_runs = {
+        target.name: test_command_for(
+            work_size, target.test_cmd, affected_for(affected, target.name, many)
+        )
+        for target in targets
+    }
+    ran_test = any(test_runs.values())
     ran_lint = any(t.lint_cmd.strip() for t in targets)
     ran_type = any(t.typecheck_cmd.strip() for t in targets)
     need_work = need_screen or ran_test or ran_lint or ran_type
@@ -3070,9 +3308,10 @@ def _reach_review_multi(
             if need_screen:
                 _click_across(works, card_text, card_id)
             for target in targets:
-                if target.test_cmd.strip() not in ("", NO_SUITE):
+                command = test_runs[target.name]
+                if command:
                     refused = _run_check(
-                        root, card_id, works[target.name], "test", target.test_cmd, target.name
+                        root, card_id, works[target.name], "test", command, target.name
                     )
                     if refused is not None:
                         return refused
@@ -3110,6 +3349,7 @@ def _reach_review_multi(
     print("allowed")
     print("merge: no")
     print("tier: standard")
+    print_size(floor, work_size, triggers, affected)
     print("repo-review: open")
     print("repos: " + ", ".join(names))
     weak_bits: list[str] = []
@@ -3199,15 +3439,24 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
         home_name = next(repo.name for repo in repos if repo.is_home)
         extra = undeclared_repos(root, text, card_id, [home_name])
         if extra:
-            return _refuse("repo-undeclared", detail="task-<id> changes code in: " + ", ".join(extra))
+            return _refuse(
+            "repo-undeclared",
+            detail="the task branch (type/<ticket-id>-<slug>) changes code in: " + ", ".join(extra),
+        )
     if not has_one_task_branch(root, card_id):
         return _refuse("task-branch-missing", detail=task_branch_missing_detail(root, card_id))
     tier = card_tier(root, queue, card_id, card_text, text)
     if _commit_kinds(root, queue, card_id) is None:
-        return _refuse("review-diff", detail="could not read the commits on task-<id> against queue:")
+        return _refuse(
+            "review-diff",
+            detail="could not read the commits on the task branch (type/<ticket-id>-<slug>) against queue:",
+        )
     suspects = secret_suspects(root, queue, card_id)
     if suspects is None:
-        return _refuse("review-diff", detail="could not read the diff on task-<id> against queue:")
+        return _refuse(
+            "review-diff",
+            detail="could not read the diff on the task branch (type/<ticket-id>-<slug>) against queue:",
+        )
     if suspects:
         return _refuse("secret-suspect", detail=", ".join(suspects))
     if tier == "standard":
@@ -3239,19 +3488,20 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
             extra_checks.append(("lint", lint_cmd.strip()))
         if type_cmd.strip():
             extra_checks.append(("typecheck", type_cmd.strip()))
+    floor, work_size, triggers, affected = collect_size(text, card_text, card_id, [("", root, queue)])
+    test_to_run = test_command_for(work_size, test_cmd, affected)
     try:
         need_screen = sees_screen(card_text)
-        need_test = test_cmd.strip() != NO_SUITE
         if need_screen:
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
                 return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-        if need_screen or need_test or extra_checks:
+        if need_screen or test_to_run or extra_checks:
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 if need_screen:
                     _click_surface(work, card_text, card_id)
-                if need_test:
-                    refused = _run_check(root, card_id, work, "test", test_cmd)
+                if test_to_run:
+                    refused = _run_check(root, card_id, work, "test", test_to_run)
                     if refused is not None:
                         return refused
                 for slug, command in extra_checks:
@@ -3277,13 +3527,14 @@ def cmd_reach_review(root: Path, card_id: str, write: bool, link: str) -> int:
     print("allowed")
     print("merge: no")
     print(f"tier: {tier}")
+    print_size(floor, work_size, triggers, affected)
     print(f"repo-review: {review_state}")
     found = test_weakening(root, queue, card_id) or []
     weak = ",".join(found) if found else "none"
     print(
         _gates_line(
             {
-                "tests": "ok" if need_test else "skip",
+                "tests": "ok" if test_to_run else "skip",
                 "lint": "ok" if any(slug == "lint" for slug, _cmd in extra_checks) else "skip",
                 "typecheck": "ok" if any(slug == "typecheck" for slug, _cmd in extra_checks) else "skip",
                 "screen": "ok" if need_screen else "skip",

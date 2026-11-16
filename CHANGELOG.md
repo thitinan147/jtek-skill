@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.1.0 - size the process to the work
+
+- A task has `size:` `small`, `medium`, or `large`, set when the task or the spec is created. A `size:` token on the board line overrides it. Unset stays `medium`, so an existing board still runs the full gate.
+- `small` runs `<TEST_CMD>` with the affected test paths appended and prints `affected:`. `medium` and `large` run the full command. `small` needs no spec (`/jt-add-task`). `medium` is a short spec. `large` is a full spec.
+- The gate raises that size, and never lowers it, when the diff touches auth or a migration or `.sql` file, or is larger than `<DIFF_LIMIT>` lines (empty means 400). `allowed` then prints `size-from:` and `escalate:` (`auth`, `migrations`, or `diff`).
+- `large` prints `size-hooks: worktree-rounds, fresh-context-review, high-risk`. Those three are recorded only; this version does not run them.
+- Hint text that used `task-<id>` for the branch now names the task branch `type/<ticket-id>-<slug>`. The gate still finds `task-<id>` or `task-<id>-<slug>`.
+
 ## 24.0.0 - commands that say what they do
 
 - **Breaking:** `/jt-work-queue` is three commands. `/jt-setup` writes the board. `/jt-add-task` agrees the brief and drafts tasks (the gate's `brief` and `add-task` actions both print this command). `/jt-work` implements the next ready task. `/jt-review-work` is `/jt-review`. Plugin names follow the skill names (`/jtek:jt-work`, `/jtek:jt-review`, and the rest).

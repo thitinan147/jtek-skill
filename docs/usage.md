@@ -36,6 +36,7 @@ Pass your task directly to `/jt-add-task`:
 - **Verification tiers:** See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md).
   - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
   - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work/assets/plan.template.md`](../skills/jt-work/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
+- **Size:** `size:` is `small`, `medium`, or `large` (unset means `medium`). The agent sets it on the task; `size:` on the board line overrides it. `small` needs no spec and the gate runs only the affected tests. `medium` is a short spec and the full test command. `large` is a full spec. The gate may raise the size and never lowers it. `<DIFF_LIMIT>` (empty means 400) is the large-diff line count.
 
 ## 3. Work the queue (`do-task`)
 `/jt-work` is one command. There is no `--loop` flag. With no argument it keeps following `gate.py next` until `next` is `wait` or `stop`: a `send-back:` task first, then an `ask:` whose question is cleared, then ready tasks in `first`, then `main`, then `later`. A task whose files overlap an open `review:` or `send-back:` is skipped. `/jt-work <ticket-id>` works only that ticket (the `ticket:` line, or the board id) and then stops.

@@ -39,6 +39,7 @@ def board_text(
     repos: str = "",
     lint: str = "",
     typecheck: str = "",
+    diff_limit: str | None = None,
 ) -> str:
     pair_line = "" if pair is None else f"pair: {pair}\n\n"
     repos_block = f"## repos\n\n{repos}\n\n" if repos else ""
@@ -54,7 +55,8 @@ def board_text(
         f"| `<LINT_CMD>` | {lint} |\n"
         f"| `<BROWSER_TOOL>` | {browser} |\n"
         f"| `<STACK_LOCK>` | {stack} |\n"
-        "| `<TEK_SKILLS>` | grill |\n"
+        + ("" if diff_limit is None else f"| `<DIFF_LIMIT>` | {diff_limit} |\n")
+        + "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
         f"{repos_block}"
         "## first\n\n"
@@ -80,6 +82,7 @@ def card_body(
     topic: str = "",
     refs: list[str] | None = None,
     do: str = "something",
+    size: str = "",
 ) -> str:
     listed = "\n".join(f"- {name}" for name in files) if files else "-"
     question_line = "ask:" if not question else f"ask: {question}"
@@ -92,7 +95,8 @@ def card_body(
     return (
         f"# 12 - {title}\n\n"
         f"kind: {kind}\n\n"
-        f"{topic_line}"
+        + (f"size: {size}\n\n" if size else "")
+        + f"{topic_line}"
         f"{screen_block}"
         "do:\n"
         f"- {do}\n\n"
@@ -3238,3 +3242,255 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertFalse(gate._head_matches("task-12-login", "task-12"))
         self.assertFalse(gate._head_matches("task-12-login", "task-12-other", fuzzy=True))
         self.assertFalse(gate._head_matches("task-123", "task-12", fuzzy=True))
+
+
+class SizeRuleTests(unittest.TestCase):
+    def test_auth_names_match_and_author_does_not(self) -> None:
+        self.assertTrue(gate.touches_auth(["src/auth/login.py"]))
+        self.assertTrue(gate.touches_auth(["app/authentication.py"]))
+        self.assertTrue(gate.touches_auth(["web/oauth_client.py"]))
+        self.assertTrue(gate.touches_auth(["password-reset.tsx"]))
+        self.assertFalse(gate.touches_auth(["author.py"]))
+        self.assertFalse(gate.touches_auth(["src/models.py"]))
+
+    def test_migration_and_sql_match_and_a_model_does_not(self) -> None:
+        self.assertTrue(gate.touches_data(["db/migrations/001_users.sql"]))
+        self.assertTrue(gate.touches_data(["alembic/versions/a.py"]))
+        self.assertTrue(gate.touches_data(["prisma/schema.prisma"]))
+        self.assertTrue(gate.touches_data(["scripts/add_migration.py"]))
+        self.assertFalse(gate.touches_data(["app/models.py"]))
+        self.assertFalse(gate.touches_data(["app/schema.py"]))
+
+    def test_each_trigger_raises_one_step_and_the_ceiling_stays(self) -> None:
+        self.assertEqual(gate.raised_size("small", ["auth"]), ("medium", ["auth"]))
+        self.assertEqual(gate.raised_size("small", ["migrations"]), ("medium", ["migrations"]))
+        self.assertEqual(gate.raised_size("small", ["diff"]), ("medium", ["diff"]))
+        self.assertEqual(gate.raised_size("medium", ["auth"]), ("large", ["auth"]))
+        self.assertEqual(
+            gate.raised_size("small", ["auth", "migrations", "diff"]),
+            ("large", ["auth", "migrations", "diff"]),
+        )
+        self.assertEqual(gate.raised_size("large", ["auth"]), ("large", []))
+        self.assertEqual(gate.path_triggers(["app.py"], 5, 5), [])
+        self.assertEqual(gate.path_triggers(["app.py"], 6, 5), ["diff"])
+        self.assertEqual(gate.path_triggers(["src/auth/login.py"], 1, 400), ["auth"])
+        self.assertEqual(gate.path_triggers(["db/migrations/001.sql"], 1, 400), ["migrations"])
+
+    def test_affected_paths_follow_the_changed_source(self) -> None:
+        existing = ["app.py", "tests/test_app.py", "tests/test_other.py"]
+        self.assertEqual(gate.affected_test_paths(["app.py"], existing), ["tests/test_app.py"])
+        self.assertEqual(
+            gate.affected_test_paths(["tests/test_app.py"], existing),
+            ["tests/test_app.py"],
+        )
+        self.assertEqual(gate.affected_test_paths(["README.md"], existing), [])
+
+    def test_board_override_replaces_the_assessed_size(self) -> None:
+        task = "size: small\n"
+        overridden = board_text("- [ ] **12** fresh (feat) size: large")
+        self.assertEqual(gate.size_floor(task, overridden, "12"), "large")
+        self.assertEqual(gate.size_floor(task, board_text("- [ ] **12** fresh (feat)"), "12"), "small")
+        self.assertEqual(gate.size_floor("", board_text("- [ ] **12** fresh (feat)"), "12"), "medium")
+        self.assertEqual(gate.diff_limit(board_text("no cards", diff_limit="20")), 20)
+        self.assertEqual(gate.diff_limit("queue: main\n"), gate.DEFAULT_DIFF_LIMIT)
+
+    def test_size_on_the_board_line_is_not_a_status(self) -> None:
+        text = board_text("- [ ] **12** fresh (feat) size: small")
+        decision = decide_board(text, {"12": card_body(["src/a.py"])})
+        self.assertEqual(decision.action, "do-task")
+        self.assertNotEqual(decision.reason, "unknown-status")
+        self.assertIsNone(gate.status_on_line("- [ ] **12** fresh (feat) size: small"))
+        self.assertEqual(
+            gate.status_on_line("- [ ] **12** fresh (feat) size: small review: local"),
+            "review:",
+        )
+        updated = gate.apply_waiting_review(text, "12", 0, "local")
+        self.assertIn("size: small", updated)
+        self.assertIn("review: local", updated)
+
+    def test_branch_hints_name_the_task_branch(self) -> None:
+        for key in ("test-failed", "lint-failed", "typecheck-failed", "pr-missing", "worktree-failed"):
+            hint = gate.HINT_FOR[key]
+            self.assertIn("type/<ticket-id>-<slug>", hint)
+            self.assertNotIn("task-<id>", hint)
+
+
+class SizeTierTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        init_repo(self.repo)
+        (self.repo / "jt-queue" / "tasks" / "12").mkdir(parents=True)
+        (self.repo / "check.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests" / "test_other.py").write_text(
+            "def test_other():\n    pass\n", encoding="utf-8"
+        )
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text("- [ ] **12** fresh (feat)", test=gate.NO_SUITE),
+            encoding="utf-8",
+        )
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["app.py"]),
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: add the board")
+        git(self.repo, "branch", "task-12")
+        self.marker = self.repo.parent / f"{self.repo.name}-ran"
+
+    def tearDown(self) -> None:
+        self.marker.unlink(missing_ok=True)
+        self.tmp.cleanup()
+
+    def _marker_cmd(self) -> str:
+        self.marker.unlink(missing_ok=True)
+        path = str(self.marker)
+        return (
+            'python3 -c "import pathlib,sys; pathlib.Path(\''
+            + path
+            + '\').write_text(\' \'.join(sys.argv[1:]))"'
+        )
+
+    def _land(self, files: dict[str, str]) -> None:
+        git(self.repo, "checkout", "task-12")
+        for name, body in files.items():
+            path = self.repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        commit_all(self.repo, "feat: change the code")
+        sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        plan = self.repo / "jt-queue" / "tasks" / "12" / "plan.md"
+        plan.write_text(
+            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n"
+            "## review-diff\n\n"
+            f"- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
+            encoding="utf-8",
+        )
+        commit_all(self.repo, "docs: record review")
+        git(self.repo, "checkout", "main")
+
+    def _reach(
+        self,
+        *,
+        size: str = "",
+        line: str = "- [ ] **12** fresh (feat)",
+        test: str | None = None,
+        diff_limit: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
+            card_body(["app.py"], size=size),
+            encoding="utf-8",
+        )
+        (self.repo / "jt-queue" / "board.md").write_text(
+            board_text(line, test=gate.NO_SUITE if test is None else test, diff_limit=diff_limit),
+            encoding="utf-8",
+        )
+        return run_gate(self.repo, "reach-review", "--id", "12")
+
+    def test_assessed_small_runs_affected_tests_only(self) -> None:
+        self._land(
+            {
+                "app.py": "VALUE = 1\n",
+                "tests/test_app.py": "def test_app():\n    pass\n",
+            }
+        )
+        result = self._reach(size="small", test=self._marker_cmd())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: small", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+        self.assertNotIn("size-from:", result.stdout)
+        self.assertIn("affected: tests/test_app.py", result.stdout)
+        ran = self.marker.read_text(encoding="utf-8")
+        self.assertIn("tests/test_app.py", ran)
+        self.assertNotIn("test_other.py", ran)
+
+    def test_medium_runs_the_full_test_command(self) -> None:
+        self._land(
+            {
+                "app.py": "VALUE = 1\n",
+                "tests/test_app.py": "def test_app():\n    pass\n",
+            }
+        )
+        result = self._reach(size="medium", test=self._marker_cmd())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: medium", result.stdout)
+        self.assertNotIn("affected:", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+        self.assertEqual(self.marker.read_text(encoding="utf-8"), "")
+
+    def test_unset_size_stays_medium(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"})
+        result = self._reach()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: medium", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+        self.assertNotIn("size-hooks:", result.stdout)
+
+    def test_board_size_overrides_the_task(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"})
+        result = self._reach(size="small", line="- [ ] **12** fresh (feat) size: large")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: large", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+        self.assertNotIn("size-from:", result.stdout)
+        self.assertIn(
+            "size-hooks: worktree-rounds, fresh-context-review, high-risk",
+            result.stdout,
+        )
+
+    def test_gate_does_not_lower_a_large_task(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"})
+        result = self._reach(size="large")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: large", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+        self.assertNotIn("size-from:", result.stdout)
+
+    def test_auth_escalates_a_small_task(self) -> None:
+        self._land({"src/auth/login.py": "def login():\n    return True\n"})
+        result = self._reach(size="small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: medium", result.stdout)
+        self.assertIn("size-from: small", result.stdout)
+        self.assertIn("escalate: auth\n", result.stdout)
+        self.assertNotIn("size-hooks:", result.stdout)
+
+    def test_migrations_escalate_a_small_task(self) -> None:
+        self._land({"db/migrations/001_users.sql": "create table users (id int);\n"})
+        result = self._reach(size="small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: medium", result.stdout)
+        self.assertIn("size-from: small", result.stdout)
+        self.assertIn("escalate: migrations\n", result.stdout)
+
+    def test_a_large_diff_escalates_at_the_board_limit(self) -> None:
+        self._land({"app.py": "".join(f"LINE_{i} = {i}\n" for i in range(8))})
+        result = self._reach(size="small", diff_limit="5")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: medium", result.stdout)
+        self.assertIn("size-from: small", result.stdout)
+        self.assertIn("escalate: diff\n", result.stdout)
+
+    def test_an_author_file_does_not_escalate(self) -> None:
+        self._land({"author.py": "NAME = 'Ada'\n"})
+        result = self._reach(size="small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: small", result.stdout)
+        self.assertIn("affected: none", result.stdout)
+        self.assertNotIn("escalate:", result.stdout)
+
+    def test_auth_and_migrations_stack_to_large(self) -> None:
+        self._land({"db/migrations/auth_login.sql": "create table sessions (id int);\n"})
+        result = self._reach(size="small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: large", result.stdout)
+        self.assertIn("escalate: auth, migrations", result.stdout)
+        self.assertIn("size-hooks: worktree-rounds, fresh-context-review, high-risk", result.stdout)
+
+    def test_small_with_no_affected_test_skips_the_suite(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"})
+        result = self._reach(size="small", test=self._marker_cmd())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("affected: none", result.stdout)
+        self.assertIn("tests skip", result.stdout)
+        self.assertFalse(self.marker.exists())
