@@ -6,14 +6,14 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.3.0"
+  version: "24.4.0"
   short-description: Human-only review and board decision command
 argument-hint: "[<id>]"
 ---
 
 # jt-review
 
-**HUMAN-ONLY COMMAND.** Never invoke this skill autonomously during `/jt-setup`, `/jt-add-task`, or `/jt-work`.
+**HUMAN-ONLY COMMAND.** Never invoke this skill autonomously during `/jt-setup`, `/jt-add-task`, or `/jt-work`. A spec approval does not merge. This command is still the only merge.
 
 ## Untrusted input
 
@@ -42,7 +42,7 @@ When inspecting a `review:` task `<id>`, present:
 
 ## 3. Record the Human's Decision (on `<queue>` branch, clean tree)
 
-Update `jt-queue/board.md` only (answering `ask:` is the one exception and edits `tasks/<id>/task.md`). Leave it uncommitted when that folder is gitignored. Commit it on `<queue>` only when the folder is tracked.
+Update `jt-queue/board.md` only (answering `ask:` is the one exception and edits `tasks/<id>/task.md`). Commit `board.md` and `task.md` on `<queue>` (they are shared queue context). Leave them uncommitted only when that folder is still gitignored. Do not commit `lessons.md` or `.git/jt-queue/`.
 
 - **Accept (`merge:`):** Verify `python3 <this-skill-dir>/scripts/landed.py --root . --id <id>` prints `landed: ancestor` or `landed: squash`, or `landed: all` for a task across repos (if not landed yet, tell the human to merge on GitHub/locally first, in the `land-order:` it prints). Show any `order-warning:` line to the human before writing `merge:`. If `needs:` lists work in another repo, ask the human to confirm each item has landed first; the gate does not check it. Never run `git merge`, open a PR, or merge a PR. Change only `- [ ]` to `- [x]` and status to `merge:`.
 - **Send back (`send-back:`):** Change `review:` to `send-back: <reason>` on `jt-queue/board.md` (stays `- [ ]`).

@@ -9,9 +9,9 @@ Run `/jt-setup` in any Git repository:
 /jt-setup
 ```
 
-- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, and `<STACK_LOCK>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-setup/assets/board.template.md`](../skills/jt-setup/assets/board.template.md). It also makes sure `.gitignore` contains `jt-queue/`.
+- **No `jt-queue/board.md` yet (`setup-board`):** The agent inspects your repo (`package.json`, lockfiles, `Cargo.toml`, `go.mod`, `pyproject.toml`; `gate.py detect --root .` prints the suggested `<TEST_CMD>` and `<SETUP_CMD>` with their source), proposes `queue:`, `<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, and `<STACK_LOCK>`, waits for your approval, and writes `jt-queue/board.md` from [`skills/jt-setup/assets/board.template.md`](../skills/jt-setup/assets/board.template.md). It commits that board. A blanket `jt-queue/` gitignore is removed so the shareable files can be committed. `lessons.md`, `.env`, private keys, and `.git/jt-queue/` stay uncommitted.
 - **Empty board and no `jt-queue/brief.md` (`brief`):** Run `/jt-add-task`. The agent reads the code first, then interviews you one question at a time to capture the goal and scope of the round in `jt-queue/brief.md` (from [`skills/jt-add-task/assets/brief.template.md`](../skills/jt-add-task/assets/brief.template.md)).
-- **Brief ready (`add-task`):** `/jt-add-task` drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-add-task/assets/task.template.md`](../skills/jt-add-task/assets/task.template.md) and adds it to `jt-queue/board.md` after your approval.
+- **Brief ready (`add-task`):** `/jt-add-task` drafts each `jt-queue/tasks/<id>/task.md` from [`skills/jt-add-task/assets/task.template.md`](../skills/jt-add-task/assets/task.template.md) and adds it to `jt-queue/board.md`. An approved spec covers those tasks, so it does not ask again; each `pass:` line is `- <id>: <Then>` from that AC or EC. A task with no spec still waits for your approval.
 
 ## 2. Add one or multiple tasks at once
 Pass your task directly to `/jt-add-task`:
@@ -147,4 +147,4 @@ jt-queue/
         └── plan.md          # Standard-tier notes, including review-diff
 ```
 
-Add `jt-queue/` to `.gitignore`. The gate reads that folder from the working tree, so a personal queue is not committed or pushed. Log output and command approvals stay under `.git/jt-queue/`.
+Commit `board.md`, `brief.md`, `task.md`, and `plan.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output and command approvals stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. `jt-queue/lessons.md` stays uncommitted too.

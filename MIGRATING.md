@@ -2,6 +2,16 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.3 to v24.4
+
+- **Guards column.** New specs use `| # | Given | When | Then | Guards |`. Each EC's Guards cell names the AC it guards (`AC1`, or `AC1 AC2`). `check.py` errors when that cell is empty or names an AC that is not in the table. A spec that still has the old four columns does not fail: `check.py` prints `migration: Acceptance Criteria has no Guards column` and skips the link check. Add the column when you next edit the spec.
+- **Approval and blocking questions.** A `✅` approval fails while an open question has Blocks `dev` or `AC`. Close or answer the question first. A question that Blocks `later` does not block approval. A spec that is still `❌ waiting for PO` is not failed for this reason.
+- **Tasks from a spec.** `/jt-add-task` sets `spec:` and copies each owned AC and EC into `pass:` as `- <id>: <Then>`. The gate refuses `pass-ac` when a line does not match that Then, and `spec-unapproved` when the spec is not approved or a question still blocks `dev` or `AC`. Tasks with no `spec:` line are unchanged, including `small` tasks. Size tiers are unchanged.
+- **One spec approval.** That approval covers the tasks derived from the spec, so `/jt-add-task` does not ask again and `/jt-work` does not ask you to approve each of those tasks or pass lines. `/jt-review` is still the only merge, and it is still human-only. Shell commands on the board still need the one-time `approve-commands` on each machine. That hash stays in `.git/jt-queue/approved-commands.json`.
+- **Queue files to commit.** Commit `jt-queue/board.md`, `jt-queue/brief.md`, `jt-queue/tasks/<id>/task.md`, and `jt-queue/tasks/<id>/plan.md` (including `## decisions`) so the work can resume on another machine. If `.gitignore` ignores all of `jt-queue/`, remove that line. A queue that stays fully gitignored still runs from the working tree.
+- **Keep local, and why.** `jt-queue/lessons.md` is notes for this agent, not the task a teammate resumes. `.git/jt-queue/approved-commands.json` is permission to run shell commands and must not travel in a commit. `.git/jt-queue/logs/` is command output and can hold secrets. `.git/jt-queue/attempts.json` is this machine's round counter. `.env` files (not `.env.example`) and private keys are secrets.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.4.0 --skill jt-work`.
+
 ## Migrating from v24.1 to v24.2
 
 - **Size.** New. Unset `size:` stays `medium`, so an existing board still runs the full gate. `small` runs the full `<TEST_CMD>` unless you set `<AFFECTED_TEST_CMD>` or put `{files}` in `<TEST_CMD>`.

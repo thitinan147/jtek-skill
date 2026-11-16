@@ -74,7 +74,7 @@ SETUP_CMD = (empty)  [source: none found]
 merge: no
 ```
 
-The agent reads the repo, sees `test_tempconv.py`, and proposes `python3 -m unittest`, showing where each value came from. **Nothing is written until you confirm.** Then it writes the board and adds `jt-queue/` to `.gitignore`:
+The agent reads the repo, sees `test_tempconv.py`, and proposes `python3 -m unittest`, showing where each value came from. **Nothing is written until you confirm.** Then it writes the board and commits it. It does not gitignore the whole `jt-queue/` folder. `lessons.md`, `.env`, private keys, and `.git/jt-queue/` stay off the branch:
 
 ```markdown
 queue: main
@@ -91,7 +91,7 @@ queue: main
 /jt-add-task
 ```
 
-The gate now answers `action: brief`. The agent reads the code, asks you only what the code cannot answer, and writes `jt-queue/brief.md` after you agree. Next it answers `action: add-task`, and the agent drafts one `task.md` per task for your approval. This is part of task 2 (empty fields left out):
+The gate now answers `action: brief`. The agent reads the code, asks you only what the code cannot answer, and writes `jt-queue/brief.md` after you agree. Next it answers `action: add-task`, and the agent drafts one `task.md` per task. This example has no spec, so it waits for your approval. A task taken from an approved spec does not ask again: each `pass:` line is copied from an AC. This is part of task 2 (empty fields left out):
 
 ```markdown
 # 2 - c_to_f adds 23 instead of 32

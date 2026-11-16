@@ -3624,3 +3624,182 @@ class SizeTierTests(unittest.TestCase):
         self.assertIn("affected: tests/test_app.py", result.stdout)
         self.assertFalse(self.marker.exists())
         self.assertIn("tests/test_app.py", scoped.read_text(encoding="utf-8"))
+
+
+_SPEC_THEN = "the button is enabled"
+_SPEC_EC = "the room is hidden"
+
+
+def _story_spec(approve: str = "✅ Alex · 2026-11-03", question: str = "| Q1 | Spinner? | UX | later | |",
+                guards: bool = True) -> str:
+    if guards:
+        table = (
+            "| # | Given | When | Then | Guards |\n|---|---|---|---|---|\n"
+            f"| AC1 | staff | look | {_SPEC_THEN} | |\n"
+            f"| EC1 | not admin | open | {_SPEC_EC} | AC1 |\n"
+        )
+    else:
+        table = (
+            "| # | Given | When | Then |\n|---|---|---|---|\n"
+            f"| AC1 | staff | look | {_SPEC_THEN} |\n"
+            f"| EC1 | not admin | open | {_SPEC_EC} |\n"
+        )
+    return (
+        "<!-- scrum-spec -->\n# book\n\n## Acceptance Criteria\n\n"
+        f"**approve:** {approve}\n\n{table}\n"
+        "## Questions\n\n| # | Question | Ask | Blocks | Answer |\n|---|---|---|---|---|\n"
+        f"{question}\n"
+    )
+
+
+def _spec_task(pass_lines: str) -> str:
+    body = "\n".join(f"- {line}" for line in pass_lines.splitlines() if line.strip())
+    return (
+        "# 12 - book\n\nkind: feat\n\nspec: scrum-spec/book/spec.md\n\n"
+        "do:\n- book\n\nout:\n- other\n\npass:\n"
+        f"{body}\n\nfiles:\n- src/a.py\n\nask:\n"
+    )
+
+
+def _plant_spec(root: Path, spec: str, task: str) -> None:
+    spec_path = root / "scrum-spec" / "book" / "spec.md"
+    spec_path.parent.mkdir(parents=True, exist_ok=True)
+    spec_path.write_text(spec, encoding="utf-8")
+    task_dir = root / "jt-queue" / "tasks" / "12"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "task.md").write_text(task, encoding="utf-8")
+    (root / "jt-queue" / "board.md").write_text(
+        board_text("- [ ] **12** book (feat)", test=gate.NO_SUITE),
+        encoding="utf-8",
+    )
+
+
+class SpecPassBridgeTests(unittest.TestCase):
+    def test_pass_lines_trace_to_their_ac(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _spec_task(f"AC1:   {_SPEC_THEN}\nEC1: {_SPEC_EC}")
+            _plant_spec(root, _story_spec(), task)
+            traced = gate.trace_spec_pass(root, task)
+        self.assertIsInstance(traced, dict)
+        self.assertEqual(traced["approval"], "Alex · 2026-11-03")
+        self.assertEqual(traced["ids"], ["AC1", "EC1"])
+
+    def test_old_spec_without_guards_still_traces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _spec_task(f"AC1: {_SPEC_THEN}")
+            _plant_spec(root, _story_spec(guards=False), task)
+            traced = gate.trace_spec_pass(root, task)
+        self.assertIsInstance(traced, dict)
+        self.assertEqual(traced["ids"], ["AC1"])
+
+    def test_pass_line_that_is_not_the_ac_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _spec_task("AC1: something else")
+            _plant_spec(root, _story_spec(), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+            self.assertEqual(reason, "pass-ac")
+            self.assertIn("must quote its Then", detail)
+            task = _spec_task("AC9: missing")
+            _plant_spec(root, _story_spec(), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+            self.assertEqual(reason, "pass-ac")
+            self.assertIn("AC9 is not an AC or EC", detail)
+            task = _spec_task("just a command")
+            _plant_spec(root, _story_spec(), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+        self.assertEqual(reason, "pass-ac")
+        self.assertIn("does not name an AC id", detail)
+
+    def test_unapproved_or_blocked_spec_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task = _spec_task(f"AC1: {_SPEC_THEN}")
+            _plant_spec(root, _story_spec(approve="❌ waiting for PO"), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+            self.assertEqual(reason, "spec-unapproved")
+            self.assertIn("not approved", detail)
+            _plant_spec(root, _story_spec(question="| Q2 | API? | BE | dev | |"), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+            self.assertEqual(reason, "spec-unapproved")
+            self.assertIn("approval is blocked while Q2 blocks dev", detail)
+            _plant_spec(root, _story_spec(approve="✅ Claude · 2026-11-03"), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+        self.assertEqual(reason, "spec-unapproved")
+        self.assertIn("not an AI", detail)
+
+    def test_task_without_spec_is_unchanged(self) -> None:
+        self.assertIsNone(gate.trace_spec_pass(Path("."), card_body(["src/a.py"])))
+
+    def test_spec_outside_the_repo_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "repo"
+            root.mkdir()
+            (base / "outside-spec.md").write_text("<!-- scrum-spec -->\n", encoding="utf-8")
+            task = _spec_task(f"AC1: {_SPEC_THEN}").replace(
+                "spec: scrum-spec/book/spec.md", "spec: ../outside-spec.md"
+            )
+            _plant_spec(root, _story_spec(), task)
+            reason, detail = gate.trace_spec_pass(root, task)
+        self.assertEqual(reason, "spec-unapproved")
+        self.assertIn("inside this repository", detail)
+
+    def test_reach_review_refuses_a_bad_pass_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _plant_spec(root, _story_spec(), _spec_task("AC1: not the then"))
+            result = run_gate_raw(root, "reach-review", "--id", "12")
+        self.assertIn("refused: pass-ac", result.stdout)
+        self.assertIn("next: retry", result.stdout)
+        self.assertNotIn("commands-unapproved", result.stdout)
+
+    def test_reach_review_accepts_a_traced_spec_before_the_branch_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _plant_spec(root, _story_spec(), _spec_task(f"AC1: {_SPEC_THEN}\nEC1: {_SPEC_EC}"))
+            result = run_gate_raw(root, "reach-review", "--id", "12")
+        self.assertIn("refused: task-branch-missing", result.stdout)
+        self.assertNotIn("refused: pass-ac", result.stdout)
+        self.assertNotIn("refused: spec-unapproved", result.stdout)
+
+    def test_reach_review_refuses_a_blocked_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _plant_spec(
+                root,
+                _story_spec(question="| Q1 | Who? | PO | AC | |"),
+                _spec_task(f"AC1: {_SPEC_THEN}"),
+            )
+            result = run_gate_raw(root, "reach-review", "--id", "12")
+        self.assertIn("refused: spec-unapproved", result.stdout)
+        self.assertIn("next: stop", result.stdout)
+        self.assertIn("Q1 blocks AC", result.stdout)
+
+
+class QueueContextTests(unittest.TestCase):
+    def test_teammate_files_are_committed(self) -> None:
+        for rel in (
+            "jt-queue/board.md",
+            "jt-queue/brief.md",
+            "jt-queue/tasks/12/task.md",
+            "jt-queue/tasks/12.1/plan.md",
+        ):
+            self.assertEqual(gate.queue_context_class(rel), "commit", rel)
+
+    def test_secrets_and_local_files_stay_out(self) -> None:
+        local = {
+            "jt-queue/lessons.md": "notes for this agent, not the task",
+            ".git/jt-queue/approved-commands.json": "permission to run shell commands",
+            ".git/jt-queue/logs/12-test.log": "command output can hold secrets",
+            ".git/jt-queue/attempts.json": "this machine's round counter",
+            "jt-queue/.env": "secrets",
+            "jt-queue/tasks/12/id_rsa": "private key",
+            "jt-queue/secrets/key.pem": "private key",
+            "jt-queue/notes.md": "not a resume file",
+        }
+        for rel in local:
+            self.assertEqual(gate.queue_context_class(rel), "local", rel)
+        self.assertEqual(gate.queue_context_class("src/app.py"), "outside")

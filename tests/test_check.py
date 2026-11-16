@@ -48,6 +48,18 @@ def write_spec(root: Path, text: str) -> Path:
     return path
 
 
+def _approved_spec(rows: str, questions: str = "", approve: str = "✅ Alex · 2026-11-03") -> str:
+    return (
+        "<!-- scrum-spec -->\n\n## Acceptance Criteria\n\n"
+        f"**approve:** {approve}\n\n"
+        "| # | Given | When | Then | Guards |\n|---|---|---|---|---|\n"
+        f"{rows}\n"
+        "## Questions\n\n"
+        "| # | Question | Ask | Blocks | Answer |\n|---|---|---|---|---|\n"
+        f"{questions}"
+    )
+
+
 class CheckTests(unittest.TestCase):
     def test_complete_spec_passes_with_full_coverage(self) -> None:
         with Project("room-booking") as root:
@@ -206,6 +218,90 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("vague words in AC/EC: AC1 'nice', AC1 'user-friendly', EC1 '" + thai + "'", out)
         self.assertNotIn("'fast'", out)
+
+    def test_approval_fails_while_a_dev_question_is_open(self) -> None:
+        with Project("room-booking") as root:
+            spec = write_spec(root, _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | AC1 |\n",
+                "| Q2 | Where is the API? | BE | dev | |\n",
+            ))
+            code, out = run(spec)
+        self.assertEqual(code, 1, out)
+        self.assertIn("approval is blocked while Q2 blocks dev", out)
+
+    def test_approval_fails_while_an_ac_question_is_open(self) -> None:
+        with Project("room-booking") as root:
+            spec = write_spec(root, _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | AC1 |\n",
+                "| Q1 | Who can book? | PO | AC | |\n",
+            ))
+            code, out = run(spec)
+        self.assertEqual(code, 1, out)
+        self.assertIn("approval is blocked while Q1 blocks AC", out)
+
+    def test_waiting_approval_and_a_later_question_do_not_fail(self) -> None:
+        with Project("room-booking") as root:
+            waiting = _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | AC1 |\n",
+                "| Q2 | Where is the API? | BE | dev | |\n",
+                approve="❌ waiting for PO",
+            )
+            code, out = run(write_spec(root, waiting))
+            self.assertEqual(code, 0, out)
+            self.assertIn("blocking: Q2 (dev · BE)", out)
+            self.assertNotIn("approval is blocked", out)
+            later = _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | AC1 |\n",
+                "| Q9 | Spinner? | UX | later | |\n",
+            )
+            code, out = run(write_spec(root, later))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("approval is blocked", out)
+        self.assertNotIn("migration:", out)
+
+    def test_answered_dev_question_does_not_block_approval(self) -> None:
+        with Project("room-booking") as root:
+            spec = write_spec(root, _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | AC1 |\n",
+                "| Q2 | Where is the API? | BE | dev | ⚠️ D1 |\n",
+            ) + "\n## Decisions\n\n- **D1** assumption: use DELETE · Pat · 2026-11-12\n")
+            code, out = run(spec)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("approval is blocked", out)
+
+    def test_ec_guard_links_pass_and_fail(self) -> None:
+        with Project("room-booking") as root:
+            good = write_spec(root, _approved_spec(
+                "| AC1 | a | b | enabled | |\n| AC2 | a | b | saved | |\n"
+                "| EC1 | a | b | hidden | AC1 |\n| EC2 | a | b | both | AC1 AC2 |\n",
+            ))
+            code, out = run(good)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn("must name the AC", out)
+            bad = write_spec(root, _approved_spec(
+                "| AC1 | a | b | enabled | |\n| EC1 | a | b | hidden | |\n| EC2 | a | b | missing | AC9 |\n",
+            ))
+            code, out = run(bad)
+        self.assertEqual(code, 1, out)
+        self.assertIn("EC1 must name the AC it guards", out)
+        self.assertIn("EC2 guards AC9, which is not an AC", out)
+
+    def test_old_ac_table_prints_migration_and_does_not_crash(self) -> None:
+        with Project("room-booking") as root:
+            spec = write_spec(root, (
+                "<!-- scrum-spec -->\n\n## Acceptance Criteria\n\n"
+                "**approve:** ✅ Alex · 2026-11-03\n\n"
+                "| # | Given | When | Then |\n|---|---|---|---|\n"
+                "| AC1 | a | b | enabled |\n| EC1 | a | b | hidden |\n"
+            ))
+            result = subprocess.run(
+                [sys.executable, "-I", str(CHECK), str(spec)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("migration: Acceptance Criteria has no Guards column", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn("must name the AC", result.stdout)
 
     def test_help_prints_usage(self) -> None:
         code, out = run("--help")

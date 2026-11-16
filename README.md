@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.3.0
+npx skills add thitinan147/jtek-skill#v24.4.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.3.0
+/plugin marketplace add thitinan147/jtek-skill#v24.4.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.3.0` the marketplace follows the default branch.
+Without `#v24.4.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.3.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.4.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -89,7 +89,7 @@ Spec (human types the command)          Queue
 /jt-board        board.html              /jt-review     human: merge / send-back / drop
 ```
 
-1. **Queue files stay local; code lives on a branch.** `jt-queue/` is gitignored. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word.
+1. **Commit the queue context; keep secrets local.** Commit `jt-queue/board.md`, `brief.md`, `tasks/<id>/task.md`, and `plan.md` (including `## decisions`) so another machine can resume. Leave `lessons.md` uncommitted (notes for this agent, not the task). Leave `.git/jt-queue/` uncommitted: `approved-commands.json` is permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. Also leave `.env` files and private keys out. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word. A human approves the spec once; that covers the tasks derived from it. `/jt-review` is still the only merge.
 2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. When the board sets `<LINT_CMD>` or `<TYPECHECK_CMD>`, those must pass too. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it.
 3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
 
@@ -101,7 +101,7 @@ Spec (human types the command)          Queue
 | [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | **human-only** | Write test steps once nothing blocks the AC. |
 | [`/jt-board`](skills/jt-board/SKILL.md) | **human-only** | Write a FigJam-style `board.html`. |
 | [`/jt-setup`](skills/jt-setup/SKILL.md) | human confirms | Write `jt-queue/board.md`. |
-| [`/jt-add-task`](skills/jt-add-task/SKILL.md) | human approves | Agree the brief, then add tasks. |
+| [`/jt-add-task`](skills/jt-add-task/SKILL.md) | spec approval covers derived tasks | Agree the brief, then add tasks. |
 | [`/jt-work`](skills/jt-work/SKILL.md) | agent | Work ready tasks in order, or one ticket id. Cannot merge. |
 | [`/jt-review`](skills/jt-review/SKILL.md) | **human-only** | Inspect `review:` and write `merge:`, `send-back:`, or `drop:`. |
 

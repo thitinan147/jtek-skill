@@ -1,4 +1,4 @@
-# Task Queue Contract, version 24.2
+# Task Queue Contract, version 24.4
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
@@ -6,10 +6,10 @@ This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `
 
 - `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<AFFECTED_TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`).
 - `jt-queue/brief.md`: Optional round brief accepted by the human.
-- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `size:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
+- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `size:`, `spec:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, and `## decisions`.
 
-`jt-queue/` is gitignored by default, so the gate reads these paths from the working tree and they are never part of a commit or a push. Only when a path is tracked is it read from a branch: the board, brief, and `task.md` from `<queue>`, and `plan.md` from the task branch.
+Commit `board.md`, `brief.md`, `tasks/<id>/task.md`, and `tasks/<id>/plan.md` so a teammate can resume. A tracked board, brief, and `task.md` are read from `<queue>`. A tracked `plan.md` is read from the task branch. A gitignored or untracked file is still read from the working tree, so a queue that stays local keeps working. Do not commit `jt-queue/lessons.md` (notes for this agent, not the task), any `.env` or private key, or `.git/jt-queue/`: `approved-commands.json` is the permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter.
 
 ## 2. Board Line Format & Status Permissions
 
@@ -20,7 +20,7 @@ This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `
 
 - `<id>` must match `^\d+(\.\d+)*$` with no path traversal.
 - Allowed status tokens: `ask:`, `review:`, `send-back:`, `merge:`, `drop:`. Any other colon token in the status slot stops the queue with `unknown-status`.
-- **Agent permissions:** May add human-approved new task lines, but must update status tokens on existing lines **only** via `gate.py ask` and `gate.py reach-review --write`. Never write `merge:` or `drop:`. Never run `gate.py approve-commands` and never change `<TEST_CMD>`, `<SETUP_CMD>`, `<LINT_CMD>`, `<TYPECHECK_CMD>`, or a task's screen-check commands to make a refusal pass; the human approves those commands (stored in `.git`, outside every branch).
+- **Agent permissions:** May add task lines that an approved spec covers without a second approval, and other new task lines only after a human approves them. Must update status tokens on existing lines **only** via `gate.py ask` and `gate.py reach-review --write`. Never write `merge:` or `drop:`. Never run `gate.py approve-commands` and never change `<TEST_CMD>`, `<SETUP_CMD>`, `<LINT_CMD>`, `<TYPECHECK_CMD>`, or a task's screen-check commands to make a refusal pass; the human approves those commands once per machine (stored in `.git`, outside every branch). A spec approval does not replace that, and it does not merge.
 - **Human permissions (`/jt-review`):** Writes `merge:`, `send-back:`, and `drop:`. Answers `ask:` by updating `jt-queue/tasks/<id>/task.md` until intent is closed and clearing the `ask:` heading; on the next run, `gate.py next` resumes the task (`question-cleared`) and `reach-review --write` replaces `ask:` with `review:`.
 - `needs:` names work in another repository (for example a backend task for a frontend task) that must land first. It is text for the human: the gate never reads it and never refuses because of it.
 - Same-topic tasks sharing `layer:` must link each other under `refs:`. Do not split into parallel agents without a link.
@@ -86,3 +86,7 @@ queue: main
 ## 6. Size (`small`, `medium`, `large`)
 
 `size:` on the task is `small`, `medium`, or `large`. The agent sets it when it creates the task or the spec. Unset means `medium`. A `size:` token on that board line overrides the task, including downward; the gate itself never lowers the floor. Each of these raises it one step, capped at `large`: a changed path that names auth (`auth`, `login`, `session`, `password`, `oauth`; not `author`), a migration or `.sql` file, or a diff over `<DIFF_LIMIT>` added and deleted lines (empty means 400). `allowed` prints `size:`. When the floor was raised it also prints `size-from:` and `escalate:` (`auth`, `migrations`, `diff`). `small` runs `<AFFECTED_TEST_CMD>` when that cell is set, or `<TEST_CMD>` when it contains `{files}` (filled with the affected test paths). Otherwise, and when no affected test can be named, it runs the full `<TEST_CMD>` and prints `affected: none -> full suite`. It does not append paths to a command that did not ask for them. An `<AFFECTED_TEST_CMD>` with no `{files}` runs as written and prints `affected: command`. `medium` and `large` run `<TEST_CMD>` unchanged. `large` also prints `size-hooks: worktree-rounds, fresh-context-review, high-risk`. Those three are only recorded here. `small` needs no spec and uses `/jt-add-task`. `medium` is a short spec. `large` is a full spec.
+
+## 7. Spec pass lines
+
+When `task.md` sets `spec:` to a `spec.md` inside the repo, every `pass:` line is `- <AC id or EC id>: <Then>` copied from that row. `reach-review` refuses `pass-ac` when an id is missing or the text is not that Then, and `spec-unapproved` when the spec has no human `✅` approval or an open question Blocks `dev` or `AC`. No `spec:` line means these checks do not run. One spec approval covers the tasks derived from it: `/jt-add-task` does not ask again, and `/jt-work` does not ask the human to approve each of those tasks or pass lines. Shell commands still need the one-time `approve-commands` on this machine. `/jt-review` stays human-only.

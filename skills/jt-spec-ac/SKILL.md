@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.3.0"
+  version: "24.4.0"
   short-description: Draft story, rules, acceptance criteria, and questions
 argument-hint: "<work> [text or path of a PDF or image]"
 ---
@@ -21,7 +21,7 @@ Goal: the PO approves a draft instead of writing one, and what two devs could bu
 
 ## Composed skills
 
-When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to sharpen the draft; `check.py` still blocks approval while a question blocks `AC`. When **brainstorming** (superpowers) is installed and the card or flow is unclear, invoke it before drafting. If a skill is missing: one short question round per [references/rules.md](references/rules.md) step 5.
+When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to sharpen the draft; `check.py` still blocks approval while a question blocks `dev` or `AC`. When **brainstorming** (superpowers) is installed and the card or flow is unclear, invoke it before drafting. If a skill is missing: one short question round per [references/rules.md](references/rules.md) step 5.
 
 ## Before drafting
 
@@ -63,10 +63,10 @@ When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to shar
 
 **approve:** ❌ waiting for PO
 
-| # | Given | When | Then |
-|---|---|---|---|
-| AC1 | | | |
-| EC1 | | | |
+| # | Given | When | Then | Guards |
+|---|---|---|---|---|
+| AC1 | | | | |
+| EC1 | | | | AC1 |
 
 ## Questions
 
@@ -80,6 +80,7 @@ When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to shar
 ```
 
 - Blocks: `AC` = needed to approve · `dev` = needed before dev start the work · `later` = changes nothing structural
+- EC Guards names its AC. A missing link fails. No Guards column prints a migration line.
 - The PO approves in chat, or by editing the line to `**approve:** ✅ <name> · <YYYY-MM-DD>`
 
 ## After drafting

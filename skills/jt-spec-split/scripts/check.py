@@ -7,6 +7,8 @@ ERROR, exit 1:
   - the first line is not the <!-- scrum-spec --> marker
   - a table row has a different number of cells than its header
   - an approval or a decision without a person and a date, or given by an AI
+  - a ✅ approval while an open question Blocks dev or AC
+  - an EC row whose Guards cell names no AC, or names an AC that is not in the table
   - any text cites a D that does not exist, including "(incl. D<n>)" and a warning
     mark before D<n> (a capitalized name such as "Room D1" is not a citation)
   - a path in Source does not exist in the git root or a code_roots path
@@ -14,7 +16,8 @@ ERROR, exit 1:
 
 Reported, exit 0: approval status, open and blocking questions, assumptions waiting
 for the asked role, answers not yet recorded as decisions, AC and EC with no test step,
-vague words in AC and EC.
+vague words in AC and EC. An Acceptance Criteria table with no Guards column prints
+a migration line and does not fail; EC links are checked only when that column exists.
 A ## Tasks section from scrum-spec 0.2 is kept as it is; its paths and AC are not checked.
 
 Read-only, standard library only, Python 3.10+.
@@ -41,6 +44,12 @@ D_REF = re.compile(r"\bD(\d+)\b")
 NAMED_D = re.compile(r"[A-Z][A-Za-z]* $")
 OTHER_SPEC = re.compile(r"\bper \S+ D\d+")  # "per rb-12 D3:" cites another spec's decision
 AC_ID = re.compile(r"\b(?:AC|EC)\d+\b")
+GUARDS = "Guards"
+_EMPTY_GUARD = frozenset({"", "-", "–", "—"})
+MIGRATION_GUARDS = (
+    "migration: Acceptance Criteria has no Guards column. "
+    "Add Guards so each EC names the AC it guards. EC links were not checked."
+)
 VAGUE_WORDS = ("fast", "nice", "user-friendly", "เร็ว", "สวย", "ง่าย")
 CODE = re.compile(r"`([^`]+)`(\s*\(new\))?")
 LINE_SUFFIX = re.compile(r"(:\d+(-\d+)?|#L\d+(-L?\d+)?)$")
@@ -83,6 +92,17 @@ def roots_for(doc: Path) -> list[Path] | None:
     return None
 
 
+def blocks_dev_or_ac(blocks: str) -> bool:
+    """True when Blocks names dev or AC (the values that stop a ✅ approval)."""
+    return bool({"ac", "dev"} & set(re.findall(r"[A-Za-z]+", blocks.lower())))
+
+
+def guard_links(cell: str) -> list[str]:
+    if cell.strip() in _EMPTY_GUARD:
+        return []
+    return re.findall(r"\bAC\d+\b", cell)
+
+
 def looks_like_path(token: str) -> bool:
     """A relative path with a folder, e.g. src/a.ts; not user.role, v0.2.0 or /bookings."""
     return "/" in token and not token.startswith("/") and not re.search(r"[\s<>*{}$|:]|://", token)
@@ -101,6 +121,8 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
             if len(row) != len(header):
                 errors.append(f"line {n}: {len(row)} cells, the header has {len(header)}")
 
+    qs = questions_from(tables)
+    blocking_approval = [q for q in qs if q["open"] and blocks_dev_or_ac(q["blocks"])]
     for n, line in sorted(x for v in sections.values() for x in v):
         if line.startswith("**approve:**"):
             value = line.split("**approve:**", 1)[1].strip()
@@ -111,6 +133,10 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
                     errors.append(f"line {n}: approval must read ✅ <name> · YYYY-MM-DD")
                 elif is_ai(who.group(1)):
                     errors.append(f"line {n}: approval must come from a person, not an AI")
+                for q in blocking_approval:
+                    errors.append(
+                        f"line {n}: approval is blocked while {q['id']} blocks {q['blocks'].strip()}"
+                    )
 
     defined_d = set()
     for n, line in sections.get("Decisions", []):
@@ -154,6 +180,29 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
     if vague:
         notes.append("vague words in AC/EC: " + ", ".join(vague))
 
+    told_migration = False
+    for section, header, rows in tables:
+        if section != "Acceptance Criteria":
+            continue
+        if GUARDS not in header:
+            if not told_migration:
+                notes.append(MIGRATION_GUARDS)
+                told_migration = True
+            continue
+        at = header.index(GUARDS)
+        ac_ids_present = {row[0] for _, row in rows if row and re.fullmatch(r"AC\d+", row[0])}
+        for n, row in rows:
+            if not row or not re.fullmatch(r"EC\d+", row[0]):
+                continue
+            cell = row[at] if at < len(row) else ""
+            linked = guard_links(cell)
+            if not linked:
+                errors.append(f"line {n}: {row[0]} must name the AC it guards")
+                continue
+            for ac in linked:
+                if ac not in ac_ids_present:
+                    errors.append(f"line {n}: {row[0]} guards {ac}, which is not an AC")
+
     roots = roots_for(doc.resolve())
     if roots is None:
         notes.append("paths not checked: no git repo found")
@@ -168,7 +217,6 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
                 if not any((root / path).exists() for root in roots):
                     errors.append(f"line {n}: `{token}` not found (add (new) if it will be created)")
 
-    qs = questions_from(tables)
     open_q = [q["id"] for q in qs if q["open"]]
     blocking = [f"{q['id']} ({q['blocks']} · {q['ask']})" for q in qs if q["blocking"]]
     assumed = [f"{q['id']} ({q['ask']})" for q in qs if q["assumed"]]

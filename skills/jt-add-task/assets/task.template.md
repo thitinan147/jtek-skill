@@ -26,6 +26,10 @@ do:
 out:
 - 
 
+# spec: path of spec.md when this task comes from an approved spec. Empty when there is no spec.
+# pass: lines are then "- <AC id>: <Then>" copied from that row. A vague line cannot be checked.
+spec:
+
 # Each pass line is something to run or open. A vague line cannot be checked.
 pass:
 - 

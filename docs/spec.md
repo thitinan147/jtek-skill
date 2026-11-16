@@ -12,7 +12,7 @@ The PO gets a draft instead of a blank page, dev get acceptance criteria with th
 - **A person's name and a date.** Decisions and the AC approval record who decided. `check.py` fails an approval or a decision given by an AI, and it fails one that has no name and date.
 - **Facts come from the code.** The skill reads every repo in `code_roots` before it asks. People are asked only for decisions.
 - **You can answer in the file.** Write in the Answer cell, or edit the approve line. The next run records it.
-- **These commands do not break work into tasks, estimate, assign owners, write code, commit, or delete.** Dev decide how to build. The queue commands (`/jt-add-task`, `/jt-work`) are the task list.
+- **These commands do not break work into tasks, estimate, assign owners, write code, commit, or delete.** Dev decide how to build. The queue commands (`/jt-add-task`, `/jt-work`) are the task list. When `/jt-add-task` splits an approved spec into tasks, each `pass:` line is copied from an AC or EC (`- <id>: <Then>`), and the gate checks that id. One spec approval covers those tasks. `/jt-review` is still the only merge.
 
 ## Commands
 
@@ -54,8 +54,8 @@ roles: PO, BE, UX, QA
 python3 -I <skill folder>/scripts/check.py scrum-spec/
 ```
 
-- **Exit 1:** missing marker, a broken table row, an approval or decision without a person and a date or given by an AI, a reference to a D that does not exist (including `(incl. D<n>)` and a warning mark before `D<n>`), a path in Source that does not exist (add `(new)` for a file still to be created)
-- **Reported, exit 0:** approval status, open and blocking questions, answers not yet recorded, assumptions still waiting, AC/EC with no test step, vague words in AC and EC
+- **Exit 1:** missing marker, a broken table row, an approval or decision without a person and a date or given by an AI, a `✅` approval while an open question Blocks `dev` or `AC`, an EC whose `Guards` cell names no AC or names an AC that is not in the table, a reference to a D that does not exist (including `(incl. D<n>)` and a warning mark before `D<n>`), a path in Source that does not exist (add `(new)` for a file still to be created)
+- **Reported, exit 0:** approval status, open and blocking questions, answers not yet recorded, assumptions still waiting, AC/EC with no test step, vague words in AC and EC. A table that still has `| # | Given | When | Then |` and no `Guards` column prints `migration:` and does not fail. Add `Guards` when you next edit it. Each EC names the AC it guards (`AC1`, or `AC1 AC2`).
 
 ## The board
 
