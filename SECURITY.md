@@ -39,6 +39,7 @@ How this is kept in check:
 - No network calls are made by the queue scripts apart from `gh` and a connection check against `127.0.0.1` for screen checks. Setup commands you configure (for example `npm install`) can of course use the network.
 - **`scripts/check.py`** (the same file, copied into `jt-spec-ac`, `jt-spec-split`, and `jt-spec-handoff`) reads Markdown files you pass it and prints a report. It never writes or deletes files, runs no subprocess, and makes no network calls.
 - **`scripts/board.py`** reads that Markdown and writes `board.html` (or the path given with `--output`). It does not modify the Markdown. With `--open` it opens that file in the default browser. `board.py` itself makes no network calls. The HTML loads [Google Fonts](https://fonts.googleapis.com/) from `fonts.googleapis.com` and `fonts.gstatic.com` each time someone opens it.
+- **`scripts/flow.py`** (`/jt-board flow`) reads `jt-queue/` files, git history, and, when `gh` is installed, merged pull requests and items labelled `bug`. It prints metrics or `unknown`. It does not write files, merge, or print command output. A gate pass/fail row recorded by `reach-review` stays in `.git/jt-queue/gate-runs.jsonl` (id, time, result, reason). That file is not committed.
 - The spec commands tell the agent to read the repos in `code_roots` and write Markdown under `docs_root`. They do not commit, push, delete, or move files. `pdftotext` and `pdftoppm` run only on a PDF the user gave, when it is too large to read directly.
 
 ## Treating repository text as data

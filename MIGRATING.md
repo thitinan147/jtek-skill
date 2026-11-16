@@ -2,6 +2,14 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.9 to v24.10
+
+- **Flow metrics.** `/jt-board flow` prints lead time, gate fails, rework, review time, and escaped defects for the last 30 days, or for `--since` and `--until`. A missing source prints `unknown` and the reason. It does not guess, and it does not merge.
+- **Gate log.** `reach-review` appends pass and fail rows to `.git/jt-queue/gate-runs.jsonl` (id, time, result, reason). No command output. Leave it uncommitted, with `attempts.json`. Tasks from before this version have no rows, so gate fails stay `unknown` until the gate runs again on this machine.
+- **Escaped defects.** A git revert that names the task counts without `gh`. Bug-label links need `gh`. If `gh` is not installed, that source is `unknown`.
+- **Unchanged.** `/jt-board <flow>` still writes `board.html`. The gate checks and who can merge are unchanged.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.10.0 --skill jt-work`.
+
 ## Migrating from v24.8 to v24.9
 
 - **Agent instructions.** Run `/jt-setup` again, or `gate.py agents --root .`, and confirm before `--write`. `AGENTS.md` is the single source. `CLAUDE.md` imports it (`@AGENTS.md`) and does not copy the section. Text you already wrote stays. The jtek section is the part between `::: jtek:start` and `::: jtek:end`.

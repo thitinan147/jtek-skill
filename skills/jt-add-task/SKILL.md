@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional.
 metadata:
   author: Thitinan
-  version: "24.9.0"
+  version: "24.10.0"
   short-description: Agree the brief and add tasks to the board
 argument-hint: "[task text]"
 ---

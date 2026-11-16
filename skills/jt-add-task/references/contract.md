@@ -1,4 +1,4 @@
-# Task Queue Contract, version 24.9
+# Task Queue Contract, version 24.10
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
@@ -10,7 +10,7 @@ This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `
 - `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `size:`, `spec:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, `## ai-review`, and `## decisions`.
 
-Commit `board.md`, `brief.md`, `tasks/<id>/task.md`, and `tasks/<id>/plan.md` so a teammate can resume. A tracked board, brief, and `task.md` are read from `<queue>`. A tracked `plan.md` is read from the task branch. A gitignored or untracked file is still read from the working tree, so a queue that stays local keeps working. Do not commit `jt-queue/lessons.md` (notes for this agent, not the task), any `.env` or private key, or `.git/jt-queue/`: `approved-commands.json` is the permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter.
+Commit `board.md`, `brief.md`, `tasks/<id>/task.md`, and `tasks/<id>/plan.md` so a teammate can resume. A tracked board, brief, and `task.md` are read from `<queue>`. A tracked `plan.md` is read from the task branch. A gitignored or untracked file is still read from the working tree, so a queue that stays local keeps working. Do not commit `jt-queue/lessons.md` (notes for this agent, not the task), any `.env` or private key, or `.git/jt-queue/`: `approved-commands.json` is the permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, `attempts.json` is this machine's round counter, and `gate-runs.jsonl` is this machine's gate pass/fail log (id, time, result, and reason; never command output).
 
 ## 2. Board Line Format & Status Permissions
 
