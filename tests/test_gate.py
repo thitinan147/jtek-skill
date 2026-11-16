@@ -40,6 +40,7 @@ def board_text(
     lint: str = "",
     typecheck: str = "",
     diff_limit: str | None = None,
+    affected: str | None = None,
 ) -> str:
     pair_line = "" if pair is None else f"pair: {pair}\n\n"
     repos_block = f"## repos\n\n{repos}\n\n" if repos else ""
@@ -56,6 +57,7 @@ def board_text(
         f"| `<BROWSER_TOOL>` | {browser} |\n"
         f"| `<STACK_LOCK>` | {stack} |\n"
         + ("" if diff_limit is None else f"| `<DIFF_LIMIT>` | {diff_limit} |\n")
+        + ("" if affected is None else f"| `<AFFECTED_TEST_CMD>` | {affected} |\n")
         + "| `<TEK_SKILLS>` | grill |\n"
         "| `<REPO_SKILLS>` | review-skill |\n\n"
         f"{repos_block}"
@@ -3214,10 +3216,64 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertFalse(gate.is_task_head("task-123", "12"))
         self.assertFalse(gate.is_task_head("task-1.1-split", "1"))
         self.assertFalse(gate.is_task_head("task-12-a/b", "12"))
+        self.assertTrue(gate.is_task_head("feat/BOOK-12-room-search", "12", "BOOK-12"))
+        self.assertTrue(gate.is_task_head("feat/BOOK-12", "12", "BOOK-12"))
+        self.assertTrue(gate.is_task_head("feat/#45-login-fix", "12", "#45"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-12-room-search", "12", "BOOK-99"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-99-room-search", "12", "BOOK-12"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-12-room", "12", "BOOK-1"))
+        self.assertFalse(gate.is_task_head("feat/BOOK-1-room", "12", "BOOK-12"))
+        self.assertFalse(gate.is_task_head("feat/#45-fix", "12", "#4"))
+        self.assertFalse(gate.is_task_head("feat/#4-fix", "12", "#45"))
+        self.assertTrue(gate.is_task_head("style/BOOK-12-format", "12", "BOOK-12"))
+
+    def test_ticket_id_normalization(self) -> None:
+        text = "ticket: 'BOOK-12'  # Jira\n"
+        self.assertEqual(gate.ticket_id_in_card(text), "BOOK-12")
+        self.assertEqual(gate.ticket_id_in_card('ticket: "#45"\n'), "#45")
+        self.assertEqual(gate.ticket_id_in_card("ticket: BOOK-12  # note\n"), "BOOK-12")
+
+    def test_default_branch_uses_board_kind(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text("# 12\n\nticket: BOOK-12\n", encoding="utf-8")
+        (self.repo / "jt-queue" / "board.md").write_text(
+            "# Board\n\nqueue: main\n\n## main\n\n- [ ] **12** format (style)\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.task_branch(self.repo, "12"), "style/BOOK-12")
+
+    def test_branch_deprecated_note_for_legacy_branch(self) -> None:
+        git(self.repo, "branch", "task-12-login")
+        note = gate.task_branch_deprecation_note(self.repo, "12")
+        self.assertIn("branch-deprecated:", note)
+        self.assertIn("legacy task-<id>", note)
+
+    def test_ticket_id_in_card(self) -> None:
+        self.assertEqual(gate.ticket_id_in_card(""), "")
+        self.assertEqual(gate.ticket_id_in_card("do: x\n"), "")
 
     def test_bare_name_when_no_branch(self) -> None:
         self.assertEqual(gate.task_branch(self.repo, "12"), "task-12")
         self.assertFalse(gate.has_one_task_branch(self.repo, "12"))
+
+    def test_default_conventional_name_when_ticket_present(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text(
+            "# 12 - x\n\nticket: BOOK-12\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.task_branch(self.repo, "12"), "feat/BOOK-12")
+
+    def test_conventional_branch_is_the_task_branch(self) -> None:
+        task_dir = self.repo / "jt-queue" / "tasks" / "12"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "task.md").write_text("# 12\n\nticket: BOOK-12\n", encoding="utf-8")
+        git(self.repo, "branch", "feat/BOOK-12-room-search")
+        git(self.repo, "branch", "task-123-other")
+        self.assertEqual(gate.task_branch(self.repo, "12"), "feat/BOOK-12-room-search")
+        self.assertTrue(gate.has_one_task_branch(self.repo, "12"))
 
     def test_one_slug_branch_is_the_task_branch(self) -> None:
         git(self.repo, "branch", "task-12-login")
@@ -3242,6 +3298,14 @@ class TaskBranchNameTests(unittest.TestCase):
         self.assertFalse(gate._head_matches("task-12-login", "task-12"))
         self.assertFalse(gate._head_matches("task-12-login", "task-12-other", fuzzy=True))
         self.assertFalse(gate._head_matches("task-123", "task-12", fuzzy=True))
+        self.assertTrue(
+            gate._head_matches(
+                "feat/BOOK-12-room-search",
+                "feat/BOOK-12",
+                fuzzy=True,
+                ticket_id="BOOK-12",
+            )
+        )
 
 
 class SizeRuleTests(unittest.TestCase):
@@ -3314,6 +3378,34 @@ class SizeRuleTests(unittest.TestCase):
             self.assertIn("type/<ticket-id>-<slug>", hint)
             self.assertNotIn("task-<id>", hint)
 
+    def test_small_runs_the_full_suite_unless_the_board_says_how(self) -> None:
+        full, note = gate.test_command_for("small", "make test", ["tests/test_app.py"])
+        self.assertEqual((full, note), ("make test", "none -> full suite"))
+        missing, note = gate.test_command_for("small", "pytest {files}", [])
+        self.assertEqual((missing, note), ("pytest", "none -> full suite"))
+        scoped, note = gate.test_command_for("small", "pytest {files}", ["tests/test_app.py"])
+        self.assertEqual((scoped, note), ("pytest tests/test_app.py", "tests/test_app.py"))
+        own, note = gate.test_command_for("small", "npm test", ["tests/test_app.py"], "npx vitest --changed")
+        self.assertEqual((own, note), ("npx vitest --changed", "command"))
+        filled, note = gate.test_command_for(
+            "small", "npm test", ["tests/test_app.py"], "npx jest --findRelatedTests {files}"
+        )
+        self.assertEqual((filled, note), ("npx jest --findRelatedTests tests/test_app.py", "tests/test_app.py"))
+        fallback, note = gate.test_command_for("small", "npm test", [], "npx jest --findRelatedTests {files}")
+        self.assertEqual((fallback, note), ("npm test", "none -> full suite"))
+        none, note = gate.test_command_for("small", gate.NO_SUITE, [])
+        self.assertEqual((none, note), (None, "none"))
+        medium, note = gate.test_command_for("medium", "make test", ["tests/test_app.py"])
+        self.assertEqual((medium, note), ("make test", ""))
+
+    def test_empty_affected_test_cmd_stays_out_of_the_approval(self) -> None:
+        plain = gate._board_commands(board_text("no cards"))
+        empty = gate._board_commands(board_text("no cards", affected=""))
+        self.assertEqual(plain, empty)
+        self.assertNotIn("AFFECTED_TEST_CMD", plain)
+        filled = gate._board_commands(board_text("no cards", affected="pytest --testmon"))
+        self.assertEqual(filled["AFFECTED_TEST_CMD"], "pytest --testmon")
+
 
 class SizeTierTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -3376,13 +3468,19 @@ class SizeTierTests(unittest.TestCase):
         line: str = "- [ ] **12** fresh (feat)",
         test: str | None = None,
         diff_limit: str | None = None,
+        affected: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         (self.repo / "jt-queue" / "tasks" / "12" / "task.md").write_text(
             card_body(["app.py"], size=size),
             encoding="utf-8",
         )
         (self.repo / "jt-queue" / "board.md").write_text(
-            board_text(line, test=gate.NO_SUITE if test is None else test, diff_limit=diff_limit),
+            board_text(
+                line,
+                test=gate.NO_SUITE if test is None else test,
+                diff_limit=diff_limit,
+                affected=affected,
+            ),
             encoding="utf-8",
         )
         return run_gate(self.repo, "reach-review", "--id", "12")
@@ -3394,7 +3492,7 @@ class SizeTierTests(unittest.TestCase):
                 "tests/test_app.py": "def test_app():\n    pass\n",
             }
         )
-        result = self._reach(size="small", test=self._marker_cmd())
+        result = self._reach(size="small", test=self._marker_cmd() + " {files}")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("size: small", result.stdout)
         self.assertNotIn("escalate:", result.stdout)
@@ -3476,7 +3574,7 @@ class SizeTierTests(unittest.TestCase):
         result = self._reach(size="small")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("size: small", result.stdout)
-        self.assertIn("affected: none", result.stdout)
+        self.assertIn("affected: none\n", result.stdout)
         self.assertNotIn("escalate:", result.stdout)
 
     def test_auth_and_migrations_stack_to_large(self) -> None:
@@ -3487,10 +3585,42 @@ class SizeTierTests(unittest.TestCase):
         self.assertIn("escalate: auth, migrations", result.stdout)
         self.assertIn("size-hooks: worktree-rounds, fresh-context-review, high-risk", result.stdout)
 
-    def test_small_with_no_affected_test_skips_the_suite(self) -> None:
+    def test_small_with_no_affected_test_runs_the_full_suite(self) -> None:
         self._land({"app.py": "VALUE = 1\n"})
         result = self._reach(size="small", test=self._marker_cmd())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("affected: none", result.stdout)
-        self.assertIn("tests skip", result.stdout)
+        self.assertIn("affected: none -> full suite", result.stdout)
+        self.assertIn("tests ok", result.stdout)
+        self.assertEqual(self.marker.read_text(encoding="utf-8"), "")
+
+    def test_small_does_not_append_paths_without_a_slot(self) -> None:
+        self._land(
+            {
+                "app.py": "VALUE = 1\n",
+                "tests/test_app.py": "def test_app():\n    pass\n",
+            }
+        )
+        result = self._reach(size="small", test=self._marker_cmd())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("affected: none -> full suite", result.stdout)
+        self.assertEqual(self.marker.read_text(encoding="utf-8"), "")
+
+    def test_affected_test_cmd_runs_instead_of_the_full_suite(self) -> None:
+        self._land(
+            {
+                "app.py": "VALUE = 1\n",
+                "tests/test_app.py": "def test_app():\n    pass\n",
+            }
+        )
+        scoped = self.repo.parent / f"{self.repo.name}-scoped"
+        self.addCleanup(scoped.unlink, missing_ok=True)
+        scoped_cmd = (
+            'python3 -c "import pathlib,sys; pathlib.Path(\''
+            + str(scoped)
+            + '\').write_text(\' \'.join(sys.argv[1:]))" {files}'
+        )
+        result = self._reach(size="small", test=self._marker_cmd(), affected=scoped_cmd)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("affected: tests/test_app.py", result.stdout)
         self.assertFalse(self.marker.exists())
+        self.assertIn("tests/test_app.py", scoped.read_text(encoding="utf-8"))

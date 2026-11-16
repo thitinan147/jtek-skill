@@ -36,14 +36,14 @@ Pass your task directly to `/jt-add-task`:
 - **Verification tiers:** See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md).
   - **`Quick`:** `docs` limited to documentation files, or `style` without `screen: yes`. The test command passes, or the board says `no-suite`. No `plan.md` and no `diff-check`.
   - **`Standard`:** Every other kind. Requires `tasks/<id>/plan.md` from [`skills/jt-work/assets/plan.template.md`](../skills/jt-work/assets/plan.template.md), a passing test command, a `## review-diff` that cites the latest code commit, and `gate.py screen-check` when `screen: yes`.
-- **Size:** `size:` is `small`, `medium`, or `large` (unset means `medium`). The agent sets it on the task; `size:` on the board line overrides it. `small` needs no spec and the gate runs only the affected tests. `medium` is a short spec and the full test command. `large` is a full spec. The gate may raise the size and never lowers it. `<DIFF_LIMIT>` (empty means 400) is the large-diff line count.
+- **Size:** `size:` is `small`, `medium`, or `large` (unset means `medium`). The agent sets it on the task; `size:` on the board line overrides it. `small` needs no spec. The gate runs affected tests only when `<AFFECTED_TEST_CMD>` is set or `<TEST_CMD>` contains `{files}`; otherwise the full command. `medium` is a short spec and the full test command. `large` is a full spec. The gate may raise the size and never lowers it. `<DIFF_LIMIT>` (empty means 400) is the large-diff line count.
 
 ## 3. Work the queue (`do-task`)
 `/jt-work` is one command. There is no `--loop` flag. With no argument it keeps following `gate.py next` until `next` is `wait` or `stop`: a `send-back:` task first, then an `ask:` whose question is cleared, then ready tasks in `first`, then `main`, then `later`. A task whose files overlap an open `review:` or `send-back:` is skipped. `/jt-work <ticket-id>` works only that ticket (the `ticket:` line, or the board id) and then stops.
 
 ```text
 /jt-work
-/jt-work BOOK-12
+/jt-work '#45'
 ```
 
 Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a human approves the exact command strings:
@@ -52,7 +52,7 @@ Before the gate runs `<TEST_CMD>` (or a task `start:` / `click:` command), a hum
 python3 skills/jt-work/scripts/gate.py approve-commands --root . --id 001
 ```
 
-Commit code on the task branch `task-<id>-<slug>` (for example `task-12-login-rate-limit`; the slug is ASCII `a-z0-9` words joined by `-`; a plain `task-<id>` still works), not `jt-queue/`. Keep one branch per task: the gate finds it by the `task-<id>` prefix and refuses `task-branch-missing` when there are two. The conventional branch `feat/BOOK-12-room-search` is the name to aim for later; this version of the gate does not look it up, so `/jt-work` does not create it. The commit subject and the PR title are `type(scope): summary (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. The ticket id is copied from the ticket. The type is the task kind. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push the branch and open one draft PR (`gh pr create --draft --base <queue> --head task-<id>-<slug> --title 'feat(booking): add room search API (BOOK-12)' --body 'Task <id> from jt-queue.'`). `reach-review --write` refuses with `pr-missing` until that open draft PR has the task branch as head and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
+Commit code on the task branch `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`; the slug is ASCII `a-z0-9` words joined by `-`). Legacy `task-<id>-<slug>` still works. Keep one branch per task; the gate refuses `task-branch-missing` when there are two. The commit subject and the PR title are `type(scope): summary (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. The ticket id is copied from `ticket:`. The type is the task kind. On `<queue>`, run `reach-review --root . --id <id>`. When it prints `allowed`: if there is no remote, run `reach-review --root . --id <id> --write --link local`. If a remote exists, push the branch and open one draft PR (`gh pr create --draft --base <queue> --head feat/BOOK-12-room-search --title 'feat(booking): add room search API (BOOK-12)' --body 'Task <id> from jt-queue.'`). `reach-review --write` refuses with `pr-missing` until that open draft PR has the task branch as head and base `<queue>`, then run `reach-review --root . --id <id> --write`. That writes `review:` on `jt-queue/board.md`.
 
 ## 4. Review and land (`review:` → `merge:` / `send-back:` / `drop:`)
 When one or more tasks reach `review:`, the human runs:

@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.1. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.2. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`.
 
 queue:
 
@@ -11,6 +11,7 @@ queue:
 | Value | In this repo |
 |---|---|
 | `<TEST_CMD>` | |
+| `<AFFECTED_TEST_CMD>` | |
 | `<SETUP_CMD>` | |
 | `<TYPECHECK_CMD>` | |
 | `<LINT_CMD>` | |
@@ -27,6 +28,8 @@ Frontend and backend in separate repos: add a `## repos` section that names each
 Task kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 
 Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `size:`. A task line may say `size: small`, `size: medium`, or `size: large`; that overrides `size:` in the task. Empty means `medium`.
+
+Empty `<AFFECTED_TEST_CMD>` means `small` runs the full `<TEST_CMD>`. Set it to narrow that run (`npx vitest --changed`, `npx jest --findRelatedTests {files}`, `pytest --testmon`), or put `{files}` in `<TEST_CMD>`. `{files}` is the affected test paths. When none can be named, `small` still runs the full suite.
 
 Pick **first**, then **main**, then **later**.
 

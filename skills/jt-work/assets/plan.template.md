@@ -6,10 +6,10 @@ The agent's working notes. The human does not accept a plan before review opens.
 - kind:
 - round: 1
 - round-status: working
-- Branch: task-<id>-<slug>
+- Branch: type/<ticket-id>-<slug>
 - Commit: <type>(<scope>): <summary> (<ticket-id>)
 
-The gate finds `task-<id>-<slug>` only. `feat/BOOK-12-room-search` is the conventional branch name and is not created for a queue task yet. `<ticket-id>` is copied from the ticket (`BOOK-12`, `#45`, a Notion id).
+`<ticket-id>` is copied from the ticket (`BOOK-12`, `#45`, a Notion id). The gate looks up `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works.
 
 ## Goal
 
@@ -87,8 +87,8 @@ Raise `round:` by one. Add a line to `jt-queue/lessons.md` for each point.
 
 Review this task's diff, not your memory of it. Report only what you confirmed by following the code from source to effect. A finding you could not confirm is not a finding.
 
-sha: <latest code commit on task-<id>>
-(Across repos: instead of sha:, write one `<repo>: <latest code commit on task-<id> in that repo>` line per repo under `repos:`.)
+sha: <latest code commit on the task branch>
+(Across repos: instead of sha:, write one `<repo>: <latest code commit on the task branch in that repo>` line per repo under `repos:`.)
 verdict: pass | fix-needed
 checked: scope - every changed file is under `files:`
 checked: out - nothing under `out:` was touched
