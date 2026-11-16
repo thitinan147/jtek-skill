@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.1.1"
+  version: "24.2.1"
   short-description: Write test steps for the tester
 argument-hint: "<work>"
 ---
@@ -16,6 +16,8 @@ argument-hint: "<work>"
 **HUMAN-ONLY COMMAND.** Read [references/rules.md](references/rules.md) and follow it. This command writes Test steps in `spec.md`. A PDF or image: also read [references/input.md](references/input.md).
 
 `/jt-spec-handoff <work>` · once no question blocks `AC`, so the tester starts on day one of the Sprint, in parallel with dev · readers know the product, not the code
+
+This finishes a `large` spec. A `medium` spec stops after `/jt-spec-ac`. `small` does not have a spec.
 
 ## Before drafting
 

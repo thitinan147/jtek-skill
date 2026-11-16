@@ -1,12 +1,12 @@
-# Task Queue Contract, version 24
+# Task Queue Contract, version 24.2
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
 ## 1. Files & Branch Locations
 
-- `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`).
+- `jt-queue/board.md`: Queue state and project command table (`<TEST_CMD>`, `<AFFECTED_TEST_CMD>`, `<SETUP_CMD>`, `<TYPECHECK_CMD>`, `<LINT_CMD>`, `<BROWSER_TOOL>`, `<STACK_LOCK>`).
 - `jt-queue/brief.md`: Optional round brief accepted by the human.
-- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
+- `jt-queue/tasks/<id>/task.md`: Task contract (`kind:`, `size:`, `layer:`, `screen:`, `do:`, `out:`, `pass:`, `files:`, `needs:`, `refs:`, `ask:`; the screen-check command fields are described in `task.template.md`).
 - `jt-queue/tasks/<id>/plan.md`: Required for `Standard` tier, optional for `Quick` tier. Contains `## Goal`, `## Architecture`, `## Files`, `## Steps`, `## Out of scope`, `## Done when`, `## Escape`, `## evidence`, `## review-diff`, and `## decisions`.
 
 `jt-queue/` is gitignored by default, so the gate reads these paths from the working tree and they are never part of a commit or a push. Only when a path is tracked is it read from a branch: the board, brief, and `task.md` from `<queue>`, and `plan.md` from the task branch.
@@ -78,7 +78,11 @@ queue: main
 ```
 
 - One `### <name>` block per repo (`[a-z][a-z0-9-]*`, not a status word such as `merge`). Exactly one has `path: .` and nothing else: the home repo, whose commands stay in the main table. Every other `path:` is relative to home's main worktree and must be the top of its own git repo. `next` stops with `repo-invalid`, `not-ready` (`be.TEST_CMD`), or `repo-missing`.
-- `approve-commands` covers each repo's `path:`, `queue:`, `TEST_CMD`, and `SETUP_CMD`, plus `LINT_CMD` and `TYPECHECK_CMD` when that cell is not empty, and a task's per-repo screen-check commands. Changing any of them refuses with `commands-changed`. An empty lint or typecheck cell is left out of the hash, so a v22 approval still matches until one of those cells is set.
+- `approve-commands` covers each repo's `path:`, `queue:`, `TEST_CMD`, and `SETUP_CMD`, plus `LINT_CMD`, `TYPECHECK_CMD`, and `AFFECTED_TEST_CMD` when that cell is not empty, and a task's per-repo screen-check commands. Changing any of them refuses with `commands-changed`. An empty lint, typecheck, or affected-test cell is left out of the hash, so a v22 approval still matches until one of those cells is set.
 - `task.md`: `repos: fe, be` names the repos; none, or only home, keeps the single-repo rules. `files:` entries are `<repo>:<path>` (no prefix means home). `land: be, fe` is the landing order (default: `## repos` order). The screen-check commands take one line per repo, as `task.template.md` shows.
 - `reach-review` on such a task is always `Standard`: the task branch in every listed repo, each repo's `TEST_CMD` in its own worktree (a failure counts one round), `## review-diff` with one `<repo>: <sha>` line per repo, and `outside-files:` per repo. A task branch with code in an unlisted repo refuses with `repo-undeclared`. `--write` writes `review: fe:<url|local> be:<url|local>`.
 - `landed.py` prints `landed-<repo>:` for each repo and `landed: all` only when every repo has landed; it adds `order-warning:` when a repo landed before one earlier in `land:`. `merge:` needs `landed: all`.
+
+## 6. Size (`small`, `medium`, `large`)
+
+`size:` on the task is `small`, `medium`, or `large`. The agent sets it when it creates the task or the spec. Unset means `medium`. A `size:` token on that board line overrides the task, including downward; the gate itself never lowers the floor. Each of these raises it one step, capped at `large`: a changed path that names auth (`auth`, `login`, `session`, `password`, `oauth`; not `author`), a migration or `.sql` file, or a diff over `<DIFF_LIMIT>` added and deleted lines (empty means 400). `allowed` prints `size:`. When the floor was raised it also prints `size-from:` and `escalate:` (`auth`, `migrations`, `diff`). `small` runs `<AFFECTED_TEST_CMD>` when that cell is set, or `<TEST_CMD>` when it contains `{files}` (filled with the affected test paths). Otherwise, and when no affected test can be named, it runs the full `<TEST_CMD>` and prints `affected: none -> full suite`. It does not append paths to a command that did not ask for them. An `<AFFECTED_TEST_CMD>` with no `{files}` runs as written and prints `affected: command`. `medium` and `large` run `<TEST_CMD>` unchanged. `large` also prints `size-hooks: worktree-rounds, fresh-context-review, high-risk`. Those three are only recorded here. `small` needs no spec and uses `/jt-add-task`. `medium` is a short spec. `large` is a full spec.

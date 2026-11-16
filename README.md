@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.1.1
+npx skills add thitinan147/jtek-skill#v24.2.1
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.1.1
+/plugin marketplace add thitinan147/jtek-skill#v24.2.1
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.1.1` the marketplace follows the default branch.
+Without `#v24.2.1` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.1.1 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.2.1 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -90,7 +90,7 @@ Spec (human types the command)          Queue
 ```
 
 1. **Queue files stay local; code lives on a branch.** `jt-queue/` is gitignored. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. When the board sets `<LINT_CMD>` or `<TYPECHECK_CMD>`, those must pass too.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. When the board sets `<LINT_CMD>` or `<TYPECHECK_CMD>`, those must pass too. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it.
 3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
 
 | Command | Who | What it does |
@@ -114,7 +114,7 @@ A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion
 
 ## Install before use
 
-[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md` (the shipped template includes the first two plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
+[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md` (the shipped template includes the first two plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
 
 The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`.
 
@@ -131,9 +131,9 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | [mise](https://mise.jdx.dev/installing-mise.html) | `curl -fsSL https://mise.run \| sh` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Pin tool versions; detect can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
 | [pre-commit](https://pre-commit.com/#install) + [typos](https://github.com/crate-ci/typos) / [actionlint](https://github.com/rhysd/actionlint) / [zizmor](https://docs.zizmor.sh/integrations/) | `python3 -m pip install pre-commit` then `pre-commit install` (hooks in `.pre-commit-config.yaml`) | on `git commit` | Typos, workflow lint, Actions security before the gate | — |
 | [reviewdog](https://github.com/reviewdog/reviewdog#installation) | `go install github.com/reviewdog/reviewdog/cmd/reviewdog@latest` | [`/jt-review`](skills/jt-review/SKILL.md) | Post lint or check annotations on PR lines | — |
-| Vitest affected | `vitest --changed` in `TEST_CMD` (requires Vitest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Run tests for touched files | `TEST_CMD` |
-| Jest related | `jest --findRelatedTests` in `TEST_CMD` (requires Jest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Run tests related to the diff | `TEST_CMD` |
-| [pytest-testmon](https://pypi.org/project/pytest-testmon/) | `python3 -m pip install pytest-testmon` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Pytest selection from edits | `TEST_CMD` |
+| Vitest affected | `npx vitest --changed` in `AFFECTED_TEST_CMD` (requires Vitest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Narrow tests on `small` tasks | `AFFECTED_TEST_CMD` |
+| Jest related | `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` (requires Jest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Related tests on `small` tasks | `AFFECTED_TEST_CMD` |
+| [pytest-testmon](https://pypi.org/project/pytest-testmon/) | `pytest --testmon` in `AFFECTED_TEST_CMD` after `pip install pytest-testmon` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Affected pytest modules on `small` tasks | `AFFECTED_TEST_CMD` |
 | [TruffleHog](https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation) | `curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \| sh -s -- -b /usr/local/bin` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Secret scan on commits or CI | `SECURITY_CMD` |
 | [Semgrep](https://docs.semgrep.dev/getting-started/cli) | `python3 -m pip install semgrep` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Static analysis; gate runs non-empty `LINT_CMD` on Standard tasks | `LINT_CMD` or `SECURITY_CMD` |
 | [OSV-Scanner](https://google.github.io/osv-scanner/installation/) | `brew install osv-scanner` or `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Dependency CVEs from OSV | `SECURITY_CMD` |

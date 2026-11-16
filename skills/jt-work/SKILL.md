@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.1.1"
+  version: "24.2.1"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
@@ -45,6 +45,7 @@ Choose your own implementation method (TDD, planning, subagents, worktrees are o
 | **Quick** | `docs` (doc files only), or `style` without `screen: yes` | `<TEST_CMD>` green (or `no-suite`), no one-off checker. No `plan.md` or `diff-check` needed. |
 | **Standard** | `fix`, `feat`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, and any escalated `docs`/`style` | A diff outside `jt-queue/` (none is refused), `plan.md` (from [assets/plan.template.md](assets/plan.template.md)) with an `## evidence` row for every `pass:` line, `## review-diff` against the latest code SHA (`gate.py diff-check`), `<TEST_CMD>` green, `<LINT_CMD>` and `<TYPECHECK_CMD>` green when that cell is not empty, and the JTek `gate.py screen-check` when `screen: yes`. |
 
+- **Size** is `small`, `medium`, or `large` on `size:` (unset means `medium`). A `size:` token on the board line overrides it. The gate never lowers it. `allowed` prints `size:`, and `escalate:` when auth, migrations, or a diff over `<DIFF_LIMIT>` (empty means 400) raised it. `small` runs affected tests only when `<AFFECTED_TEST_CMD>` is set or `<TEST_CMD>` contains `{files}`; otherwise it runs the full suite, including when no affected test can be named (`affected: none -> full suite`). `large` prints `size-hooks:` (`worktree-rounds`, `fresh-context-review`, `high-risk`); those are not built yet, so record the line and do not invent them.
 - **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review. A Standard branch with no diff outside `jt-queue/` does not pass.
 - **Gate report:** `allowed` prints one `gates:` line, always `tests`, `lint`, `typecheck`, `screen`, `review-diff`, `security`, `test-weakening`. An added `.env*` file other than `.env.example`, or private-key material, is `secret-suspect` and `next: ask`; the output names the file and never the value. A deleted test file or an added `.skip` / `.only` / `xit` / `@skip` marker is `test-weakening` on `allowed` (reported, not a refusal: it can be a rename or a real skip).
 - **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
