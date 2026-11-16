@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.12.0"
+  version: "24.13.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -23,7 +23,7 @@ Install one skill with `npx skills add thitinan147/jtek-skill --skill <name>` (a
 | `/jt-spec-split <flow>` | **human-only** | A flow → `<docs_root>/<flow>/map.md`, then one folder per story the PO confirms. |
 | `/jt-spec-ac <work>` | **human-only** | Story, rules, acceptance criteria, and questions in `spec.md`. |
 | `/jt-spec-handoff <work>` | **human-only** | Test steps for the tester, once no question blocks AC. |
-| `/jt-board [<flow> or flow]` | **human-only** | Spec `board.html`, or `flow` for lead time, gate fails, rework, review time, escaped defects, each task's owner, and which tasks have a handoff note. |
+| `/jt-board [<flow> or flow]` | **human-only** | Spec `board.html`, or `flow` for lead time, gate fails, rework, review time, escaped defects, each task's owner, which tasks have a handoff note, and which shared lessons are still `not yet` enforced. |
 | `/jt-setup` | human confirms | Write `jt-queue/board.md` and `AGENTS.md` after the human confirms. An existing file is merged. |
 | `/jt-add-task` | spec approval covers derived tasks | Agree `brief.md`, then draft tasks. The gate's `brief` and `add-task` actions both use this command. |
 | `/jt-work` | agent | Work ready tasks in board order, or one ticket id. Claims the task, leases its files, uses one worktree, and writes a handoff note when it stops without merging. Cannot merge. |
@@ -63,7 +63,7 @@ Files: `<docs_root>/<work>/spec.md` (default `docs_root` is `scrum-spec`, becaus
 
 ## Queue files
 
-Commit the queue files a teammate needs: `board.md`, `brief.md`, `claims.md` (who claimed a task, when, and which paths are leased), `tasks/<id>/task.md`, `tasks/<id>/plan.md` (its `## decisions`), and `tasks/<id>/handoff.md` (the resume note: state, what was done, what is left, the failing step, files, and the next command). Leave local files uncommitted: `lessons.md` (notes for this agent), `.env` and private keys, and `.git/jt-queue/` (`approved-commands.json` must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter; `gate-runs.jsonl` is this machine's gate pass/fail log and stores no command output; `worktrees/` is this machine's task checkout). `AGENTS.md` at the repo root is the agent instructions; `CLAUDE.md` imports it with `@AGENTS.md` and does not copy it. Humans approve the spec and the merge. One spec approval covers the tasks derived from it. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges. A task owned by someone else is not started, even when the claim is stale, until a human runs `gate.py release --id`.
+Commit the queue files a teammate needs: `board.md`, `brief.md`, `claims.md` (who claimed a task, when, and which paths are leased), `team-lessons.md` (shared lessons: what went wrong, how to fix it, and `enforced by`), `tasks/<id>/task.md`, `tasks/<id>/plan.md` (its `## decisions`), and `tasks/<id>/handoff.md` (the resume note: state, what was done, what is left, the failing step, files, and the next command). Leave local files uncommitted: `lessons.md` (notes for this agent, not `team-lessons.md`), `.env` and private keys, and `.git/jt-queue/` (`approved-commands.json` must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter; `gate-runs.jsonl` is this machine's gate pass/fail log and stores no command output; `worktrees/` is this machine's task checkout). The second time the same shared lesson is recorded, `gate.py lesson` proposes a denylist line, a lint rule, a gate check, or a test. A human runs `gate.py lesson-approve`. The agent never does. Until then the gate does not enforce it. A refusal prints `fix:` when the fix is known. After approval, `gate.py lesson-legacy` can add a chore that lists the search hits. Changed lines fail immediately. Lines the diff did not touch do not fail while that chore is open. `AGENTS.md` at the repo root is the agent instructions; `CLAUDE.md` imports it with `@AGENTS.md` and does not copy it. Humans approve the spec and the merge. One spec approval covers the tasks derived from it. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges. A task owned by someone else is not started, even when the claim is stale, until a human runs `gate.py release --id`.
 
 `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one and one owned by someone else. With one ticket id it works only that task. It leases `files:` and refuses an overlap by naming the other task and owner. It uses one git worktree per task and removes that worktree after `merge:` or `drop:` when the worktree is clean.
 

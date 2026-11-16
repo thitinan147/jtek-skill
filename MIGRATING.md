@@ -2,6 +2,15 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.12 to v24.13
+
+- **Shared lessons.** `jt-queue/team-lessons.md` is new and is committed with the queue. Copy [`skills/jt-work/assets/team-lessons.template.md`](skills/jt-work/assets/team-lessons.template.md) when you want the header before the first `gate.py lesson`. `jt-queue/lessons.md` stays local.
+- **Promotion.** Record a lesson with `gate.py lesson`. The second record of the same lesson proposes a denylist line (`old -> replacement`), a lint rule, a gate check, or a test. It does not write the rule. A human runs `gate.py lesson-approve --id L1`. The agent never does. A proposal, and a denylist cell that does not end with `(approved)`, is not enforced.
+- **Fix line.** A refusal for a retired name prints `fix:` with the replacement. Other refusals print `fix:` when the fix is known. `hint:` is unchanged.
+- **Old occurrences.** After approval, `gate.py lesson-legacy --id L1` adds one chore under `## later` and lists the files the search found. Until that chore is `merge:` or `drop:`, only changed lines fail. After it closes, a remaining hit fails even when this diff did not touch it.
+- **Board.** `/jt-board flow` adds a `lessons:` block for rows still `not yet`, and for proposals. Re-run `/jt-setup` (or `gate.py agents`) so `AGENTS.md` says not to run `lesson-approve` and names `team-lessons.md`. Confirm before `--write`.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.13.0 --skill jt-work`.
+
 ## Migrating from v24.11 to v24.12
 
 - **Resume note.** `jt-queue/tasks/<id>/handoff.md` is new and is committed with the queue. An existing task has no note until `/jt-work` stops without merging, or until `gate.py handoff --id <id> --reason <reason>` writes one. The file is replaced on each stop. It does not grow a history.

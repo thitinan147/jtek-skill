@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.12. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. A resume note is `tasks/<id>/handoff.md`. Claims live in `claims.md`. Commit this board, the brief, the claims, the task, the plan, and the handoff note. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.13. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. A resume note is `tasks/<id>/handoff.md`. Claims live in `claims.md`. Shared lessons live in `team-lessons.md`. Commit this board, the brief, the claims, the task, the plan, the handoff note, and `team-lessons.md`. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
 
 queue:
 
@@ -35,7 +35,7 @@ Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `si
 
 Empty `<AFFECTED_TEST_CMD>` means `small` runs the full `<TEST_CMD>`. Set it to narrow that run (`npx vitest --changed`, `npx jest --findRelatedTests {files}`, `pytest --testmon`), or put `{files}` in `<TEST_CMD>`. `{files}` is the affected test paths. When none can be named, `small` still runs the full suite.
 
-The gate stops at the first failure: secret scan, denylist, typecheck, lint, tests, verify. Pre-commit hooks are an early warning, not a gate check. `/jt-setup` proposes `.pre-commit-config.yaml` and writes it only after you confirm. Empty `<SECURITY_CMD>`, or a program that is not installed, keeps the built-in secret check and never prints a secret value. Empty `<VERIFY_CMD>` skips that step. On a web app, `/jt-setup` proposes `<VERIFY_CMD>` `npx playwright test` and a `playwright.config.ts` with `updateSnapshots` `none` (no new snapshots in the same task). Empty `<DENYLIST>` uses `jt-queue/denylist.txt` when that file exists; if both are empty the step is skipped. A denylist line is `old -> replacement`.
+The gate stops at the first failure: secret scan, denylist, typecheck, lint, tests, verify. Pre-commit hooks are an early warning, not a gate check. `/jt-setup` proposes `.pre-commit-config.yaml` and writes it only after you confirm. Empty `<SECURITY_CMD>`, or a program that is not installed, keeps the built-in secret check and never prints a secret value. Empty `<VERIFY_CMD>` skips that step. On a web app, `/jt-setup` proposes `<VERIFY_CMD>` `npx playwright test` and a `playwright.config.ts` with `updateSnapshots` `none` (no new snapshots in the same task). Empty `<DENYLIST>` uses `jt-queue/denylist.txt` when that file exists; if both are empty the step is skipped. A denylist line is `old -> replacement`. An approved row in `team-lessons.md` is the same kind of rule. The gate prints `fix:` with the replacement. A line the diff did not change does not fail while that lesson's cleanup task is open.
 
 Pick **first**, then **main**, then **later**.
 

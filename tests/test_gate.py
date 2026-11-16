@@ -4127,6 +4127,7 @@ class QueueContextTests(unittest.TestCase):
             "jt-queue/tasks/12/task.md",
             "jt-queue/tasks/12.1/plan.md",
             "jt-queue/tasks/12/handoff.md",
+            "jt-queue/team-lessons.md",
         ):
             self.assertEqual(gate.queue_context_class(rel), "commit", rel)
 

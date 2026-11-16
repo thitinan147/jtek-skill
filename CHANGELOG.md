@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.13.0 - a repeated lesson becomes a rule
+
+- `jt-queue/team-lessons.md` is the shared lesson list and is committed. Each row says what went wrong, how to fix it, and `enforced by` (`not yet`, a proposal, or a gate check, a denylist line, a lint rule, or a test). `jt-queue/lessons.md` stays uncommitted.
+- The first `gate.py lesson` records the row as `not yet`. The second time the same lesson is recorded, the gate proposes the enforcement and does not install it. A human runs `gate.py lesson-approve`. Nothing becomes a rule without that approval. `/jt-board flow` lists lessons that are still `not yet`.
+- A refusal tied to a lesson rule prints `fix:` with the replacement or the action. Other refusals print `fix:` when the fix is known.
+- After approval, `gate.py lesson-legacy` can add a chore whose body lists the search hits for the old name. Changed lines fail immediately. Lines the diff did not touch do not fail while that chore is open. After it is `merge:` or `drop:`, a remaining hit fails too.
+- Pin installs with `v24.13.0`. Skill and plugin metadata are `24.13.0`.
+
 ## 24.12.0 - a resume note when work changes hands
 
 - When `/jt-work` stops on a task without merge, it writes `jt-queue/tasks/<id>/handoff.md` and replaces that file on the next stop. The stops are a gate failure, `ask:`, `send-back:`, a human `release`, the session ending, and the round cap. The note records state, what was done, what is left, the failing gate step and a one-line error, the files touched, and the next command.
