@@ -1,5 +1,19 @@
 # Changelog
 
+## 25.0.0 - the queue can plan a batch and still stop for a human
+
+- Specs keep `## Roles`. The approver, reviewer, and merger are people. `human-only` paths and topics are project-defined. A diff there is `refused: human-only` until the task has the spec approver's `human-sign-off`. `/jt-board` and `/jt-review` stay human-only. The agent does not merge.
+- `/jt-work` composes pstack `/no-comments` before the draft PR. `/jt-spec-ac` composes pstack `/statechart` when the story has states.
+- `blocked-by:` skips a task until those ids are `merge:` or `drop:`. `<MAX_PARALLEL>` and `<MAX_REVIEW>` wait instead of starting. `<QUOTA>` is the budget for one run (`gate.py run-start` resets it).
+- `/jt-setup` proposes a CODEOWNERS lock for approved tests. A human commits it.
+- `allowed` prints `risk:` (`low`, `medium`, `high`). High suggests `/ponytail-review`. A diff over `<DIFF_LIMIT>` is `refused: diff-limit` with `fix:`.
+- `gate.py resume` prints the handoff Next line as data. `gate.py merge-queue` prints the human merge order and does not merge. `gate.py flags` describes an optional self-hosted Unleash revert and does not call the server.
+- `## repos` remains the multi-repo queue. `evals/queue.json` is the deterministic eval for risk. `gate.py title` checks `type(scope): summary`. release-please and commitlint are templates, not a CI gate.
+- Docs follow a Diátaxis layout (`docs/index.md`). Architecture decisions use `docs/adr/`.
+- `/jt-work --loop` plans at most 100 tickets from the latest queue commit, skips blocked and unclear tasks, and caps open reviews. mise and reviewdog are the tools when installed. Testcontainers, Pact, and act stay optional.
+- `<IMPORT_CMD>` (dependency-cruiser or import-linter) and `<PBT_CMD>` (fast-check or Hypothesis) are optional gate slots. A failure prints `fix:`.
+- Pin installs with `v25.0.0`. Skill and plugin metadata are `25.0.0`.
+
 ## 24.13.0 - a repeated lesson becomes a rule
 
 - `jt-queue/team-lessons.md` is the shared lesson list and is committed. Each row says what went wrong, how to fix it, and `enforced by` (`not yet`, a proposal, or a gate check, a denylist line, a lint rule, or a test). `jt-queue/lessons.md` stays uncommitted.

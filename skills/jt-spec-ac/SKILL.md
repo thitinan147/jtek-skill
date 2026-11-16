@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.13.0"
+  version: "25.0.0"
   short-description: Draft story, rules, acceptance criteria, and questions
 argument-hint: "<work> [text or path of a PDF or image]"
 ---
@@ -21,7 +21,7 @@ Goal: the PO approves a draft instead of writing one, and what two devs could bu
 
 ## Composed skills
 
-When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to sharpen the draft; `check.py` still blocks approval while a question blocks `dev` or `AC`. When **brainstorming** (superpowers) is installed and the card or flow is unclear, invoke it before drafting. If a skill is missing: one short question round per [references/rules.md](references/rules.md) step 5.
+When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to sharpen the draft; `check.py` still blocks approval while a question blocks `dev` or `AC`. When **brainstorming** (superpowers) is installed and the card or flow is unclear, invoke it before drafting. If a skill is missing: one short question round per [references/rules.md](references/rules.md) step 5. When the story has states, invoke pstack `/statechart` before AC freeze; if it is missing, list each state in Rules.
 
 ## Before drafting
 
@@ -31,14 +31,14 @@ When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to shar
 
 ## Rules
 
-- Story and Rules come from the input; a missing part (often "so that") is written "Proposal: …"
-- One AC row = one behavior a person can see or check. AC = main flow · EC = edge cases (empty, too long, no permission, failure, double submit)
-- Story, Rules and AC use words seen on screen, no paths, fields or endpoints; code evidence goes in Source
-- Every button, field and state (empty, error, no permission) on input screens is in an AC/EC, Out of scope, or a question
-- **Bug:** the Story section has **Now**, **Expected** and **Repro** instead of the user story. AC = the correct behavior · EC = what must not change
-- A new or changed API: a question for its owner in `roles` (else Dev), Blocks `dev`, with a one-line proposed contract
-- Keep existing AC and add only what is missing; a cut AC keeps its number in Out of scope ("was EC4")
-- **Size** on the Story is `small`, `medium`, or `large` (how much process, not points). `small`: do not draft; the human uses `/jt-add-task`. `medium`: this spec is enough. `large`: continue with `/jt-spec-handoff`
+- Story and Rules come from the input. A missing part is "Proposal: …"
+- One AC row is one visible behavior. AC is the main flow. EC is an edge case.
+- Story, Rules and AC use on-screen words. Paths go in Source.
+- Every control and state is an AC/EC, Out of scope, or a question.
+- **Bug:** Story has **Now**, **Expected** and **Repro**. AC is the correct behavior. EC must not change.
+- A new API asks its owner (else Dev), Blocks `dev`, with a one-line contract.
+- Keep existing AC. A cut AC keeps its number in Out of scope.
+- **Size** is `small`, `medium`, or `large`. `small` uses `/jt-add-task`. `medium` stops here. `large` continues with `/jt-spec-handoff`.
 
 ## Template
 
@@ -53,6 +53,13 @@ When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to shar
 - **Out of scope:**
   - (one topic per line)
 - **Source:** (input page or frame, related specs, code paths found)
+
+## Roles
+
+- **approver:** (human name)
+- **reviewer:** (human name)
+- **merger:** (human name, never an AI)
+- **human-only:** `src/auth/**` · payments
 
 ## Rules
 
@@ -79,7 +86,8 @@ When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to shar
 - (none yet)
 ```
 
-- Blocks: `AC` = needed to approve · `dev` = needed before dev start the work · `later` = changes nothing structural
+- Blocks: `AC` = needed to approve · `dev` = needed before dev start · `later` = changes nothing structural
+- Roles: human approver, reviewer, and merger. human-only is paths or topics. `check.py` checks names and globs.
 - EC Guards names its AC. A missing link fails. No Guards column prints a migration line.
 - The PO approves in chat, or by editing the line to `**approve:** ✅ <name> · <YYYY-MM-DD>`
 

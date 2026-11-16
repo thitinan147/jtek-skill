@@ -56,4 +56,11 @@ needs:
 refs:
 - 
 
+# blocked-by names task ids that must be merge: or drop: before this task starts.
+blocked-by:
+
+# human-sign-off records the spec approver when the diff touches a human-only area.
+# human-sign-off: ✅ <approver> · YYYY-MM-DD
+human-sign-off:
+
 ask:

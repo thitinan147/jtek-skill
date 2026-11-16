@@ -2,6 +2,15 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.13 to v25.0
+
+- **Roles.** Existing specs need `## Roles` (approver, reviewer, merger, human-only). `check.py` names what to add. A human-only diff needs `human-sign-off` from the spec approver. The agent does not ask a new question and does not approve it.
+- **Blocked tasks.** Add `blocked-by:` on a task that must wait for other ids to be `merge:` or `drop:`. Empty means nothing to wait for.
+- **Caps.** `<MAX_PARALLEL>`, `<MAX_REVIEW>`, `<QUOTA>`, `<IMPORT_CMD>`, and `<PBT_CMD>` are optional board cells. Empty means the old behavior. `<DIFF_LIMIT>` still defaults to 400, and a larger diff is now refused with `fix:`.
+- **Loop.** `/jt-work --loop` only plans. It does not merge. `gate.py resume` reads `handoff.md` as data. `gate.py merge-queue` lists reviews for a human.
+- **Docs.** New pages live under `docs/` in a Diátaxis layout. ADRs live in `docs/adr/`. CODEOWNERS, commitlint, and release-please stay proposals until a human commits them.
+- **Install.** `npx skills add thitinan147/jtek-skill#v25.0.0 --skill jt-work`.
+
 ## Migrating from v24.12 to v24.13
 
 - **Shared lessons.** `jt-queue/team-lessons.md` is new and is committed with the queue. Copy [`skills/jt-work/assets/team-lessons.template.md`](skills/jt-work/assets/team-lessons.template.md) when you want the header before the first `gate.py lesson`. `jt-queue/lessons.md` stays local.

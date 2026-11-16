@@ -48,9 +48,21 @@ def write_spec(root: Path, text: str) -> Path:
     return path
 
 
+def _roles_block() -> str:
+    return (
+        "## Roles\n\n"
+        "- **approver:** Alex\n"
+        "- **reviewer:** Sam\n"
+        "- **merger:** Alex\n"
+        "- **human-only:** -\n\n"
+    )
+
+
 def _approved_spec(rows: str, questions: str = "", approve: str = "✅ Alex · 2026-11-03") -> str:
     return (
-        "<!-- scrum-spec -->\n\n## Acceptance Criteria\n\n"
+        "<!-- scrum-spec -->\n\n"
+        + _roles_block()
+        + "## Acceptance Criteria\n\n"
         f"**approve:** {approve}\n\n"
         "| # | Given | When | Then | Guards |\n|---|---|---|---|---|\n"
         f"{rows}\n"

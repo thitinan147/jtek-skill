@@ -2,7 +2,7 @@
 
 These rules apply to `/jt-spec-split`, `/jt-spec-ac`, and `/jt-spec-handoff`. `/jt-help` lists every command and the order. `/jt-board` draws the spec board; `flow` prints queue metrics.
 
-Goal: remove waiting. The PO edits a draft instead of a blank page, dev start from AC with the code found, the tester has test steps on day one. Write what someone acts on; each fact lives in one place.
+Goal: the PO edits a draft. Write what someone acts on; each fact lives in one place.
 
 ## Rules
 
@@ -26,7 +26,7 @@ roles: PO, Dev, QA
 
 `code_roots`: every repo to search (e.g. `., ../api`); `roles` fill the Ask column.
 
-`spec.md` starts with `<!-- scrum-spec -->` and `# <work>`, then `## Story`, `## Rules`, `## Acceptance Criteria`, `## Questions`, `## Decisions`, `## Test steps`. A 0.2 `## Tasks` section is kept as is. The marker and those headings stay, because `check.py` reads them.
+`spec.md` starts with `<!-- scrum-spec -->` and `# <work>`, then `## Story`, `## Roles`, `## Rules`, `## Acceptance Criteria`, `## Questions`, `## Decisions`, `## Test steps`. `## Roles` names the human approver, reviewer, and merger, plus human-only paths or topics. A decision that changes architecture links one file in `docs/adr/`. A 0.2 `## Tasks` section is kept as is. The marker and those headings stay, because `check.py` reads them.
 
 ## Workflow
 

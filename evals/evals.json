@@ -20,7 +20,7 @@
       "evals/files/room-booking/src/rooms/rooms.ts"
     ],
     "expected_behavior": [
-      "Creates scrum-spec/rb-14-edit-booking/spec.md with first line <!-- scrum-spec --> and the sections Story, Rules, Acceptance Criteria, Questions, Decisions in that order, with no Test steps",
+      "Creates scrum-spec/rb-14-edit-booking/spec.md with first line <!-- scrum-spec --> and the sections Story, Roles, Rules, Acceptance Criteria, Questions, Decisions in that order, with no Test steps",
       "Headings, table columns and '**approve:** ❌ waiting for PO' are in English; the story, rules, AC cells and questions are in Thai",
       "Finds in src/booking/api.ts that there is no edit-booking API and adds a question for the API owner with Blocks 'dev' and a one-line proposed contract, instead of inventing an endpoint as fact",
       "Has EC rows for editing after the start time, a room that is no longer free, and someone else's booking (or a question about it)",
@@ -138,6 +138,22 @@
       "Shows rb-12-book-room as ready for the sprint: it is approved and its only question blocks later",
       "Shows rb-13-cancel-booking with a blocker: Q2 blocks dev and has no answer",
       "Includes a state flow transcribed from each story's Given, When and Then rows, one transition per row"
+    ]
+  },
+  {
+    "skills": [
+      "jt-work"
+    ],
+    "query": "/jt-work --loop",
+    "files": [
+      "evals/queue.json"
+    ],
+    "expected_behavior": [
+      "Runs gate.py loop and does not merge",
+      "Skips tasks whose blocked-by ids are not merge: or drop:, and lists unclear tasks for /jt-board",
+      "Caps the batch at 100 tickets and caps open reviews at MAX_REVIEW or 10",
+      "Starts each ticket from the latest queue commit and skips work that depends on an unmerged branch",
+      "Asks no extra approval beyond the one spec approval"
     ]
   }
 ]

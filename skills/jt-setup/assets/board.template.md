@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.13. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. A resume note is `tasks/<id>/handoff.md`. Claims live in `claims.md`. Shared lessons live in `team-lessons.md`. Commit this board, the brief, the claims, the task, the plan, the handoff note, and `team-lessons.md`. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 25.0. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. A resume note is `tasks/<id>/handoff.md`. Claims live in `claims.md`. Shared lessons live in `team-lessons.md`. Commit this board, the brief, the claims, the task, the plan, the handoff note, and `team-lessons.md`. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
 
 queue:
 
@@ -21,6 +21,11 @@ queue:
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
 | `<DIFF_LIMIT>` | |
+| `<MAX_PARALLEL>` | |
+| `<MAX_REVIEW>` | |
+| `<QUOTA>` | |
+| `<IMPORT_CMD>` | |
+| `<PBT_CMD>` | |
 | `<CLAIM_STALE>` | |
 
 Frontend and backend in separate repos: add a `## repos` section that names each repo and its path (see `contract.md` section 5). Without it the board covers this repo only.

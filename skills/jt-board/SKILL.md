@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). The GitHub CLI (gh) is optional.
 metadata:
   author: Thitinan
-  version: "24.13.0"
+  version: "25.0.0"
   short-description: Spec board, or queue flow metrics
 argument-hint: "[<flow or folder>|flow]"
 ---

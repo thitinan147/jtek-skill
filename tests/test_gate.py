@@ -3835,12 +3835,15 @@ class SizeTierTests(unittest.TestCase):
         self.assertIn("escalate: migrations\n", result.stdout)
 
     def test_a_large_diff_escalates_at_the_board_limit(self) -> None:
+        self.assertIn("diff", gate.path_triggers(["app.py"], 8, 5))
         self._land({"app.py": "".join(f"LINE_{i} = {i}\n" for i in range(8))})
         result = self._reach(size="small", diff_limit="5")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("size: medium", result.stdout)
-        self.assertIn("size-from: small", result.stdout)
-        self.assertIn("escalate: diff\n", result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refused: diff-limit", result.stdout)
+        self.assertIn("step: diff-limit", result.stdout)
+        self.assertIn("fix:", result.stdout)
+        self.assertIn("merge: no", result.stdout)
+        self.assertNotIn("\nallowed\n", f"\n{result.stdout}")
 
     def test_an_author_file_does_not_escalate(self) -> None:
         self._land({"author.py": "NAME = 'Ada'\n"})

@@ -80,7 +80,15 @@ class SpecContractTests(unittest.TestCase):
         order = [line for line in spec.splitlines() if line.startswith("## ")]
         self.assertEqual(
             order,
-            ["## Story", "## Rules", "## Acceptance Criteria", "## Questions", "## Decisions", "## Test steps"],
+            [
+                "## Story",
+                "## Roles",
+                "## Rules",
+                "## Acceptance Criteria",
+                "## Questions",
+                "## Decisions",
+                "## Test steps",
+            ],
         )
         ac = (SKILLS / "jt-spec-ac" / "SKILL.md").read_text(encoding="utf-8")
         for section in order:
@@ -116,7 +124,7 @@ class SpecContractTests(unittest.TestCase):
         readme = (REPO / "README.md").read_text(encoding="utf-8")
         security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
         self.assertNotIn("Three commands", readme)
-        self.assertIn("v24.13.0", readme)
+        self.assertIn("v25.0.0", readme)
         self.assertIn("board.py", security)
         self.assertIn("Google Fonts", security)
         self.assertIn("fonts.googleapis.com", security)
