@@ -6,7 +6,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.5.0"
+  version: "24.6.0"
   short-description: Human-only review and board decision command
 argument-hint: "[<id>]"
 ---
@@ -36,7 +36,7 @@ When inspecting a `review:` task `<id>`, present:
 2. Scope & style checks on the task branch (`<branch>`: `type/<ticket-id>-<slug>` from `gate.py`, or legacy `task-<id>-<slug>`) vs `<queue>`. When the task lists `repos:`, run each check in every listed repo (its `path:` and `queue:` from `## repos` in the board) and match `files:` entries prefixed `<repo>`:
    - Run `git diff --name-only <queue>...<branch> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
    - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...<branch> -- . ':(exclude)jt-queue'` to report non-whitespace changes.
-3. Plan `## decisions`, `## review-diff`, and `## Done when` from `jt-queue/tasks/<id>/plan.md` in the working tree, or from `<branch>:jt-queue/tasks/<id>/plan.md` when that file is tracked.
+3. Plan `## decisions`, `## review-diff`, `## ai-review`, and `## Done when` from `jt-queue/tasks/<id>/plan.md` in the working tree, or from `<branch>:jt-queue/tasks/<id>/plan.md` when that file is tracked. `## ai-review` is the fresh-context record. It is not an approval and it cannot merge.
 4. `git diff <queue>...<branch>`, test/screen evidence, and the gate's `gates:` line (`secret`, `denylist`, `typecheck`, `lint`, `tests`, `verify`, `screen`, `review-diff`, `test-weakening`). `test-weakening` other than `none` is a warning for you to judge, not a pass. A refusal names `step:` and `skipped:` so the cheapest failure is fixed first.
 5. Findings as a table `Severity | Location | Issue | Evidence`, then a recommendation (`merge:`, `send-back:`, or `drop:`) the human may override. For `screen: yes`, also cover the empty, loading, error, and long-text states. A send-back reason must cite a `pass:` bullet or a `file:line` (`<repo>:file:line` for a task across repos) so the next round can act on it.
 

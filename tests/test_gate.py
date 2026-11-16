@@ -28,6 +28,14 @@ def load_gate():
 
 gate = load_gate()
 
+AI_REVIEW_BLOCK = "\n## ai-review\n\n- rejected: none — no finding\n"
+
+
+def with_ai_review(plan: str) -> str:
+    if "## ai-review" in plan:
+        return plan
+    return plan.rstrip() + AI_REVIEW_BLOCK
+
 
 def board_text(
     cards: str,
@@ -910,7 +918,9 @@ class ReachReviewGitTests(unittest.TestCase):
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_path = plan_dir / "plan.md"
         plan_path.write_text(
-            f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
+            with_ai_review(
+                f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
+            ),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1253,6 +1263,8 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(res_docs.returncode, 0, res_docs.stdout + res_docs.stderr)
         self.assertIn("tier: quick", res_docs.stdout)
         self.assertIn("repo-review: skip", res_docs.stdout)
+        self.assertIn("size: medium", res_docs.stdout)
+        self.assertIn("ai-review: skip", res_docs.stdout)
 
         (self.repo / "jt-queue" / "board.md").write_text(
             board_text("- [ ] **12** format (style)", test=gate.NO_SUITE),
@@ -1269,6 +1281,7 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertEqual(res_style.returncode, 0, res_style.stdout + res_style.stderr)
         self.assertIn("tier: quick", res_style.stdout)
         self.assertIn("repo-review: skip", res_style.stdout)
+        self.assertIn("ai-review: skip", res_style.stdout)
 
     def test_adaptive_gate_escalates_to_standard_tier(self) -> None:
         for path in ("requirements.txt", "docs/conf.py"):
@@ -1710,8 +1723,10 @@ class ReachReviewGitTests(unittest.TestCase):
                 f"| {decision} |\n"
             )
         (plan_dir / "plan.md").write_text(
-            f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n"
-            f"- reviewer: reviewer\n- verdict: pass\n- checked: scope\n{row}",
+            with_ai_review(
+                f"# Plan {card_id}\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {sha}\n"
+                f"- reviewer: reviewer\n- verdict: pass\n- checked: scope\n{row}"
+            ),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -1893,7 +1908,9 @@ class DraftPrReachTests(unittest.TestCase):
         plan_dir = self.repo / "jt-queue" / "tasks" / "12"
         plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / "plan.md").write_text(
-            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
+            with_ai_review(
+                f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {head}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
+            ),
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -2377,7 +2394,7 @@ class DiffCheckTests(unittest.TestCase):
         git(self.repo, "checkout", "task-12")
         plan = self.repo / "jt-queue" / "tasks" / "12"
         plan.mkdir(parents=True, exist_ok=True)
-        (plan / "plan.md").write_text(body, encoding="utf-8")
+        (plan / "plan.md").write_text(with_ai_review(body), encoding="utf-8")
         commit_all(self.repo, "docs: record review")
         git(self.repo, "checkout", "main")
 
@@ -2922,7 +2939,9 @@ class IgnoredQueueTests(unittest.TestCase):
         (queue / "brief.md").write_text("# Brief\n\nship the checker\n", encoding="utf-8")
         (task / "task.md").write_text(card_body(["check.py"]), encoding="utf-8")
         (task / "plan.md").write_text(
-            f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {self.sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
+            with_ai_review(
+                f"# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n- commit: {self.sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
+            ),
             encoding="utf-8",
         )
 
@@ -3166,8 +3185,10 @@ class MultiRepoFixture(unittest.TestCase):
         fe_sha = fe_sha or self.fe_sha
         be_sha = be_sha or self.be_sha
         (self.card_dir / "plan.md").write_text(
-            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
-            f"- fe: {fe_sha[:9]}\n- be: {be_sha[:9]}\n- verdict: pass\n- checked: both sides\n",
+            with_ai_review(
+                "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+                f"- fe: {fe_sha[:9]}\n- be: {be_sha[:9]}\n- verdict: pass\n- checked: both sides\n"
+            ),
             encoding="utf-8",
         )
 
@@ -3296,8 +3317,10 @@ class MultiRepoReachReviewTests(MultiRepoFixture):
         git(self.be, "branch", "-q", "-D", "task-12")
         self.write_card(["fe:app.txt"], repos="fe")
         (self.card_dir / "plan.md").write_text(
-            "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
-            f"- commit: {self.fe_sha}\n- verdict: pass\n- checked: scope\n",
+            with_ai_review(
+                "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n## review-diff\n\n"
+                f"- commit: {self.fe_sha}\n- verdict: pass\n- checked: scope\n"
+            ),
             encoding="utf-8",
         )
         result = run_gate(self.fe, "reach-review", "--id", "12")
@@ -3680,7 +3703,7 @@ class SizeTierTests(unittest.TestCase):
             + '\').write_text(\' \'.join(sys.argv[1:]))"'
         )
 
-    def _land(self, files: dict[str, str]) -> None:
+    def _land(self, files: dict[str, str], *, review: str | None = "rejected") -> None:
         git(self.repo, "checkout", "task-12")
         for name, body in files.items():
             path = self.repo / name
@@ -3689,10 +3712,18 @@ class SizeTierTests(unittest.TestCase):
         commit_all(self.repo, "feat: change the code")
         sha = git(self.repo, "rev-parse", "HEAD").stdout.strip()
         plan = self.repo / "jt-queue" / "tasks" / "12" / "plan.md"
+        note = {
+            "rejected": "\n## ai-review\n\n- rejected: none — no finding\n",
+            "accepted": "\n## ai-review\n\n- accepted: off-by-one — the pass command shows it\n",
+            "fallback": "\n## ai-review\n\nfallback: no reviewer skill installed\n",
+            "blank": "\n## ai-review\n\nreviewer: interrogate\n",
+            None: "",
+        }[review]
         plan.write_text(
             "# Plan 12\n\n## evidence\n\n| HEADER_TOKEN | check | ok |\n\n"
             "## review-diff\n\n"
-            f"- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n",
+            f"- commit: {sha}\n- reviewer: reviewer\n- verdict: pass\n- checked: scope\n"
+            + note,
             encoding="utf-8",
         )
         commit_all(self.repo, "docs: record review")
@@ -3861,6 +3892,72 @@ class SizeTierTests(unittest.TestCase):
         self.assertIn("affected: tests/test_app.py", result.stdout)
         self.assertFalse(self.marker.exists())
         self.assertIn("tests/test_app.py", scoped.read_text(encoding="utf-8"))
+
+    def test_medium_and_large_require_ai_review(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"}, review=None)
+        medium = self._reach(size="medium")
+        self.assertIn("refused: ai-review", medium.stdout)
+        self.assertIn("no-ai-review: size medium", medium.stdout)
+        self.assertIn("next: retry", medium.stdout)
+        self.assertNotIn("step:", medium.stdout)
+        self.assertNotIn("round ", medium.stdout)
+        self.assertNotIn("\nallowed\n", f"\n{medium.stdout}")
+        large = self._reach(size="large")
+        self.assertIn("refused: ai-review", large.stdout)
+        self.assertIn("no-ai-review: size large", large.stdout)
+
+    def test_small_skips_ai_review(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"}, review=None)
+        result = self._reach(size="small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("size: small", result.stdout)
+        self.assertIn("ai-review: skip", result.stdout)
+        self.assertNotIn("refused: ai-review", result.stdout)
+
+    def test_recorded_ai_review_lets_medium_and_large_pass(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"}, review="accepted")
+        medium = self._reach(size="medium")
+        self.assertEqual(medium.returncode, 0, medium.stdout + medium.stderr)
+        self.assertIn("ai-review: open", medium.stdout)
+        self.assertIn("size: medium", medium.stdout)
+        self._land({"app.py": "VALUE = 2\n"}, review="fallback")
+        large = self._reach(size="large")
+        self.assertEqual(large.returncode, 0, large.stdout + large.stderr)
+        self.assertIn("ai-review: open", large.stdout)
+        self.assertIn("size-hooks: worktree-rounds, fresh-context-review, high-risk", large.stdout)
+
+    def test_blank_ai_review_section_does_not_count(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"}, review="blank")
+        result = self._reach(size="medium")
+        self.assertIn("refused: ai-review", result.stdout)
+        self.assertIn("no-ai-review", result.stdout)
+
+    def test_escalation_to_medium_requires_ai_review(self) -> None:
+        self._land({"src/auth/login.py": "def login():\n    return True\n"}, review=None)
+        result = self._reach(size="small")
+        self.assertIn("refused: ai-review", result.stdout)
+        self.assertIn("no-ai-review: size medium", result.stdout)
+
+    def test_a_failing_test_stops_before_ai_review(self) -> None:
+        self._land({"app.py": "VALUE = 1\n"}, review=None)
+        result = self._reach(size="medium", test="python3 -c 'import sys; sys.exit(1)'")
+        self.assertIn("refused: test-failed", result.stdout)
+        self.assertIn("step: tests", result.stdout)
+        self.assertNotIn("refused: ai-review", result.stdout)
+        self.assertNotIn("no-ai-review", result.stdout)
+
+
+class AiReviewRecordTests(unittest.TestCase):
+    def test_only_a_finding_or_the_fallback_line_counts(self) -> None:
+        self.assertTrue(gate.ai_review_recorded("- accepted: off-by-one — pass command shows 86\n"))
+        self.assertTrue(gate.ai_review_recorded("- rejected: rename - outside files\n"))
+        self.assertTrue(gate.ai_review_recorded("fallback: no reviewer skill installed\n"))
+        self.assertFalse(gate.ai_review_recorded(""))
+        self.assertFalse(gate.ai_review_recorded("- accepted: <finding> — <reason>\n"))
+        self.assertFalse(gate.ai_review_recorded("- accepted: off-by-one\n"))
+        self.assertFalse(gate.ai_review_recorded("fallback: skipped the review\n"))
+        self.assertFalse(gate.ai_review_recorded("reviewer: interrogate | pr | none\n"))
+        self.assertEqual(gate.FAIL_FAST, ("secret", "denylist", "typecheck", "lint", "tests", "verify"))
 
 
 _SPEC_THEN = "the button is enabled"

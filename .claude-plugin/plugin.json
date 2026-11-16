@@ -1,7 +1,7 @@
 {
   "name": "jtek",
   "description": "Spec drafts and an outcome-gated work queue for coding agents. Spec commands draft acceptance criteria and test steps; the agent works tasks from a board; a gate checks tests and evidence before review; only a human can merge or approve.",
-  "version": "24.5.0",
+  "version": "24.6.0",
   "author": {
     "name": "Thitinan"
   },

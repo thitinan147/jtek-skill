@@ -12,3 +12,7 @@ Write `plan.md` from the template, keep changes inside `files:` and `do:`, run `
 - Start each task from `gate.py next`; re-read `task.md` and `jt-queue/lessons.md`. Prefer a fresh session per task when you can.
 - Inside `files:`, remove dead code before adding; do not tidy files outside `files:`.
 - Review the diff against `files:` and `out:` before `review:`; write what you checked in `## review-diff` (not your memory of the change).
+
+## If no reviewer skill is installed
+
+Write `fallback: no reviewer skill installed` under `## ai-review`. Do not invent findings, and do not run a second reviewer.

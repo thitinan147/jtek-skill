@@ -14,6 +14,7 @@ When you catch yourself thinking the left column, do the right column.
 | "I will run `approve-commands` to get unblocked." | Never. Only the human runs it. |
 | "I will edit the test to match my code." | Change the code. Edit a test only when `do:` says the test is wrong. Deleting a test file or adding `.skip`, `.only`, `xit`, or `@skip` is reported as `test-weakening`. |
 | "The reviewer will catch it." | `verdict: pass` is your claim. Make it true. |
+| "The AI review approved it." | It cannot approve or merge. Fix each `accepted:` finding and leave the decision to `/jt-review`. |
 
 ## Red flags
 

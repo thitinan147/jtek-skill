@@ -2,6 +2,14 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.5 to v24.6
+
+- **Fresh-context review.** On Standard, effective size `medium` or `large` needs `## ai-review` in `plan.md` before `reach-review` prints `allowed`. Copy the new block from [`skills/jt-work/assets/plan.template.md`](skills/jt-work/assets/plan.template.md). `small` and Quick print `ai-review: skip` and need no new section.
+- **One reviewer.** `/jt-work` runs `/interrogate` when it is installed, otherwise Matt `/pr`, otherwise `/ponytail-review` on a `large` task. It does not run two of them. With none installed, the section is the line `fallback: no reviewer skill installed`.
+- **Not an approval.** Accepted findings are fixed and the gate runs again. The AI reviewer does not set `review:` and does not merge. `/jt-review` is still the only merge.
+- **Unchanged.** Size tiers, `<AFFECTED_TEST_CMD>`, and the fail-fast order (secret, denylist, typecheck, lint, tests, verify) stay as in v24.5.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.6.0 --skill jt-work`.
+
 ## Migrating from v24.4 to v24.5
 
 - **Check order.** `reach-review` fails fast: secret scan, denylist, typecheck, lint, tests, verify. A failure prints `step:` and `skipped:` (the next step) so the cheapest problem is fixed first. Typecheck and lint run before tests. They still run only on Standard, and only when the cell is set.

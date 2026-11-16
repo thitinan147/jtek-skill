@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.6.0 - one fresh-context review before the human
+
+- After the fail-fast checks pass, `/jt-work` invokes one reviewer in a fresh context that cannot read the implementer's chat. It receives only the spec acceptance criteria and edge cases, `task.md`, and the diff.
+- The one reviewer is pstack `/interrogate` when that skill is installed, otherwise Matt `/pr`, otherwise `/ponytail-review` when the effective size is `large`. No second reviewer. If none of those skills is installed, `plan.md` records `fallback: no reviewer skill installed`.
+- Findings go in `## ai-review` as `accepted:` or `rejected:` plus a reason. Accepted findings are fixed and the gate runs again. The reviewer does not approve or merge. `/jt-review` stays human-only.
+- The gate requires that section on Standard `medium` and `large` (`refused: ai-review`). `small` and Quick print `ai-review: skip`. Size tiers and the fail-fast order are unchanged. `large` still prints `size-hooks:`; `worktree-rounds` is still only recorded.
+- Pin installs with `v24.6.0`. Skill and plugin metadata are `24.6.0`.
+
 ## 24.5.0 - fail fast, cheapest check first
 
 - `reach-review` stops at the first failure and prints `step:` and `skipped:` (the next step). Order: secret scan, deprecated-name denylist, `<TYPECHECK_CMD>`, `<LINT_CMD>`, tests, `<VERIFY_CMD>`.

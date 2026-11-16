@@ -151,6 +151,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 "## Escape\n- Signature change required\n\n"
                 "## evidence\n| python3 -m unittest passes | python3 -m unittest | OK |\n\n"
                 f"## review-diff\n- commit: {code_sha}\n- reviewer: self\n- verdict: pass\n- checked: scope\n\n"
+                "## ai-review\n- rejected: none — no finding\n\n"
                 "## decisions\n| decision | why | evidence |\n|---|---|---|\n| subtract pct | fix bug | test_calc.py |\n",
                 encoding="utf-8",
             )

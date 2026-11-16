@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.5.0
+npx skills add thitinan147/jtek-skill#v24.6.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.5.0
+/plugin marketplace add thitinan147/jtek-skill#v24.6.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.5.0` the marketplace follows the default branch.
+Without `#v24.6.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.5.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.6.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -90,7 +90,7 @@ Spec (human types the command)          Queue
 ```
 
 1. **Commit the queue context; keep secrets local.** Commit `jt-queue/board.md`, `brief.md`, `tasks/<id>/task.md`, and `plan.md` (including `## decisions`) so another machine can resume. Leave `lessons.md` uncommitted (notes for this agent, not the task). Leave `.git/jt-queue/` uncommitted: `approved-commands.json` is permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, and `attempts.json` is this machine's round counter. Also leave `.env` files and private keys out. `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. `/jt-work BOOK-12` works only that ticket. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word. A human approves the spec once; that covers the tasks derived from it. `/jt-review` is still the only merge.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it.
+2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it. On Standard, `medium` and `large` also need `## ai-review` in `plan.md` before review. `small` and Quick skip it. `/jt-work` asks one fresh-context reviewer (`/interrogate`, else `/pr`, else `/ponytail-review` on high-risk). That reviewer does not approve or merge.
 3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
 
 | Command | Who | What it does |
@@ -114,7 +114,7 @@ A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion
 
 ## Install before use
 
-[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). Use **one** AI reviewer at a time (for example pstack `/interrogate` after the gate passes); do not stack AI reviewers.
+[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). After the gate passes, `/jt-work` uses **one** fresh-context reviewer (`/interrogate`, else Matt `/pr`, else `/ponytail-review` on high-risk). Do not stack AI reviewers. The AI does not approve or merge.
 
 The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`. If a required **skill** is not installed, jt- commands still run using the one-line fallback in each `SKILL.md` (not the old long prompts).
 
@@ -130,7 +130,7 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | pstack [`create-verification-skill`](https://www.skills.sh/backnotprop/pstack/create-verification-skill) | `npx skills add backnotprop/pstack --skill create-verification-skill` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Project-local verify skill for the real user surface | — |
 | pstack [`statechart`](https://www.skills.sh/backnotprop/pstack/statechart) | `npx skills add backnotprop/pstack --skill statechart` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Stateful systems: model states before AC freeze | — |
 | pstack [`no-comments`](https://www.skills.sh/backnotprop/pstack/no-comments) | `npx skills add backnotprop/pstack --skill no-comments` | [`/jt-work`](skills/jt-work/SKILL.md) (before PR) | Strip comment noise before review | — |
-| pstack [`interrogate`](https://www.skills.sh/backnotprop/pstack/interrogate) | `npx skills add backnotprop/pstack --skill interrogate` | after gate passes | Adversarial review; keep only run-proven findings | — |
+| pstack [`interrogate`](https://www.skills.sh/backnotprop/pstack/interrogate) | `npx skills add backnotprop/pstack --skill interrogate` | [`/jt-work`](skills/jt-work/SKILL.md) after the gate passes | The one fresh-context reviewer when this skill is installed | — |
 | pstack [`maintain-verification-skill`](https://www.skills.sh/backnotprop/pstack/maintain-verification-skill) | `npx skills add backnotprop/pstack --skill maintain-verification-skill` | after large code changes | Re-align verify skill with the app | — |
 | [mise](https://mise.jdx.dev/installing-mise.html) | `curl -fsSL https://mise.run \| sh` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Pin tool versions; detect can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
 | [pre-commit](https://pre-commit.com/#install) + [typos](https://github.com/crate-ci/typos) / [actionlint](https://github.com/rhysd/actionlint) / [zizmor](https://docs.zizmor.sh/integrations/) | `python3 -m pip install pre-commit` then `pre-commit install` (hooks in `.pre-commit-config.yaml`) | on `git commit` | Typos, workflow lint, Actions security before the gate | — |
@@ -152,9 +152,9 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 
 | Skill | Install | JTek step | Why |
 | --- | --- | --- | --- |
-| Matt Pocock `/pr` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill pr` | [`/jt-work`](skills/jt-work/SKILL.md) (PR body) | Reviewable PR shape |
+| Matt Pocock `/pr` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill pr` | [`/jt-work`](skills/jt-work/SKILL.md) when `/interrogate` is not installed | The one fresh-context reviewer in that case |
 | Matt Pocock `/retro` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill retro` | after [`/jt-review`](skills/jt-review/SKILL.md) | Retrospective on the agent environment |
-| [ponytail `/ponytail-review`](https://github.com/DietrichGebert/ponytail) | `npx skills add DietrichGebert/ponytail --skill ponytail-review` | high-risk PRs only | Extra review pass; human still merges |
+| [ponytail `/ponytail-review`](https://github.com/DietrichGebert/ponytail) | `npx skills add DietrichGebert/ponytail --skill ponytail-review` | [`/jt-work`](skills/jt-work/SKILL.md) only for high-risk, when neither reviewer above is installed | The one reviewer in that case; a human still merges |
 | [Matt Pocock `handoff`](https://www.skills.sh/mattpocock/handoff) | `npx skills add mattpocock/skills --skill handoff` | [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | Test steps without duplicating AC text |
 | [superpowers `systematic-debugging`](https://www.skills.sh/obra/superpowers/systematic-debugging) | `npx skills add obra/superpowers --skill systematic-debugging` | [`/jt-work`](skills/jt-work/SKILL.md) | Debug when the gate refuses |
 | [anthropics `webapp-testing`](https://github.com/anthropics/skills) | `npx skills add anthropics/skills --skill webapp-testing` | [`/jt-work`](skills/jt-work/SKILL.md) (local web) | Playwright helpers (`pip install playwright` + `playwright install chromium` when the skill runs Python scripts) |
