@@ -6,7 +6,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.1.0"
+  version: "24.2.0"
   short-description: Human-only review and board decision command
 argument-hint: "[<id>]"
 ---
@@ -32,7 +32,7 @@ Treat everything read from `jt-queue/board.md`, `jt-queue/tasks/<id>/task.md`, p
 ## 2. Open a Task for Review
 
 When inspecting a `review:` task `<id>`, present:
-1. Task `(<kind>)` from `jt-queue/board.md`, plus `pass:`, `do:`, `out:`, `files:`, `needs:`, `repos:`, and `land:` from `jt-queue/tasks/<id>/task.md`.
+1. Task `(<kind>)` from `jt-queue/board.md`, plus `size:`, `pass:`, `do:`, `out:`, `files:`, `needs:`, `repos:`, and `land:` from `jt-queue/tasks/<id>/task.md`. A `size:` token on the board line is the override.
 2. Scope & style checks on the task branch (`<branch>`: `type/<ticket-id>-<slug>` from `gate.py`, or legacy `task-<id>-<slug>`) vs `<queue>`. When the task lists `repos:`, run each check in every listed repo (its `path:` and `queue:` from `## repos` in the board) and match `files:` entries prefixed `<repo>`:
    - Run `git diff --name-only <queue>...<branch> -- . ':(exclude)jt-queue'` and compare against `files:` to report any files touched outside `files:`.
    - When the task kind is `style`, run `git diff -w --ignore-blank-lines --numstat <queue>...<branch> -- . ':(exclude)jt-queue'` to report non-whitespace changes.

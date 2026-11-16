@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.1.0"
+  version: "24.2.0"
   short-description: Draft story, rules, acceptance criteria, and questions
 argument-hint: "<work> [text or path of a PDF or image]"
 ---
@@ -35,6 +35,7 @@ Goal: the PO approves a draft instead of writing one, and what two devs could bu
 - A new or changed API: a question for its owner in `roles` (else Dev), Blocks `dev`, with a one-line proposed contract
 - Keep existing AC and add only what is missing; a cut AC keeps its number in Out of scope ("was EC4")
 - **Review before asking:** read the draft as a dev and as the tester; fix or ask about the places two people would read differently (data rules, permissions, states, errors, vague words like "fast" or "own")
+- **Size** on the Story is `small`, `medium`, or `large` (how much process, not points). `small`: do not draft; the human uses `/jt-add-task`. `medium`: this spec is enough. `large`: continue with `/jt-spec-handoff`
 
 ## Template
 
@@ -42,6 +43,7 @@ Goal: the PO approves a draft instead of writing one, and what two devs could bu
 ## Story
 
 - **Ticket:** (the id the ticket already has, copied as written, or ask)
+- **Size:** small | medium | large
 - **Story:** As a … I want … so that …
 - **In scope:**
   - (one topic per line)

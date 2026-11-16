@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.1.0"
+  version: "24.2.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -68,3 +68,7 @@ Files: `<docs_root>/<work>/spec.md` (default `docs_root` is `scrum-spec`, becaus
 `/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. With one ticket id it works only that task.
 
 A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion id). The skills require one and do not check its shape. Commits and PR titles are `<type>(<scope>): <summary> (<ticket-id>)`. The task branch is `type/<ticket-id>-short-slug` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works.
+
+## Size
+
+`small`, `medium`, and `large` scale the process. The agent sets `size:` when it creates the task or the spec. A human can change it on the task or with `size:` on the board line. `small` skips the spec and uses `/jt-add-task`. It runs affected tests only when the board sets `<AFFECTED_TEST_CMD>` or `<TEST_CMD>` contains `{files}`; otherwise it runs the full suite. `medium` is a short spec and the full gate. `large` is a full spec. The gate may raise the size (`escalate:`). It never lowers it.

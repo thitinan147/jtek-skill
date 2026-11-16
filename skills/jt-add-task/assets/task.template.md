@@ -2,6 +2,9 @@
 
 kind: <kind>
 
+# size: small, medium, or large. The gate may raise it. A size: token on the board line overrides it.
+size: medium
+
 # ticket: the id this work already has. Copy it (BOOK-12, #45, a Notion id).
 # The gate does not read this line. Do not invent an id.
 ticket:

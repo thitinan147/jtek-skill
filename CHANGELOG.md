@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.2.0 - size the process to the work
+
+- A task has `size:` `small`, `medium`, or `large`, set when the task or the spec is created. A `size:` token on the board line overrides it. Unset stays `medium`, so an existing board still runs the full gate.
+- `small` runs the full `<TEST_CMD>` unless the board sets `<AFFECTED_TEST_CMD>` or `<TEST_CMD>` contains `{files}`. The name-stem heuristic fills `{files}`. The cell can also be a command that selects its own tests (`npx vitest --changed`, `npx jest --findRelatedTests {files}`, `pytest --testmon`). When no affected test can be named, `small` still runs the full suite and prints `affected: none -> full suite`. `medium` and `large` run `<TEST_CMD>` unchanged. `small` needs no spec (`/jt-add-task`). `medium` is a short spec. `large` is a full spec.
+- The gate raises that size, and never lowers it, when the diff touches auth or a migration or `.sql` file, or is larger than `<DIFF_LIMIT>` lines (empty means 400). `allowed` then prints `size-from:` and `escalate:` (`auth`, `migrations`, or `diff`).
+- `large` prints `size-hooks: worktree-rounds, fresh-context-review, high-risk`. Those three are recorded only; this version does not run them.
+- An empty `<AFFECTED_TEST_CMD>` is not part of the command approval. Setting it is `commands-changed` until a human approves it.
+
 ## 24.1.0 - conventional task branches
 
 - `gate.py` and `landed.py` find the task branch as `type/<ticket-id>-<slug>` (for example `feat/BOOK-12-room-search`), using `ticket:` from `task.md` and the task kind. Legacy `task-<id>` / `task-<id>-<slug>` still work; `reach-review` prints `branch-deprecated:` when it uses one.
