@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.9.0 - AGENTS.md is the repo's agent instructions
+
+- `/jt-setup` writes `AGENTS.md` at the repo root. It lists `TEST_CMD`, `LINT_CMD`, `TYPECHECK_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `AFFECTED_TEST_CMD`, the flow spec -> tasks -> work -> gate -> human merge, the house rules, and where `jt-queue/` files live.
+- `CLAUDE.md`, when created or already present, is an `@AGENTS.md` import. It does not repeat that file.
+- An existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board is not replaced. `gate.py agents` shows a diff, keeps the current text, and adds only a `::: jtek:start` section. The same files produce no new diff on the next run. `unparsed` means the file is left untouched.
+- `gate.py detect` proposes those slots from `package.json` scripts, `pyproject.toml`, `Makefile`, `justfile`, `go.mod`, `Cargo.toml`, and `.github/workflows` run lines. A slot with no source stays empty.
+- Pin installs with `v24.9.0`. Skill and plugin metadata are `24.9.0`.
+
 ## 24.8.0 - screen evidence a human can review
 
 - On a screen task, `/jt-work` drives the app with Microsoft's Playwright CLI (`playwright-cli -s=<ticket-id>`, one session per worktree), not Playwright MCP. It reads console and network errors. An uncaught error or a console error on a touched screen is `finding:` in `plan.md` `## evidence`, next to a screenshot path for that AC id. A short video or trace path is optional.

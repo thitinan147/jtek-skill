@@ -1,6 +1,6 @@
 # Install before use
 
-Install these on your machine or in the repo before jtek-skill. None replace `gate.py` or a human `/jt-review`. At `/jt-setup`, confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md`. After the gate passes, `/jt-work` invokes one fresh-context reviewer for medium and large: `/interrogate` when installed, otherwise `/pr`, otherwise `/ponytail-review` when the task is high-risk. Do not stack AI reviewers. The AI does not approve or merge.
+Install these on your machine or in the repo before jtek-skill. None replace `gate.py` or a human `/jt-review`. At `/jt-setup`, confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md`. The same command writes `AGENTS.md` (those commands, the flow spec -> tasks -> work -> gate -> human merge, the house rules, and where `jt-queue/` files live). `CLAUDE.md` is `@AGENTS.md` only. An existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board is merged, not replaced. After the gate passes, `/jt-work` invokes one fresh-context reviewer for medium and large: `/interrogate` when installed, otherwise `/pr`, otherwise `/ponytail-review` when the task is high-risk. Do not stack AI reviewers. The AI does not approve or merge.
 
 Copy-paste install commands live in the repo README; here, the Install column is the official page to follow. If a required **skill** is not installed, jt- commands still run: each `SKILL.md` gives a one-line fallback, not the old long prompts.
 
