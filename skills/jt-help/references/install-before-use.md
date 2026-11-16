@@ -12,13 +12,13 @@ Install these on your machine or in the repo before jtek-skill. None replace `ga
 | pstack `no-comments` | `npx skills add backnotprop/pstack --skill no-comments` | `/jt-work` (before PR) | Strip noise before human review | — |
 | pstack `interrogate` | `npx skills add backnotprop/pstack --skill interrogate` | after gate passes | Adversarial review; keep only run-proven findings | — |
 | pstack `maintain-verification-skill` | `npx skills add backnotprop/pstack --skill maintain-verification-skill` | after large code changes | Re-align verify skill with the app | — |
-| mise | `curl -fsSL https://mise.run \| sh` | `/jt-setup` | Pin tool versions; `gate.py detect` can source `TEST_CMD` / `LINT_CMD` from `mise.toml` tasks | `TEST_CMD`, `LINT_CMD` |
+| mise | `brew install mise` | `/jt-setup` | Pin tool versions; `gate.py detect` can source `TEST_CMD` / `LINT_CMD` from `mise.toml` tasks | `TEST_CMD`, `LINT_CMD` |
 | pre-commit (typos, actionlint, zizmor) | `python3 -m pip install pre-commit` then `pre-commit install` | on commit | Catches typos, workflow syntax, and Actions security before the gate | — |
 | reviewdog | `go install github.com/reviewdog/reviewdog/cmd/reviewdog@latest` | `/jt-review` | Post CI or lint output on PR lines | — |
 | Vitest affected | (Vitest in repo) `vitest --changed` in `TEST_CMD` | `/jt-setup` | Faster feedback on touched files | `TEST_CMD` |
 | Jest related | (Jest in repo) `jest --findRelatedTests` in `TEST_CMD` | `/jt-setup` | Run tests tied to the diff | `TEST_CMD` |
 | pytest-testmon | `python3 -m pip install pytest-testmon` | `/jt-setup` | Run pytest modules affected by edits | `TEST_CMD` |
-| TruffleHog | `curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \| sh -s -- -b /usr/local/bin` | `/jt-setup` | Secret scan on commits or CI | `SECURITY_CMD` |
+| TruffleHog | `brew install trufflehog` | `/jt-setup` | Secret scan on commits or CI | `SECURITY_CMD` |
 | Semgrep | `python3 -m pip install semgrep` | `/jt-setup` | Static analysis; gate runs non-empty `LINT_CMD` on Standard tasks | `LINT_CMD` or `SECURITY_CMD` |
 | OSV-Scanner | `brew install osv-scanner` or `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest` | `/jt-setup` | Dependency CVEs from OSV | `SECURITY_CMD` |
 | Knip | `npm install -D knip typescript @types/node` | `/jt-setup` | Dead exports and unused deps | `VERIFY_CMD` |
@@ -45,5 +45,5 @@ Install these on your machine or in the repo before jtek-skill. None replace `ga
 | --- | --- | --- | --- | --- |
 | Testcontainers | `python3 -m pip install "testcontainers[postgres]"` (pick extra) | `/jt-setup` | Real DB/services in tests; needs Docker | `TEST_CMD` |
 | Pact | `pip install pact-python` | `/jt-setup` | Consumer-driven contracts across fe/be repos | `TEST_CMD` |
-| nektos act | `curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh \| sudo bash` | before push | Run GitHub Actions locally | — |
+| nektos act | `brew install act` | before push | Run GitHub Actions locally | — |
 | Unleash (self-hosted) | Follow https://docs.getunleash.io/ (Docker Compose) | when feature flags land | Toggle features safely | — |
