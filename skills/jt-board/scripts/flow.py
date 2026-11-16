@@ -821,9 +821,185 @@ def window_of(task: Task, since: datetime, until: datetime) -> None:
     task.in_window = "no"
 
 
-def render_task(task: Task) -> list[str]:
+@dataclass
+class ClaimRow:
+    owner: str
+    claimed: str
+    activity: str
+
+
+def stale_hours(board: str) -> int:
+    for line in board.splitlines():
+        match = re.match(r"^\|\s*`<CLAIM_STALE>`\s*\|\s*(.*?)\s*\|\s*$", line)
+        if match is None:
+            continue
+        raw = match.group(1).strip().lower()
+        if raw.endswith("h"):
+            raw = raw[:-1]
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+    return 24
+
+
+def parse_claim_file(text: str) -> dict[str, ClaimRow] | None:
+    """Claims keyed by task id. None means the file is not a claim list."""
+    if not text.strip():
+        return {}
+    claims: dict[str, ClaimRow] = {}
+    current: str | None = None
+    owner = ""
+    claimed = ""
+    activity = ""
+
+    def finish() -> bool:
+        nonlocal current, owner, claimed, activity
+        if current is None:
+            return True
+        if current in claims or not owner or parse_time(claimed) is None or parse_time(activity) is None:
+            return False
+        if any(ch.isspace() and ch != " " for ch in owner):
+            return False
+        claims[current] = ClaimRow(owner, claimed, activity)
+        current = None
+        owner = claimed = activity = ""
+        return True
+
+    for line in text.splitlines():
+        if line.startswith("# ") or line.strip() == "#":
+            continue
+        if line.startswith("## "):
+            if not finish():
+                return None
+            task_id = line[3:].strip()
+            if not valid_id(task_id):
+                return None
+            current = task_id
+            continue
+        if current is None:
+            if line.strip():
+                return None
+            continue
+        if line.startswith("owner:"):
+            owner = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("claimed:"):
+            claimed = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("activity:"):
+            activity = line.split(":", 1)[1].strip()
+            continue
+        if line.strip() == "paths:" or line.strip() == "-" or line.startswith("- "):
+            continue
+        if line.strip():
+            return None
+    if not finish():
+        return None
+    return claims
+
+
+def load_claim_text(root: Path, repo: GitRepo) -> str | None:
+    text = read_text(root / "jt-queue" / "claims.md")
+    if text is not None:
+        return text
+    if not repo.ok:
+        return None
+    shown = repo.run(["show", "HEAD:jt-queue/claims.md"])
+    if shown is not None and shown.returncode == 0:
+        return shown.stdout
+    return None
+
+
+def _branch_matches(name: str, task_id: str, ticket: str) -> bool:
+    bare = f"task-{task_id}"
+    if name == bare or (name.startswith(bare + "-") and name[len(bare) + 1 :]):
+        return True
+    if not ticket or "/" not in name or any(ch.isspace() for ch in ticket):
+        return False
+    _kind, rest = name.split("/", 1)
+    return rest == ticket or rest.startswith(ticket + "-")
+
+
+def branch_activity(repo: GitRepo, task_id: str, ticket: str) -> datetime | None:
+    if not repo.ok:
+        return None
+    state, names = repo.lines(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+    if state != "ok":
+        return None
+    matched = [name for name in names if _branch_matches(name, task_id, ticket)]
+    if len(matched) != 1:
+        return None
+    proc = repo.run(["log", "-1", "--format=%cI", matched[0]])
+    if proc is None or proc.returncode != 0:
+        return None
+    return parse_time(proc.stdout.strip())
+
+
+def worktree_dirty(repo: GitRepo, task_id: str) -> bool:
+    common = repo.common_dir()
+    if common is None:
+        return False
+    reg = common / "jt-queue" / "worktrees.json"
+    try:
+        loaded = json.loads(reg.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(loaded, dict):
+        return False
+    entry = loaded.get(task_id)
+    if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+        return False
+    path = Path(entry["path"])
+    if not path.is_dir():
+        return False
+    proc = repo.run(["-C", str(path), "status", "--porcelain"])
+    if proc is None or proc.returncode != 0:
+        return False
+    return bool(proc.stdout.strip())
+
+
+def claim_view(
+    repo: GitRepo,
+    task: Task,
+    claims: dict[str, ClaimRow] | None,
+    hours: int,
+    now: datetime,
+) -> tuple[str, str]:
+    """(owner line body, stale yes/no/unknown). Owner body is `none` or the name."""
+    if claims is None:
+        return "unknown (jt-queue/claims.md could not be read)", "unknown"
+    claim = claims.get(task.card.task_id)
+    if claim is None:
+        return "none", "no"
+    if worktree_dirty(repo, task.card.task_id):
+        return claim.owner, "no"
+    moments = [parse_time(claim.activity), parse_time(claim.claimed)]
+    tip = branch_activity(repo, task.card.task_id, task.ticket)
+    if tip is not None:
+        moments.append(tip)
+    latest = max((item for item in moments if item is not None), default=None)
+    if latest is None:
+        return claim.owner, "unknown"
+    stale = "yes" if now - latest > timedelta(hours=hours) else "no"
+    return claim.owner, stale
+
+
+def owner_block(owner: str, claimed: str, activity: str, stale: str) -> list[str]:
+    lines = [f"  owner: {owner}"]
+    if owner == "none" or owner.startswith("unknown"):
+        lines.append("  claimed: none" if owner == "none" else "  claimed: unknown")
+        lines.append(f"  stale: {stale}")
+        return lines
+    lines.append(f"  claimed: {claimed}")
+    lines.append(f"  activity: {activity}")
+    lines.append(f"  stale: {stale}")
+    return lines
+
+
+def render_task(task: Task, owners: list[str] | None = None) -> list[str]:
     name = f" {task.card.name}" if task.card.name else ""
     lines = [f"task: {task.card.task_id}{name}"]
+    if owners:
+        lines.extend(owners)
     if task.in_window == "unknown":
         lines.append(f"  in-window: unknown ({task.window_reason})")
     else:
@@ -916,8 +1092,33 @@ def report(
     in_window = [task for task in shown if task.in_window == "yes"]
     undated = [task for task in shown if task.in_window == "unknown"]
 
+    claim_text = load_claim_text(root, repo)
+    claims = parse_claim_file(claim_text) if claim_text is not None else {}
+    hours = stale_hours(text)
+    by_id = {task.card.task_id: task for task in tasks}
+
+    def owner_lines(task: Task) -> list[str]:
+        owner, stale = claim_view(repo, task, claims, hours, moment)
+        claim = claims.get(task.card.task_id) if claims is not None else None
+        claimed = claim.claimed if claim is not None else ""
+        activity = claim.activity if claim is not None else ""
+        return owner_block(owner, claimed, activity, stale)
+
     for task in shown:
-        lines.extend(render_task(task))
+        lines.extend(render_task(task, owner_lines(task)))
+
+    lines.append("claims:")
+    if claims is None:
+        lines.append("  claims: unknown (jt-queue/claims.md could not be read)")
+    else:
+        for card in cards:
+            task = by_id.get(card.task_id)
+            if task is None:
+                continue
+            owner, stale = claim_view(repo, task, claims, hours, moment)
+            claim = claims.get(card.task_id)
+            claimed = claim.claimed if claim is not None else "none"
+            lines.append(f"  {card.task_id} owner: {owner} claimed: {claimed} stale: {stale}")
 
     lines.append("summary:")
     lines.append(f"  tasks: {len(in_window)}")
