@@ -271,6 +271,12 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
     if vague:
         notes.append("vague words in AC/EC: " + ", ".join(vague))
 
+    story = "\n".join(line for _, line in sections.get("Story", []))
+    if re.search(r"\b(states?|status)\b", story, re.IGNORECASE) and "Statechart" not in sections:
+        notes.append(
+            "statechart: compose pstack /statechart before AC freeze, or list each state in Rules"
+        )
+
     told_migration = False
     for section, header, rows in tables:
         if section != "Acceptance Criteria":

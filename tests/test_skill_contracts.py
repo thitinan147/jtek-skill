@@ -179,7 +179,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertEqual(len(set(versions.values())), 1, f"versions differ: {versions}")
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertIn(f"## {plugin['version']}", changelog)
-        self.assertEqual(plugin["version"], "24.13.0")
+        self.assertEqual(plugin["version"], "25.0.0")
 
     def test_second_lesson_must_name_what_enforces_it(self) -> None:
         template = (SKILLS_DIR / "jt-work" / "assets" / "lessons.template.md").read_text(
@@ -235,7 +235,8 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("feat/BOOK-12-room-search", text)
             self.assertNotIn("S-001", text)
             self.assertNotIn("T-012", text)
-        self.assertIn("no `--loop` flag", work)
+        self.assertIn("`--loop`", work)
+        self.assertIn("Does not merge", work)
         self.assertIn("type/<ticket-id>-<slug>", work)
         self.assertIn("do not check its shape", work)
 

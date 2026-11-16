@@ -153,6 +153,13 @@ NEXT_FOR = {
     "lesson-missing": "stop",
     "lesson-board": "stop",
     "human-only": "stop",
+    "diff-limit": "retry",
+    "codeowners": "stop",
+    "import-failed": "retry",
+    "import-timeout": "retry",
+    "pbt-failed": "retry",
+    "pbt-timeout": "retry",
+    "commit-title": "retry",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
@@ -245,6 +252,19 @@ HINT_FOR = {
         "A human adds human-sign-off: ✅ <approver> · YYYY-MM-DD on the task, "
         "using the person who approved the spec. Do not approve it yourself."
     ),
+    "diff-limit": "Split the diff below DIFF_LIMIT, or a human raises that cell on the board.",
+    "codeowners": "A human edits CODEOWNERS. The agent does not.",
+    "import-failed": (
+        "The import boundary failed. Move the import back inside the allowed modules, "
+        "or update the boundary config the project owns. Do not silence the rule."
+    ),
+    "import-timeout": "The import check ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "pbt-failed": (
+        "A property failed. Shrink the example the tool printed and fix the property, "
+        "or fix the code it covers. Do not delete the property to get past the gate."
+    ),
+    "pbt-timeout": "The property check ran past its limit. Make it faster, or raise JT_TEST_TIMEOUT (max 3600 seconds).",
+    "commit-title": "Use a conventional title: type(scope): summary (ticket-id).",
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset(
@@ -258,6 +278,10 @@ ROUND_REASONS = frozenset(
         "typecheck-timeout",
         "verify-failed",
         "verify-timeout",
+        "import-failed",
+        "import-timeout",
+        "pbt-failed",
+        "pbt-timeout",
     }
 )
 # Failed reach-review runs worth counting as gate fails. Operational stops
@@ -273,6 +297,9 @@ _GATE_FAIL_REASONS = ROUND_REASONS | {
     "review-diff",
     "ai-review",
     "human-only",
+    "diff-limit",
+    "codeowners",
+    "commit-title",
 }
 _GATE_STEP = {
     "secret-suspect": "secret",
@@ -293,6 +320,13 @@ _GATE_STEP = {
     "console-error": "screen",
     "snapshot-update": "verify",
     "human-only": "human-only",
+    "import-failed": "import",
+    "import-timeout": "import",
+    "pbt-failed": "pbt",
+    "pbt-timeout": "pbt",
+    "diff-limit": "diff-limit",
+    "codeowners": "codeowners",
+    "commit-title": "commit-title",
 }
 _gate_record: contextvars.ContextVar[tuple[Path, str] | None] = contextvars.ContextVar(
     "jt_gate_record", default=None
@@ -330,20 +364,34 @@ _CHECK_FAIL = {
     "lint": "lint-failed",
     "typecheck": "typecheck-failed",
     "verify": "verify-failed",
+    "import": "import-failed",
+    "pbt": "pbt-failed",
 }
 _CHECK_TIMEOUT = {
     "test": "test-timeout",
     "lint": "lint-timeout",
     "typecheck": "typecheck-timeout",
     "verify": "verify-timeout",
+    "import": "import-timeout",
+    "pbt": "pbt-timeout",
 }
 _STEP_FOR_CHECK = {
     "test": "tests",
     "lint": "lint",
     "typecheck": "typecheck",
     "verify": "verify",
+    "import": "import",
+    "pbt": "pbt",
 }
-_HASHED_WHEN_SET = ("TYPECHECK_CMD", "LINT_CMD", "AFFECTED_TEST_CMD", "SECURITY_CMD", "VERIFY_CMD")
+_HASHED_WHEN_SET = (
+    "TYPECHECK_CMD",
+    "LINT_CMD",
+    "AFFECTED_TEST_CMD",
+    "SECURITY_CMD",
+    "VERIFY_CMD",
+    "IMPORT_CMD",
+    "PBT_CMD",
+)
 _PRIVATE_KEY_LINE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 _SKIP_MARKER = re.compile(
     r"(?:\.skip\b|\.only\b|\bxit\s*\(|\bxdescribe\s*\(|\bxcontext\s*\(|"
@@ -410,6 +458,8 @@ REPO_VALUES = (
     "SECURITY_CMD",
     "VERIFY_CMD",
     "DENYLIST",
+    "IMPORT_CMD",
+    "PBT_CMD",
 )
 _SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 _DOC_EXTS = (".md", ".rst", ".adoc")
@@ -514,6 +564,7 @@ class Card:
     has_card_file: bool = False
     topic: str = ""
     refs: tuple[str, ...] = ()
+    blocked_by: tuple[str, ...] = ()
 
 
 @dataclass
@@ -726,12 +777,14 @@ def hydrate(board: Board, bodies: dict[str, str | None]) -> Board:
             card.question_empty = True
             card.topic = ""
             card.refs = ()
+            card.blocked_by = ()
             continue
         card.files = tuple(parse_files(body))
         card.question = question_text(body)
         card.question_empty = card.question == ""
         card.topic = _label(body, "layer")
         card.refs = parse_refs(body)
+        card.blocked_by = parse_blocked_by(body)
     return board
 
 
@@ -740,6 +793,55 @@ def parse_refs(card_text: str) -> tuple[str, ...]:
     for line in _section_label(card_text, "refs:").splitlines():
         found.extend(_REF_ID.findall(line))
     return tuple(dict.fromkeys(found))
+
+
+def parse_blocked_by(card_text: str) -> tuple[str, ...]:
+    """Task ids named on `blocked-by:`. Empty when the line is absent."""
+    return tuple(dict.fromkeys(_REF_ID.findall(_label(card_text, "blocked-by"))))
+
+
+def _waiting_ids(card: Card, cards: list[Card]) -> list[str]:
+    """Ids in blocked-by that are not yet merge: or drop:."""
+    if not card.blocked_by:
+        return []
+    closed = {other.id for other in cards if other.checked and other.status in _CLOSED}
+    return [dep for dep in card.blocked_by if dep not in closed]
+
+
+def _optional_int(board_text: str, name: str) -> int | None:
+    raw = parse_field(board_text, name).strip()
+    if raw.isdigit():
+        return int(raw)
+    return None
+
+
+def _start_cap(board: Board, claims: dict, card: Card, me: str) -> Decision | None:
+    """Wait instead of starting when a parallel or review cap is already full."""
+    review_cap = _optional_int(board.text, "MAX_REVIEW")
+    if review_cap is not None:
+        open_reviews = sum(
+            1 for other in board.cards if not other.checked and other.status == "review:"
+        )
+        if open_reviews >= review_cap:
+            return Decision(
+                "wait",
+                id=card.id,
+                reason="review-cap",
+                line=card.line,
+                detail=f"{open_reviews} tasks await review, MAX_REVIEW is {review_cap}",
+            )
+    parallel_cap = _optional_int(board.text, "MAX_PARALLEL")
+    if parallel_cap is not None:
+        mine = card.id in claims and claims[card.id].owner == me
+        if not mine and len(claims) >= parallel_cap:
+            return Decision(
+                "wait",
+                id=card.id,
+                reason="parallel",
+                line=card.line,
+                detail=f"{len(claims)} open claims, MAX_PARALLEL is {parallel_cap}",
+            )
+    return None
 
 
 def _same_topic(card: Card, cards: list[Card]) -> list[Card]:
@@ -815,7 +917,7 @@ def _pool(cards: list[Card]) -> list[Card]:
             continue
         if card.section == "later" and higher_open:
             continue
-        if _blocked(card, cards):
+        if _blocked(card, cards) or _waiting_ids(card, cards):
             continue
         chosen.append(card)
     return _ordered(chosen)
@@ -912,6 +1014,9 @@ def decide(
         return _take(board, cleared, "question-cleared", held_claims)
     ready = _work(pool, lambda card: card.status is None and card.has_card_file and _available(card))
     if ready:
+        capped = _start_cap(board, held_claims, ready, me)
+        if capped is not None:
+            return capped
         return _take(board, ready, "ready", held_claims)
 
     reviews = [
@@ -984,6 +1089,18 @@ def decide(
             ids=tuple(card.id for card in held),
             reason="claimed",
             line=held[0].line,
+        )
+    waiting_on = [
+        card for card in unchecked if card.has_card_file and _waiting_ids(card, board.cards)
+    ]
+    if waiting_on:
+        deps = ", ".join(_waiting_ids(waiting_on[0], board.cards))
+        return Decision(
+            "wait",
+            id=waiting_on[0].id,
+            reason="blocked-by",
+            line=waiting_on[0].line,
+            detail=f"blocked by {deps}",
         )
     return Decision("stop", reason="queue-clear")
 
@@ -1586,7 +1703,7 @@ def _board_runs_commands(commands: dict[str, str]) -> bool:
         return True  # path: decides where every command and start line runs
     for name, value in commands.items():
         value = value.strip()
-        if name.endswith(("SETUP_CMD", "LINT_CMD", "TYPECHECK_CMD", "SECURITY_CMD", "VERIFY_CMD")) and value:
+        if name.endswith(("SETUP_CMD", "LINT_CMD", "TYPECHECK_CMD", "SECURITY_CMD", "VERIFY_CMD", "IMPORT_CMD", "PBT_CMD")) and value:
             return True
         if name.endswith("TEST_CMD") and value not in ("", NO_SUITE):
             return True
@@ -1842,6 +1959,12 @@ def cmd_next(root: Path) -> int:
             extra.append("landed-waiting: " + ", ".join(landed_ids))
     if board is not None and has_git:
         prune_rounds(root, {card.id for card in board.cards if not card.checked})
+    if decision.action == "do-task" and board is not None and has_git:
+        capped = _quota_block(root, board.text)
+        if capped is not None:
+            decision = capped
+        else:
+            _remember_quota(root, board.text, decision.id)
     emit(decision, extra or None)
     return 0
 
@@ -1947,7 +2070,11 @@ def count_round(root: Path, card_id: str) -> int:
 
 # Steps that run before FAIL_FAST. They print step: and name the next check.
 _STEP_AFTER = {
+    "diff-limit": "human-only",
     "human-only": "secret",
+    "codeowners": "secret",
+    "import": "tests",
+    "pbt": "verify",
 }
 
 
@@ -5104,6 +5231,8 @@ class Target:
     security_cmd: str = ""
     verify_cmd: str = ""
     denylist: str = ""
+    import_cmd: str = ""
+    pbt_cmd: str = ""
 
 
 def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
@@ -5120,6 +5249,8 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
             parse_field(board_text, "SECURITY_CMD"),
             parse_field(board_text, "VERIFY_CMD"),
             parse_field(board_text, "DENYLIST"),
+            parse_field(board_text, "IMPORT_CMD"),
+            parse_field(board_text, "PBT_CMD"),
         )
     return Target(
         repo.name,
@@ -5133,6 +5264,8 @@ def _repo_target(home: Path, board_text: str, repo: RepoSpec) -> Target:
         repo.values.get("SECURITY_CMD", ""),
         repo.values.get("VERIFY_CMD", ""),
         repo.values.get("DENYLIST", ""),
+        repo.values.get("IMPORT_CMD", ""),
+        repo.values.get("PBT_CMD", ""),
     )
 
 
@@ -6662,9 +6795,14 @@ def _reach_review_multi(
         if unapproved:
             return _refuse(unapproved[0], detail=unapproved[1])
     for target in targets:
-        refused = refuse_human_only(
-            root, card_text, _diff_names(target.root, target.queue, card_id) or []
-        )
+        changed = _diff_names(target.root, target.queue, card_id) or []
+        refused = refuse_diff_limit(target.root, target.queue, card_id, text)
+        if refused is not None:
+            return refused
+        refused = refuse_codeowners(changed)
+        if refused is not None:
+            return refused
+        refused = refuse_human_only(root, card_text, changed)
         if refused is not None:
             return refused
     for target in targets:
@@ -6739,7 +6877,9 @@ def _reach_review_multi(
     ran_lint = any(t.lint_cmd.strip() for t in targets)
     ran_type = any(t.typecheck_cmd.strip() for t in targets)
     ran_verify = any(t.verify_cmd.strip() for t in targets)
-    need_work = need_screen or ran_test or ran_lint or ran_type or ran_verify
+    ran_import = any(t.import_cmd.strip() for t in targets)
+    ran_pbt = any(t.pbt_cmd.strip() for t in targets)
+    need_work = need_screen or ran_test or ran_lint or ran_type or ran_verify or ran_import or ran_pbt
     current = ""
     try:
         with ExitStack() as stack:
@@ -6750,12 +6890,14 @@ def _reach_review_multi(
                     _card_worktree(target.root, card_id, setup_cmd=target.setup_cmd)
                 )
             current = ""
-            for slug in ("typecheck", "lint", "test", "verify"):
+            for slug in ("typecheck", "lint", "import", "test", "pbt", "verify"):
                 for target in targets:
                     command = {
                         "typecheck": target.typecheck_cmd,
                         "lint": target.lint_cmd,
+                        "import": target.import_cmd,
                         "test": test_runs[target.name] or "",
+                        "pbt": target.pbt_cmd,
                         "verify": target.verify_cmd,
                     }[slug]
                     if not command.strip():
@@ -6804,6 +6946,14 @@ def _reach_review_multi(
     print(f"human-only: {human_only_state(root, card_text)}")
     print(f"ai-review: {ai_state}")
     _print_hooks_note(root)
+    multi_paths: list[str] = []
+    multi_lines = 0
+    for target in targets:
+        multi_paths.extend(_diff_names(target.root, target.queue, card_id) or [])
+        multi_lines += diff_line_count(target.root, target.queue, card_id) or 0
+    _print_v25(root, card_text, multi_paths, multi_lines, text)
+    print(f"import: {'ok' if ran_import else 'skip'}")
+    print(f"pbt: {'ok' if ran_pbt else 'skip'}")
     print("repo-review: open")
     print("repos: " + ", ".join(names))
     weak_bits: list[str] = []
@@ -6919,7 +7069,14 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
             "review-diff",
             detail="could not read the commits on the task branch (type/<ticket-id>-<slug>) against queue:",
         )
-    refused = refuse_human_only(root, card_text, _diff_names(root, queue, card_id) or [])
+    changed = _diff_names(root, queue, card_id) or []
+    refused = refuse_diff_limit(root, queue, card_id, text)
+    if refused is not None:
+        return refused
+    refused = refuse_codeowners(changed)
+    if refused is not None:
+        return refused
+    refused = refuse_human_only(root, card_text, changed)
     if refused is not None:
         return refused
     security_cmd = parse_field(text, "SECURITY_CMD")
@@ -6971,6 +7128,8 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
     lint_cmd = parse_field(text, "LINT_CMD")
     type_cmd = parse_field(text, "TYPECHECK_CMD")
     verify_cmd = parse_field(text, "VERIFY_CMD")
+    import_cmd = parse_field(text, "IMPORT_CMD")
+    pbt_cmd = parse_field(text, "PBT_CMD")
     ai_state = "skip"
     extra_checks: list[tuple[str, str]] = []
     if tier == "standard":
@@ -6978,6 +7137,8 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
             extra_checks.append(("typecheck", type_cmd.strip()))
         if lint_cmd.strip():
             extra_checks.append(("lint", lint_cmd.strip()))
+        if import_cmd.strip():
+            extra_checks.append(("import", import_cmd.strip()))
     floor, work_size, triggers, affected = collect_size(text, card_text, card_id, [("", root, queue)])
     test_to_run, affected_note = test_command_for(
         work_size, test_cmd, affected, parse_field(text, "AFFECTED_TEST_CMD")
@@ -6988,7 +7149,7 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
             browser = parse_field(text, "BROWSER_TOOL")
             if browser.strip() == "":
                 return _refuse("browser-empty", detail="screen: yes needs <BROWSER_TOOL> in board.md")
-        if need_screen or test_to_run or extra_checks or verify_cmd.strip():
+        if need_screen or test_to_run or extra_checks or verify_cmd.strip() or pbt_cmd.strip():
             with _card_worktree(root, card_id, setup_cmd=setup_cmd) as work:
                 for slug, command in extra_checks:
                     refused = _run_check(root, card_id, work, slug, command)
@@ -6996,6 +7157,10 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
                         return refused
                 if test_to_run:
                     refused = _run_check(root, card_id, work, "test", test_to_run)
+                    if refused is not None:
+                        return refused
+                if pbt_cmd.strip():
+                    refused = _run_check(root, card_id, work, "pbt", pbt_cmd.strip())
                     if refused is not None:
                         return refused
                 if verify_cmd.strip():
@@ -7038,6 +7203,9 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
     print(f"ai-review: {ai_state}")
     _print_hooks_note(root)
     print(f"repo-review: {review_state}")
+    _print_v25(root, card_text, changed, diff_line_count(root, queue, card_id) or 0, text)
+    print(f"import: {'ok' if any(slug == 'import' for slug, _cmd in extra_checks) else 'skip'}")
+    print(f"pbt: {'ok' if pbt_cmd.strip() else 'skip'}")
     found = test_weakening(root, queue, card_id) or []
     weak = ",".join(found) if found else "none"
     print(
@@ -8343,6 +8511,274 @@ def refuse_human_only(root: Path, card_text: str, paths: list[str]) -> int | Non
     return _refuse("human-only", detail=detail, fix_line=fix, step="human-only")
 
 
+_CONVENTIONAL_TITLE = re.compile(
+    r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)"
+    r"(?:\([^)\s]+\))?: \S"
+)
+_LOOP_CAP = 100
+_OPEN_PR_CAP = 10
+
+
+def commit_title_problem(title: str) -> str | None:
+    """Empty when the title is a conventional commit subject. Scope may be omitted."""
+    if _CONVENTIONAL_TITLE.match(title.strip()):
+        return None
+    return "use type(scope): summary, with the ticket id in the summary"
+
+
+def risk_level(paths: list[str], lines: int, human_hit: bool, limit: int) -> str:
+    """low, medium, or high from paths, diff size, and human-only areas."""
+    if human_hit or lines > limit or touches_auth(paths) or touches_data(paths):
+        return "high"
+    if lines > max(1, limit // 2) or len(paths) > 12:
+        return "medium"
+    return "low"
+
+
+def touches_human_only(root: Path, card_text: str, paths: list[str]) -> bool:
+    text = _spec_text_for(root, card_text)
+    areas = human_only_areas(text) if text else []
+    return any(path_in_area(path, area) for path in paths for area in areas)
+
+
+def _print_v25(root: Path, card_text: str, paths: list[str], lines: int, board_text: str) -> None:
+    level = risk_level(paths, lines, touches_human_only(root, card_text, paths), diff_limit(board_text))
+    print(f"risk: {level}")
+    if level == "high":
+        print("suggest: /ponytail-review")
+    print("trim: pstack /no-comments")
+
+
+def refuse_diff_limit(root: Path, queue: str, card_id: str, board_text: str) -> int | None:
+    count = diff_line_count(root, queue, card_id)
+    if count is None:
+        return None
+    limit = diff_limit(board_text)
+    if count <= limit:
+        return None
+    return _refuse(
+        "diff-limit",
+        detail=f"{count} changed lines, DIFF_LIMIT is {limit}",
+        step="diff-limit",
+    )
+
+
+def refuse_codeowners(paths: list[str]) -> int | None:
+    hits = [path for path in paths if PurePosixPath(path).name == "CODEOWNERS"]
+    if not hits:
+        return None
+    return _refuse("codeowners", detail="touches " + ", ".join(hits), step="codeowners")
+
+
+def _looks_like_test(path: str) -> bool:
+    pure = PurePosixPath(path.replace("\\", "/"))
+    name = pure.name.lower()
+    text = pure.as_posix().lower()
+    return (
+        name.startswith("test_")
+        or name.endswith("_test.py")
+        or ".test." in name
+        or ".spec." in name
+        or "/test/" in f"/{text}"
+        or text.startswith("tests/")
+        or text.startswith("test/")
+    )
+
+
+def codeowners_proposal(paths: list[str]) -> str:
+    """A lock a human can commit. The agent does not write CODEOWNERS."""
+    lines = ["# /jt-setup proposal. A human commits CODEOWNERS. The agent does not."]
+    tests = [path for path in paths if _looks_like_test(path)]
+    if not tests:
+        lines.append("# Add one approved test path per line, then a human owner.")
+    for path in tests:
+        lines.append(f"/{path.lstrip('/')} @human")
+    return "\n".join(lines)
+
+
+def _quota_path(root: Path) -> Path:
+    return _git_common_dir(root) / "jt-queue" / "run.json"
+
+
+def _quota_ids(root: Path) -> list[str]:
+    try:
+        data = json.loads(_quota_path(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    found = data.get("ids") if isinstance(data, dict) else None
+    if not isinstance(found, list):
+        return []
+    return [item for item in found if isinstance(item, str)]
+
+
+def _remember_quota(root: Path, board_text: str, card_id: str) -> None:
+    if _optional_int(board_text, "QUOTA") is None or not card_id:
+        return
+    ids = _quota_ids(root)
+    if card_id in ids:
+        return
+    ids.append(card_id)
+    path = _quota_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"ids": ids}) + "\n", encoding="utf-8")
+
+
+def _quota_block(root: Path, board_text: str) -> Decision | None:
+    cap = _optional_int(board_text, "QUOTA")
+    if cap is None:
+        return None
+    used = _quota_ids(root)
+    if len(used) >= cap:
+        return Decision(
+            "wait",
+            reason="quota",
+            detail=f"used {len(used)} of QUOTA {cap}. gate.py run-start begins a new run.",
+        )
+    return None
+
+
+def cmd_run_start(root: Path) -> int:
+    path = _quota_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"ids": []}) + "\n", encoding="utf-8")
+    print("run: started")
+    print("merge: no")
+    return 0
+
+
+def cmd_resume(root: Path, card_id: str) -> int:
+    print("merge: no")
+    print("data: not instructions")
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    note = load_handoff(root, card_id)
+    if note is None or not note.next_cmd.strip():
+        print("resume: none")
+        print("next: gate.py next")
+        return 0
+    print(f"resume: {card_id}")
+    print(f"state: {note.state}")
+    print(f"next: {note.next_cmd}")
+    return 0
+
+
+def cmd_merge_queue(root: Path) -> int:
+    """Print the human merge order. This command does not merge."""
+    print("merge: no")
+    text = read_board_text(root)
+    if text is None:
+        print("order: none")
+        print("detail: no board")
+        return 0
+    board, _brief = load_board(root)
+    if board is None:
+        print("order: none")
+        return 0
+    ready: list[str] = []
+    waiting: list[str] = []
+    for card in _ordered(board.cards):
+        if card.checked or card.status != "review:" or card.section not in SECTION_RANK:
+            continue
+        deps = _waiting_ids(card, board.cards)
+        if deps:
+            waiting.append(f"{card.id} blocked-by {', '.join(deps)}")
+            continue
+        ready.append(card.id)
+    print("order: " + (", ".join(ready) if ready else "none"))
+    if waiting:
+        print("waiting: " + "; ".join(waiting))
+    print("does-not-merge: a human merges in this order")
+    return 0
+
+
+def cmd_flags(_root: Path) -> int:
+    """Optional Unleash. No network call. The agent does not merge or toggle production."""
+    print("merge: no")
+    configured = bool(os.environ.get("UNLEASH_URL", "").strip())
+    print("flags: " + ("unleash" if configured else "skip"))
+    print("host: open-source Unleash, self-hosted, optional")
+    print("revert: revert the merge, then disable the flag on that server")
+    if not configured:
+        print("detail: UNLEASH_URL is unset, so this run does not call a flag server")
+    return 0
+
+
+def cmd_title(text: str) -> int:
+    print("merge: no")
+    problem = commit_title_problem(text)
+    if problem:
+        return _refuse("commit-title", detail=problem)
+    print("title: ok")
+    print("post-merge: a human merges; release-please opens the release PR when that config is installed")
+    return 0
+
+
+def cmd_codeowners(root: Path, card_id: str) -> int:
+    print("merge: no")
+    print("owner: human")
+    paths: list[str] = []
+    text = read_board_text(root)
+    if card_id and text is not None and valid_card_id(card_id):
+        queue = parse_queue(text)
+        paths = _diff_names(root, queue, card_id) or []
+    print(codeowners_proposal(paths))
+    return 0
+
+
+def _unclear(card: Card) -> bool:
+    return bool(card.question) or not card.has_card_file
+
+
+def cmd_loop(root: Path, limit: int) -> int:
+    """Plan one batch. It does not start agents, open PRs, or merge."""
+    print("merge: no")
+    print("tools: mise, reviewdog")
+    print("optional: testcontainers, pact, act")
+    board, _brief = load_board(root)
+    if board is None:
+        print("action: setup-board")
+        return 0
+    cap = _optional_int(board.text, "MAX_REVIEW")
+    review_cap = _OPEN_PR_CAP if cap is None else min(cap, _OPEN_PR_CAP)
+    batch = max(1, min(limit, _LOOP_CAP))
+    open_reviews = [
+        card.id
+        for card in board.cards
+        if not card.checked and card.status == "review:" and card.section in SECTION_RANK
+    ]
+    questions = [card.id for card in _ordered(board.cards) if not card.checked and _unclear(card)]
+    blocked = [
+        card.id for card in _ordered(board.cards) if not card.checked and _waiting_ids(card, board.cards)
+    ]
+    ready = [card.id for card in _pool(board.cards) if card.has_card_file and card.status in {None, "send-back:"}]
+    print(f"base: {board.queue_branch}")
+    print(f"open-reviews: {len(open_reviews)}")
+    print(f"max-review: {review_cap}")
+    print("questions: " + (", ".join(questions) if questions else "none"))
+    print("skip-blocked: " + (", ".join(blocked) if blocked else "none"))
+    print(f"each-from: latest {board.queue_branch}")
+    quota = _quota_block(root, board.text)
+    if quota is not None:
+        print("action: wait")
+        print(f"reason: {quota.reason}")
+        print(f"detail: {quota.detail}")
+        return 0
+    if len(open_reviews) >= review_cap:
+        print("action: wait")
+        print("reason: review-cap")
+        print(f"detail: {len(open_reviews)} open reviews, cap is {review_cap}")
+        return 0
+    room = review_cap - len(open_reviews)
+    chosen = ready[: min(batch, room)]
+    parallel = _optional_int(board.text, "MAX_PARALLEL")
+    if parallel is not None:
+        chosen = chosen[:parallel]
+    print("action: loop")
+    print("ids: " + (", ".join(chosen) if chosen else "none"))
+    print("skip-unmerged: a task whose blocked-by is not merge: or drop: stays out of ids")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in MERGE_ARGV:
@@ -8424,6 +8860,17 @@ def main(argv: list[str] | None = None) -> int:
     hooks.add_argument("--security", default=None)
     landed = sub.add_parser("landed", parents=[common])
     landed.add_argument("--id", required=True)
+    resume = sub.add_parser("resume", parents=[common])
+    resume.add_argument("--id", required=True)
+    sub.add_parser("merge-queue", parents=[common])
+    sub.add_parser("flags", parents=[common])
+    sub.add_parser("run-start", parents=[common])
+    title = sub.add_parser("title", parents=[common])
+    title.add_argument("--text", required=True)
+    owners = sub.add_parser("codeowners", parents=[common])
+    owners.add_argument("--id", default="")
+    loop = sub.add_parser("loop", parents=[common])
+    loop.add_argument("--max", type=int, default=100)
 
     parsed = parser.parse_args(args)
     root = Path(parsed.root).resolve()
@@ -8480,6 +8927,20 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hooks(root, parsed.write, parsed.lint, parsed.security)
     if parsed.cmd == "landed":
         return cmd_landed(root, parsed.id)
+    if parsed.cmd == "resume":
+        return cmd_resume(root, parsed.id)
+    if parsed.cmd == "merge-queue":
+        return cmd_merge_queue(root)
+    if parsed.cmd == "flags":
+        return cmd_flags(root)
+    if parsed.cmd == "run-start":
+        return cmd_run_start(root)
+    if parsed.cmd == "title":
+        return cmd_title(parsed.text)
+    if parsed.cmd == "codeowners":
+        return cmd_codeowners(root, parsed.id)
+    if parsed.cmd == "loop":
+        return cmd_loop(root, parsed.max)
     return _refuse("merge")
 
 

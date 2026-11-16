@@ -139,5 +139,21 @@
       "Shows rb-13-cancel-booking with a blocker: Q2 blocks dev and has no answer",
       "Includes a state flow transcribed from each story's Given, When and Then rows, one transition per row"
     ]
+  },
+  {
+    "skills": [
+      "jt-work"
+    ],
+    "query": "/jt-work --loop",
+    "files": [
+      "evals/queue.json"
+    ],
+    "expected_behavior": [
+      "Runs gate.py loop and does not merge",
+      "Skips tasks whose blocked-by ids are not merge: or drop:, and lists unclear tasks for /jt-board",
+      "Caps the batch at 100 tickets and caps open reviews at MAX_REVIEW or 10",
+      "Starts each ticket from the latest queue commit and skips work that depends on an unmerged branch",
+      "Asks no extra approval beyond the one spec approval"
+    ]
   }
 ]

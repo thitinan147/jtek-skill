@@ -10,7 +10,10 @@ Write `plan.md` from the template, keep changes inside `files:` and `do:`, run `
 
 - Never cut security, input validation at a trust boundary, or error handling to save effort.
 - Start each task from `gate.py next`; re-read `task.md` and `jt-queue/lessons.md`. Prefer a fresh session per task when you can.
-- Inside `files:`, remove dead code before adding; do not tidy files outside `files:`.
+- Inside `files:`, remove dead code before adding; do not tidy files outside `files:`. Before the draft PR, compose pstack /no-comments. If that skill is missing, delete comments that restate the code and unused code inside `files:`.
+- A story with states composes pstack /statechart at `/jt-spec-ac` before AC freeze. If that skill is missing, list each state in Rules.
+- Optional `<IMPORT_CMD>` is an import boundary (dependency-cruiser or import-linter). Optional `<PBT_CMD>` is a property check (fast-check or Hypothesis). A failure names the fix. Do not silence the rule or delete the property to get past the gate.
+- `gate.py loop` plans a batch with mise and reviewdog when they are installed. Testcontainers, Pact, and act stay optional. Each ticket starts from the latest queue commit. Skip a task that depends on unmerged work.
 - Review the diff against `files:` and `out:` before `review:`; write what you checked in `## review-diff` (not your memory of the change).
 
 ## If no reviewer skill is installed
