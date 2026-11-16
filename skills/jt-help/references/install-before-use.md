@@ -2,12 +2,16 @@
 
 Install these on your machine or in the repo before jtek-skill. None replace `gate.py` or a human `/jt-review`. At `/jt-setup`, confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` on `board.md`. Use one AI reviewer at a time (for example `/interrogate` after the gate passes); do not stack AI reviewers.
 
-Copy-paste install commands live in the repo README; here, the Install column is the official page to follow.
+Copy-paste install commands live in the repo README; here, the Install column is the official page to follow. If a required **skill** is not installed, jt- commands still run: each `SKILL.md` gives a one-line fallback, not the old long prompts.
 
 ## Required
 
 | Tool | Official install | JTek step | Why | Slot |
 | --- | --- | --- | --- | --- |
+| superpowers executing-plans | https://www.skills.sh/obra/superpowers/executing-plans | `/jt-work` | Plan then execute Standard tasks | — |
+| superpowers test-driven-development | https://www.skills.sh/obra/superpowers/test-driven-development | `/jt-work` | Red-green-refactor before `reach-review` | — |
+| superpowers brainstorming | https://www.skills.sh/obra/superpowers/brainstorming | `/jt-spec-ac` | When the idea is unclear before drafting AC | — |
+| grill-me | https://www.skills.sh/mattpocock/skills/grill-me | `/jt-spec-ac` | Questions that unblock AC; `check.py` outcomes unchanged | — |
 | Playwright CLI + skills | https://playwright.dev/docs/getting-started-cli and https://playwright.dev/agent-cli/skills | `/jt-work` | Agent drives the app (`playwright-cli open … -s=<ticket>` per worktree); gate still runs `npx playwright test` / `toHaveScreenshot` | (agent + `TEST_CMD`) |
 | pstack create-verification-skill | https://www.skills.sh/backnotprop/pstack/create-verification-skill | `/jt-setup` | Project-local verify skill for the real surface | — |
 | pstack statechart | https://www.skills.sh/backnotprop/pstack/statechart | `/jt-spec-ac` | Stateful flows: model states and rules before AC freeze | — |
@@ -35,9 +39,9 @@ Copy-paste install commands live in the repo README; here, the Install column is
 | Skill | Official install | JTek step | Why |
 | --- | --- | --- | --- |
 | Matt Pocock /pr | https://www.skills.sh/mattpocock/skills/pr | `/jt-work` (PR body) | Reviewable PR shape |
+| Matt Pocock handoff | https://www.skills.sh/mattpocock/skills/handoff | `/jt-spec-handoff` | Test steps without duplicating AC text |
 | Matt Pocock /retro | https://www.skills.sh/mattpocock/skills/retro | after `/jt-review` | Improve agent environment from the session |
 | ponytail /ponytail-review | https://github.com/DietrichGebert/ponytail | high-risk PRs only | Deep review; not a substitute for human merge |
-| superpowers brainstorming | https://www.skills.sh/obra/superpowers/brainstorming | `/jt-add-task` / early `/jt-work` | Shape the problem before implementation |
 | superpowers systematic-debugging | https://www.skills.sh/obra/superpowers/systematic-debugging | `/jt-work` | Disciplined debug when the gate refuses |
 | anthropics webapp-testing | https://github.com/anthropics/skills (skill webapp-testing) | `/jt-work` (local web) | Playwright helpers; see skill for Python deps |
 

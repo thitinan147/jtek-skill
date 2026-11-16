@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.2.1"
+  version: "24.3.0"
   short-description: Draft story, rules, acceptance criteria, and questions
 argument-hint: "<work> [text or path of a PDF or image]"
 ---
@@ -18,6 +18,10 @@ argument-hint: "<work> [text or path of a PDF or image]"
 `/jt-spec-ac <work>` plus a card, a bug report, or a PDF or image path · for Refinement · readers do not read the code
 
 Goal: the PO approves a draft instead of writing one, and what two devs could build differently is asked before Planning.
+
+## Composed skills
+
+When **grill-me** (Matt Pocock) is installed, invoke it after `check.py` to sharpen the draft; `check.py` still blocks approval while a question blocks `AC`. When **brainstorming** (superpowers) is installed and the card or flow is unclear, invoke it before drafting. If a skill is missing: one short question round per [references/rules.md](references/rules.md) step 5.
 
 ## Before drafting
 
@@ -34,7 +38,6 @@ Goal: the PO approves a draft instead of writing one, and what two devs could bu
 - **Bug:** the Story section has **Now**, **Expected** and **Repro** instead of the user story. AC = the correct behavior · EC = what must not change
 - A new or changed API: a question for its owner in `roles` (else Dev), Blocks `dev`, with a one-line proposed contract
 - Keep existing AC and add only what is missing; a cut AC keeps its number in Out of scope ("was EC4")
-- **Review before asking:** read the draft as a dev and as the tester; fix or ask about the places two people would read differently (data rules, permissions, states, errors, vague words like "fast" or "own")
 - **Size** on the Story is `small`, `medium`, or `large` (how much process, not points). `small`: do not draft; the human uses `/jt-add-task`. `medium`: this spec is enough. `large`: continue with `/jt-spec-handoff`
 
 ## Template

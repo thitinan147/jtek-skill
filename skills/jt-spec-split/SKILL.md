@@ -6,7 +6,7 @@ license: MIT
 compatibility: Claude Code, Codex, Cursor and other Agent Skills clients. Needs git and Python 3.10+ (standard library only). poppler is optional, for large PDFs.
 metadata:
   author: Thitinan
-  version: "24.2.1"
+  version: "24.3.0"
   short-description: Split a flow into a story map and one folder per story
 argument-hint: "<flow> [text or path of a PDF or image]"
 ---

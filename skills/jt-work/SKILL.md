@@ -5,14 +5,14 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.2.1"
+  version: "24.3.0"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
 
 # jt-work
 
-*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for the gate contract. Templates: [assets/plan.template.md](assets/plan.template.md), [assets/lessons.template.md](assets/lessons.template.md). Habits: [references/playbooks.md](references/playbooks.md). The gate is [scripts/gate.py](scripts/gate.py).
+*Constrain the outcome, not the agent.* Read [references/contract.md](references/contract.md) for the gate contract. Templates: [assets/plan.template.md](assets/plan.template.md), [assets/lessons.template.md](assets/lessons.template.md). Method and fallbacks: [references/playbooks.md](references/playbooks.md). The gate is [scripts/gate.py](scripts/gate.py).
 
 ```bash
 python3 <this-skill-dir>/scripts/gate.py next --root .
@@ -38,7 +38,7 @@ One command, and no `--loop` flag. With no argument, keep taking the task `gate.
 
 ## 2. Do the task and minimum evidence
 
-Choose your own implementation method (TDD, planning, subagents, worktrees are optional); [references/playbooks.md](references/playbooks.md) has habits by `<kind>`. The gate computes the tier from `(<kind>)` and checks only this minimum evidence:
+On **Standard** tasks, invoke **executing-plans** then **test-driven-development** (obra/superpowers) when installed; `size-hooks: worktree-rounds` still applies when the gate prints it. If either skill is missing, follow the one-line fallback in [references/playbooks.md](references/playbooks.md). The gate computes the tier from `(<kind>)` and checks only this minimum evidence:
 
 | Gate tier | Task kinds | Minimum evidence checked by `gate.py` |
 |---|---|---|
