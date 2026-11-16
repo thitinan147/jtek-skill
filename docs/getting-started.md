@@ -71,6 +71,7 @@ It looks for a test command. `detect` only knows common setups, so here it finds
 $ gate.py detect --root .
 TEST_CMD = no-suite  [source: no test runner found]
 SETUP_CMD = (empty)  [source: none found]
+VERIFY_CMD = (empty)  [source: not a web app]
 merge: no
 ```
 

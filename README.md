@@ -21,7 +21,7 @@ Pick **one** method. Installing both the plugin and the skills CLI gives you eve
 
 ```bash
 # Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v24.7.0
+npx skills add thitinan147/jtek-skill#v24.8.0
 
 # Or follow the default branch
 npx skills add thitinan147/jtek-skill
@@ -32,11 +32,11 @@ Add `-g` to install for all your projects instead of the current one.
 **Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v24.7.0
+/plugin marketplace add thitinan147/jtek-skill#v24.8.0
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v24.7.0` the marketplace follows the default branch.
+Without `#v24.8.0` the marketplace follows the default branch.
 
 ### Install what you need
 
@@ -54,7 +54,7 @@ Each skill is a folder of its own. The name is a separate argument, with a space
 | [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
 | [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
 
-Pin the same way: `npx skills add thitinan147/jtek-skill#v24.7.0 --skill jt-work`.
+Pin the same way: `npx skills add thitinan147/jtek-skill#v24.8.0 --skill jt-work`.
 
 In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
 
@@ -126,7 +126,7 @@ The same list ships in [`skills/jt-help/references/install-before-use.md`](skill
 | [superpowers `test-driven-development`](https://www.skills.sh/obra/superpowers/test-driven-development) | `npx skills add obra/superpowers --skill test-driven-development` | [`/jt-work`](skills/jt-work/SKILL.md) | Red-green-refactor before `reach-review` | — |
 | [superpowers `brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming) | `npx skills add obra/superpowers --skill brainstorming` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | When the idea is unclear before drafting AC | — |
 | [grill-me](https://www.skills.sh/mattpocock/grill-me) | `npx skills add mattpocock/skills --skill grill-me` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Questions that unblock AC (`check.py` outcomes unchanged) | — |
-| [Playwright CLI](https://playwright.dev/docs/getting-started-cli) + [skills](https://playwright.dev/agent-cli/skills) | `npm install -g @playwright/cli@latest` then `playwright-cli install --skills -g` | [`/jt-work`](skills/jt-work/SKILL.md) | Agent clicks through AC (`playwright-cli open … -s=<ticket>` per worktree); gate still runs `npx playwright test` / `toHaveScreenshot` | agent + `TEST_CMD` |
+| [Playwright CLI](https://playwright.dev/docs/getting-started-cli) + [skills](https://playwright.dev/agent-cli/skills) | `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` | [`/jt-work`](skills/jt-work/SKILL.md) | Agent drives the app with `playwright-cli -s=<ticket-id>` (one session per worktree; not Playwright MCP), reads console and network errors, and lists a screenshot per AC id. The gate runs `npx playwright test` / `toHaveScreenshot` and does not update snapshots in that task | `VERIFY_CMD` |
 | pstack [`create-verification-skill`](https://www.skills.sh/backnotprop/pstack/create-verification-skill) | `npx skills add backnotprop/pstack --skill create-verification-skill` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Project-local verify skill for the real user surface | — |
 | pstack [`statechart`](https://www.skills.sh/backnotprop/pstack/statechart) | `npx skills add backnotprop/pstack --skill statechart` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Stateful systems: model states before AC freeze | — |
 | pstack [`no-comments`](https://www.skills.sh/backnotprop/pstack/no-comments) | `npx skills add backnotprop/pstack --skill no-comments` | [`/jt-work`](skills/jt-work/SKILL.md) (before PR) | Strip comment noise before review | — |

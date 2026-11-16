@@ -16,3 +16,14 @@ Write `plan.md` from the template, keep changes inside `files:` and `do:`, run `
 ## If no reviewer skill is installed
 
 Write `fallback: no reviewer skill installed` under `## ai-review`. Do not invent findings, and do not run a second reviewer.
+
+## Screen
+
+Use Microsoft's Playwright CLI. Do not use Playwright MCP. Install with `npm install -g @playwright/cli@latest` then `playwright-cli install --skills`. Docs: https://playwright.dev/docs/getting-started-cli and https://playwright.dev/agent-cli/skills
+
+One session per worktree. Pass `-s=<ticket-id>` on every call (the long flag is `--session`).
+
+1. `playwright-cli -s=<ticket-id> open <url>` and do the AC steps on the touched screens.
+2. `playwright-cli -s=<ticket-id> console error`. Read network errors too (`Failed to load resource`, `net::ERR_`). An uncaught error or a console error is `finding:` in `## evidence`, tied to that AC id. Do not record the row as ok.
+3. Put a screenshot path in that row (`.png`, `.jpg`, or `.webp`). A short video (`.webm`, `.mp4`) or trace (`.zip`) path is optional.
+4. The gate decides with `<VERIFY_CMD>`: `npx playwright test`, including `toHaveScreenshot`. Do not pass `--update-snapshots` or `-u`. `updateSnapshots` stays `none`. A baseline update is a separate step a human reviews. This task does not accept new snapshots.

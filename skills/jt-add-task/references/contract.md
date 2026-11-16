@@ -1,4 +1,4 @@
-# Task Queue Contract, version 24.7
+# Task Queue Contract, version 24.8
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
@@ -41,11 +41,11 @@ The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A trac
 |---|---|---|
 | Exactly one task branch (`type/<ticket-id>-<slug>` or legacy `task-<id>-<slug>`) exists | ✓ | ✓ |
 | Use existing check commands; no one-off checker script | ✓ | ✓ |
-| `<TEST_CMD>` passes (or `no-suite`). `<VERIFY_CMD>` passes when that cell is not empty (empty is `skip`) | ✓ | ✓ |
+| `<TEST_CMD>` passes (or `no-suite`). `<VERIFY_CMD>` passes when that cell is not empty (empty is `skip`). A verify command must not update snapshots (`--update-snapshots`, `-u`, or `updateSnapshots` other than `none`) | ✓ | ✓ |
 | `<TYPECHECK_CMD>` then `<LINT_CMD>` when the cell is not empty (empty is `skip` and is not run). Quick does not run them | — | ✓ |
 | A diff outside `jt-queue/` exists, and `## review-diff` cites the latest code commit, `verdict: pass`, and a `checked:` line. No such diff is refused (`no diff outside jt-queue/ to review`), not `repo-review: skip` | — | ✓ |
 | `## ai-review` when the effective size is `medium` or `large` (`ai-review: skip` when `small`) | — | ✓ |
-| Every `pass:` line of the task appears in `## evidence` of `plan.md` | — | ✓ |
+| Every `pass:` line of the task appears in `## evidence` of `plan.md`. On `screen: yes`, a pass line that names an AC or EC id also names a screenshot path in that row (a video or trace path is optional) | — | ✓ |
 | JTek `gate.py screen-check` when `screen: yes` | — | ✓ |
 | Secret scan, first: `<SECURITY_CMD>` when that program is installed, otherwise `secret-suspect` (added `.env*` except `.env.example`, a private-key file, or a `PRIVATE KEY` block). `next: ask`. The output names the file or `file:line` and never the value | ✓ | ✓ |
 | Deprecated names: `<DENYLIST>` or `jt-queue/denylist.txt`, each line `old -> replacement` (`;` separates pairs). A hit in the diff is `deprecated-name` and names the replacement. An empty list is `skip` | ✓ | ✓ |
@@ -58,7 +58,7 @@ Pre-commit is not one of those checks. `/jt-setup` shows `gate.py hooks` (pinned
 ## 4. Plan, Three Rounds, and Diff Review
 
 - **Plan (`Standard` tier):** A `Done when` line is a command to run, or an artifact to open. If `Done when` has no command and no artifact, run `gate.py ask`. If `Escape` is empty, or an `Escape` line is true, run `gate.py ask` and do not set `review:`.
-- **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. The gate counts a round each time `<TEST_CMD>`, `<LINT_CMD>`, `<TYPECHECK_CMD>`, `<VERIFY_CMD>`, or setup fails in `reach-review` (retrying an unchanged commit counts too), and prints `round <n> of 3`. On the third it answers `next: ask`: run `gate.py ask` with what each round tried. `gate.py ask` starts the count again. `secret-suspect`, `secret-failed`, and `deprecated-name` do not count a round.
+- **Three rounds:** One round is one full attempt. The evidence is that the relevant tests are green, and for screen work of every kind, not only `fix`, the same steps on the same screen do not show the bug. Screen work that cannot be clicked does not count as this round. The gate counts a round each time `<TEST_CMD>`, `<LINT_CMD>`, `<TYPECHECK_CMD>`, `<VERIFY_CMD>`, or setup fails in `reach-review` (retrying an unchanged commit counts too), and prints `round <n> of 3`. On the third it answers `next: ask`: run `gate.py ask` with what each round tried. `gate.py ask` starts the count again. `secret-suspect`, `secret-failed`, `deprecated-name`, `console-error`, and `snapshot-update` do not count a round. A console or uncaught error on a touched screen is `finding:` in that evidence row, not a pass.
 - **Diff review:** On `Standard` tier, review this task's diff yourself before `review:` and record it in `## review-diff`. A Standard task with no diff outside `jt-queue/` is refused. `docs` on the Quick tier does not need that review. Do not skip a review that the tier requires; if you cannot review the diff, do not set `review:`. A note in the plan is not that review.
 - **Ticket id:** Copy the id the ticket already has onto `ticket:` in `task.md` (`BOOK-12`, `#45`, a Notion id). Require one. Do not invent one and do not check its shape. The gate reads `ticket:` only to find the task branch.
 - **Commit and PR title:** `<type>(<scope>): <summary> (<ticket-id>)`. `<type>` is the task kind (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`). `<scope>` is optional. Example: `feat(booking): add room search API (BOOK-12)`. The kind before `(` or `:` is what the gate matches.

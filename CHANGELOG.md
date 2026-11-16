@@ -1,5 +1,16 @@
 # Changelog
 
+## 24.8.0 - screen evidence a human can review
+
+- On a screen task, `/jt-work` drives the app with Microsoft's Playwright CLI (`playwright-cli -s=<ticket-id>`, one session per worktree), not Playwright MCP. It reads console and network errors. An uncaught error or a console error on a touched screen is `finding:` in `plan.md` `## evidence`, next to a screenshot path for that AC id. A short video or trace path is optional.
+- The gate still decides with `<VERIFY_CMD>` (`npx playwright test`, including `toHaveScreenshot`). `reach-review` refuses `snapshot-update` instead of running `--update-snapshots`, `-u`, or a Playwright config that would write baselines. `updateSnapshots` must be `none`. A baseline change is a separate step a human reviews. This task does not accept new snapshots.
+- A `screen: yes` pass line that names an AC or EC id must quote that id in `## evidence` and name a screenshot path. Missing either is `evidence-missing`. A console or network error in that section that is not marked `finding:` is `console-error`.
+- `/jt-setup` proposes `<VERIFY_CMD>` `npx playwright test` and a minimal `playwright.config.ts` when `gate.py detect` sees a web app. `--write` creates the file only when none exists. When pstack `create-verification-skill` is installed, `feature-map:` says so and the agent follows that map.
+- Install docs name `npm install -g @playwright/cli@latest`, `playwright-cli install --skills`, and the official Playwright CLI and skills pages. The board slot is `VERIFY_CMD`.
+- SkillSpector treats `npx playwright test` as that verify command, not an unpinned MCP server (`.skillspector-baseline.yaml`).
+- Fail-fast order, size tiers, `## ai-review`, and pre-commit hooks are unchanged.
+- Pin installs with `v24.8.0`. Skill and plugin metadata are `24.8.0`.
+
 ## 24.7.0 - pre-commit hooks as an early warning
 
 - `/jt-setup` runs `gate.py hooks` and shows a `.pre-commit-config.yaml` with the source of each hook. It waits for confirmation. `--write` merges into an existing file. Existing repos, revs, and hook ids stay.

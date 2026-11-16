@@ -15,6 +15,9 @@ screen: no
 # For `screen: yes` a human approves start and click with gate.py approve-commands.
 # start runs the app, port is what it listens on (space or comma list), wait is seconds to wait,
 # click is the command that opens the screen and checks what pass names.
+# The agent drives the screen with playwright-cli -s=<ticket-id> (not Playwright MCP).
+# plan.md ## evidence names a screenshot per AC id. VERIFY_CMD is npx playwright test.
+# Do not pass --update-snapshots in this task.
 start:
 port:
 wait:
