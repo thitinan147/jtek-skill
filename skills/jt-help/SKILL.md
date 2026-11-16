@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.6.0"
+  version: "24.7.0"
   short-description: List every jt- command and the order to use them
 ---
 

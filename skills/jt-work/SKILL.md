@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs a git repo and Python 3.10+ (stdlib only). The GitHub CLI (gh) is optional and used for PR lookups.
 metadata:
   author: Thitinan
-  version: "24.6.0"
+  version: "24.7.0"
   short-description: Work ready jt-queue tasks, or one named ticket
 argument-hint: "[<ticket-id>]"
 ---
@@ -49,6 +49,7 @@ On **Standard** tasks, invoke **executing-plans** then **test-driven-development
 - **One fresh-context review** for Standard `medium` and `large`, and only after `reach-review` refuses `ai-review` (secret, denylist, typecheck, lint, tests, verify, and `## review-diff` already passed). `small` and Quick print `ai-review: skip`. Invoke exactly one reviewer in a new session that cannot read this chat. Give it only the spec Acceptance Criteria and Edge Cases when `spec:` is set, `task.md`, and the diff. Stop at the first installed skill: pstack `/interrogate`, else Matt `/pr`, else `/ponytail-review` when `detail:` says `size large`. If none is installed, write the one-line fallback in [references/playbooks.md](references/playbooks.md) and do not invent findings. Under `## ai-review`, record each finding as `accepted:` or `rejected:` plus a reason after ` — `. Fix every accepted finding, commit, point `## review-diff` at the new SHA, and run the gate again. Do not stack reviewers. The reviewer does not approve, merge, or set `review:`.
 - **Review the diff yourself** on Standard tasks before `review:`. If you cannot review it, do not set `review:`. A note in the plan is not that review. A Standard branch with no diff outside `jt-queue/` does not pass.
 - **Gate report:** `allowed` prints one `gates:` line, always `secret`, `denylist`, `typecheck`, `lint`, `tests`, `verify`, `screen`, `review-diff`, `test-weakening`. Reach-review stops at the first failure among secret, denylist, typecheck, lint, tests, and verify, and prints `step:` plus `skipped:` (the next of those). Secret scan runs `<SECURITY_CMD>` when that program is installed, otherwise `secret-suspect`; the output names the file and never the value. `<DENYLIST>` or `jt-queue/denylist.txt` (`old -> replacement`, for example `dmedasset -> dmecasset`) fails with `deprecated-name` and names the replacement. An empty list is `skip`. A deleted test file or an added `.skip` / `.only` / `xit` / `@skip` marker is `test-weakening` on `allowed` (reported, not a refusal: it can be a rename or a real skip).
+- **Pre-commit:** Not a gate. When `pre-commit` is installed, `allowed` may print `hooks: ok` or `hooks: missing`. That line does not change the result. Fail-fast order, size tiers, and `## ai-review` are unchanged.
 - **Ask instead of guessing** when intent is ambiguous, a contract would break, an action is irreversible, or the task is too big: run `gate.py ask` with two or three options or a split proposal, leave `jt-queue/` uncommitted, and move to the next task.
 
 ## 3. Scope, failure, and handoff

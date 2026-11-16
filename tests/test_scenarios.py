@@ -74,7 +74,7 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
             card = (
                 "# 1 - fix readme typo\n\n"
                 "kind: docs\n\n"
-                "do:\n- Fix typo 'Teh' to 'The' in README.md\n\n"
+                "do:\n- Fix typo 'Teh' to 'The' in README.md\n\n"  # fixture spelling; the task corrects it  # spellchecker:disable-line
                 "out:\n- Code changes\n\n"
                 "pass:\n- README.md contains 'The quick brown fox'\n\n"
                 "files:\n- README.md\n\n"
@@ -82,7 +82,8 @@ class ScenarioGateIntegrationTests(unittest.TestCase):
                 "ask:\n"
             )
             _init_fixture_repo(repo, "1", "- [ ] **1** fix readme typo (docs)", card, test_cmd="no-suite")
-            (repo / "README.md").write_text("Teh quick brown fox\n", encoding="utf-8")
+            # The bad spelling is the bug this scenario fixes.
+            (repo / "README.md").write_text("Teh quick brown fox\n", encoding="utf-8")  # spellchecker:disable-line
             _git(repo, "add", ".")
             _git(repo, "commit", "-m", "docs: initial repo")
 

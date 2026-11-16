@@ -1,4 +1,4 @@
-# Task Queue Contract, version 24.6
+# Task Queue Contract, version 24.7
 
 This contract belongs to `jt-setup`, `jt-add-task`, and `jt-work`. The gate is `scripts/gate.py` in each of those skills (one module). All queue files live under `jt-queue/` in the open repository.
 
@@ -52,6 +52,8 @@ The gate computes the task's tier from `(<kind>)` on `jt-queue/board.md`. A trac
 | `test-weakening`: a deleted test file, or an added `.skip` / `.only` / `xit` / `@skip` / `xfail` marker, is reported on `allowed` and does not refuse. A rename or a skip the task asked for looks the same, so the human judges it, as with `outside-files:` | ✓ | ✓ |
 | Fail-fast: stop at the first of secret, denylist, typecheck, lint, tests, verify. Print `step:` and `skipped:` (the next of those). `allowed` prints `gates:` as `secret`, `denylist`, `typecheck`, `lint`, `tests`, `verify`, `screen`, `review-diff`, `test-weakening` | ✓ | ✓ |
 | Report `outside-files:` and `style-changes:` | ✓ (both) | ✓ (`outside-files:` only) |
+
+Pre-commit is not one of those checks. `/jt-setup` shows `gate.py hooks` (pinned typos; actionlint and zizmor when `.github/workflows` exists; a cheap `LINT_CMD` or secret scan; a pinned commit-msg hook) and merges `.pre-commit-config.yaml` only after the human confirms. Existing hooks and revs stay. When the `pre-commit` program is installed, `allowed` prints `hooks: ok` or `hooks: missing`. That line is not a failure.
 
 ## 4. Plan, Three Rounds, and Diff Review
 

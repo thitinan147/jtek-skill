@@ -74,7 +74,7 @@ SETUP_CMD = (empty)  [source: none found]
 merge: no
 ```
 
-The agent reads the repo, sees `test_tempconv.py`, and proposes `python3 -m unittest`, showing where each value came from. **Nothing is written until you confirm.** Then it writes the board and commits it. It does not gitignore the whole `jt-queue/` folder. `lessons.md`, `.env`, private keys, and `.git/jt-queue/` stay off the branch:
+The agent reads the repo, sees `test_tempconv.py`, and proposes `python3 -m unittest`, showing where each value came from. **Nothing is written until you confirm.** Then it writes the board and commits it. It also shows `gate.py hooks` (a `.pre-commit-config.yaml` for typos, plus actionlint and zizmor when workflows exist) and writes that file only after you confirm. The gate still decides review. Missing pre-commit does not fail a task. It does not gitignore the whole `jt-queue/` folder. `lessons.md`, `.env`, private keys, and `.git/jt-queue/` stay off the branch:
 
 ```markdown
 queue: main

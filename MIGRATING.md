@@ -2,6 +2,12 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.6 to v24.7
+
+- **Hooks.** Optional. Run `/jt-setup` again, or `gate.py hooks --root .`, and confirm before `--write`. An existing `.pre-commit-config.yaml` is merged. Revs you already pinned stay. A file the merger cannot read is left untouched (`unparsed`).
+- **Gate.** Nothing new to approve. Pre-commit is not part of `approve-commands` and not part of fail-fast. Size tiers and `## ai-review` are unchanged. When `pre-commit` is installed, `allowed` may print `hooks: ok` or `hooks: missing`.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.7.0 --skill jt-work`. Install pre-commit from https://pre-commit.com/#install with `python3 -m pip install pre-commit`, then `pre-commit install`.
+
 ## Migrating from v24.5 to v24.6
 
 - **Fresh-context review.** On Standard, effective size `medium` or `large` needs `## ai-review` in `plan.md` before `reach-review` prints `allowed`. Copy the new block from [`skills/jt-work/assets/plan.template.md`](skills/jt-work/assets/plan.template.md). `small` and Quick print `ai-review: skip` and need no new section.

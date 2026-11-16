@@ -1,5 +1,14 @@
 # Changelog
 
+## 24.7.0 - pre-commit hooks as an early warning
+
+- `/jt-setup` runs `gate.py hooks` and shows a `.pre-commit-config.yaml` with the source of each hook. It waits for confirmation. `--write` merges into an existing file. Existing repos, revs, and hook ids stay.
+- The proposal pins typos, plus actionlint and zizmor when `.github/workflows` exists. It adds the board's `LINT_CMD` or secret scan only when that command is a cheap local tool, and a commit-msg hook (commitlint when that config exists, otherwise conventional-pre-commit).
+- `reach-review` does not run pre-commit and does not fail when it is missing. When the `pre-commit` program is installed, `allowed` prints `hooks: ok` or `hooks: missing`.
+- Size tiers, the fail-fast order, and `## ai-review` are unchanged.
+- This repo checks typos, actionlint, and zizmor on commit.
+- Pin installs with `v24.7.0`. Skill and plugin metadata are `24.7.0`.
+
 ## 24.6.0 - one fresh-context review before the human
 
 - After the fail-fast checks pass, `/jt-work` invokes one reviewer in a fresh context that cannot read the implementer's chat. It receives only the spec acceptance criteria and edge cases, `task.md`, and the diff.

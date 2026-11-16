@@ -19,7 +19,7 @@ Copy-paste install commands live in the repo README; here, the Install column is
 | pstack interrogate | https://www.skills.sh/backnotprop/pstack/interrogate | `/jt-work` after the gate passes | The one fresh-context reviewer when this skill is installed | — |
 | pstack maintain-verification-skill | https://www.skills.sh/backnotprop/pstack/maintain-verification-skill | after large code changes | Re-align verify skill with the app | — |
 | mise | https://mise.jdx.dev/installing-mise.html | `/jt-setup` | Pin tool versions; `gate.py detect` can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
-| pre-commit, typos, actionlint, zizmor | https://pre-commit.com/#install ; https://github.com/crate-ci/typos ; https://github.com/rhysd/actionlint ; https://docs.zizmor.sh/integrations/ | on commit | Typos, workflow syntax, Actions security before the gate | — |
+| pre-commit, typos, actionlint, zizmor | https://pre-commit.com/#install ; https://github.com/crate-ci/typos ; https://github.com/rhysd/actionlint ; https://docs.zizmor.sh/integrations/ | on commit | `/jt-setup` proposes a pinned `.pre-commit-config.yaml` and waits. Typos, workflow syntax, and Actions security run before the gate. The gate does not fail if pre-commit is absent | — |
 | reviewdog | https://github.com/reviewdog/reviewdog#installation | `/jt-review` | Post CI or lint output on PR lines | — |
 | Vitest affected | https://vitest.dev/guide/cli.html | `/jt-setup` | Example: `npx vitest --changed` in `AFFECTED_TEST_CMD` for `small` tasks | `AFFECTED_TEST_CMD` |
 | Jest related | https://jestjs.io/docs/cli | `/jt-setup` | Example: `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` | `AFFECTED_TEST_CMD` |
