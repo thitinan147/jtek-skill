@@ -13,6 +13,13 @@
   - Email notifications
 - **Source:** PO note 2026-11-02 · `src/booking/BookingPage.tsx` · `src/rooms/rooms.ts`
 
+## Roles
+
+- **approver:** Alex
+- **reviewer:** Sam
+- **merger:** Alex
+- **human-only:** `src/auth/**` · payments
+
 ## Rules
 
 - **Permissions**

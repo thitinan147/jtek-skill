@@ -56,4 +56,8 @@ needs:
 refs:
 - 
 
+# human-sign-off records the spec approver when the diff touches a human-only area.
+# human-sign-off: ✅ <approver> · YYYY-MM-DD
+human-sign-off:
+
 ask:

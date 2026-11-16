@@ -152,6 +152,7 @@ NEXT_FOR = {
     "lesson-unapproved": "stop",
     "lesson-missing": "stop",
     "lesson-board": "stop",
+    "human-only": "stop",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
@@ -239,6 +240,11 @@ HINT_FOR = {
     "lesson-unapproved": "A human runs gate.py lesson-approve. The agent does not.",
     "lesson-missing": "That id is not a row in jt-queue/team-lessons.md.",
     "lesson-board": "Create jt-queue/board.md with /jt-setup before the follow-up task.",
+    "human-only": (
+        "The diff touches a human-only area from the spec. "
+        "A human adds human-sign-off: ✅ <approver> · YYYY-MM-DD on the task, "
+        "using the person who approved the spec. Do not approve it yourself."
+    ),
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset(
@@ -266,6 +272,7 @@ _GATE_FAIL_REASONS = ROUND_REASONS | {
     "snapshot-update",
     "review-diff",
     "ai-review",
+    "human-only",
 }
 _GATE_STEP = {
     "secret-suspect": "secret",
@@ -285,6 +292,7 @@ _GATE_STEP = {
     "ai-review": "ai-review",
     "console-error": "screen",
     "snapshot-update": "verify",
+    "human-only": "human-only",
 }
 _gate_record: contextvars.ContextVar[tuple[Path, str] | None] = contextvars.ContextVar(
     "jt_gate_record", default=None
@@ -1937,7 +1945,15 @@ def count_round(root: Path, card_id: str) -> int:
     return count
 
 
+# Steps that run before FAIL_FAST. They print step: and name the next check.
+_STEP_AFTER = {
+    "human-only": "secret",
+}
+
+
 def _skipped_after(step: str) -> str:
+    if step in _STEP_AFTER:
+        return _STEP_AFTER[step]
     try:
         index = FAIL_FAST.index(step)
     except ValueError:
@@ -6646,6 +6662,12 @@ def _reach_review_multi(
         if unapproved:
             return _refuse(unapproved[0], detail=unapproved[1])
     for target in targets:
+        refused = refuse_human_only(
+            root, card_text, _diff_names(target.root, target.queue, card_id) or []
+        )
+        if refused is not None:
+            return refused
+    for target in targets:
         refused = _scan_secret(target.root, target.queue, card_id, target.security_cmd, target.name)
         if refused is not None:
             return refused
@@ -6779,6 +6801,7 @@ def _reach_review_multi(
     print("merge: no")
     print("tier: standard")
     print_size(floor, work_size, triggers, ", ".join(affected_notes))
+    print(f"human-only: {human_only_state(root, card_text)}")
     print(f"ai-review: {ai_state}")
     _print_hooks_note(root)
     print("repo-review: open")
@@ -6896,6 +6919,9 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
             "review-diff",
             detail="could not read the commits on the task branch (type/<ticket-id>-<slug>) against queue:",
         )
+    refused = refuse_human_only(root, card_text, _diff_names(root, queue, card_id) or [])
+    if refused is not None:
+        return refused
     security_cmd = parse_field(text, "SECURITY_CMD")
     if _command_installed(security_cmd, root):
         unapproved = _commands_refusal(root, text, card_id, card_text)
@@ -7008,6 +7034,7 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
     print("merge: no")
     print(f"tier: {tier}")
     print_size(floor, work_size, triggers, affected_note)
+    print(f"human-only: {human_only_state(root, card_text)}")
     print(f"ai-review: {ai_state}")
     _print_hooks_note(root)
     print(f"repo-review: {review_state}")
@@ -8169,6 +8196,151 @@ def cmd_worktree_remove(root: Path, card_id: str) -> int:
     print(f"path: {path}")
     print("merge: no")
     return 0
+
+
+_ROLE_FIELD = re.compile(r"^\s*-\s+\*\*(approver|reviewer|merger|human-only):\*\*\s*(.*)$")
+_ROLE_EMPTY = frozenset({"", "-", "–", "—", "none", "n/a"})
+
+
+def role_map(spec_text: str) -> dict[str, str]:
+    """Fields under ## Roles. Empty when the spec has no such section."""
+    section = ""
+    fence = False
+    found: dict[str, str] = {}
+    for line in spec_text.splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if not fence and line.startswith("## "):
+            section = line[3:].strip()
+            continue
+        if fence or section != "Roles":
+            continue
+        match = _ROLE_FIELD.match(line.strip())
+        if match and match.group(1) not in found:
+            found[match.group(1)] = match.group(2).strip()
+    return found
+
+
+def area_tokens(value: str) -> list[str]:
+    """Backticked globs and bare topics on the same human-only line."""
+    ticked = [part.strip() for part in re.findall(r"`([^`]+)`", value) if part.strip()]
+    rest = re.sub(r"`[^`]*`", " ", value)
+    bare = [
+        part.strip()
+        for part in re.split(r"[·,]", rest)
+        if part.strip() and part.strip().lower() not in _ROLE_EMPTY
+    ]
+    found: list[str] = []
+    for token in ticked + bare:
+        if token not in found:
+            found.append(token)
+    return found
+
+
+def human_only_areas(spec_text: str) -> list[str]:
+    raw = role_map(spec_text).get("human-only", "")
+    if raw.lower() in _ROLE_EMPTY:
+        return []
+    return area_tokens(raw)
+
+
+def path_in_area(path: str, area: str) -> bool:
+    """True when a changed path matches a project glob or a topic segment."""
+    token = area.strip().strip("`")
+    norm = path.replace("\\", "/").lstrip("./")
+    if not token or token.lower() in _ROLE_EMPTY:
+        return False
+    if not any(ch in token for ch in "/*?["):
+        return token.lower() in {part.lower() for part in norm.split("/") if part}
+    if token.endswith("/**"):
+        prefix = token[:-3].rstrip("/")
+        if norm == prefix or norm.startswith(prefix + "/"):
+            return True
+    parts: list[str] = []
+    index = 0
+    while index < len(token):
+        if token.startswith("**", index):
+            parts.append(".*")
+            index += 2
+            if index < len(token) and token[index] == "/":
+                index += 1
+        elif token[index] == "*":
+            parts.append("[^/]*")
+            index += 1
+        elif token[index] == "?":
+            parts.append("[^/]")
+            index += 1
+        else:
+            parts.append(re.escape(token[index]))
+            index += 1
+    return re.fullmatch("".join(parts), norm) is not None
+
+
+def spec_approver_name(spec_text: str) -> str:
+    """The human on the spec's ✅ line. Empty when that approval is missing or an AI."""
+    for line in spec_text.splitlines():
+        if not line.startswith("**approve:**"):
+            continue
+        value = line.split("**approve:**", 1)[1].strip()
+        match = _SPEC_APPROVED.match(value)
+        if match and not _SPEC_AI.search(match.group(1)):
+            return match.group(1).strip()
+    return ""
+
+
+def task_signoff_names(card_text: str) -> list[str]:
+    block = _label(card_text, "human-sign-off")
+    if not block:
+        block = _section_label(card_text, "human-sign-off:")
+    return [match.group(1).strip() for match in _SPEC_APPROVED.finditer(block)]
+
+
+def _spec_text_for(root: Path, card_text: str) -> str:
+    raw = _spec_raw(card_text)
+    if not raw:
+        return ""
+    spec = _spec_inside(root, raw)
+    if spec is None or not spec.is_file():
+        return ""
+    return spec.read_text(encoding="utf-8")
+
+
+def human_only_state(root: Path, card_text: str) -> str:
+    text = _spec_text_for(root, card_text)
+    if not text or not human_only_areas(text):
+        return "skip"
+    return "ok"
+
+
+def human_only_problem(root: Path, card_text: str, paths: list[str]) -> tuple[str, str] | None:
+    """Detail and fix when a diff touches a human-only area without the spec approver's sign-off."""
+    text = _spec_text_for(root, card_text)
+    areas = human_only_areas(text) if text else []
+    if not areas:
+        return None
+    hits = [path for path in paths if any(path_in_area(path, area) for area in areas)]
+    if not hits:
+        return None
+    approver = spec_approver_name(text) or role_map(text).get("approver", "").strip()
+    signed = task_signoff_names(card_text)
+    if approver and not _SPEC_AI.search(approver) and approver in signed:
+        return None
+    who = approver or "<approver>"
+    detail = "touches " + ", ".join(hits)
+    fix = (
+        f"A human adds `human-sign-off: ✅ {who} · YYYY-MM-DD` on the task. "
+        "That name is the spec approver. Do not ask for a new approval and do not approve it yourself."
+    )
+    return detail, fix
+
+
+def refuse_human_only(root: Path, card_text: str, paths: list[str]) -> int | None:
+    problem = human_only_problem(root, card_text, paths)
+    if problem is None:
+        return None
+    detail, fix = problem
+    return _refuse("human-only", detail=detail, fix_line=fix, step="human-only")
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -80,7 +80,15 @@ class SpecContractTests(unittest.TestCase):
         order = [line for line in spec.splitlines() if line.startswith("## ")]
         self.assertEqual(
             order,
-            ["## Story", "## Rules", "## Acceptance Criteria", "## Questions", "## Decisions", "## Test steps"],
+            [
+                "## Story",
+                "## Roles",
+                "## Rules",
+                "## Acceptance Criteria",
+                "## Questions",
+                "## Decisions",
+                "## Test steps",
+            ],
         )
         ac = (SKILLS / "jt-spec-ac" / "SKILL.md").read_text(encoding="utf-8")
         for section in order:

@@ -26,7 +26,7 @@ roles: PO, Dev, QA
 
 `code_roots`: every repo to search (e.g. `., ../api`); `roles` fill the Ask column.
 
-`spec.md` starts with `<!-- scrum-spec -->` and `# <work>`, then `## Story`, `## Rules`, `## Acceptance Criteria`, `## Questions`, `## Decisions`, `## Test steps`. A 0.2 `## Tasks` section is kept as is. The marker and those headings stay, because `check.py` reads them.
+`spec.md` starts with `<!-- scrum-spec -->` and `# <work>`, then `## Story`, `## Roles`, `## Rules`, `## Acceptance Criteria`, `## Questions`, `## Decisions`, `## Test steps`. `## Roles` names the human approver, reviewer, and merger, plus human-only paths or topics. A 0.2 `## Tasks` section is kept as is. The marker and those headings stay, because `check.py` reads them.
 
 ## Workflow
 

@@ -11,6 +11,13 @@
   - Editing a booking
 - **Source:** PO note 2026-11-05 · `src/booking/api.ts` (no cancel API yet)
 
+## Roles
+
+- **approver:** Alex
+- **reviewer:** Sam
+- **merger:** Alex
+- **human-only:** -
+
 ## Rules
 
 - **Permissions**

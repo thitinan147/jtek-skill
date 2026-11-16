@@ -9,6 +9,7 @@ ERROR, exit 1:
   - an approval or a decision without a person and a date, or given by an AI
   - a ✅ approval while an open question Blocks dev or AC
   - an EC row whose Guards cell names no AC, or names an AC that is not in the table
+  - a ## Roles section missing a human approver, a reviewer, a human merger, or a well-formed human-only glob
   - any text cites a D that does not exist, including "(incl. D<n>)" and a warning
     mark before D<n> (a capitalized name such as "Room D1" is not a citation)
   - a path in Source does not exist in the git root or a code_roots path
@@ -19,6 +20,9 @@ for the asked role, answers not yet recorded as decisions, AC and EC with no tes
 vague words in AC and EC. An Acceptance Criteria table with no Guards column prints
 a migration line and does not fail; EC links are checked only when that column exists.
 A ## Tasks section from scrum-spec 0.2 is kept as it is; its paths and AC are not checked.
+A spec with no ## Roles section prints a migration line and does not fail. When that
+section is present, approver, reviewer, and merger are required, approver and merger
+must be humans, and each human-only glob must be well-formed. The error line carries fix:.
 
 Read-only, standard library only, Python 3.10+.
 """
@@ -50,6 +54,13 @@ MIGRATION_GUARDS = (
     "migration: Acceptance Criteria has no Guards column. "
     "Add Guards so each EC names the AC it guards. EC links were not checked."
 )
+MIGRATION_ROLES = (
+    "migration: spec has no ## Roles section. "
+    "fix: add approver, reviewer, and merger as human names, plus human-only paths or topics."
+)
+ROLE_FIELD = re.compile(r"^\s*-\s+\*\*(approver|reviewer|merger|human-only):\*\*\s*(.*)$")
+_ROLE_EMPTY = frozenset({"", "-", "–", "—", "none", "n/a"})
+_GLOB_CHARS = re.compile(r"^[A-Za-z0-9_./?*\[\]-]+$")
 VAGUE_WORDS = ("fast", "nice", "user-friendly", "เร็ว", "สวย", "ง่าย")
 CODE = re.compile(r"`([^`]+)`(\s*\(new\))?")
 LINE_SUFFIX = re.compile(r"(:\d+(-\d+)?|#L\d+(-L?\d+)?)$")
@@ -106,6 +117,86 @@ def guard_links(cell: str) -> list[str]:
 def looks_like_path(token: str) -> bool:
     """A relative path with a folder, e.g. src/a.ts; not user.role, v0.2.0 or /bookings."""
     return "/" in token and not token.startswith("/") and not re.search(r"[\s<>*{}$|:]|://", token)
+
+
+def role_tokens(value: str) -> list[str]:
+    """Backticked globs and bare topics on the same human-only line."""
+    ticked = [part.strip() for part in re.findall(r"`([^`]+)`", value) if part.strip()]
+    rest = re.sub(r"`[^`]*`", " ", value)
+    bare = [
+        part.strip()
+        for part in re.split(r"[·,]", rest)
+        if part.strip() and part.strip().lower() not in _ROLE_EMPTY
+    ]
+    found: list[str] = []
+    for token in ticked + bare:
+        if token not in found:
+            found.append(token)
+    return found
+
+
+def glob_problem(token: str) -> str:
+    """Empty when a project-defined path glob or topic is well-formed."""
+    if not token or token in {".", ".."}:
+        return "empty area"
+    if token.startswith("/") or "\\" in token or ".." in token.split("/"):
+        return "use a relative path or a topic, not an absolute path or .."
+    if "***" in token:
+        return "use ** for any folders, not ***"
+    if token.count("[") != token.count("]"):
+        return "unbalanced [ ]"
+    if not _GLOB_CHARS.fullmatch(token):
+        return "use letters, digits, slashes, and * ? [ ]"
+    if any(part == "" for part in token.split("/")):
+        return "empty path segment"
+    return ""
+
+
+def check_roles(sections: dict) -> tuple[list[str], list[str]]:
+    """Validate ## Roles. A missing section is a migration note, not an error."""
+    items = sections.get("Roles", [])
+    if not items:
+        return [], [MIGRATION_ROLES]
+    fields: dict[str, tuple[int, str]] = {}
+    for n, line in items:
+        found = ROLE_FIELD.match(line.strip())
+        if found and found.group(1) not in fields:
+            fields[found.group(1)] = (n, found.group(2).strip())
+    errors: list[str] = []
+    for name in ("approver", "reviewer", "merger"):
+        if name not in fields or fields[name][1].lower() in _ROLE_EMPTY:
+            errors.append(
+                f"line {items[0][0]}: {name} is missing. "
+                f"fix: add '- **{name}:** <human name>' under ## Roles"
+            )
+            continue
+        n, value = fields[name]
+        if name != "reviewer" and is_ai(value):
+            errors.append(
+                f"line {n}: {name} must be a person, not an AI. "
+                f"fix: name the human who {('approves the spec' if name == 'approver' else 'merges')}"
+            )
+        elif name == "reviewer" and is_ai(value):
+            errors.append(
+                f"line {n}: reviewer must be a person, not an AI. "
+                "fix: name the human who reviews pull requests"
+            )
+    if "human-only" not in fields:
+        errors.append(
+            f"line {items[0][0]}: human-only is missing. "
+            "fix: add '- **human-only:** `path/**` · topic' or '-' when the project has none"
+        )
+    else:
+        n, value = fields["human-only"]
+        if value.lower() not in _ROLE_EMPTY:
+            for token in role_tokens(value):
+                problem = glob_problem(token)
+                if problem:
+                    errors.append(
+                        f"line {n}: human-only `{token}` is not well-formed ({problem}). "
+                        "fix: use a relative glob such as `src/auth/**` or a topic such as payments"
+                    )
+    return errors, []
 
 
 def check(doc: Path) -> tuple[list[str], list[str]]:
@@ -216,6 +307,10 @@ def check(doc: Path) -> tuple[list[str], list[str]]:
                     continue
                 if not any((root / path).exists() for root in roots):
                     errors.append(f"line {n}: `{token}` not found (add (new) if it will be created)")
+
+    role_errors, role_notes = check_roles(sections)
+    errors.extend(role_errors)
+    notes.extend(role_notes)
 
     open_q = [q["id"] for q in qs if q["open"]]
     blocking = [f"{q['id']} ({q['blocks']} · {q['ask']})" for q in qs if q["blocking"]]

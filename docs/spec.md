@@ -33,7 +33,7 @@ Headings, table columns, and the marker stay in English because `check.py` reads
 
 Everything for one story is in `<docs_root>/<work>/spec.md`. `<work>` starts with the ticket id as the source wrote it, then a short slug (`BOOK-12-book-room`). The id is copied. It is not rewritten into another scheme, and its shape is not checked. The default `docs_root` is `scrum-spec`. That folder name and the first-line marker `<!-- scrum-spec -->` are what the checker looks for. Command names do not use that word.
 
-Order inside the file: Story, Rules, Acceptance Criteria, Questions, Decisions, Test steps. A `## Tasks` section from an older spec is kept as it is and is not checked.
+Order inside the file: Story, Roles, Rules, Acceptance Criteria, Questions, Decisions, Test steps. Roles names the human who approves the spec, the human who reviews pull requests, and the human who merges. The merger is always a human. human-only lists paths or topics the project does not want an AI to change on its own. A `## Tasks` section from an older spec is kept as it is and is not checked.
 
 A flow from `/jt-spec-split` also has `<docs_root>/<flow>/map.md`.
 

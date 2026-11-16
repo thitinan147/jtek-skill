@@ -20,7 +20,7 @@
       "evals/files/room-booking/src/rooms/rooms.ts"
     ],
     "expected_behavior": [
-      "Creates scrum-spec/rb-14-edit-booking/spec.md with first line <!-- scrum-spec --> and the sections Story, Rules, Acceptance Criteria, Questions, Decisions in that order, with no Test steps",
+      "Creates scrum-spec/rb-14-edit-booking/spec.md with first line <!-- scrum-spec --> and the sections Story, Roles, Rules, Acceptance Criteria, Questions, Decisions in that order, with no Test steps",
       "Headings, table columns and '**approve:** ❌ waiting for PO' are in English; the story, rules, AC cells and questions are in Thai",
       "Finds in src/booking/api.ts that there is no edit-booking API and adds a question for the API owner with Blocks 'dev' and a one-line proposed contract, instead of inventing an endpoint as fact",
       "Has EC rows for editing after the start time, a room that is no longer free, and someone else's booking (or a question about it)",
