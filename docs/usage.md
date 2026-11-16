@@ -31,7 +31,7 @@ Pass your task directly to `/jt-add-task`:
 - **Priority sections:** Place urgent tasks under `## first`, normal work under `## main`, and deferred ideas under `## later`. Open work in `first` or `main` keeps `later` waiting.
 - **Slices:** Cut work into vertical slices that can pass their own `pass:`, not into layers. There is no `depends:`, so put the task that must come first under `## first`.
 - **Frontend and backend in separate repos:** Keep one board and declare the other repo under `## repos` (see [section 5](#5-frontend-and-backend-in-two-repos)). Use `needs:` only for work that is not on this board; the gate prints it but does not check it.
-- **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. There is no `depends:` field.
+- **Overlap:** The queue stops when a ready task's `files:` overlap a task already in `review:` or `send-back:`. A claim also leases those paths: `/jt-work` refuses a new task that overlaps an open lease and names the other task and owner. There is no `depends:` field.
 - **Same topic:** Tasks that share `layer:` link each other under `refs:`.
 - **Kinds (`<kind>`):** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 - **Verification tiers:** See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contract.md).
@@ -40,7 +40,9 @@ Pass your task directly to `/jt-add-task`:
 - **Size:** `size:` is `small`, `medium`, or `large` (unset means `medium`). The agent sets it on the task; `size:` on the board line overrides it. `small` needs no spec. The gate runs affected tests only when `<AFFECTED_TEST_CMD>` is set or `<TEST_CMD>` contains `{files}`; otherwise the full command. `medium` is a short spec and the full test command. `large` is a full spec. The gate may raise the size and never lowers it. `<DIFF_LIMIT>` (empty means 400) is the large-diff line count. On Standard, `medium` and `large` need `## ai-review` before review. `small` and Quick skip it. `/jt-work` runs one fresh-context reviewer after the fail-fast checks pass.
 
 ## 3. Work the queue (`do-task`)
-`/jt-work` is one command. There is no `--loop` flag. With no argument it keeps following `gate.py next` until `next` is `wait` or `stop`: a `send-back:` task first, then an `ask:` whose question is cleared, then ready tasks in `first`, then `main`, then `later`. A task whose files overlap an open `review:` or `send-back:` is skipped. `/jt-work <ticket-id>` works only that ticket (the `ticket:` line, or the board id) and then stops.
+`/jt-work` is one command. There is no `--loop` flag. With no argument it keeps following `gate.py next` until `next` is `wait` or `stop`: a `send-back:` task first, then an `ask:` whose question is cleared, then ready tasks in `first`, then `main`, then `later`. A task whose files overlap an open `review:` or `send-back:` is skipped, and so is a task owned by someone else. A stale claim (no activity newer than `<CLAIM_STALE>`, empty means 24 hours) is shown as stale and is not taken. `/jt-work <ticket-id>` works only that ticket (the `ticket:` line, or the board id) and then stops.
+
+Before it edits code, `gate.py claim` writes `jt-queue/claims.md` (owner, claimed time, activity, and the leased `files:` paths) and that file is committed on `<queue>`. `gate.py worktree` then creates `.git/jt-queue/worktrees/<id>` on `type/<ticket-id>-<slug>` from the latest `<queue>` commit, or reuses that worktree. The checkout stays on this machine. An overlapping lease refuses with `lease` and names the other task and owner.
 
 ```text
 /jt-work
@@ -69,9 +71,10 @@ Or to inspect a specific task directly:
 ```
 
 `/jt-review` reads `jt-queue/board.md` from the working tree (from the `<queue>` branch only when that file is tracked). It flags files touched outside `files:` and non-whitespace changes on `style` tasks, checks whether `task-<id>` has landed, and records the decision on the board only:
-- **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`.
-- **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`.
-- **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging.
+- **`merge:`** — Land `task-<id>` yourself first (`landed: ancestor` or `landed: squash`). The skill does not run `git merge`. Then change the line to `- [x]` and set `merge:`. `gate.py release --closed` drops the lease, and `gate.py worktree-remove` removes the worktree when it is clean. A dirty worktree is reported and kept.
+- **`send-back:`** — Change `review:` to `send-back: <reason>` on the board line. The line stays `- [ ]`. The claim stays.
+- **`drop: <reason>`** — Close the line with `- [x]` and `drop: <reason>`, and close any open PR without merging. Then release the lease and remove a clean worktree, the same way as `merge:`.
+- **Release an open claim:** Only you run `gate.py release --id <id>`. That clears the owner so someone else may claim it. The agent never runs that command.
 
 ## 5. Frontend and backend in two repos
 
@@ -147,7 +150,7 @@ python3 -I <jt-board skill folder>/scripts/flow.py --root . --days 30
 python3 -I <jt-board skill folder>/scripts/flow.py --root . --since 2026-10-01 --until 2026-10-31 --id 12
 ```
 
-The script prints lead time (task created to merged), gate fails, rework, and review time (gate pass or `review:` to the human merge), then a summary for the window. The default window is the last 30 days. Each line names the source: git, `plan.md`, `.git/jt-queue/gate-runs.jsonl`, or `gh`. When that source is missing the line is `unknown` and says why. It does not estimate the number.
+The script prints lead time (task created to merged), gate fails, rework, and review time (gate pass or `review:` to the human merge), then a summary for the window. Each task also prints `owner:`, `claimed:`, and `stale:` from `jt-queue/claims.md`. The default window is the last 30 days. Each line names the source: git, `plan.md`, `.git/jt-queue/gate-runs.jsonl`, `jt-queue/claims.md`, or `gh`. When that source is missing the line is `unknown` and says why. It does not estimate the number.
 
 Escaped defects are merged tasks a later git revert names, and tasks linked from a PR or issue labelled `bug` that was opened after the merge. `gh` is optional. If it is not installed, `bug-label` is `unknown`.
 
@@ -161,10 +164,11 @@ See [`skills/jt-work/references/contract.md`](../skills/jt-work/references/contr
 jt-queue/
 ├── board.md                 # Queue configuration (queue, test, skills) + task list
 ├── brief.md                 # Round brief agreed with the human before drafting tasks
+├── claims.md                # Owner, claimed time, activity, and leased paths
 └── tasks/
     └── 001/
         ├── task.md          # Approved task: kind, do, out, pass, files
         └── plan.md          # Standard-tier notes, including review-diff
 ```
 
-Commit `board.md`, `brief.md`, `task.md`, and `plan.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output and command approvals stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, `attempts.json` is this machine's round counter, and `gate-runs.jsonl` is this machine's gate pass/fail log (never command output). `jt-queue/lessons.md` stays uncommitted too.
+Commit `board.md`, `brief.md`, `claims.md`, `task.md`, and `plan.md` so work can resume on another machine. The gate still reads a gitignored or untracked file from the working tree. Log output, command approvals, and task checkouts stay under `.git/jt-queue/` and are not committed: `approved-commands.json` is permission to run shell commands, `logs/` can hold secrets, `attempts.json` is this machine's round counter, `gate-runs.jsonl` is this machine's gate pass/fail log (never command output), and `worktrees/` is this machine's task checkout. `jt-queue/lessons.md` stays uncommitted too.

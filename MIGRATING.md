@@ -2,6 +2,14 @@
 
 Upgrade notes for older queues and for `/scrum-spec`. For the full list of changes see [CHANGELOG.md](CHANGELOG.md).
 
+## Migrating from v24.10 to v24.11
+
+- **Claims.** `jt-queue/claims.md` is new and is committed on the queue branch. An existing queue with no file has no owners. The first `/jt-work` on a task writes one. Set `JT_OWNER` when `git config user.name` is not the name you want recorded.
+- **Stale claims.** Add `<CLAIM_STALE>` to the board table when 24 hours is wrong (`48`, or `48h`). Empty keeps 24 hours. A stale claim stays with its owner until a human runs `gate.py release --id <id>` from the jt-work skill.
+- **Leases.** `files:` paths are leased while the task is open. Overlap with another open lease refuses the new task and names the other task and owner. `merge:` and `drop:` release those paths through `gate.py release --closed`.
+- **Worktrees.** Task checkouts live under `.git/jt-queue/worktrees/<id>` and are not committed. A worktree with uncommitted changes is left in place. Remove it only after those changes are committed or discarded, then run `gate.py worktree-remove --id <id>`.
+- **Install.** `npx skills add thitinan147/jtek-skill#v24.11.0 --skill jt-work`.
+
 ## Migrating from v24.9 to v24.10
 
 - **Flow metrics.** `/jt-board flow` prints lead time, gate fails, rework, review time, and escaped defects for the last 30 days, or for `--since` and `--until`. A missing source prints `unknown` and the reason. It does not guess, and it does not merge.

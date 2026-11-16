@@ -12,7 +12,7 @@ The PO gets a draft instead of a blank page, dev get acceptance criteria with th
 - **A person's name and a date.** Decisions and the AC approval record who decided. `check.py` fails an approval or a decision given by an AI, and it fails one that has no name and date.
 - **Facts come from the code.** The skill reads every repo in `code_roots` before it asks. People are asked only for decisions.
 - **You can answer in the file.** Write in the Answer cell, or edit the approve line. The next run records it.
-- **These commands do not break work into tasks, estimate, assign owners, write code, commit, or delete.** Dev decide how to build. The queue commands (`/jt-add-task`, `/jt-work`) are the task list. Repo instructions for the agent live in `AGENTS.md`, written by `/jt-setup`; `CLAUDE.md` imports that file and does not copy it. When `/jt-add-task` splits an approved spec into tasks, each `pass:` line is copied from an AC or EC (`- <id>: <Then>`), and the gate checks that id. One spec approval covers those tasks. `/jt-review` is still the only merge.
+- **These commands do not break work into tasks, estimate, assign owners, write code, commit, or delete.** Dev decide how to build. Who later works a queue task is recorded in `jt-queue/claims.md` by `/jt-work`, not in the spec. The queue commands (`/jt-add-task`, `/jt-work`) are the task list. Repo instructions for the agent live in `AGENTS.md`, written by `/jt-setup`; `CLAUDE.md` imports that file and does not copy it. When `/jt-add-task` splits an approved spec into tasks, each `pass:` line is copied from an AC or EC (`- <id>: <Then>`), and the gate checks that id. One spec approval covers those tasks. `/jt-review` is still the only merge.
 
 ## Commands
 

@@ -4119,6 +4119,7 @@ class QueueContextTests(unittest.TestCase):
         for rel in (
             "jt-queue/board.md",
             "jt-queue/brief.md",
+            "jt-queue/claims.md",
             "jt-queue/tasks/12/task.md",
             "jt-queue/tasks/12.1/plan.md",
         ):
@@ -4131,6 +4132,7 @@ class QueueContextTests(unittest.TestCase):
             ".git/jt-queue/logs/12-test.log": "command output can hold secrets",
             ".git/jt-queue/attempts.json": "this machine's round counter",
             ".git/jt-queue/gate-runs.jsonl": "this machine's gate pass/fail log",
+            ".git/jt-queue/worktrees.json": "this machine's worktree paths",
             "jt-queue/.env": "secrets",
             "jt-queue/tasks/12/id_rsa": "private key",
             "jt-queue/secrets/key.pem": "private key",

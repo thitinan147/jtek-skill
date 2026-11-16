@@ -19,7 +19,7 @@ import tempfile
 import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 try:  # POSIX only; without it the round counter is unlocked
@@ -135,6 +135,17 @@ NEXT_FOR = {
     "spec-unapproved": "stop",
     "console-error": "retry",
     "snapshot-update": "ask",
+    "claimed": "stop",
+    "lease": "stop",
+    "owner-unknown": "stop",
+    "claims-invalid": "stop",
+    "lease-path": "stop",
+    "claims-uncommitted": "stop",
+    "queue-behind": "stop",
+    "worktree-dirty": "stop",
+    "worktree-open": "stop",
+    "worktree-busy": "stop",
+    "not-ready": "stop",
 }
 HINT_FOR = {
     "test-failed": "Read log:, fix the cause on the task branch (type/<ticket-id>-<slug>), commit, then run reach-review again.",
@@ -198,6 +209,20 @@ HINT_FOR = {
         "Do not pass --update-snapshots or -u in this task, and set updateSnapshots to none. "
         "A baseline change is a separate step a human reviews."
     ),
+    "claimed": (
+        "This task is owned by someone else. A human runs gate.py release --id. "
+        "A stale claim is shown and is not taken."
+    ),
+    "lease": "Another open task has leased an overlapping path. Wait until it is merged or dropped.",
+    "owner-unknown": "Set JT_OWNER or git user.name to a plain name, then run gate.py claim again.",
+    "claims-invalid": "Fix jt-queue/claims.md. The gate will not ignore a claim file it cannot read.",
+    "lease-path": "files: has a path the gate will not lease. Use a relative path inside the repo.",
+    "claims-uncommitted": "Commit jt-queue/claims.md on the queue branch before creating the worktree.",
+    "queue-behind": "Fast-forward the queue branch so a new worktree starts from its latest commit.",
+    "worktree-dirty": "The task worktree has uncommitted changes. It was not deleted.",
+    "worktree-open": "Remove the worktree only after the human writes merge: or drop:.",
+    "worktree-busy": "The main checkout is on the task branch. Check out the queue branch first.",
+    "not-ready": "Fill queue:, TEST_CMD, and STACK_LOCK on the board. A human confirms those before work starts.",
 }
 MAX_ROUNDS = 3
 ROUND_REASONS = frozenset(
@@ -487,6 +512,7 @@ class Decision:
     line: str = ""
     question: str = ""
     fields: tuple[str, ...] = field(default_factory=tuple)
+    detail: str = ""
 
     def __post_init__(self) -> None:
         if self.action not in ALLOWED_ACTIONS:
@@ -782,6 +808,8 @@ def decide(
     dirty: bool | str,
     is_git: bool,
     repo_problem: tuple[str, tuple[str, ...]] | None = None,
+    claims: dict[str, "Claim"] | None = None,
+    me: str = "",
 ) -> Decision:
     if board is None:
         return Decision("setup-board", reason="no-board", command=COMMAND_FOR["setup-board"])
@@ -833,19 +861,34 @@ def decide(
     if unknown:
         return Decision("stop", id=unknown.id, reason="unknown-status", line=unknown.line)
 
+    held_claims = claims or {}
+
+    def _available(card: Card) -> bool:
+        if _held_by_other(card, held_claims, me):
+            return False
+        return _lease_hit(card, held_claims, board.cards) is None
+
     pool = _pool(board.cards)
-    send_back = _work(pool, lambda card: card.status == "send-back:" and card.has_card_file)
+    send_back = _work(
+        pool,
+        lambda card: card.status == "send-back:" and card.has_card_file and _available(card),
+    )
     if send_back:
-        return _take(board, send_back, "send-back")
+        return _take(board, send_back, "send-back", held_claims)
     cleared = _work(
         pool,
-        lambda card: card.status == "ask:" and card.question_empty and card.has_card_file,
+        lambda card: (
+            card.status == "ask:"
+            and card.question_empty
+            and card.has_card_file
+            and _available(card)
+        ),
     )
     if cleared:
-        return _take(board, cleared, "question-cleared")
-    ready = _work(pool, lambda card: card.status is None and card.has_card_file)
+        return _take(board, cleared, "question-cleared", held_claims)
+    ready = _work(pool, lambda card: card.status is None and card.has_card_file and _available(card))
     if ready:
-        return _take(board, ready, "ready")
+        return _take(board, ready, "ready", held_claims)
 
     reviews = [
         card
@@ -887,6 +930,37 @@ def decide(
     if any(card.has_card_file and _blocked(card, board.cards) for card in unchecked):
         blocked = next(card for card in unchecked if _blocked(card, board.cards))
         return Decision("stop", id=blocked.id, reason="overlap", line=blocked.line)
+    leased = [
+        card
+        for card in pool
+        if card.has_card_file
+        and card.status in {None, "send-back:"}
+        and not _held_by_other(card, held_claims, me)
+        and _lease_hit(card, held_claims, board.cards) is not None
+    ]
+    if leased:
+        hit = _lease_hit(leased[0], held_claims, board.cards)
+        detail = ""
+        if hit is not None:
+            detail = f"overlaps task {hit[0]} owned by {hit[1]} at {hit[2]}"
+        return Decision("stop", id=leased[0].id, reason="lease", line=leased[0].line, detail=detail)
+    held = [
+        card
+        for card in _ordered(board.cards)
+        if not card.checked
+        and card.section in SECTION_RANK
+        and card.has_card_file
+        and card.status not in _CLOSED
+        and _held_by_other(card, held_claims, me)
+    ]
+    if held:
+        return Decision(
+            "wait",
+            id=held[0].id,
+            ids=tuple(card.id for card in held),
+            reason="claimed",
+            line=held[0].line,
+        )
     return Decision("stop", reason="queue-clear")
 
 
@@ -900,10 +974,24 @@ def _do(card: Card, reason: str) -> Decision:
     )
 
 
-def _take(board: Board, card: Card, reason: str) -> Decision:
+def _take(
+    board: Board,
+    card: Card,
+    reason: str,
+    claims: dict[str, "Claim"] | None = None,
+) -> Decision:
     stopped = _related_stop(card, board.cards)
     if stopped is not None:
         return stopped
+    hit = _lease_hit(card, claims or {}, board.cards)
+    if hit is not None:
+        return Decision(
+            "stop",
+            id=card.id,
+            reason="lease",
+            line=card.line,
+            detail=f"overlaps task {hit[0]} owned by {hit[1]} at {hit[2]}",
+        )
     return _do(card, reason)
 
 
@@ -1652,6 +1740,8 @@ def emit(decision: Decision, extra: list[str] | None = None) -> None:
         print(f"line: {decision.line}")
     if decision.question:
         print(f"ask: {decision.question}")
+    if decision.detail:
+        print(f"detail: {decision.detail}")
     if extra:
         print("\n".join(extra))
 
@@ -1659,14 +1749,26 @@ def emit(decision: Decision, extra: list[str] | None = None) -> None:
 def cmd_next(root: Path) -> int:
     board, brief_exists = load_board(root)
     has_git = _is_git(root) or (root / ".git").exists()
+    claims: dict[str, Claim] = {}
+    if board is not None:
+        try:
+            claims = load_claims(root, board.queue_branch)
+        except GateError as err:
+            emit(Decision("stop", reason="claims-invalid", detail=err.detail or err.reason))
+            return 0
+    me = current_owner(root) if board is not None and has_git else ""
     decision = decide(
         board,
         brief_exists=brief_exists,
         dirty=_dirty(root) if board is not None and has_git else "clean",
         is_git=True if board is None else has_git,
         repo_problem=check_repos(root, board.repos) if board is not None and has_git else None,
+        claims=claims,
+        me=me,
     )
     extra: list[str] = []
+    if board is not None and claims:
+        extra.extend(claim_notes(root, board, claims, me))
     if board is not None and has_git and board.queue_branch:
         landed_ids: list[str] = []
         pending_gh: list[str] = []
@@ -1898,7 +2000,7 @@ _PASS_AC_LINE = re.compile(r"^((?:AC|EC)\d+)\s*:\s*(.*)$")
 _SPEC_APPROVED = re.compile(r"^✅\s+(.+?)\s+·\s+(\d{4}-\d{2}-\d{2})\b")
 _SPEC_AI = re.compile(r"\bAI\b|\b(?i:claude|chatgpt|gpt|copilot|gemini|codex|assistant)\b")
 _QUEUE_TASK_FILE = re.compile(r"^jt-queue/tasks/(\d+(?:\.\d+)*)/(task|plan)\.md$")
-_COMMIT_QUEUE = frozenset({"jt-queue/board.md", "jt-queue/brief.md"})
+_COMMIT_QUEUE = frozenset({"jt-queue/board.md", "jt-queue/brief.md", "jt-queue/claims.md"})
 _OPEN_ANSWER = frozenset({"", "-", "–"})
 
 
@@ -1911,6 +2013,7 @@ def queue_context_class(rel: str) -> str:
     """How a queue path is shared: 'commit', 'local', or 'outside'.
 
     Commit the files a teammate needs to resume: board.md, brief.md,
+    claims.md (who is working a task, when, and which paths are leased),
     tasks/<id>/task.md, and tasks/<id>/plan.md (its ## decisions).
     Everything else under jt-queue/ or .git/jt-queue/ stays local:
     lessons.md (notes for this agent, not the task), approved-commands.json
@@ -4087,7 +4190,8 @@ def render_agents_body(slots: dict[str, tuple[str, str]]) -> str:
             "- jt-queue/brief.md holds the round brief.",
             "- jt-queue/tasks/<id>/task.md holds the task contract.",
             "- jt-queue/tasks/<id>/plan.md holds the plan, the evidence, and the review notes.",
-            "- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl).",
+            "- jt-queue/claims.md holds who claimed each task and the paths that task has leased.",
+            "- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl, worktrees/).",
         ]
     )
     return "\n".join(lines)
@@ -5980,6 +6084,743 @@ def _reach_review_recorded(root: Path, card_id: str, write: bool, link: str) -> 
     return 0
 
 
+@dataclass
+class Claim:
+    task_id: str
+    owner: str
+    claimed: str
+    activity: str
+    paths: tuple[str, ...] = ()
+
+
+_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_OWNER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._+@-]{0,79}$")
+DEFAULT_CLAIM_STALE_HOURS = 24
+_WORKABLE = frozenset({None, "send-back:", "ask:"})
+
+
+def _one_detail(text: str) -> str:
+    clean = " ".join(text.split())
+    if len(clean) > 180:
+        return clean[:180] + " (truncated)"
+    return clean
+
+
+def _stamp(moment: datetime | None = None) -> str:
+    when = moment or datetime.now(timezone.utc)
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_stamp(text: str) -> datetime | None:
+    raw = text.strip()
+    if not _STAMP_RE.fullmatch(raw):
+        return None
+    return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def _parse_git_time(text: str) -> datetime | None:
+    raw = text.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def owner_ok(name: str) -> bool:
+    return bool(_OWNER_RE.fullmatch(name))
+
+
+def current_owner(root: Path) -> str:
+    """Who is running the gate. JT_OWNER wins; otherwise git user.name. Never reads .env."""
+    chosen = os.environ.get("JT_OWNER", "").strip()
+    if chosen:
+        return chosen if owner_ok(chosen) else ""
+    if not _is_git(root):
+        return ""
+    proc = _run_git(root, ["config", "--get", "user.name"])
+    if proc.returncode != 0:
+        return ""
+    name = proc.stdout.strip()
+    return name if owner_ok(name) else ""
+
+
+def claim_stale_hours(board_text: str) -> int:
+    raw = parse_field(board_text, "CLAIM_STALE").strip().lower()
+    if raw.endswith("h"):
+        raw = raw[:-1]
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return DEFAULT_CLAIM_STALE_HOURS
+
+
+def claims_rel() -> str:
+    return _queue_rel("claims.md")
+
+
+def normalize_lease_path(raw: str) -> str | None:
+    """A repo-relative lease path. None means the gate will not record it."""
+    text = raw.strip().replace("\\", "/")
+    if not text or text == "-" or "\x00" in text or "\n" in text:
+        return None
+    repo = ""
+    body = text
+    if ":" in text:
+        left, right = text.split(":", 1)
+        if REPO_NAME_RE.fullmatch(left) and right.strip():
+            repo = left
+            body = right.strip()
+        else:
+            return None
+    pure = PurePosixPath(body)
+    if pure.is_absolute() or ".." in pure.parts:
+        return None
+    norm = pure.as_posix()
+    while norm.endswith("/"):
+        norm = norm[:-1]
+    if norm in {"", "."}:
+        return None
+    return f"{repo}:{norm}" if repo else norm
+
+
+def lease_paths(card_text: str) -> tuple[str, ...]:
+    found: list[str] = []
+    for raw in parse_files(card_text):
+        norm = normalize_lease_path(raw)
+        if norm is None:
+            raise GateError("lease-path", _one_detail(raw))
+        found.append(norm)
+    return tuple(dict.fromkeys(found))
+
+
+def _card_is_closed(card: Card) -> bool:
+    return card.checked or card.status in _CLOSED
+
+
+def _board_card(board: Board, card_id: str) -> Card | None:
+    matches = [card for card in board.cards if card.id == card_id]
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _card_title(board_text: str, card_id: str) -> str:
+    if not valid_card_id(card_id):
+        return ""
+    pattern = re.compile(rf"^- \[[ xX]\] \*\*{re.escape(card_id)}\*\*\s*(.*)$", re.M)
+    found = list(pattern.finditer(board_text))
+    if len(found) != 1:
+        return ""
+    rest = found[0].group(1)
+    kind = _KIND_TAIL.search(rest)
+    title = rest[: kind.start()] if kind else rest
+    return title.strip()
+
+
+def parse_claims(text: str) -> dict[str, Claim]:
+    claims: dict[str, Claim] = {}
+    current: str | None = None
+    owner = ""
+    claimed = ""
+    activity = ""
+    paths: list[str] = []
+    in_paths = False
+
+    def finish() -> None:
+        nonlocal current, owner, claimed, activity, paths, in_paths
+        if current is None:
+            return
+        if current in claims:
+            raise GateError("claims-invalid", f"duplicate claim {current}")
+        if not owner_ok(owner) or _parse_stamp(claimed) is None or _parse_stamp(activity) is None:
+            raise GateError("claims-invalid", f"claim {current} is missing owner, claimed, or activity")
+        claims[current] = Claim(current, owner, claimed, activity, tuple(paths))
+        current = None
+        owner = ""
+        claimed = ""
+        activity = ""
+        paths = []
+        in_paths = False
+
+    for line in text.splitlines():
+        if line.startswith("# ") or line.strip() == "#":
+            continue
+        if line.startswith("## "):
+            finish()
+            task_id = line[3:].strip()
+            if not valid_card_id(task_id):
+                raise GateError("claims-invalid", "a claim id is not a task id")
+            current = task_id
+            continue
+        if current is None:
+            if line.strip():
+                raise GateError("claims-invalid", "text outside a claim")
+            continue
+        if line.startswith("owner:"):
+            owner = line.split(":", 1)[1].strip()
+            in_paths = False
+            continue
+        if line.startswith("claimed:"):
+            claimed = line.split(":", 1)[1].strip()
+            in_paths = False
+            continue
+        if line.startswith("activity:"):
+            activity = line.split(":", 1)[1].strip()
+            in_paths = False
+            continue
+        if line.strip() == "paths:":
+            in_paths = True
+            continue
+        if in_paths and (line.startswith("- ") or line.strip() == "-"):
+            item = line[2:].strip() if line.startswith("- ") else ""
+            if item and item != "-":
+                norm = normalize_lease_path(item)
+                if norm is None:
+                    raise GateError("claims-invalid", f"claim {current} has a path the gate will not lease")
+                paths.append(norm)
+            continue
+        if line.strip():
+            raise GateError("claims-invalid", f"claim {current} has an unknown line")
+    finish()
+    return claims
+
+
+def load_claims(root: Path, queue: str) -> dict[str, Claim]:
+    text = _read_queue_file(root, queue, claims_rel())
+    if text is None or not text.strip():
+        return {}
+    return parse_claims(text)
+
+
+def render_claims(claims: dict[str, Claim]) -> str:
+    def sort_key(task_id: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in task_id.split("."))
+
+    lines = ["# claims", ""]
+    for task_id in sorted(claims, key=sort_key):
+        claim = claims[task_id]
+        lines.append(f"## {task_id}")
+        lines.append(f"owner: {claim.owner}")
+        lines.append(f"claimed: {claim.claimed}")
+        lines.append(f"activity: {claim.activity}")
+        lines.append("paths:")
+        if claim.paths:
+            for path in claim.paths:
+                lines.append(f"- {path}")
+        else:
+            lines.append("-")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@contextmanager
+def _claims_lock(root: Path):
+    lock = _git_common_dir(root) / "jt-queue" / "claims.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+", encoding="utf-8") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def write_claims(root: Path, claims: dict[str, Claim]) -> None:
+    path = root / QUEUE_DIR / "claims.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name("claims.md.tmp")
+    tmp.write_text(render_claims(claims), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _paths_conflict(
+    task_id: str,
+    paths: tuple[str, ...],
+    claims: dict[str, Claim],
+    cards: list[Card],
+) -> tuple[str, str, str] | None:
+    by_id = {card.id: card for card in cards}
+    for other_id, claim in claims.items():
+        if other_id == task_id or not paths or not claim.paths:
+            continue
+        other = by_id.get(other_id)
+        if other is not None and _card_is_closed(other):
+            continue
+        for left in paths:
+            for right in claim.paths:
+                if _path_overlaps(left, right):
+                    return other_id, claim.owner, right
+    return None
+
+
+def _lease_hit(
+    card: Card, claims: dict[str, Claim], cards: list[Card]
+) -> tuple[str, str, str] | None:
+    lefts: list[str] = []
+    for raw in card.files:
+        norm = normalize_lease_path(raw)
+        lefts.append(norm if norm is not None else raw.strip())
+    return _paths_conflict(card.id, tuple(lefts), claims, cards)
+
+
+def _held_by_other(card: Card, claims: dict[str, Claim], me: str) -> bool:
+    claim = claims.get(card.id)
+    if claim is None or _card_is_closed(card):
+        return False
+    return claim.owner != me
+
+
+def _worktree_rows(root: Path) -> list[dict[str, str]]:
+    proc = _run_git(root, ["worktree", "list", "--porcelain"])
+    if proc.returncode != 0:
+        return []
+    rows: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            if current:
+                rows.append(current)
+                current = {}
+            continue
+        if line.startswith("worktree "):
+            current["path"] = line[len("worktree ") :]
+        elif line.startswith("branch "):
+            ref = line[len("branch ") :]
+            prefix = "refs/heads/"
+            current["branch"] = ref[len(prefix) :] if ref.startswith(prefix) else ref
+        elif line.startswith("HEAD "):
+            current["head"] = line[len("HEAD ") :]
+    if current:
+        rows.append(current)
+    return rows
+
+
+def _worktree_dir(root: Path, card_id: str) -> Path:
+    return _git_common_dir(root) / "jt-queue" / "worktrees" / card_id
+
+
+def _task_worktree_path(root: Path, card_id: str) -> Path | None:
+    local, _remote = task_branch_names(root, card_id)
+    branch = local[0] if len(local) == 1 else ""
+    home = _home_toplevel(root)
+    dedicated = _worktree_dir(root, card_id)
+    for row in _worktree_rows(root):
+        raw = row.get("path", "")
+        if not raw:
+            continue
+        path = Path(raw)
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved == home:
+            continue
+        if branch and row.get("branch") == branch:
+            return resolved
+        try:
+            if resolved == dedicated.resolve():
+                return resolved
+        except OSError:
+            continue
+    return None
+
+
+def _worktree_state(path: Path) -> str:
+    proc = _run_git(path, ["status", "--porcelain"])
+    if proc.returncode != 0:
+        return "unknown"
+    return "dirty" if proc.stdout.strip() else "clean"
+
+
+def _branch_commit_time(root: Path, card_id: str) -> datetime | None:
+    local, _remote = task_branch_names(root, card_id)
+    if len(local) != 1:
+        return None
+    proc = _run_git(root, ["log", "-1", "--format=%cI", local[0]])
+    if proc.returncode != 0:
+        return None
+    return _parse_git_time(proc.stdout.strip())
+
+
+def _effective_activity(root: Path, claim: Claim, card_id: str, now: datetime) -> datetime:
+    moments: list[datetime] = []
+    for raw in (claim.activity, claim.claimed):
+        parsed = _parse_stamp(raw)
+        if parsed is not None:
+            moments.append(parsed)
+    tip = _branch_commit_time(root, card_id)
+    if tip is not None:
+        moments.append(tip)
+    path = _task_worktree_path(root, card_id)
+    if path is not None and _worktree_state(path) == "dirty":
+        moments.append(now)
+    return max(moments) if moments else now
+
+
+def claim_is_stale(
+    root: Path,
+    claim: Claim,
+    card_id: str,
+    hours: int,
+    now: datetime | None = None,
+) -> bool:
+    moment = now or datetime.now(timezone.utc)
+    latest = _effective_activity(root, claim, card_id, moment)
+    return moment - latest > timedelta(hours=hours)
+
+
+def claim_notes(root: Path, board: Board, claims: dict[str, Claim], me: str) -> list[str]:
+    hours = claim_stale_hours(board.text)
+    now = datetime.now(timezone.utc)
+    notes: list[str] = []
+    for card in _ordered(board.cards):
+        claim = claims.get(card.id)
+        if claim is None or not _held_by_other(card, claims, me):
+            continue
+        stale = "yes" if claim_is_stale(root, claim, card.id, hours, now) else "no"
+        notes.append(
+            f"claimed-by: {card.id} owner: {claim.owner} "
+            f"claimed: {claim.claimed} activity: {claim.activity} stale: {stale}"
+        )
+    return notes
+
+
+def _print_claim_state(claim: Claim, stale: bool) -> None:
+    print(f"owner: {claim.owner}")
+    print(f"claimed: {claim.claimed}")
+    print(f"activity: {claim.activity}")
+    print(f"stale: {'yes' if stale else 'no'}")
+
+
+def _require_queue(root: Path) -> tuple[Board, str] | None:
+    text = read_board_text(root)
+    if text is None:
+        _refuse("board-missing")
+        return None
+    queue = parse_queue(text)
+    if not queue or _current_branch(root) != queue:
+        _refuse("not-on-queue-branch")
+        return None
+    board, _brief = load_board(root)
+    if board is None:
+        _refuse("board-missing")
+        return None
+    return board, queue
+
+
+def _new_branch_name(root: Path, card_id: str) -> str:
+    ticket = ticket_id_in_card(_read_card(root, card_id))
+    board = read_board_text(root) or ""
+    kind = _branch_type(card_kind_in_board(board, card_id))
+    words = re.findall(r"[a-z0-9]+", _card_title(board, card_id).casefold())
+    slug = "-".join(words[:5])
+    if ticket and len(words) >= 2 and _TASK_SLUG_RE.fullmatch(slug):
+        name = f"{kind}/{ticket}-{slug}"
+        if ".." not in name and not name.endswith(".lock"):
+            return name
+    return _default_task_branch(root, card_id)
+
+
+def _origin_ahead(root: Path, queue: str) -> str:
+    remote = f"origin/{queue}"
+    if _run_git(root, ["rev-parse", "--verify", "--quiet", remote]).returncode != 0:
+        return ""
+    if _run_git(root, ["merge-base", "--is-ancestor", remote, queue]).returncode != 0:
+        return f"{remote} is not contained in {queue}"
+    return ""
+
+
+def claims_need_commit(root: Path) -> bool:
+    rel = claims_rel()
+    if not _is_git(root):
+        return False
+    ignored = _run_git(root, ["check-ignore", "-q", "--", rel])
+    if ignored.returncode == 0:
+        return False
+    status = _run_git(root, ["status", "--porcelain", "--", rel])
+    if status.returncode != 0:
+        return True
+    return bool(status.stdout.strip())
+
+
+def _record_worktree(root: Path, card_id: str, path: Path, branch: str) -> None:
+    reg = _git_common_dir(root) / "jt-queue" / "worktrees.json"
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, dict[str, str]] = {}
+    try:
+        loaded = json.loads(reg.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        loaded = None
+    if isinstance(loaded, dict):
+        for key, value in loaded.items():
+            if isinstance(key, str) and isinstance(value, dict):
+                recorded_path = value.get("path")
+                recorded_branch = value.get("branch")
+                if isinstance(recorded_path, str) and isinstance(recorded_branch, str):
+                    data[key] = {"path": recorded_path, "branch": recorded_branch}
+    data[card_id] = {"path": str(path), "branch": branch}
+    tmp = reg.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, reg)
+
+
+def _forget_worktree(root: Path, card_id: str) -> None:
+    reg = _git_common_dir(root) / "jt-queue" / "worktrees.json"
+    if not reg.is_file():
+        return
+    try:
+        loaded = json.loads(reg.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(loaded, dict) or card_id not in loaded:
+        return
+    loaded.pop(card_id, None)
+    tmp = reg.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(loaded, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, reg)
+
+
+def _main_has_branch(root: Path, branch: str) -> bool:
+    home = _home_toplevel(root)
+    for row in _worktree_rows(root):
+        raw = row.get("path", "")
+        if not raw or row.get("branch") != branch:
+            continue
+        try:
+            if Path(raw).resolve() == home:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def cmd_claim(root: Path, card_id: str) -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    found = _require_queue(root)
+    if found is None:
+        return 1
+    board, queue = found
+    card = _board_card(board, card_id)
+    if card is None:
+        return _refuse("task-line-missing")
+    if _card_is_closed(card):
+        return _refuse("task-closed")
+    me = current_owner(root)
+    if not me:
+        return _refuse("owner-unknown")
+    body = _read_repo_file(root, queue, _queue_rel("tasks", card_id, "task.md"))
+    if body is None:
+        return _refuse("task-line-missing")
+    try:
+        paths = lease_paths(body)
+    except GateError as err:
+        return _refuse(err.reason, detail=err.detail)
+    hours = claim_stale_hours(board.text)
+    with _claims_lock(root):
+        try:
+            claims = load_claims(root, queue)
+        except GateError as err:
+            return _refuse(err.reason, detail=err.detail)
+        for task_id in list(claims):
+            other = _board_card(board, task_id)
+            if task_id != card_id and other is not None and _card_is_closed(other):
+                claims.pop(task_id, None)
+        existing = claims.get(card_id)
+        if existing is not None and existing.owner != me:
+            stale = claim_is_stale(root, existing, card_id, hours)
+            _print_claim_state(existing, stale)
+            return _refuse("claimed", detail=f"task {card_id} is owned by {existing.owner}")
+        if existing is None and card.status not in _WORKABLE:
+            return _refuse("claimed", detail=f"task {card_id} is not a task this command can start")
+        conflict = _paths_conflict(card_id, paths, claims, board.cards)
+        if conflict is not None:
+            other_id, owner, path = conflict
+            print(f"task: {other_id}")
+            print(f"owner: {owner}")
+            print(f"path: {path}")
+            return _refuse(
+                "lease",
+                detail=f"{path} overlaps task {other_id} owned by {owner}",
+            )
+        now = _stamp()
+        if existing is None:
+            claims[card_id] = Claim(card_id, me, now, now, paths)
+            verb = "new"
+        else:
+            claims[card_id] = Claim(card_id, me, existing.claimed, now, paths)
+            verb = "refresh"
+        write_claims(root, claims)
+    print(f"claimed: {verb}")
+    print(f"owner: {me}")
+    print(f"id: {card_id}")
+    print("stale: no")
+    print("paths: " + (", ".join(paths) if paths else "none"))
+    print("commit: jt-queue/claims.md")
+    print("merge: no")
+    return 0
+
+
+def cmd_release(root: Path, card_id: str, closed_only: bool) -> int:
+    if not closed_only and not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    found = _require_queue(root)
+    if found is None:
+        return 1
+    board, queue = found
+    with _claims_lock(root):
+        try:
+            claims = load_claims(root, queue)
+        except GateError as err:
+            return _refuse(err.reason, detail=err.detail)
+        if closed_only:
+            dropped = [
+                task_id
+                for task_id in list(claims)
+                if (card := _board_card(board, task_id)) is not None and _card_is_closed(card)
+            ]
+            for task_id in dropped:
+                claims.pop(task_id, None)
+        else:
+            card = _board_card(board, card_id)
+            if card is not None and not _card_is_closed(card):
+                print("human-only: release")
+            if card_id in claims:
+                claims.pop(card_id, None)
+                dropped = [card_id]
+            else:
+                dropped = []
+        if dropped:
+            write_claims(root, claims)
+    if dropped:
+        print("released: " + ", ".join(dropped))
+        print("commit: jt-queue/claims.md")
+    else:
+        print("released: none")
+    print("merge: no")
+    return 0
+
+
+def cmd_worktree(root: Path, card_id: str) -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    text = read_board_text(root)
+    if text is None:
+        return _refuse("board-missing")
+    board, _brief = load_board(root)
+    if board is None:
+        return _refuse("board-missing")
+    queue = board.queue_branch
+    if not queue:
+        return _refuse("not-ready", detail="queue")
+    card = _board_card(board, card_id)
+    if card is None:
+        return _refuse("task-line-missing")
+    if _card_is_closed(card):
+        return _refuse("task-closed")
+    me = current_owner(root)
+    if not me:
+        return _refuse("owner-unknown")
+    try:
+        claims = load_claims(root, queue)
+    except GateError as err:
+        return _refuse(err.reason, detail=err.detail)
+    claim = claims.get(card_id)
+    hours = claim_stale_hours(board.text)
+    if claim is None:
+        return _refuse("claimed", detail=f"task {card_id} has no claim; run gate.py claim first")
+    if claim.owner != me:
+        _print_claim_state(claim, claim_is_stale(root, claim, card_id, hours))
+        return _refuse("claimed", detail=f"task {card_id} is owned by {claim.owner}")
+    if claims_need_commit(root):
+        return _refuse("claims-uncommitted")
+    local, _remote = task_branch_names(root, card_id)
+    if len(local) > 1:
+        return _refuse("task-branch-missing", detail=task_branch_missing_detail(root, card_id))
+    branch = local[0] if local else _new_branch_name(root, card_id)
+    existing = _task_worktree_path(root, card_id)
+    if existing is not None:
+        _record_worktree(root, card_id, existing, branch)
+        print("worktree: reuse")
+        print(f"path: {existing}")
+        print(f"branch: {branch}")
+        print("merge: no")
+        return 0
+    if _main_has_branch(root, branch):
+        return _refuse("worktree-busy", detail=f"the main checkout is on {branch}")
+    if not local:
+        behind = _origin_ahead(root, queue)
+        if behind:
+            return _refuse("queue-behind", detail=behind)
+    dedicated = _worktree_dir(root, card_id)
+    if dedicated.exists():
+        return _refuse(
+            "worktree-failed",
+            detail=f"{dedicated} exists and is not the task worktree",
+        )
+    dedicated.parent.mkdir(parents=True, exist_ok=True)
+    if local:
+        added = _run_git(root, ["worktree", "add", str(dedicated), branch])
+    else:
+        added = _run_git(root, ["worktree", "add", "-b", branch, str(dedicated), queue])
+    if added.returncode != 0:
+        detail = _one_detail(added.stderr or "git worktree add failed")
+        return _refuse("worktree-failed", detail=detail)
+    _record_worktree(root, card_id, dedicated.resolve(), branch)
+    print("worktree: created")
+    print(f"path: {dedicated.resolve()}")
+    print(f"branch: {branch}")
+    print(f"base: {queue}")
+    print("merge: no")
+    return 0
+
+
+def cmd_worktree_remove(root: Path, card_id: str) -> int:
+    if not valid_card_id(card_id):
+        return _refuse("invalid-id")
+    text = read_board_text(root)
+    if text is None:
+        return _refuse("board-missing")
+    board, _brief = load_board(root)
+    if board is None:
+        return _refuse("board-missing")
+    path = _task_worktree_path(root, card_id)
+    if path is None:
+        _forget_worktree(root, card_id)
+        print("worktree: absent")
+        print("merge: no")
+        return 0
+    state = _worktree_state(path)
+    if state == "unknown":
+        return _refuse("worktree-failed", detail=f"could not read status of {path}")
+    if state == "dirty":
+        print("worktree: dirty")
+        print(f"path: {path}")
+        return _refuse("worktree-dirty", detail=f"uncommitted changes in {path}")
+    card = _board_card(board, card_id)
+    if card is None or not _card_is_closed(card):
+        print(f"path: {path}")
+        return _refuse("worktree-open")
+    removed = _run_git(root, ["worktree", "remove", str(path)])
+    if removed.returncode != 0:
+        err = removed.stderr or "git worktree remove refused"
+        if "modified" in err or "untracked" in err:
+            print("worktree: dirty")
+            print(f"path: {path}")
+            return _refuse("worktree-dirty", detail=_one_detail(err))
+        return _refuse("worktree-failed", detail=_one_detail(err))
+    _forget_worktree(root, card_id)
+    print("worktree: removed")
+    print(f"path: {path}")
+    print("merge: no")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in MERGE_ARGV:
@@ -5999,6 +6840,15 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--root", default=".")
 
     sub.add_parser("next", parents=[common])
+    claim = sub.add_parser("claim", parents=[common])
+    claim.add_argument("--id", required=True)
+    release = sub.add_parser("release", parents=[common])
+    release.add_argument("--id", default="")
+    release.add_argument("--closed", action="store_true")
+    tree = sub.add_parser("worktree", parents=[common])
+    tree.add_argument("--id", required=True)
+    drop_tree = sub.add_parser("worktree-remove", parents=[common])
+    drop_tree.add_argument("--id", required=True)
     ask_parser = sub.add_parser("ask", parents=[common])
     ask_parser.add_argument("--id", required=True)
     ask_parser.add_argument("--question", required=True)
@@ -6034,6 +6884,14 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(parsed.root).resolve()
     if parsed.cmd == "next":
         return cmd_next(root)
+    if parsed.cmd == "claim":
+        return cmd_claim(root, parsed.id)
+    if parsed.cmd == "release":
+        return cmd_release(root, parsed.id, parsed.closed)
+    if parsed.cmd == "worktree":
+        return cmd_worktree(root, parsed.id)
+    if parsed.cmd == "worktree-remove":
+        return cmd_worktree_remove(root, parsed.id)
     if parsed.cmd == "ask":
         return cmd_ask(root, parsed.id, parsed.question, parsed.refused)
     if parsed.cmd == "reach-review":

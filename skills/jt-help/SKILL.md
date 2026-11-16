@@ -5,7 +5,7 @@ license: MIT
 compatibility: Codex, Claude Code, Cursor, Grok Build, and Antigravity. Needs nothing beyond the installed skills.
 metadata:
   author: Thitinan
-  version: "24.10.0"
+  version: "24.11.0"
   short-description: List every jt- command and the order to use them
 ---
 
@@ -23,10 +23,10 @@ Install one skill with `npx skills add thitinan147/jtek-skill --skill <name>` (a
 | `/jt-spec-split <flow>` | **human-only** | A flow → `<docs_root>/<flow>/map.md`, then one folder per story the PO confirms. |
 | `/jt-spec-ac <work>` | **human-only** | Story, rules, acceptance criteria, and questions in `spec.md`. |
 | `/jt-spec-handoff <work>` | **human-only** | Test steps for the tester, once no question blocks AC. |
-| `/jt-board [<flow> or flow]` | **human-only** | Spec `board.html`, or `flow` for lead time, gate fails, rework, review time, and escaped defects. |
+| `/jt-board [<flow> or flow]` | **human-only** | Spec `board.html`, or `flow` for lead time, gate fails, rework, review time, escaped defects, and each task's owner. |
 | `/jt-setup` | human confirms | Write `jt-queue/board.md` and `AGENTS.md` after the human confirms. An existing file is merged. |
 | `/jt-add-task` | spec approval covers derived tasks | Agree `brief.md`, then draft tasks. The gate's `brief` and `add-task` actions both use this command. |
-| `/jt-work` | agent | Work ready tasks in board order, or one ticket id. No `--loop` flag. Cannot merge. |
+| `/jt-work` | agent | Work ready tasks in board order, or one ticket id. Claims the task, leases its files, and uses one worktree. Cannot merge. |
 | `/jt-review` | **human-only** | Inspect `review:` tasks. Write `merge:`, `send-back:`, or `drop:`. |
 
 Human-only means the agent must not start that command itself. The human types it.
@@ -63,9 +63,9 @@ Files: `<docs_root>/<work>/spec.md` (default `docs_root` is `scrum-spec`, becaus
 
 ## Queue files
 
-Commit the queue files a teammate needs: `board.md`, `brief.md`, `tasks/<id>/task.md`, and `tasks/<id>/plan.md` (its `## decisions`). Leave local files uncommitted: `lessons.md` (notes for this agent), `.env` and private keys, and `.git/jt-queue/` (`approved-commands.json` must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter; `gate-runs.jsonl` is this machine's gate pass/fail log and stores no command output). `AGENTS.md` at the repo root is the agent instructions; `CLAUDE.md` imports it with `@AGENTS.md` and does not copy it. Humans approve the spec and the merge. One spec approval covers the tasks derived from it. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges.
+Commit the queue files a teammate needs: `board.md`, `brief.md`, `claims.md` (who claimed a task, when, and which paths are leased), `tasks/<id>/task.md`, and `tasks/<id>/plan.md` (its `## decisions`). Leave local files uncommitted: `lessons.md` (notes for this agent), `.env` and private keys, and `.git/jt-queue/` (`approved-commands.json` must not travel in a commit; `logs/` can hold secrets; `attempts.json` is this machine's round counter; `gate-runs.jsonl` is this machine's gate pass/fail log and stores no command output; `worktrees/` is this machine's task checkout). `AGENTS.md` at the repo root is the agent instructions; `CLAUDE.md` imports it with `@AGENTS.md` and does not copy it. Humans approve the spec and the merge. One spec approval covers the tasks derived from it. Only `/jt-review`, run by a human, writes `merge:`. The agent never merges. A task owned by someone else is not started, even when the claim is stale, until a human runs `gate.py release --id`.
 
-`/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one. With one ticket id it works only that task.
+`/jt-work` is one command and has no `--loop` flag. With no id it works every ready task in board order and skips a blocked one and one owned by someone else. With one ticket id it works only that task. It leases `files:` and refuses an overlap by naming the other task and owner. It uses one git worktree per task and removes that worktree after `merge:` or `drop:` when the worktree is clean.
 
 A ticket id is copied from its source onto `ticket:` (`BOOK-12`, `#45`, a Notion id). The skills require one and do not check its shape. Commits and PR titles are `<type>(<scope>): <summary> (<ticket-id>)`. The task branch is `type/<ticket-id>-short-slug` (for example `feat/BOOK-12-room-search`). Legacy `task-<id>-<slug>` still works.
 

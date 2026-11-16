@@ -25,6 +25,9 @@ You type the slash commands. The agent runs `gate.py` for you; the commands are 
 | **Quick / Standard** | The gate's tier, worked out from the kind. **Quick** (`docs`, plain `style`) needs passing tests. **Standard** (everything else) also needs `plan.md` with evidence for every `pass:` line and a review of the diff. |
 | **Size** | `small`, `medium`, or `large` on the task. **Small** needs no spec. It runs affected tests only when the board sets that; otherwise the full suite. **Medium** is a short spec and the full gate. **Large** is a full spec. You can override it on the board line. The gate may raise it and never lowers it. On Standard, medium and large also need `## ai-review` before you review. Small and Quick skip that. |
 | **plan.md** | `jt-queue/tasks/<id>/plan.md`: the agent's notes for a Standard task, including the `## evidence` table, `## review-diff`, and `## ai-review`. |
+| **claim** | `jt-queue/claims.md`: who is working a task (`owner:`), when they claimed it, and the latest activity. `/jt-board flow` prints that owner. A claim with no activity newer than `<CLAIM_STALE>` (empty means 24 hours) is `stale` and stays with that owner until you run `gate.py release --id`. |
+| **lease** | The `files:` paths on that claim. `/jt-work` refuses a new task whose paths overlap an open lease and names the other task and owner. Merge or drop releases the lease. |
+| **worktree** | One checkout per task under `.git/jt-queue/worktrees/<id>`, on `type/<ticket-id>-<slug>`, from the latest queue commit. Re-running reuses it. A checkout with uncommitted changes is kept. |
 | **approve-commands** | The step where **you** confirm the exact test command (and any app start/click commands). The gate will not run a command you have not approved. |
 | **round** | One attempt at passing the gate. After three failed test rounds the gate tells the agent to ask you instead of guessing. |
 
@@ -136,7 +139,8 @@ board: skip
 +- jt-queue/brief.md holds the round brief.
 +- jt-queue/tasks/<id>/task.md holds the task contract.
 +- jt-queue/tasks/<id>/plan.md holds the plan, the evidence, and the review notes.
-+- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl).
++- jt-queue/claims.md holds who claimed each task and the paths that task has leased.
++- Local only: jt-queue/lessons.md, and .git/jt-queue/ (approved-commands.json, logs, attempts.json, gate-runs.jsonl, worktrees/).
 +::: jtek:end
 --- end
 --- diff CLAUDE.md
@@ -199,7 +203,7 @@ Each `pass:` line is something you can run. The board now lists both tasks:
 
 ### 3. A Quick task, and approving the test command
 
-Run `/jt-work`. The gate picks task 1, a `docs` task. The agent commits the README change on `docs/BOOK-1-readme-usage`, then asks the gate:
+Run `/jt-work`. The gate picks task 1, a `docs` task, records you as its owner in `jt-queue/claims.md`, and checks out one worktree for that task. The agent commits the README change on `docs/BOOK-1-readme-usage`, then asks the gate:
 
 ```text
 $ gate.py reach-review --root . --id 1

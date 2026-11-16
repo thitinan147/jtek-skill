@@ -1,6 +1,6 @@
 # Board - `<REPO_NAME>`
 
-The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.10. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Commit this board, the brief, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
+The rules live in skills `jt-setup`, `jt-add-task`, and `jt-work`, version 24.11. The brief is `brief.md`. A task is `tasks/<id>/task.md`. A plan is `tasks/<id>/plan.md`. Claims live in `claims.md`. Commit this board, the brief, the claims, the task, and the plan. Do not commit `lessons.md` or `.git/jt-queue/`. Agent instructions live in `AGENTS.md` at the repo root.
 
 queue:
 
@@ -21,6 +21,7 @@ queue:
 | `<BROWSER_TOOL>` | |
 | `<STACK_LOCK>` | |
 | `<DIFF_LIMIT>` | |
+| `<CLAIM_STALE>` | |
 
 Frontend and backend in separate repos: add a `## repos` section that names each repo and its path (see `contract.md` section 5). Without it the board covers this repo only.
 
@@ -30,7 +31,7 @@ Frontend and backend in separate repos: add a `## repos` section that names each
 
 Task kinds are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
 
-Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `size:`. A task line may say `size: small`, `size: medium`, or `size: large`; that overrides `size:` in the task. Empty means `medium`.
+Empty `<DIFF_LIMIT>` means 400 added and deleted lines. A larger diff raises `size:`. A task line may say `size: small`, `size: medium`, or `size: large`; that overrides `size:` in the task. Empty means `medium`. Empty `<CLAIM_STALE>` means 24 hours. A claim with no newer activity is shown as stale and is not taken.
 
 Empty `<AFFECTED_TEST_CMD>` means `small` runs the full `<TEST_CMD>`. Set it to narrow that run (`npx vitest --changed`, `npx jest --findRelatedTests {files}`, `pytest --testmon`), or put `{files}` in `<TEST_CMD>`. `{files}` is the affected test paths. When none can be named, `small` still runs the full suite.
 

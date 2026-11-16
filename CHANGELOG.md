@@ -1,5 +1,13 @@
 # Changelog
 
+## 24.11.0 - claims, file leases, and one worktree per task
+
+- `/jt-work` records who is working a task in `jt-queue/claims.md` (`owner`, `claimed`, `activity`) and commits that file on the queue branch. The owner is `JT_OWNER` when that is set, otherwise `git config user.name`. `/jt-board flow` prints the owner, the claimed time, and whether the claim is stale.
+- A task owned by someone else is refused with `claimed`. A stale claim (no activity newer than `<CLAIM_STALE>`, empty means 24 hours) is shown as stale and is not taken. Only a human runs `gate.py release --id` on an open task. The agent never does.
+- Starting a task leases the paths in `files:`. `/jt-work` refuses `lease` when those paths overlap an open lease and names the other task and owner. `release --closed` drops leases whose board line is `merge:` or `drop:`.
+- Each task gets one git worktree under `.git/jt-queue/worktrees/<id>`, on `type/<ticket-id>-<slug>`, from the latest queue commit. Running it again reuses that worktree. It is removed after merge or drop when the checkout is clean. A dirty worktree is reported and kept. That directory stays on this machine.
+- Pin installs with `v24.11.0`. Skill and plugin metadata are `24.11.0`.
+
 ## 24.10.0 - queue flow metrics on /jt-board
 
 - `/jt-board flow` prints, per task and as a summary, lead time, gate fails, rework, and review time for a window (default the last 30 days). Each value names its source. A missing source prints `unknown` and the reason. The script does not guess.
