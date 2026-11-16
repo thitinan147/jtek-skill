@@ -755,12 +755,12 @@ class ReachReviewGitTests(unittest.TestCase):
                 board_text(
                     "- [ ] **12** fresh (feat)",
                     typecheck=f"touch {marker}",
-                    denylist="dmedasset -> MediaAsset",
+                    denylist="dmedasset -> dmecasset",
                 ),
                 encoding="utf-8",
             )
 
-        plant(f"name = 'dmedassets'\nnote = '{secret}'\n")
+        plant(f"name = 'dmedassets'\nrenamed = 'dmecasset'\nnote = '{secret}'\n")
         use_slot()
         missed = run_gate(self.repo, "reach-review", "--id", "12")
         self.assertEqual(missed.returncode, 0, missed.stdout + missed.stderr)
@@ -775,13 +775,14 @@ class ReachReviewGitTests(unittest.TestCase):
         self.assertIn("refused: deprecated-name", hit.stdout)
         self.assertIn("step: denylist", hit.stdout)
         self.assertIn("skipped: typecheck", hit.stdout)
-        self.assertIn("dmedasset -> MediaAsset", hit.stdout)
+        self.assertIn("dmedasset -> dmecasset", hit.stdout)
         self.assertIn("app.py:", hit.stdout)
         self.assertNotIn(secret, hit.stdout + hit.stderr)
+        self.assertNotIn("dmecasset ->", hit.stdout)
         self.assertFalse(marker.exists())
 
         (self.repo / "jt-queue" / "denylist.txt").write_text(
-            "# retired names\ndmedasset -> MediaAsset\n",
+            "# retired names\ndmedasset -> dmecasset\n",
             encoding="utf-8",
         )
         (self.repo / "jt-queue" / "board.md").write_text(
@@ -790,7 +791,8 @@ class ReachReviewGitTests(unittest.TestCase):
         )
         from_file = run_gate(self.repo, "reach-review", "--id", "12")
         self.assertIn("refused: deprecated-name", from_file.stdout)
-        self.assertIn("MediaAsset", from_file.stdout)
+        self.assertIn("dmecasset", from_file.stdout)
+        self.assertNotIn("dmecasset ->", from_file.stdout)
         self.assertNotIn(secret, from_file.stdout + from_file.stderr)
         self.assertFalse(marker.exists())
         marker.unlink(missing_ok=True)

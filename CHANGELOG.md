@@ -4,7 +4,7 @@
 
 - `reach-review` stops at the first failure and prints `step:` and `skipped:` (the next step). Order: secret scan, deprecated-name denylist, `<TYPECHECK_CMD>`, `<LINT_CMD>`, tests, `<VERIFY_CMD>`.
 - Secret scan runs `<SECURITY_CMD>` when that program is installed (the TruffleHog slot). Otherwise it keeps the v23 `secret-suspect` check. The output names the file and never the value, and the scan's own output is not printed.
-- `<DENYLIST>`, or `jt-queue/denylist.txt` when the cell is empty, lists `old -> replacement` (for example `dmedasset -> MediaAsset`). A hit in the diff fails with `deprecated-name` and names the replacement. An empty list skips the step.
+- `<DENYLIST>`, or `jt-queue/denylist.txt` when the cell is empty, lists `old -> replacement` (for example `dmedasset -> dmecasset`). A hit in the diff fails with `deprecated-name` and names the replacement. An empty list skips the step.
 - On Standard, typecheck runs before lint, and both run before tests. Quick still skips typecheck and lint. `<VERIFY_CMD>` runs after tests on every tier when the cell is set. Empty cells stay `skip`.
 - Non-empty `<SECURITY_CMD>` and `<VERIFY_CMD>` join the `approve-commands` hash (home table and each `## repos` block). Empty cells stay out, so an existing approval still matches. `<DENYLIST>` is not a shell command and is not part of the hash.
 - Size tiers and `<AFFECTED_TEST_CMD>` are unchanged. `allowed` prints `gates:` as `secret`, `denylist`, `typecheck`, `lint`, `tests`, `verify`, `screen`, `review-diff`, `test-weakening`.
