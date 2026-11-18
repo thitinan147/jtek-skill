@@ -8,7 +8,7 @@ One Notion database is the board, and each page is a ticket. `jtek.py` reads the
 2. Create the database below, and share it with the integration. Share only this database: every session holds the token, so the token should reach nothing else.
 3. Put the token in the environment of the sessions as `NOTION_TOKEN`. Never commit it.
 4. Put the database's id or link in `jtek.json` as `"notion"`, and commit that on the base branch of every repository the board serves.
-5. Run `jtek.py list`. It only reads. It names any property that is missing or has the wrong type.
+5. Add one ticket in Backlog, then run `jtek.py list`. It only reads. It names any property that is missing or has the wrong type.
 
 ## The database
 
@@ -34,7 +34,7 @@ Use headings for `Goal`, `Done when`, and `Out of scope`.
 
 - **`Done when`** holds only top-level list items, one outcome each. `start` refuses a page with other content there, or with an item that has nested content, because every item must be answered in the evidence.
 - Text above the first heading is copied under `Notes`.
-- A block that cannot be copied as text, such as an image or a table, shows in the copy as a line that names it. Open the page to see it.
+- A block that cannot be copied as text, such as an image or a table, shows in the copy as a line that names it. So does a toggle heading, because what is inside it is not read. Open the page to see it.
 - Ticket fields come from the properties only. A line such as `review: human` typed in the body changes nothing.
 
 ## Who sets which status
@@ -52,7 +52,7 @@ Without a forge, the human sets Done.
 
 | Result | On the page |
 |---|---|
-| `outcome: review` | Status: Review. PR: the link. Waiting cleared. A comment with the result block and the evidence. |
+| `outcome: review` | Status: Review. PR: the link. Waiting cleared. A comment with the result block and the evidence. If the human moved the page out of In Progress meanwhile, it is left as it is and `finish` says so. |
 | `outcome: needs-review` | Nothing. The result is saved on the machine for the reviewer. |
 | `outcome: needs-human` | Waiting: `input` or `approval`. A comment with the result block. The question is on its `note:` line. |
 

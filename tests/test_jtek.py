@@ -848,6 +848,55 @@ class NotionTests(Scratch):
         self.assertEqual(self.field("T-2", "status"), "Done")
         self.assertIn("set to Done, pull request merged: T-2", out)
 
+    def test_sync_keeps_a_worktree_when_the_page_is_only_missing_from_the_list(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.board.by_id("T-1")["hidden"] = True  # the query does not return it, but the page says In Progress
+        self.assertEqual(self.jtek("list", "--sync")[0], 0)
+        self.assertTrue(self.worktree("T-1").is_dir())
+        self.board.fail("GET", "/v1/pages", 500, times=5)
+        self.jtek("list", "--sync")
+        self.assertTrue(self.worktree("T-1").is_dir(), "a page that cannot be read is not finished")
+
+    def test_a_toggle_heading_is_named_and_refused_for_done_when(self):
+        body = [{"type": "heading_2", "text": "Goal"}, {"type": "paragraph", "text": "x"},
+                {"type": "heading_2", "text": "Done when"}, {"type": "bulleted_list_item", "text": "it works"},
+                {"type": "heading_2", "text": "Out of scope", "children": True}]
+        self.ticket("T-1", body=body)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        snapshot = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertIn("this heading is a toggle", snapshot)
+        body[2]["children"] = True
+        self.ticket("T-2", body=body)
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 1)
+        self.assertIn("`Done when` heading on the page is a toggle", out)
+
+    def test_finish_does_not_overwrite_a_status_the_human_set(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.board.set("T-1", Status="Cancelled")
+        code, out = self.to_review()
+        self.assertEqual(code, 1)
+        self.assertIn("the page is `Cancelled`, not In Progress", out)
+        self.assertEqual(self.field("T-1", "status"), "Cancelled")
+        self.assertEqual(self.board.comments_on("T-1"), [])
+
+    def test_the_test_address_must_be_http(self):
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", env={"JTEK_NOTION_API": "ftp://127.0.0.1/x"})
+        self.assertEqual(code, 1)
+        self.assertIn("may only point at this machine", out)
+
+    def test_the_same_question_asked_again_is_commented_again(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        for _ in range(2):
+            self.assertEqual(self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")[0], 0)
+            self.board.set("T-1", Waiting="")
+            self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.assertEqual(len(self.board.comments_on("T-1")), 2)
+
     def test_release_says_the_board_is_not_changed(self):
         self.ticket("T-1")
         self.jtek("start", "T-1")

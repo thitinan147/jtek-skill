@@ -174,7 +174,7 @@ class FakeNotion:
                 return 404, {"message": "no such data source"}
             rule = body.get("filter")
             found = [page for page in self.pages.values()
-                     if not page["trash"] and (not rule or self.matches(page, rule))]
+                     if not page["trash"] and not page.get("hidden") and (not rule or self.matches(page, rule))]
             begin = int(body.get("start_cursor") or 0)
             size = min(int(body.get("page_size", 100)), self.page_size)
             more = begin + size < len(found)

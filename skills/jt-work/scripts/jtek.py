@@ -299,7 +299,8 @@ def api_base() -> str:
     override = os.environ.get("JTEK_NOTION_API", "").rstrip("/")
     if not override:
         return NOTION_API
-    if urllib.parse.urlparse(override).hostname not in ("127.0.0.1", "localhost", "::1"):
+    parsed = urllib.parse.urlparse(override)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
         # The token goes to this address, so it may only be a test board on this machine.
         raise Refuse("JTEK_NOTION_API is for tests and may only point at this machine; unset it")
     return override
@@ -315,7 +316,8 @@ def notion(method: str, path: str, body: dict | None = None) -> dict:
     for attempt in range(4):
         request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            # The address is Notion's, or an http(s) address on this machine: api_base() refuses anything else.
+            with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
                 return json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as err:
             if err.code == 429 and attempt < 3:
@@ -436,6 +438,12 @@ def page_body(page_id: str) -> list[str]:
             if kind.startswith("heading_"):
                 section = text.lower()
                 lines += ["", f"## {text}", ""]
+                if block.get("has_children"):
+                    # A toggle heading keeps its content inside it, and that content is not read here.
+                    if section == "done when":
+                        raise Refuse("the `Done when` heading on the page is a toggle, so its items are hidden inside it. "
+                                     "Make it a plain heading with the items below it")
+                    lines.append("[this heading is a toggle, and what is inside it is not copied here; open the page to see it]")
                 continue
             if kind == "divider" or (kind == "paragraph" and not text):
                 lines.append("")
@@ -528,6 +536,10 @@ def push_result(ticket_id: str) -> None:
     if outcome == "needs-review":
         return  # nothing changes for the human until the verdict is in
     if outcome == "review":
+        status = prop(notion("GET", f"/v1/pages/{meta['page']}"), "status")
+        if status not in ("In Progress", "Review"):
+            # The human moved the ticket while the session worked. Their choice stays.
+            raise Refuse(f"the page is `{status}`, not In Progress, so it was left as it is")
         set_page(meta["page"], status="Review", waiting=None, pr=meta.get("pr") or None)
         if (work / "evidence.md").exists():
             text += "\nevidence:\n" + (work / "evidence.md").read_text()
@@ -599,6 +611,7 @@ def cmd_start(args: argparse.Namespace) -> None:
             raise Refuse(f"{ticket_id} is still waiting for {waiting}. The human answers on the page and clears Waiting")
         set_page(page_id, status="In Progress", waiting=None)
         (work / "result.md").unlink(missing_ok=True)
+        (work / "pushed").unlink(missing_ok=True)
         checks_path = work / "checks.json"
         if checks_path.exists():
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
@@ -967,12 +980,18 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("set to Done, pull request merged: " + ", ".join(done))
     print("Done and Cancelled tickets are not listed.")
     if args.sync:
-        # A ticket this machine worked that is no longer open on the board is finished: remove its worktree.
-        open_pages = {hex_id(page["id"]) for page in pages if prop(page, "id") not in done}
+        # Remove the worktree of a ticket this machine worked, only when its page says Done or Cancelled.
+        # A page that is merely absent from the list above proves nothing.
         folder = state_dir() / "work"
         for work in sorted(folder.iterdir()) if folder.is_dir() else []:
             page_id = read_json(work / "meta.json").get("page")
-            if page_id and page_id not in open_pages:
+            if not page_id:
+                continue
+            try:
+                finished = prop(notion("GET", f"/v1/pages/{page_id}"), "status") in ("Done", "Cancelled")
+            except Refuse:
+                finished = False
+            if finished:
                 tidy_done(work.name)
 
 
