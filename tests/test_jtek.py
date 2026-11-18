@@ -667,6 +667,11 @@ class PageTests(Scratch):
         code, out = self.jtek("start", "T-2")
         self.assertEqual(code, 1)
         self.assertIn("Not an item: - on every screen", out)
+        self.ticket("T-3", body="## Goal\nx\n## Done when\n1. it works\n")
+        code, out = self.jtek("start", "T-3")
+        self.assertEqual(code, 1, "the page is saved with `- ` for every list item, so a number is not an item")
+        self.ticket("T-4", body="## Goal\nx\n## Done when\n- [ ] it works\n")
+        self.assertEqual(self.jtek("start", "T-4")[0], 0)
 
     def test_after_holds_across_repositories(self):
         self.ticket("T-1", extra="repo: api\n")

@@ -96,13 +96,9 @@ Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool
 
 Three things, once.
 
-**1. The board.** Connect the Notion tool in your agent. In Claude Code: `/mcp`, then Notion. Then ask the agent:
+**1. The board.** Create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. In Claude Code: `/mcp`, then Notion.
 
-```text
-Create the jtek board in Notion as skills/jt-work/references/notion.md says.
-```
-
-The properties it needs are in [notion.md](skills/jt-work/references/notion.md). Keep the database's link: it goes into `jtek.json` in the next step.
+Keep the database's link: it goes into `jtek.json` in the next step.
 
 **2. The checks.** In each repository:
 

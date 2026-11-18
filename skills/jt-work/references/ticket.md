@@ -61,7 +61,7 @@ After creating the worktree, `start` runs the `setup` command from `jtek.json`, 
 
 `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first, so nothing is left that the next session cannot explain.
 
-A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human runs `start <id> --resume`.
+A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human tells a new session to take the ticket over, and that session adds `--resume` to `start`. A session never adds it on its own.
 
 Notion has no atomic claim. The directory above is the lock for sessions on one machine. The session writes In Progress on the page only after `start` allows it.
 

@@ -31,5 +31,5 @@ These are for the human. An agent does not run them.
 
 - Tickets are written in Notion. Set Status to Todo to release one.
 - `jtek.py next --board-file <file>` and `jtek.py sync --board-file <file>`: what each open ticket needs, and which Review tickets are merged. Both read a file that lists the board's tickets. See [starting-sessions.md](starting-sessions.md).
-- `jtek.py start <id> --resume`: take over a claim whose session died without a result.
+- **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It reads the page and adds `--resume` to `start`. A session never adds `--resume` on its own.
 - `jtek.py release <id>`: drop a claim and its worktree. Git refuses when the worktree has uncommitted changes. The branch is kept, and the page is not changed.

@@ -17,7 +17,7 @@ Go on in this session only if every line holds. Otherwise end the session.
 
 ## For each ticket, start over
 
-- Run `jtek.py start <id>`, pick its playbook, and write a new todo list. Do not reuse the last one.
+- Read its page and run `jtek.py start` for it, pick its playbook, and write a new todo list. Do not reuse the last one.
 - Its worktree is cut from the base branch. **The last ticket's changes are not in it.** Do not assume a helper, a fix, or a rename from the last ticket exists here.
 - Read its ticket file in full, and name the proof for each of its `Done when` items again. You may skip re-reading code you read this session, but re-check anything the ticket depends on.
 - It gets its own evidence, its own pull request, and its own result. Never put two tickets in one branch or one pull request.

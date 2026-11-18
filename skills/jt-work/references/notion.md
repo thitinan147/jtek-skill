@@ -5,7 +5,7 @@ One Notion database is the board, and each page is a ticket. You read and write 
 ## Set up once, by the human
 
 1. Connect the Notion tool in the agent. In Claude Code: `/mcp`, then Notion.
-2. Create the database below. An agent with the Notion tool can create it from this table.
+2. Create the database below by hand. An agent with the Notion tool may be able to create it from this table, but that has not been tried, and the Status options and the Unique ID prefix may need your hands.
 3. Give the tool access to that database.
 4. Put the database's link in `jtek.json` as `"board"`, in every repository the board serves, and commit it on the base branch.
 
@@ -40,6 +40,7 @@ Write a temporary file outside the repository in the ticket format of [ticket.md
 - **Header lines come from properties only:** `# <Name>`, then `id:` from Ticket ID and `status:` from Status. Add `repo:`, `kind:`, `area:`, `checks:`, `waiting:`, and `pr:` when the property is set, and `review: human` when Review is `human`.
 - **`after:`** lists only the related tickets whose Status is not Done. Leave the line out when all are Done. Look at each related page's Status. Do not guess.
 - **The body** goes below the header, starting at its first heading, copied as it is. Put text that sits above the first heading under `## Notes`, so it cannot be read as a header line.
+- **Every list item is written as `- `,** whether the page shows a bullet, a number, or a checkbox. A nested item keeps its indent.
 - **Do not repair the page.** If `Done when` has nested items or other text, copy it as it is. `start` will refuse, and the human fixes the page.
 - **What you cannot copy as text,** such as an image, a table, or a closed toggle: write one line that names it, and open it when the work needs it.
 
