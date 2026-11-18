@@ -368,9 +368,11 @@ class FinishTests(Scratch):
         self.assertEqual(self.field(path, "waiting"), "input")
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 1)
-        self.assertIn("still waiting for input", out)
+        self.assertIn("stopped with a question", out)
         self.board.set("T-1", Waiting="")
-        self.assertEqual(self.jtek("start", "T-1", "--resume")[0], 0)
+        self.assertEqual(self.jtek("start", "T-1")[0], 1, "an empty Waiting is not an answer: only Todo is")
+        self.board.set("T-1", Status="Todo")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
         self.assertIsNone(self.field(path, "waiting"))
 
     def fake_gh(self, output):
@@ -413,7 +415,7 @@ class FinishTests(Scratch):
     def test_a_new_session_picks_up_a_stopped_ticket_with_plain_start(self):
         path = self.started()
         self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
-        self.board.set("T-1", Waiting="")  # the human answered on the page
+        self.board.set("T-1", Status="Todo")  # the human answered on the page
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 0, out)
         self.assertIn("jtek start: resumed", out)
@@ -453,7 +455,7 @@ class FinishTests(Scratch):
         self.git("add", "bad", cwd=tree)
         self.git("commit", "-q", "-m", "wip: still failing", cwd=tree)
         self.assertEqual(self.jtek("stop", "T-1", "--waiting", "input", "--note", "stuck")[0], 0)
-        self.board.set("T-1", Waiting="")
+        self.board.set("T-1", Status="Todo")
         self.assertEqual(self.jtek("start", "T-1")[0], 0)
         self.assertIn("(1/3 failed runs)", self.jtek("check", "T-1")[1])
 
@@ -758,7 +760,9 @@ class NextTests(Scratch):
         self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
         self.assertEqual(self.next()["T-1"][0], "human")
         self.board.set("T-1", Waiting="")
-        self.assertEqual(self.next()["T-1"], ["work", "the human answered"])
+        self.assertEqual(self.next()["T-1"][0], "board", "the question never reached the page, so no session starts")
+        self.board.set("T-1", Status="Todo")
+        self.assertEqual(self.next()["T-1"], ["work", "the human answered, or asked for rework"])
 
     def test_next_says_board_when_the_page_missed_a_result(self):
         self.ticket("T-1")

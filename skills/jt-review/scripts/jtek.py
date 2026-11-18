@@ -316,8 +316,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     path = Path(git("rev-parse", "--show-toplevel")) / CONFIG
     if path.exists():
         raise Refuse(f"{path} already exists")
-    write_json(path, {"setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
+    write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
+    print("`board` is the link of the Notion database that holds the tickets. The agent reads it to find a ticket.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
@@ -354,8 +355,10 @@ def cmd_start(args: argparse.Namespace) -> None:
             raise Refuse(f"worktree for {ticket_id} is gone; nothing to resume")
         if status not in ("Todo", "In Progress"):
             raise Refuse(f"{ticket_id} is `{status}`; only a ticket in Todo or In Progress can resume")
-        if waiting and status != "Todo":
-            raise Refuse(f"{ticket_id} is still waiting for {waiting}. The human answers on the page and clears Waiting")
+        asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
+        if (asked or waiting) and status != "Todo":
+            # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
+            raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
         (work / "result.md").unlink(missing_ok=True)
         checks_path = work / "checks.json"
         if checks_path.exists():
@@ -708,16 +711,16 @@ def next_step(row: dict, this_repo: str) -> tuple[str, str]:
     if status == "Todo":
         if row["after"]:
             return "hold", "comes after " + ", ".join(row["after"])
-        return "work", "rework asked by the human" if claimed else "new"
+        return "work", "the human answered, or asked for rework" if claimed else "new"
     if row["waiting"]:
-        return "human", f"waiting for {row['waiting']}; answer on the page and clear Waiting"
+        return "human", f"waiting for {row['waiting']}; answer on the page and set Status to Todo"
     if not claimed:
         return "elsewhere", "In Progress, and not claimed on this machine"
     outcome = dict(line.split(": ", 1) for line in (work / "result.md").read_text().splitlines() if ": " in line).get("outcome")
     if outcome == "review":
         return "board", f"the page does not show the result; write the `board:` line of `jtek.py result {ticket_id}`"
     if outcome == "needs-human":
-        return "work", "the human answered"
+        return "board", f"the page does not show the question; write the `board:` line of `jtek.py result {ticket_id}`"
     meta, verdict = load_meta(ticket_id), read_json(work / "verdict.json")
     if not verdict or verdict.get("patch") != patch_id(Path(meta["worktree"]), meta["base"]):
         return "review", "needs a verdict from a session that did not write the change"

@@ -4,7 +4,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
 ## Ask what each ticket needs
 
-1. Read the board with your Notion tool, and save the tickets that are not Done or Cancelled as a JSON file outside the repository:
+1. Read the board (the database named as `board` in `jtek.json`) with your Notion tool, and save the tickets that are not Done or Cancelled as a JSON file outside the repository:
 
    ```json
    [{"id": "T-12", "title": "...", "status": "Todo", "repo": "api", "waiting": "", "pr": "", "after": ["T-10"]}]
@@ -17,8 +17,8 @@ A session works the tickets it is given. Something else decides which ticket run
 |---|---|
 | `work` | Start a fresh session in this repository: "Follow the `jt-work` skill for ticket `<id>`." |
 | `review` | Start a fresh session in this repository: "Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
-| `board` | The page does not show the saved result. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) says. |
-| `human` | Nothing. The human answers on the page, or reviews and merges. |
+| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) says. Do not start a session. |
+| `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
 | `elsewhere` | Nothing. Another machine has the ticket. |

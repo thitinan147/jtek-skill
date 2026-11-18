@@ -49,8 +49,8 @@ The page in Notion is the source of truth. The layout of the board is in [notion
 | Cancelled | Dropped. | Human |
 
 - **Waiting** is a property, not a status. `input` means the agent has a question. `approval` means a step needs permission. The ticket stays In Progress.
-- **Rework:** the human sets a Review ticket back to Todo and adds what to fix. A new session runs `start <id>` and continues in the same worktree.
-- **Answering a question:** the human writes the answer on the page and clears Waiting. A new session runs `start <id>`.
+- **Rework:** the human sets a Review ticket back to Todo and adds what to fix. A new session runs `start` again and continues in the same worktree.
+- **Answering a question:** the human writes the answer on the page and sets Status to Todo. A new session runs `start` again.
 - There is no command that sets Todo, Done by hand, or Cancelled. The human edits the page.
 
 ## Claims and parallel work

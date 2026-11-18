@@ -1,64 +1,128 @@
-# jtek-skill
+<h1 align="center">jtek</h1>
 
-**The inner loop for a coding agent: take one ticket, build it in its own worktree, pass the project's real checks, get a verdict from a session that did not write it, and stop at a pull request with the evidence for you to merge.**
+<p align="center">
+  <em>One ticket in. One pull request out. You merge.</em>
+</p>
 
-`jtek-skill` is eleven small [Agent Skills](https://agentskills.io/) and one Python script. `jt-work` runs the steps in order, and each step has its own skill. It uses no other skill set. Choosing the next ticket, starting sessions, and merging are the outer loop. You do those yourself, or a bot does them for you.
+<p align="center">
+  <img src="https://img.shields.io/badge/version-26.0.0-111111?style=flat-square" alt="Version 26.0.0">
+  <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
+  <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
+  <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
+  <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
+</p>
 
-## What it does
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/flow-dark.svg">
+    <img src="assets/flow.svg" width="880" alt="jtek flow: you set a ticket to Todo in Notion, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge.">
+  </picture>
+</p>
 
-- **One ticket, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
-- **A session may take several tickets in a row, when it fits.** Give `/jt-work` several ids. The session goes on to the next one only if the last ended cleanly, the next is in code it already read, and the session is still short. Otherwise it stops and lists the ids it did not start.
-- **The board is a Notion database.** The agent reads each ticket's page with its Notion tool, such as the Notion MCP connector, and writes back exactly what the script's `board:` line says.
-- **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
-- **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit, a session that did not write the change records `PASS`, the evidence is saved, and a pull request link is given. Add `review: human` to a small ticket to waive the verdict. When `gh` can read the link, the script also requires the pull request to be open at that commit.
-- **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
-- **You review the evidence first.** Every result points to at most 40 lines that account for each `Done when` item as `seen` or `not run`, with screenshots or output attached. Evidence that skips an item is refused.
-- **Red CI never reaches you.** `finish` refuses while the pull request's checks are failing.
-- **You merge.** There is no merge command.
-- **A red base is caught first.** `start` runs the checks on the base before any edit, and refuses when one already fails.
-- **The result says where to look first.** Its `attention:` line names a changed check script, CI config, lockfile, deleted test, or existing test that lost lines. A ticket that touches one cannot waive the review.
-- **One result format.** Every session ends with the same short block, whether you ran it by hand or a bot launched it.
+---
+
+You know the pull request. Forty files. "All tests pass." The feature does not start.
+
+An agent will tell you the work is done. jtek does not take its word. A ticket reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and every `Done when` item has a line that says what was run and what was seen.
+
+Then it stops. You read the evidence. You merge.
+
+## What you get back
+
+Every session ends with the same block, whether you started it by hand or a bot did.
+
+```text
+jtek-result
+id: T-12
+status: Review
+outcome: review
+waiting: -
+checks: lint=pass types=pass test=pass verify=pass @1a2b3c4
+verdict: PASS by reviewer @1a2b3c4
+pr: https://github.com/you/app/pull/41
+ci: pass
+evidence: .git/jtek/work/T-12/evidence.md (3 seen, 0 not run)
+attention: -
+branch: jtek/T-12
+source: https://www.notion.so/...
+note: the human reviews and merges; jtek never merges.
+board: Status=Review; Waiting=; PR=https://github.com/you/app/pull/41; comment=result+evidence
+```
+
+Read `evidence` first, then `attention`, then the diff. `attention` names the files that decide whether checks pass: a changed check script, CI config, a lockfile, a deleted test, or an existing test that lost lines.
+
+## How it works
+
+1. **You write a ticket** as a page on a Notion board, with `Goal` and `Done when`, and set it to Todo.
+2. **A session takes it.** The agent reads the page with its Notion tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
+3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
+4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
+5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so new code needs a new one.
+6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the Notion page.
+7. **You merge.** There is no merge command.
+
+If the agent is stuck or has a question, it stops and puts the question on the page. You answer and set the ticket back to Todo.
+
+`jtek.py` never talks to Notion. The agent reads and writes the board with its own Notion tool, and the script says what to write.
+
+## The prompt
+
+The whole set is eleven Markdown files and one Python script. Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only.
+
+It uses no other skill set.
 
 ## Install
 
-Pick one method.
-
-**Any agent (Claude Code, Cursor, Antigravity, Codex, ...)** with [skills.sh](https://skills.sh/thitinan147/jtek-skill):
+**Any agent** (Claude Code, Cursor, Antigravity, Codex, ...) with [skills.sh](https://skills.sh/thitinan147/jtek-skill):
 
 ```bash
 npx skills add thitinan147/jtek-skill
 ```
 
-**Claude Code plugin:**
+**Claude Code**, as two separate prompts:
 
-```text
+```
 /plugin marketplace add thitinan147/jtek-skill
+```
+```
 /plugin install jtek@jtek-skill
 ```
 
-Requirements: `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool for the board. `gh` is optional. It is used only to read a pull request's state, head commit, and CI result.
+Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-## Set up the board
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. `gh` is optional: it reads a pull request's state and CI result.
 
-The board is one Notion database. Connect the Notion tool in your agent (in Claude Code: `/mcp`, then Notion), and create the database with the properties in [notion.md](skills/jt-work/references/notion.md). An agent with the tool can create it for you.
+## Set up
 
-## Set up a repository
+Three things, once.
+
+**1. The board.** Connect the Notion tool in your agent. In Claude Code: `/mcp`, then Notion. Then ask the agent:
+
+```text
+Create the jtek board in Notion as skills/jt-work/references/notion.md says.
+```
+
+The properties it needs are in [notion.md](skills/jt-work/references/notion.md). Keep the database's link: it goes into `jtek.json` in the next step.
+
+**2. The checks.** In each repository:
 
 ```bash
 python3 <skill-dir>/scripts/jtek.py init
 ```
 
-This writes `jtek.json`. Fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
+This writes `jtek.json`. Set `board` to the database's link, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"board": "https://www.notion.so/...", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
 ```
 
-Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive the app, and a feature map) and proposes the `verify` check. Do this before agents work tickets: without it, a passing check only means the code compiles.
+A command is one program with arguments. Put a pipeline in a script.
 
-`jtek.json` and `.jtek/` are all jtek adds to the repository. Tickets live in Notion. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+**3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/` (how to run and drive the real app, and a feature map) and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
-## Use it
+`jtek.json` and `.jtek/` are all jtek adds to a repository. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+
+## Commands
 
 | You want to | Do this |
 |---|---|
@@ -66,11 +130,11 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
-| Fix a pull request after CI or review comments | set the page back to Todo, then `/jt-work T-12` |
-| Ask what each open ticket needs, or which are merged | see [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
+| Answer a question, or ask for a fix | Write on the page, set Status to Todo, then `/jt-work T-12` |
 | Give a ticket back | `jtek.py release T-12` |
+| Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
-A program that starts sessions runs the same commands. It reads the `jtek-result` block at the end of the session to decide what to do next.
+Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
 
 ## Skills
 
@@ -88,7 +152,8 @@ A program that starts sessions runs the same commands. It reads the `jtek-result
 | After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
 | Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
 
-Each skill also works on its own, for example `/jt-verify` on any change. Install the whole set: the script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run `jtek.py`.
+
+Each skill also works on its own, for example `/jt-verify` on any change.
 
 ## Statuses
 
@@ -103,25 +168,51 @@ Each skill also works on its own, for example `/jt-verify` on any change. Instal
 
 Waiting, with `input` or `approval`, is a property of an In Progress ticket. It is not a status. The ticket format and the result block are in [ticket.md](skills/jt-work/references/ticket.md).
 
-## Limits
+## Not proven yet
 
-- **Nothing here has been run against a real Notion workspace.** Reading the page and writing the `board:` line are steps the agent does with its Notion tool, and no agent has done them yet.
-- **The script cannot check the board.** It cannot tell whether the page was copied faithfully or whether the `board:` line was written.
-- **The script cannot tell who ran a command.** Nothing in code stops an agent from setting a page to Todo with its Notion tool, or from recording a verdict on its own change. The skills forbid both.
-- **Claims are per machine.** Two machines can both read a page as Todo before either writes In Progress.
-- Tested on macOS with Python 3.14. CI runs Python 3.10 and 3.13 on Linux.
+No numbers here. There are none to show yet.
 
-See [SECURITY.md](SECURITY.md) for what the script runs on your machine.
+- **Proven:** the script, by 76 tests. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
+- **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
+
+Use it by hand, one ticket at a time, before you let anything start sessions for you.
+
+## FAQ
+
+**Does it merge?**
+No. There is no command for it.
+
+**Can the agent mark its own work as done?**
+It can say so. The script wants the checks, the evidence, and a verdict for the current content of the change.
+
+**Can the agent weaken a check to pass?**
+Not by editing `jtek.json`: the script reads it from the base branch. A check's own script is read from the worktree, so a ticket can change it. The result names it on the `attention:` line, and that ticket cannot waive the review.
+
+**Can it give the verdict on its own change?**
+The script cannot tell who ran a command. The skills forbid it, and nothing in code stops an agent that ignores them. See [SECURITY.md](SECURITY.md).
+
+**Why does the script not talk to Notion?**
+Your agent already has a Notion tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.
+
+**Do I need the second session for a one-line fix?**
+Set Review to `human` on that ticket. The waiver is ignored when the change touches a file on the `attention:` line.
+
+**Two repositories, one feature?**
+Two tickets, joined by a contract file and a check on each side. [two-repos.md](skills/jt-work/references/two-repos.md).
+
+**Is this a software factory?**
+It is the part inside one session. What picks the next ticket is up to you.
 
 ## Coming from v25
 
 Version 26 is a rewrite, not an upgrade.
 
 - **Gone:** `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, the three `jt-spec-*` skills, `gate.py`, and `/jt-work --loop`. Choosing the next ticket and writing specs are no longer part of this set.
-- **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets.
+- **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets on the board.
 - **New in the repository:** `jtek.json` and `.jtek/`. You can delete `jt-queue/` when nothing in it is needed.
 - **The old set** is at commit `4c9d0f1` in the git history.
 
 ## License
 
-MIT
+[MIT](LICENSE).
