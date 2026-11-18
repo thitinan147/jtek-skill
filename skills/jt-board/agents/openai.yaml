@@ -1,6 +1,0 @@
-interface:
-  display_name: "JT Board"
-  short_description: "Human-only: spec board or queue flow metrics"
-
-policy:
-  allow_implicit_invocation: false

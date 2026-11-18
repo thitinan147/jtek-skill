@@ -1,6 +1,0 @@
-interface:
-  display_name: "JT Spec Split"
-  short_description: "Human-only: split a flow into a story map"
-
-policy:
-  allow_implicit_invocation: false

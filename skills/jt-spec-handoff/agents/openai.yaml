@@ -1,6 +1,0 @@
-interface:
-  display_name: "JT Spec Handoff"
-  short_description: "Human-only: write test steps for the tester"
-
-policy:
-  allow_implicit_invocation: false

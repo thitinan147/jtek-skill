@@ -1,5 +1,39 @@
 # Changelog
 
+## 26.0.0 - inner loop only
+
+This version is a rewrite. It does not read the `jt-queue/` files of earlier versions.
+
+- Eleven skills, one per step: `jt-work` (start, check, stop, and the order of the steps, in playbooks for a feature, a bug, and a refactor), `jt-understand`, `jt-build`, `jt-debug`, `jt-verify`, `jt-cleanup`, `jt-ship`, `jt-review` (the non-author verdict), `jt-babysit` (conflicts, failing CI, and review comments on an open pull request), `jt-learn`, and `jt-harness` (builds a repository's verify guide, feature map, and `verify` check). The spec skills, `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, `gate.py`, and the `jt-queue/` files are removed.
+- jtek no longer names or calls any other skill set.
+- `jtek.py` replaces the gate. `start` claims a ticket and creates its worktree, `check` runs the declared checks, `verdict` records the reviewer's result, `finish` moves the ticket to Review, and `stop` waits for the human.
+- A session may work several tickets in a row when the last one ended cleanly, the next one is in code it already read, and the session is still short. Each ticket keeps its own worktree, evidence, pull request, and result.
+- Several tickets can run at once, each in its own session and worktree. A claim is an atomic directory under the git common directory, so the same ticket cannot be taken twice.
+- Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` is the only file added to a repository.
+- The board is a Notion database, and nothing else. The agent reads a ticket's page with its Notion tool, such as the Notion MCP connector, saves it as a ticket file, and runs `start <page link> --from-file <file>`. `start`, `finish`, and `stop` print a `board:` line that says exactly what to write on the page, and the script never talks to Notion. `After` may point at a ticket of any repository. `jtek.json` names the board as `board`, and a ticket that stopped with a question starts again only after the human sets Todo. `references/notion.md` gives the database layout and the rules. Local ticket files and `jtek.py add` are removed.
+- `jtek.py next --board-file` tells whoever starts sessions what each open ticket needs: `work`, `review`, `board`, or nothing. `jtek.py sync --board-file` says which Review tickets are merged. A human, a Claude Code session, or a bot follows the same contract, in `references/starting-sessions.md`.
+- A feature that spans two repositories is one ticket per repository, joined by a contract file and checks that read it. `references/two-repos.md` gives the setup and what each check catches.
+- Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
+- Review requires passing checks on the current commit, a `PASS` or `PASS+NOTES` verdict from a session that did not write the change, saved evidence, and a pull request. The human merges. A ticket with `review: human` waives the verdict. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
+- `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.
+- The result has an `attention:` line. It names `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check runs, a deleted test, and `watch` matches when the ticket changes them.
+- The evidence must account for every `Done when` item as `seen:` or `not run:`, and the result counts both.
+- The `attention:` line also names an existing test file that lost or changed lines. A ticket that touches an attention file cannot waive the review.
+- `finish` reads the pull request's CI state with `gh`, shows it as `ci:`, and refuses while it is failing.
+- The `jtek.json` template offers `secrets` and `audit` checks. `show` prints the check commands for the reviewer.
+- Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
+- `finish --evidence-file` saves what was run and seen, in at most 40 lines. It is required, and it is also the pull request body. `--attach` keeps screenshots and output with it. The result has an `evidence:` line.
+- A green run on the base is remembered per base commit, so parallel tickets do not repeat it.
+- `list --sync` removes the worktree of each Done ticket, unless it has uncommitted files.
+- `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.
+- `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
+- `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
+- A ticket may name its repository with `repo:`. `start` refuses one that is for another repository, so one board can serve a frontend and a backend.
+- Every session ends with the same `jtek-result` block.
+- The skills never choose the next ticket and never merge.
+- `evals/` has two scenarios with hidden acceptance tests, a builder, and a grader that reads the repository an agent leaves behind.
+- Skill and plugin metadata are `26.0.0`.
+
 ## 25.0.0 - the queue can plan a batch and still stop for a human
 
 - Specs keep `## Roles`. The approver, reviewer, and merger are people. `human-only` paths and topics are project-defined. A diff there is `refused: human-only` until the task has the spec approver's `human-sign-off`. `/jt-board` and `/jt-review` stay human-only. The agent does not merge.

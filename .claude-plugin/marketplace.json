@@ -1,14 +1,14 @@
 {
   "name": "jtek-skill",
-  "description": "Marketplace for the jtek work-queue skills",
+  "description": "Marketplace for the jtek inner-loop skills",
   "owner": {
     "name": "Thitinan"
   },
   "plugins": [
     {
       "name": "jtek",
-      "description": "Spec drafts and an outcome-gated work queue for coding agents. Spec commands draft acceptance criteria and test steps; the agent works tasks from a board; a gate checks tests and evidence before review; only a human can merge or approve.",
-      "version": "25.0.0",
+      "description": "The inner loop for coding agents. One ticket runs in its own session and git worktree, passes the checks the project declares, and stops at a pull request. A human reviews and merges.",
+      "version": "26.0.0",
       "source": "./",
       "author": {
         "name": "Thitinan"

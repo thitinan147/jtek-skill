@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 268" width="880" height="268" role="img" aria-label="jtek flow: you set a ticket to Todo in Notion, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge. jtek.py refuses a red base, a failing check, evidence that skips an item, a verdict for older code, red CI, and a second claim.">
+<rect width="880" height="268" fill="#ffffff"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<text x="22" y="36" font-size="15" font-weight="600" fill="#111111">One ticket in. One pull request out. You merge.</text>
+<rect x="22" y="64" width="148" height="86" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="96.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#ffffff">You</text>
+<text x="96.0" y="116" font-size="12" text-anchor="middle" fill="#ffffff">write the ticket,</text>
+<text x="96.0" y="132" font-size="12" text-anchor="middle" fill="#ffffff">set Todo in Notion</text>
+<path d="M174 107.0H188" stroke="#111111" stroke-width="1.5"/>
+<path d="M187 102.0L194 107.0L187 112.0z" fill="#111111"/>
+<rect x="196" y="64" width="148" height="86" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="270.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#111111">Session 1</text>
+<text x="270.0" y="116" font-size="12" text-anchor="middle" fill="#57606a">own worktree: build,</text>
+<text x="270.0" y="132" font-size="12" text-anchor="middle" fill="#57606a">checks, see it work</text>
+<path d="M348 107.0H362" stroke="#111111" stroke-width="1.5"/>
+<path d="M361 102.0L368 107.0L361 112.0z" fill="#111111"/>
+<rect x="370" y="64" width="148" height="86" rx="8" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+<text x="444.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#111111">Session 2</text>
+<text x="444.0" y="116" font-size="12" text-anchor="middle" fill="#57606a">did not write it:</text>
+<text x="444.0" y="132" font-size="12" text-anchor="middle" fill="#57606a">tries to break it</text>
+<path d="M522 107.0H536" stroke="#111111" stroke-width="1.5"/>
+<path d="M535 102.0L542 107.0L535 112.0z" fill="#111111"/>
+<rect x="544" y="64" width="148" height="86" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="618.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#111111">Pull request</text>
+<text x="618.0" y="116" font-size="12" text-anchor="middle" fill="#57606a">with evidence for</text>
+<text x="618.0" y="132" font-size="12" text-anchor="middle" fill="#57606a">every Done-when item</text>
+<path d="M696 107.0H710" stroke="#111111" stroke-width="1.5"/>
+<path d="M709 102.0L716 107.0L709 112.0z" fill="#111111"/>
+<rect x="718" y="64" width="148" height="86" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="792.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#ffffff">You</text>
+<text x="792.0" y="116" font-size="12" text-anchor="middle" fill="#ffffff">read the evidence,</text>
+<text x="792.0" y="132" font-size="12" text-anchor="middle" fill="#ffffff">merge</text>
+<text x="22" y="196" font-size="12" font-weight="600" fill="#9a6700" letter-spacing="0.5">JTEK.PY REFUSES</text>
+<rect x="22" y="210" width="82" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="63" y="228" font-size="12" text-anchor="middle" fill="#111111">a red base</text>
+<rect x="112.0" y="210" width="115" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="170" y="228" font-size="12" text-anchor="middle" fill="#111111">a failing check</text>
+<rect x="235.0" y="210" width="194" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="332" y="228" font-size="12" text-anchor="middle" fill="#111111">evidence that skips an item</text>
+<rect x="437.2" y="210" width="174" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="524" y="228" font-size="12" text-anchor="middle" fill="#111111">a verdict for older code</text>
+<rect x="619.5999999999999" y="210" width="56" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="647" y="228" font-size="12" text-anchor="middle" fill="#111111">red CI</text>
+<rect x="683.1999999999999" y="210" width="108" height="28" rx="14" fill="none" stroke="#d0d7de" stroke-width="1.2"/>
+<text x="737" y="228" font-size="12" text-anchor="middle" fill="#111111">a second claim</text>
+</g></svg>
