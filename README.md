@@ -12,6 +12,7 @@
 - **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit and a pull request link is given. You review and merge it. For a risky ticket, add `review: agent`, and a session that did not write the change must record `PASS` first. When `gh` can read the link, the script also requires the pull request to be open at that commit.
 - **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
 - **You merge.** There is no merge command.
+- **A red base is caught first.** `start` runs the checks on the base before any edit, and refuses when one already fails.
 - **One result format.** Every session ends with the same short block, whether you ran it by hand or a bot launched it.
 
 ## Install
@@ -101,9 +102,14 @@ Each skill also works on its own, for example `/jt-verify` on any change. Instal
 
 See [SECURITY.md](SECURITY.md) for what the script runs on your machine.
 
-## Earlier versions
+## Coming from v25
 
-Versions up to 25 were a work queue with spec skills and a larger gate. This version keeps only the inner loop. The old set is in the git history before 26.0.0.
+Version 26 is a rewrite, not an upgrade.
+
+- **Gone:** `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, the three `jt-spec-*` skills, `gate.py`, and `/jt-work --loop`. Choosing the next ticket and writing specs are no longer part of this set.
+- **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets.
+- **New in the repository:** `jtek.json` and `.jtek/`. You can delete `jt-queue/` when nothing in it is needed.
+- **The old set** is at commit `4c9d0f1` in the git history.
 
 ## License
 

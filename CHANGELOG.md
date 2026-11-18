@@ -12,6 +12,8 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot.
 - Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
 - Review requires passing checks on the current commit and a pull request. The human reviews and merges. A ticket with `review: agent` also needs a `PASS` or `PASS+NOTES` verdict on that commit from a session that did not write it. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
+- `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
+- `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
 - Every session ends with the same `jtek-result` block.
 - The skills never choose the next ticket and never merge.
 - Skill and plugin metadata are `26.0.0`.

@@ -4,7 +4,3 @@ extend-ignore-re = [
     # The comment on that line says why.
     "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
 ]
-
-[default.extend-words]
-# Auth path token in the size-escalation regex (signin / signins). Not the noun "signings".
-signins = "signins"

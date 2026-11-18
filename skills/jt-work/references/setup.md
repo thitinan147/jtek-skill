@@ -15,6 +15,8 @@ Two things go into the repository: `jtek.json`, and the `.jtek/` folder that the
 
 The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. Set `JTEK_BASE` to override it.
 
+Every `start` runs the checks once on the base before any edit, so keep the base green. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
+
 ## Human commands
 
 These are for the human. An agent does not run them.

@@ -295,7 +295,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     ticket = parse_ticket(text)
     ticket_id = check_id(args.id or ticket["fields"].get("id") or (ticket_path.stem if ticket_path else ""))
     base = base_branch()
-    selected = validate_ticket(ticket, load_checks(base))
+    declared = load_checks(base)
+    selected = validate_ticket(ticket, declared)
     status = ticket["fields"].get("status", "")
     work = work_dir(ticket_id)
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
@@ -340,6 +341,19 @@ def cmd_start(args: argparse.Namespace) -> None:
         except Refuse:
             work.rmdir()
             raise
+        if not args.no_baseline:
+            # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
+            logs = state_dir() / "baseline" / ticket_id
+            _, failed = run_checks(worktree, selected, declared, logs)
+            if failed:
+                git("worktree", "remove", "--force", str(worktree))
+                git("branch", "-D", branch)
+                work.rmdir()
+                raise Refuse(
+                    f"check `{failed}` fails on {base} before any change, so {ticket_id} was not started "
+                    f"and is still Todo. Fix {base} first, or pass --no-baseline.\nlog: {logs / (failed + '.log')}\n"
+                    + log_tail(logs / f"{failed}.log")
+                )
         meta = {
             "id": ticket_id, "kind": kind, "source": source,
             "ticket": str(ticket_path) if ticket_path else "",
@@ -364,20 +378,11 @@ def cmd_start(args: argparse.Namespace) -> None:
     print("next: work only inside the worktree, commit, then `jtek.py check " + ticket_id + "`")
 
 
-def cmd_check(args: argparse.Namespace) -> None:
-    meta = load_meta(args.id)
-    work = work_dir(args.id)
-    worktree = Path(meta["worktree"])
-    declared = load_checks(meta["base"])
-    missing = [name for name in meta["checks"] if name not in declared]
-    if missing:
-        raise Refuse(f"{CONFIG} on {meta['base']} no longer declares: {', '.join(missing)}")
-    sha, dirty = head_state(worktree)
-    previous = read_json(work / "checks.json")
-    logs = work / "logs"
-    logs.mkdir(exist_ok=True)
-    results, failed = [], None
-    for name in meta["checks"]:
+def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path) -> tuple[list[dict], str | None]:
+    """Run checks in order and stop at the first failure. Return the results and the failed name."""
+    logs.mkdir(parents=True, exist_ok=True)
+    results: list[dict] = []
+    for name in names:
         started = time.time()
         log = logs / f"{name}.log"
         try:
@@ -393,8 +398,26 @@ def cmd_check(args: argparse.Namespace) -> None:
             ok = False
         results.append({"name": name, "status": "pass" if ok else "fail", "seconds": round(time.time() - started, 1)})
         if not ok:
-            failed = name
-            break
+            return results, name
+    return results, None
+
+
+def log_tail(log: Path) -> str:
+    return "\n".join(log.read_text(errors="replace").splitlines()[-20:])
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    meta = load_meta(args.id)
+    work = work_dir(args.id)
+    worktree = Path(meta["worktree"])
+    declared = load_checks(meta["base"])
+    missing = [name for name in meta["checks"] if name not in declared]
+    if missing:
+        raise Refuse(f"{CONFIG} on {meta['base']} no longer declares: {', '.join(missing)}")
+    sha, dirty = head_state(worktree)
+    previous = read_json(work / "checks.json")
+    logs = work / "logs"
+    results, failed = run_checks(worktree, meta["checks"], declared, logs)
     failed_runs = previous.get("failed_runs", 0) + 1 if failed else 0
     write_json(work / "checks.json", {"sha": sha, "dirty": bool(dirty), "results": results, "failed_runs": failed_runs})
     for result in results:
@@ -402,7 +425,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     if failed:
         log = logs / f"{failed}.log"
         print(f"log: {log}")
-        print("\n".join(log.read_text(errors="replace").splitlines()[-20:]))
+        print(log_tail(log))
         if failed_runs >= MAX_FAILED_RUNS:
             print(f"next: {failed_runs} failed runs; stop with `jtek.py stop {args.id} --waiting input --note ...`")
         else:
@@ -476,6 +499,14 @@ def cmd_finish(args: argparse.Namespace) -> None:
 
 def cmd_stop(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
+    worktree = Path(meta["worktree"])
+    if worktree.is_dir():
+        _, dirty = head_state(worktree)
+        if dirty:
+            raise Refuse(
+                "these files are not committed, and the next session would not know what they are. "
+                f"Commit them as `wip: <what is unfinished>`, or add build output to .gitignore\n{dirty}"
+            )
     mirror(meta, {"waiting": args.waiting})
     print(write_result(args.id, "needs-human", "In Progress", note=args.note, waiting=args.waiting), end="")
 
@@ -558,6 +589,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--from-file", help="ticket text fetched from another system")
     start.add_argument("--id")
     start.add_argument("--resume", action="store_true")
+    start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
     start.set_defaults(func=cmd_start)
 
     check = sub.add_parser("check", help="run the declared checks in the worktree")

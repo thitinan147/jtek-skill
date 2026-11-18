@@ -6,12 +6,13 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 ## Trust model (read before installing)
 
-`jtek-skill` is not a sandbox. `jtek.py check` runs commands on your machine.
+`jtek-skill` is not a sandbox. `jtek.py check` runs commands on your machine, and so does `jtek.py start`, which runs the same checks once on the base before any edit.
 
 - **Which commands:** only the ones in `jtek.json` on the base branch of the repository. The script reads the file with `git show <base>:jtek.json`, so an edit in a ticket's worktree or branch has no effect until it is merged.
 - **How they run:** each command is split into a program and arguments and run without a shell, in the ticket's worktree, with your full environment (including any tokens in it). The time limit is 30 minutes per check.
 - **What a ticket can do:** name checks that `jtek.json` already declares. A name that is not declared is refused. Ticket text, including text fetched from Notion, is never executed.
 - **Treat `jtek.json` like CI config.** Review every change to it before you merge, including in pull requests from others.
+- **The `verify` script is code too.** The `jt-harness` skill writes a script and the `.jtek/` folder. `jtek.json` names that script, but the script itself is read from the ticket's worktree, so a ticket can change it. Review changes to it, and to anything a check runs, as you review product code.
 
 ## What the script cannot enforce
 

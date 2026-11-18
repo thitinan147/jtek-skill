@@ -179,7 +179,7 @@ class CheckTests(Scratch):
     def test_checks_come_from_base_not_from_the_worktree(self):
         self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
         self.ticket("T-1")
-        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.assertEqual(self.jtek("start", "T-1", "--no-baseline")[0], 0)
         tree = self.worktree("T-1")
         (tree / "jtek.json").write_text(json.dumps({"checks": {"test": f"{sys.executable} -c pass"}}))
         self.git("commit", "-qam", "weaken the check", cwd=tree)
@@ -190,15 +190,38 @@ class CheckTests(Scratch):
     def test_three_failed_runs_say_stop(self):
         self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
         self.ticket("T-1")
-        self.jtek("start", "T-1")
+        self.jtek("start", "T-1", "--no-baseline")
         outs = [self.jtek("check", "T-1")[1] for _ in range(3)]
         self.assertNotIn("stop", outs[1])
         self.assertIn("jtek.py stop T-1", outs[2])
 
+    def test_red_base_refuses_start_and_gives_the_claim_back(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""})
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "break main")
+        path = self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("fails on main before any change", out)
+        self.assertEqual(self.field(path, "status"), "Todo")
+        self.assertFalse(self.worktree("T-1").exists())
+        self.assertEqual(self.git("branch", "--list", "jtek/T-1"), "")
+        self.git("rm", "-q", "red")
+        self.git("commit", "-q", "-m", "fix main")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.worktree("T-1")), "")
+
+    def test_no_baseline_skips_the_check_on_base(self):
+        self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-baseline")[0], 0)
+
     def test_fail_fast_in_declared_order(self):
         self.write_config({"lint": f"{sys.executable} -c raise(SystemExit(1))", "test": f"{sys.executable} -c pass"})
         self.ticket("T-1")
-        self.jtek("start", "T-1")
+        self.jtek("start", "T-1", "--no-baseline")
         _, out = self.jtek("check", "T-1")
         self.assertIn("lint: fail", out)
         self.assertNotIn("test:", out)
@@ -379,9 +402,24 @@ class FinishTests(Scratch):
         self.assertIn("(1/3 failed runs)", self.jtek("check", "T-1")[1])
         self.jtek("check", "T-1")
         self.assertIn("jtek.py stop T-1", self.jtek("check", "T-1")[1])
-        self.jtek("stop", "T-1", "--waiting", "input", "--note", "stuck")
+        self.git("add", "bad", cwd=tree)
+        self.git("commit", "-q", "-m", "wip: still failing", cwd=tree)
+        self.assertEqual(self.jtek("stop", "T-1", "--waiting", "input", "--note", "stuck")[0], 0)
         self.jtek("start", "T-1")
         self.assertIn("(1/3 failed runs)", self.jtek("check", "T-1")[1])
+
+    def test_stop_refuses_uncommitted_files(self):
+        self.started()
+        tree = self.worktree("T-1")
+        (tree / "half_done.py").write_text("x = 1\n")
+        code, out = self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
+        self.assertEqual(code, 1)
+        self.assertIn("half_done.py", out)
+        self.assertIn("wip:", out)
+        self.git("add", "half_done.py", cwd=tree)
+        self.git("commit", "-q", "-m", "wip: currency not decided", cwd=tree)
+        code, out = self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
+        self.assertEqual(code, 0, out)
 
     def test_there_is_no_command_that_releases_or_merges(self):
         code, out = self.jtek("--help")
