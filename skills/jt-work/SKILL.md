@@ -79,3 +79,5 @@ The human answers in the ticket. A new session then runs `/jt-work <id>` again, 
 The last thing you write is the `jtek-result` block that `finish` or `stop` printed, unchanged. A person or a bot reads it. After several tickets, print each block in order, then the ids you did not start.
 
 Setup for a new repository: [references/setup.md](references/setup.md).
+
+A feature that changes two repositories, such as a backend and a frontend: [references/two-repos.md](references/two-repos.md).

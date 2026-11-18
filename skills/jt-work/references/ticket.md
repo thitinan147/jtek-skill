@@ -25,7 +25,7 @@ What should be true when this is done, and why.
 
 - **`id`:** letters, digits, `.`, `_`, `-`. It names the branch `jtek/<id>` and the worktree.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
-- **`after`:** optional. Ids that must be Done first. Checked for local tickets only.
+- **`after`:** optional. Ids that must be Done first. Checked for local tickets only, and only against tickets of this repository. To order work across two repositories, see [two-repos.md](two-repos.md).
 - **`repo`:** optional. The repository the ticket is for, when one board serves several. It is the `name` in that repository's `jtek.json`, or its folder name. `start` refuses a ticket whose `repo` is another one.
 - **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together, and `jtek.py list` shows it.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
