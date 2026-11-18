@@ -995,6 +995,62 @@ def cmd_list(args: argparse.Namespace) -> None:
                 tidy_done(work.name)
 
 
+def next_step(page: dict, this_repo: str, open_ids: dict[str, str]) -> tuple[str, str]:
+    """What one open ticket needs now, for whoever starts sessions. The first word is the action:
+    `work`, `review`, and `push` are for a session to do. Every other word means do not start one."""
+    ticket_id, status = prop(page, "id"), prop(page, "status") or "Backlog"
+    repo = prop(page, "repo")
+    if repo not in ("", this_repo):
+        return "other", f"belongs to the repository `{repo}`"
+    if status == "Backlog":
+        return "hold", "not released; the human sets Todo"
+    work = work_dir(ticket_id)
+    claimed, parked = (work / "meta.json").exists(), (work / "result.md").exists()
+    outcome = ""
+    if parked:
+        outcome = dict(line.split(": ", 1) for line in (work / "result.md").read_text().splitlines() if ": " in line).get("outcome", "")
+    if outcome in ("review", "needs-human") and status != "Todo" and not (work / "pushed").exists():
+        return "push", "the result did not reach the board in full"
+    if status == "Review":
+        return "human", "review and merge " + (prop(page, "pr") or "the branch")
+    if work.exists() and not parked:
+        return "running", "a session holds the claim. If none is running, it died: the human runs start with --resume"
+    if status == "Todo":
+        blocked = [open_ids[hex_id(dep)] for dep in prop(page, "after") if hex_id(dep) in open_ids]
+        if blocked:
+            return "hold", "comes after " + ", ".join(blocked)
+        return "work", "rework asked by the human" if claimed else "new"
+    if prop(page, "waiting"):
+        return "human", f"waiting for {prop(page, 'waiting')}; answer on the page and clear Waiting"
+    if not claimed:
+        return "elsewhere", "In Progress, and not claimed on this machine"
+    if outcome == "needs-human":
+        return "work", "the human answered"
+    meta, verdict = load_meta(ticket_id), read_json(work / "verdict.json")
+    if not verdict or verdict.get("patch") != patch_id(Path(meta["worktree"]), meta["base"]):
+        return "review", "needs a verdict from a session that did not write the change"
+    if verdict.get("verdict") == "FAIL":
+        return "work", "the verdict is FAIL; the findings are in the review notes"
+    return "work", "the verdict is in; finish"
+
+
+def cmd_next(args: argparse.Namespace) -> None:
+    base = base_branch()
+    this_repo = str(load_config(base).get("name") or main_root().name)
+    name = PROPS["status"][0]
+    pages = board_pages(board(base), {"and": [
+        {"property": name, "status": {"does_not_equal": "Done"}},
+        {"property": name, "status": {"does_not_equal": "Cancelled"}},
+    ]})
+    if pages:
+        check_schema(pages[0])
+    open_ids = {hex_id(page["id"]): prop(page, "id") for page in pages}
+    for page in sorted(pages, key=lambda item: prop(item, "id")):
+        action, reason = next_step(page, this_repo, open_ids)
+        if action != "other":
+            print(f"{prop(page, 'id')}\t{action}\t{reason}")
+
+
 def cmd_release(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
@@ -1055,6 +1111,8 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--sync", action="store_true",
                          help="set Review tickets to Done when their PR is merged, and remove the worktrees of Done tickets")
     listing.set_defaults(func=cmd_list)
+    sub.add_parser("next", help="for whoever starts sessions: what each open ticket of this repository needs now"
+                   ).set_defaults(func=cmd_next)
     return parser
 
 

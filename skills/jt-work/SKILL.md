@@ -77,4 +77,6 @@ The last thing you write is the `jtek-result` block that `finish` or `stop` prin
 
 Setup for a new repository: [references/setup.md](references/setup.md).
 
+Starting sessions for tickets, as a human, a Claude Code session, or a bot: [references/starting-sessions.md](references/starting-sessions.md).
+
 A feature that changes two repositories, such as a backend and a frontend: [references/two-repos.md](references/two-repos.md).

@@ -906,5 +906,63 @@ class NotionTests(Scratch):
         self.assertEqual(self.field("T-1", "status"), "In Progress")
 
 
+class NextTests(Scratch):
+    def next(self):
+        code, out = self.jtek("next")
+        self.assertEqual(code, 0, out)
+        return {line.split("\t")[0]: line.split("\t")[1:] for line in out.splitlines()}
+
+    def test_next_follows_a_ticket_from_todo_to_review(self):
+        self.ticket("T-1")
+        self.assertEqual(self.next()["T-1"], ["work", "new"])
+        self.jtek("start", "T-1")
+        self.assertEqual(self.next()["T-1"][0], "running")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(self.next()["T-1"][0], "review")
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("- reproduces: crash on empty input\n")
+        self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
+        self.assertEqual(self.next()["T-1"], ["work", "the verdict is FAIL; the findings are in the review notes"])
+        self.jtek("start", "T-1")
+        self.commit_change("T-1", "fix.txt")
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(self.next()["T-1"][0], "review", "a verdict for the old change does not count")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.assertEqual(self.next()["T-1"], ["work", "the verdict is in; finish"])
+        self.jtek("start", "T-1")
+        self.jtek("finish", "T-1", "--no-pr")
+        self.assertEqual(self.next()["T-1"][0], "human")
+
+    def test_next_waits_for_the_human_and_for_other_tickets(self):
+        self.ticket("T-1")
+        self.ticket("T-2", extra="after: T-1\n")
+        self.ticket("T-3", status="Backlog")
+        self.ticket("T-4", extra="repo: api\n")
+        self.ticket("T-5", status="In Progress")
+        found = self.next()
+        self.assertEqual(found["T-2"], ["hold", "comes after T-1"])
+        self.assertEqual(found["T-3"][0], "hold")
+        self.assertNotIn("T-4", found)
+        self.assertEqual(found["T-5"][0], "elsewhere")
+        self.jtek("start", "T-1")
+        self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
+        self.assertEqual(self.next()["T-1"][0], "human")
+        self.board.set("T-1", Waiting="")
+        self.assertEqual(self.next()["T-1"], ["work", "the human answered"])
+
+    def test_next_says_push_when_the_board_missed_a_result(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.board.can_comment = False
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(self.next()["T-1"][0], "push")
+
+
 if __name__ == "__main__":
     unittest.main()
