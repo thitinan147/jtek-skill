@@ -16,7 +16,7 @@ Do this before the first edit. The output is a short list, not a document. Keep 
 ## 2. Find the pattern
 
 1. Find how this codebase already solves the same kind of problem, and plan to follow it.
-2. If the nearest example is a workaround, do not copy it. Note it for the result.
+2. If the nearest example is a workaround, do not copy it. Note it for the evidence.
 3. Look for a function, a helper, or an installed package that already does what you need. Plan to use it.
 
 ## 3. Name the proof
@@ -27,7 +27,7 @@ If an item has no way to be seen working, stop: `jtek.py stop <id> --waiting inp
 
 ## 4. Settle what the ticket leaves open
 
-- **Small and easy to change later:** choose the reading that changes less. Write the choice down for the pull request and the result note.
+- **Small and easy to change later:** choose the reading that changes less. Write the choice down for the evidence.
 - **Costly to undo, or it changes what the ticket is for:** stop with `--waiting input` and ask one question.
 
 ## Done when

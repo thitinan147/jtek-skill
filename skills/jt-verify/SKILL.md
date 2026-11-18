@@ -37,14 +37,14 @@ Use the real user path, not an internal function or a test-only endpoint. Captur
 
 ## 4. Say only what you saw
 
-- Write down the command or steps and the result for each item. This goes into the pull request.
+- Write down the command or steps and the result for each item. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
-- If you could not run it, say that in the result note, and say why.
+- If you could not run it, say that in the evidence, and say why.
 
 ## 5. When it does not work
 
 The change is not done. Find the cause, fix it, commit, and run `jtek.py check <id>` again. Then repeat this skill.
 
-If the project has no way to run the real thing, say so in the result note and say that the repository needs a verification harness.
+If the project has no way to run the real thing, say so in the evidence and say that the repository needs a verification harness.
 
 If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `.jtek/features/` in the same change.

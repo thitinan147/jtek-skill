@@ -43,7 +43,7 @@ class SkillContracts(unittest.TestCase):
             self.assertIn("`jt-ship`", steps[-1], book.name)
             for needed in ("jt-understand", "jt-build", "jtek.py check", "jt-verify", "jt-cleanup"):
                 self.assertIn(needed, text, f"{book.name} skips {needed}")
-            self.assertIn("n/a: <reason>", text)
+        self.assertIn("n/a: <reason>", (SKILLS / "jt-work" / "SKILL.md").read_text())
 
     def test_ci_scans_every_skill(self):
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

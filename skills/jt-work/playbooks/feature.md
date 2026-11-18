@@ -1,7 +1,5 @@
 # Playbook: feature
 
-Copy these steps into your todo list before you start. A step that does not apply stays in the list as `n/a: <reason>`.
-
 1. **Understand** with `jt-understand`. Exit: you can say what will change, which existing pattern you follow, and how each `Done when` item will be seen working.
 2. **Build** with `jt-build`. Exit: the change is committed and each new behaviour has a test.
 3. **Check** with `jtek.py check <id>`. On a failure use `jt-debug`. Exit: every check passes on the current commit.

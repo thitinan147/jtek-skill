@@ -5,14 +5,14 @@ description: Removes leftover debug output, unused code, and comments that repea
 
 # jt-cleanup
 
-Read your own diff once as a stranger would: `git diff <base>...HEAD`. Work only on lines the diff added or changed.
+Read your own diff once as a stranger would: `git diff <base>...HEAD`, where the base is the branch `jtek.py start` printed. Work only on lines the diff added or changed.
 
 ## Remove
 
 - Debug prints, temporary logging, and commented-out code.
 - Code the change added and nothing uses.
 - Comments that say what the next line does.
-- A "do not remove" or "must stay in sync" comment. Turn the claim into a type, a test, or a lint rule, then delete the comment. If you cannot, keep it and say so in the result note.
+- A "do not remove" or "must stay in sync" comment. Turn the claim into a type, a test, or a lint rule, then delete the comment. If you cannot, keep it and say so in the evidence.
 - A helper used once that hides nothing. Inline it.
 - A wrapper, option, or setting added "for later". Nothing in `Done when` asks for it.
 - Files the change created and does not need: scratch scripts, logs, screenshots.

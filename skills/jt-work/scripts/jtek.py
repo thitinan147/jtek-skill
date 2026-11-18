@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -270,6 +271,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     check_line = " ".join(f"{r['name']}={r['status']}" for r in checks.get("results", [])) or "not run"
     if checks.get("sha"):
         check_line += f" @{checks['sha'][:7]}"
+    evidence = str(work / "evidence.md") if (work / "evidence.md").exists() else ("in the pull request" if meta.get("pr") else "-")
     verdict_line = "none" if meta.get("review") else "not requested"
     if verdict:
         verdict_line = f"{verdict['verdict']} by {verdict['by']} @{verdict['sha'][:7]}"
@@ -282,6 +284,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"checks: {check_line}",
         f"verdict: {verdict_line}",
         f"pr: {meta.get('pr') or '-'}",
+        f"evidence: {evidence}",
         f"attention: {attention(meta)}",
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
@@ -406,12 +409,19 @@ def cmd_start(args: argparse.Namespace) -> None:
                 raise give_back(f"the setup command from {CONFIG} failed in the new worktree", logs / "setup.log")
         if not args.no_baseline:
             # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
-            _, failed = run_checks(worktree, selected, declared, logs)
-            if failed:
-                raise give_back(
-                    f"check `{failed}` fails on {base} before any change (fix {base} first, or pass --no-baseline)",
-                    logs / f"{failed}.log",
-                )
+            # One green run per base commit and command set is enough, so parallel tickets do not repeat it.
+            base_sha = git("rev-parse", base)
+            key = hashlib.sha256(json.dumps([base_sha, [(n, declared[n]) for n in selected]]).encode()).hexdigest()
+            green = state_dir() / "baseline" / "green" / key
+            if not green.exists():
+                _, failed = run_checks(worktree, selected, declared, logs)
+                if failed:
+                    raise give_back(
+                        f"check `{failed}` fails on {base} before any change (fix {base} first, or pass --no-baseline)",
+                        logs / f"{failed}.log",
+                    )
+                green.parent.mkdir(parents=True, exist_ok=True)
+                green.write_text(base_sha + "\n")
         meta = {
             "id": ticket_id, "kind": kind, "source": source,
             "ticket": str(ticket_path) if ticket_path else "",
@@ -428,6 +438,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"id: {ticket_id}")
     print(f"worktree: {meta['worktree']}")
     print(f"branch: {meta['branch']}")
+    print(f"base: {meta['base']}")
     print(f"ticket: {work / 'ticket.md'}  (a copy taken now; read this file)")
     print(f"checks: {', '.join(selected)}")
     print(f"review: {'agent (a non-author verdict is required)' if meta['review'] else 'human only'}")
@@ -497,8 +508,8 @@ def cmd_check(args: argparse.Namespace) -> None:
         print(f"next: all checks pass, but these files are not committed; {DIRTY_HINT} and run check again")
         print(dirty)
     else:
-        print(f"next: all checks pass at {sha[:7]}; open the PR, then run `jtek.py finish {args.id} --pr <url>` "
-              "(--no-pr when the repository has no forge)")
+        print(f"next: all checks pass at {sha[:7]}; go on with the next step of your playbook. "
+              "Run check again after any new commit")
 
 
 def cmd_verdict(args: argparse.Namespace) -> None:
@@ -532,7 +543,14 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse(f"these files are not committed; {DIRTY_HINT} and run `jtek.py check {args.id}`\n{dirty}")
     if checks.get("dirty") or checks.get("sha") != sha or not passed or not ran_all:
         raise Refuse(f"checks have not passed on the current commit {sha[:7]}; run `jtek.py check {args.id}`")
+    if args.evidence_file:
+        (work / "evidence.md").write_text(Path(args.evidence_file).read_text())
     if args.no_pr:
+        if not (work / "evidence.md").exists():
+            raise Refuse(
+                "with no pull request there is nowhere else for the evidence; write what you ran and saw for each "
+                "`Done when` item to a file and pass --evidence-file <file>"
+            )
         pr_note = f" No pull request: the branch {meta['branch']} is local."
     elif not meta["pr"]:
         raise Refuse(
@@ -603,6 +621,15 @@ def pr_info(url: str) -> tuple[str, str]:
     return (parts[0], parts[1]) if proc.returncode == 0 and len(parts) == 2 else ("unknown", "")
 
 
+def tidy_done(ticket_id: str) -> None:
+    """Remove the worktree of a finished ticket. Git refuses when it has uncommitted files, and then it stays."""
+    meta = read_json(work_dir(ticket_id) / "meta.json")
+    if meta and Path(meta["worktree"]).is_dir():
+        if subprocess.run(["git", "worktree", "remove", meta["worktree"]], capture_output=True).returncode == 0:
+            # -d deletes only a merged branch, so unmerged work is never lost here
+            subprocess.run(["git", "branch", "-d", meta["branch"]], capture_output=True)
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     rows: dict[str, list[str]] = {status: [] for status in STATUSES}
     folder = tickets_dir()
@@ -617,6 +644,8 @@ def cmd_list(args: argparse.Namespace) -> None:
                 status = "Done"
             elif state != "OPEN":
                 fields["note"] = f"PR state: {state}"
+        if args.sync and status == "Done":
+            tidy_done(path.stem)
         extra = "".join(f"  [{key}: {fields[key]}]" for key in ("waiting", "after", "pr", "note") if fields.get(key))
         rows.setdefault(status, []).append(f"  {path.stem}  {ticket['title']}{extra}")
     for status, items in rows.items():
@@ -669,6 +698,7 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("id")
     finish.add_argument("--pr")
     finish.add_argument("--no-pr", action="store_true", help="the repository has no forge; the branch stays local")
+    finish.add_argument("--evidence-file", help="what was run and seen for each item; required with --no-pr")
     finish.set_defaults(func=cmd_finish)
 
     stop = sub.add_parser("stop", help="stop and wait for the human")
@@ -685,7 +715,8 @@ def build_parser() -> argparse.ArgumentParser:
         item.set_defaults(func=func)
 
     listing = sub.add_parser("list", help="print the local board")
-    listing.add_argument("--sync", action="store_true", help="set Review tickets to Done when their PR is merged")
+    listing.add_argument("--sync", action="store_true",
+                         help="set Review tickets to Done when their PR is merged, and remove the worktrees of Done tickets")
     listing.set_defaults(func=cmd_list)
     return parser
 

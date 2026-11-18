@@ -213,6 +213,22 @@ class CheckTests(Scratch):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.git("status", "--porcelain", cwd=self.worktree("T-1")), "")
 
+    def test_baseline_runs_once_per_base_commit(self):
+        counter = Path(self.tmp.name) / "runs"
+        code = f"open(r'{counter}','a').write('x')"
+        self.write_config({"test": f'{sys.executable} -c "{code}"'})
+        self.ticket("T-1")
+        self.ticket("T-2")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.assertEqual(self.jtek("start", "T-2")[0], 0)
+        self.assertEqual(counter.read_text(), "x", "the second ticket reuses the green run")
+        (self.repo / "new.txt").write_text("x")
+        self.git("add", "new.txt")
+        self.git("commit", "-q", "-m", "base moves")
+        self.ticket("T-3")
+        self.assertEqual(self.jtek("start", "T-3")[0], 0)
+        self.assertEqual(counter.read_text(), "xx", "a new base commit is checked again")
+
     def test_no_baseline_skips_the_check_on_base(self):
         self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
         self.ticket("T-1")
@@ -247,6 +263,11 @@ class CheckTests(Scratch):
 
 
 class FinishTests(Scratch):
+    def evidence(self):
+        path = Path(self.tmp.name) / "evidence.md"
+        path.write_text("- ran the thing, saw it work\n")
+        return str(path)
+
     def started(self, extra=""):
         path = self.ticket("T-1", extra=extra)
         self.assertEqual(self.jtek("start", "T-1")[0], 0)
@@ -272,11 +293,15 @@ class FinishTests(Scratch):
         path = self.started("review: agent\n")
         self.jtek("check", "T-1")
         code, out = self.jtek("finish", "T-1", "--no-pr")
+        self.assertEqual(code, 1)
+        self.assertIn("--evidence-file", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: needs-review", out)
         self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
         code, out = self.jtek("finish", "T-1", "--no-pr")
         self.assertIn("outcome: review", out)
+        self.assertIn("evidence.md", out.split("evidence:")[1].splitlines()[0])
         self.assertIn("No pull request", out)
         self.assertEqual(self.field(path, "status"), "Review")
 
@@ -434,7 +459,7 @@ class FinishTests(Scratch):
         self.git("add", "-A", cwd=tree)
         self.git("commit", "-q", "-m", "more", cwd=tree)
         self.jtek("check", "T-1")
-        return self.jtek("finish", "T-1", "--no-pr")[1]
+        return self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())[1]
 
     def test_attention_is_empty_for_an_ordinary_change(self):
         self.assertIn("attention: -", self.result_after(lambda tree: (tree / "a.txt").write_text("a")))
@@ -515,6 +540,20 @@ class BoardTests(Scratch):
         self.assertEqual(self.jtek("list", "--sync")[0], 0)
         self.assertEqual(self.field(merged, "status"), "Done")
         self.assertEqual(self.field(still_open, "status"), "Review")
+
+    def test_sync_removes_the_worktree_of_a_done_ticket(self):
+        path = self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.assertTrue(self.worktree("T-1").is_dir())
+        path.write_text(path.read_text().replace("status: In Progress", "status: Done"))
+        self.assertEqual(self.jtek("list", "--sync")[0], 0)
+        self.assertFalse(self.worktree("T-1").exists())
+        dirty = self.ticket("T-2")
+        self.jtek("start", "T-2")
+        (self.worktree("T-2") / "left.txt").write_text("x")
+        dirty.write_text(dirty.read_text().replace("status: In Progress", "status: Done"))
+        self.jtek("list", "--sync")
+        self.assertTrue(self.worktree("T-2").is_dir(), "uncommitted work is never removed")
 
     def test_release_refuses_uncommitted_work(self):
         self.ticket("T-1")

@@ -12,29 +12,29 @@ This skill owns the order of the steps and the script. Each step's judgement liv
 
 | Step | Skill | Script command |
 |---|---|---|
-| 1. Start | `jt-work` (this file) | `start` |
-| 2. Understand | `jt-understand` | |
-| 3. Build | `jt-build` | |
-| 4. Check | `jt-work`, and `jt-debug` when a check fails | `check` |
-| 5. See it work | `jt-verify` | |
-| 6. Clean up | `jt-cleanup` | `check` |
-| 7. Ship | `jt-ship` | `finish` |
-| 8. Second look, only for `review: agent` | `jt-review` in another session | `verdict` |
+| Start | `jt-work` (this file) | `start` |
+| Understand | `jt-understand` | |
+| Build | `jt-build` | |
+| Check | `jt-work`, and `jt-debug` when a check fails | `check` |
+| See it work | `jt-verify` | |
+| Clean up | `jt-cleanup` | `check`, only if something was removed |
+| Ship | `jt-ship` | `finish` |
+| Second look, only for `review: agent` | `jt-review` in another session | `verdict` |
 | Stop and wait, at any step | `jt-work` | `stop` |
 | When the human corrects you | `jt-learn` | |
 | Once per repository, before any ticket | `jt-harness` | |
 
 `jtek.py` is at `scripts/jtek.py` in this skill's folder. Run it with `python3` from anywhere inside the repository or the ticket's worktree. The step skills call it by this path. When it prints `refused:`, do what the message says. Do not work around it.
 
-After `start`, pick the playbook from the ticket's `kind:` line. With no `kind`, decide from the `Goal`.
+Run Start below first. Then pick the playbook from the ticket's `kind:` line. With no `kind`, decide from the `Goal`.
 
 - **feature**, or anything else: [playbooks/feature.md](playbooks/feature.md)
 - **bug:** [playbooks/bug.md](playbooks/bug.md). See it fail before you fix it.
 - **refactor:** [playbooks/refactor.md](playbooks/refactor.md). Lock the behaviour before you move code.
 
-Copy the playbook's steps into your todo list, and do them in order. A step that does not apply stays in the list as `n/a: <reason>`. Do not drop it. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
+The playbook gives the order and the step numbers. Copy its steps into your todo list before the first one, and do them in order. A step that does not apply stays in the list as `n/a: <reason>`. Do not drop it. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
 
-## 1. Start
+## Start
 
 1. Get the ticket.
    - **Local id or file:** `jtek.py start <id-or-path>`.
@@ -45,13 +45,14 @@ Copy the playbook's steps into your todo list, and do them in order. A step that
 4. If `start` prints `resumed`, an earlier session stopped on this ticket. The commits are in the worktree, and a commit that starts with `wip:` is unfinished work. `start` copied the ticket again, so the human's answer or the requested fix is in the ticket file it printed. Read the review notes when `start` prints their path. Continue from the step that was not finished.
 5. If `start` says the ticket is already claimed, stop. Another session has it.
 
-## 4. Check
+## Check
 
 1. Run `jtek.py check <id>`. It runs the checks the base branch declares in `jtek.json`, in order, and stops at the first failure.
 2. On a failure, use `jt-debug`, then commit and run `check` again.
 3. After three failed runs the script tells you to stop. Stop.
+4. Run `check` again after every new commit. `finish` only accepts checks that passed on the current commit.
 
-## 8. Second look
+## Second look
 
 Only for a ticket with `review: agent`. `finish` then prints `outcome: needs-review`.
 

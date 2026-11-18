@@ -15,6 +15,9 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.
 - The result has an `attention:` line. It names `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check runs, a deleted test, and `watch` matches when the ticket changes them.
 - Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
+- `finish --evidence-file` saves what was run and seen. It is required with `--no-pr`, and the result has an `evidence:` line.
+- A green run on the base is remembered per base commit, so parallel tickets do not repeat it.
+- `list --sync` removes the worktree of each Done ticket, unless it has uncommitted files.
 - `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.
 - `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
 - `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.

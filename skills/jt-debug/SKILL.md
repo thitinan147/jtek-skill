@@ -7,6 +7,10 @@ description: Finds the cause of a failing check, test, or bug before any code ch
 
 Do not change code until you can say what the cause is.
 
+The base branch is the one `jtek.py start` printed as `base:`.
+
+When you start from a bug you reproduced, and no check has failed, your reproduction is the failure. Skip to step 2, and compare with a nearby case that works.
+
 ## 1. Read the failure
 
 1. Read the whole log, not only the last line. `jtek.py check` prints the log path.
@@ -36,4 +40,4 @@ Do not change code until you can say what the cause is.
 
 After three failed `check` runs the script tells you to stop. A fourth guess usually means the design is wrong, not the line. Run `jtek.py stop <id> --waiting input --note "<the cause you suspect and what you tried>"`.
 
-A check that fails on the base branch too is not yours to fix in this ticket. Stop and say so.
+A declared check that fails on the base branch too, for a reason outside your ticket, is not yours to fix here. Stop and say so.

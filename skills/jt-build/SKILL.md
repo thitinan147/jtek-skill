@@ -19,7 +19,7 @@ This never applies to security, input validation at a trust boundary, or error h
 ## 2. Build
 
 1. Agree the public interface first: the function, endpoint, or command a caller sees. Tests go through it.
-2. Write or change a test for each behaviour you add, before or with the code. A test checks what a caller can observe, not how the inside works. See each new test fail once before it passes. Prefer no new test over a test that cannot fail.
+2. Write or change a test for each behaviour you add, before or with the code. When the playbook says the test comes first, it does. A test checks what a caller can observe, not how the inside works. See each new test fail once before it passes. Prefer no new test over a test that cannot fail.
 3. Make the smallest change that meets `Done when`. Behaviour listed under `Out of scope` stays exactly as it is now.
 4. Apply [references/principles.md](references/principles.md) where a condition holds.
 5. Commit in the worktree. Never commit on the base branch.

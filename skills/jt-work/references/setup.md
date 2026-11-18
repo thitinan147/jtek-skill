@@ -26,6 +26,6 @@ Every `start` runs the checks once on the base before any edit, so keep the base
 These are for the human. An agent does not run them.
 
 - `jtek.py add --title "..."`: add a local ticket in Backlog. Then edit the file and set `status: Todo` to release it.
-- `jtek.py list --sync`: print the board, and set Review tickets to Done when `gh` reports the pull request as merged.
+- `jtek.py list --sync`: print the board, set Review tickets to Done when `gh` reports the pull request as merged, and remove the worktree of each Done ticket. A worktree with uncommitted files is kept.
 - `jtek.py start <id> --resume`: take over a claim whose session died without a result.
 - `jtek.py release <id>`: drop a claim and its worktree. Git refuses when the worktree has uncommitted changes. The branch is kept.

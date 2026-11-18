@@ -59,7 +59,7 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 | Work a local ticket | `/jt-work T-12` |
 | Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection) |
 | Get a second look on a risky ticket | add `review: agent`, then `/jt-review T-12` in a fresh session |
-| See the local board | `jtek.py list --sync` |
+| See the local board and tidy finished worktrees | `jtek.py list --sync` |
 | Give a ticket back | `jtek.py release T-12` |
 
 A bot runs the same commands. It reads the `jtek-result` block at the end of the session to decide what to do next.
