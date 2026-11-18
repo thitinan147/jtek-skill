@@ -19,7 +19,7 @@ What keeps the two sides in agreement is a contract file and checks that read it
    - Refuse a pin that is not on the provider's base branch.
    - Refuse a copy that differs from the provider's contract at the pin.
    - Start the provider at the pin, and drive the consumer against it. Do not use a mock here.
-4. Say in `.jtek/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it.
+4. Say in `.jtek/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it, without `NOTION_TOKEN`.
 
 A check command is one program with arguments, so each of these is a script.
 
@@ -27,8 +27,8 @@ A check command is one program with arguments, so each of these is a script.
 
 - One ticket per repository, each with `repo:`. The provider's ticket comes first.
 - Put the contract change in the provider ticket's `Done when`, so the evidence covers it.
-- The human sets the consumer's ticket to Todo after merging the provider's pull request.
-- Do not use `after:` to point at a ticket in the other repository. Local tickets live inside each repository, so `start` cannot find that ticket and refuses. For a ticket from Notion, `after:` is not checked at all. The order is kept by the human who sets Todo, and by the checks below.
+- Set After on the consumer's ticket to the provider's ticket. Both are on the same board, so `start` refuses the consumer's ticket until the provider's is Done, which means merged.
+- After keeps the order. The checks below keep the two sides in agreement.
 
 ## Working the consumer's ticket
 

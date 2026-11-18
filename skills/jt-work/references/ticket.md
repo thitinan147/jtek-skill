@@ -2,7 +2,7 @@
 
 ## Ticket format
 
-The same format is used for a local file and for text fetched from Notion or another system.
+A ticket is a page on the Notion board. `jtek.py start` copies it into this format, and that copy is the file you read. The header lines come from the page's properties, and the sections from its body.
 
 ```markdown
 # Short title
@@ -23,9 +23,9 @@ What should be true when this is done, and why.
 - What this ticket must not change.
 ```
 
-- **`id`:** letters, digits, `.`, `_`, `-`. It names the branch `jtek/<id>` and the worktree.
+- **`id`:** the page's Ticket ID. It names the branch `jtek/<id>` and the worktree.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
-- **`after`:** optional. Ids that must be Done first. Checked for local tickets only, and only against tickets of this repository. To order work across two repositories, see [two-repos.md](two-repos.md).
+- **`after`:** optional. Tickets that must be Done first. They may belong to any repository on the board. `start` refuses while one is not Done.
 - **`repo`:** optional. The repository the ticket is for, when one board serves several. It is the `name` in that repository's `jtek.json`, or its folder name. `start` refuses a ticket whose `repo` is another one.
 - **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together, and `jtek.py list` shows it.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
@@ -35,28 +35,27 @@ What should be true when this is done, and why.
 
 ## Where tickets live
 
-- **Local:** one file per ticket in `<git-common-dir>/jtek/tickets/<id>.md`. This folder is outside the tracked files, so parallel sessions never conflict on it. `jtek.py add --title "..."` creates one in Backlog. Set `JTEK_STATE` to keep the folder somewhere else.
-- **Notion or another system:** the page is the source of truth. The session reads it, passes the text with `--from-file`, and writes the status back. A ticket lives in one place. Do not keep a local copy in sync.
+The page in Notion is the source of truth. The layout of the board is in [notion.md](notion.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
 
 ## Statuses
 
 | Status | Meaning | Who sets it |
 |---|---|---|
-| Backlog | Written down, not released. | Human or bot |
+| Backlog | Written down, not released. | Human |
 | Todo | Released for an agent to take. | Human only |
 | In Progress | A session has claimed it. | `jtek.py start` |
 | Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | `jtek.py finish` |
-| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | `jtek.py list --sync`, or the bot |
+| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | `jtek.py list --sync` |
 | Cancelled | Dropped. | Human |
 
-- **`waiting`** is a field, not a status. `input` means the agent has a question. `approval` means a step needs permission. The ticket stays In Progress.
+- **Waiting** is a property, not a status. `input` means the agent has a question. `approval` means a step needs permission. The ticket stays In Progress.
 - **Rework:** the human sets a Review ticket back to Todo and adds what to fix. A new session runs `start <id>` and continues in the same worktree.
-- **Answering a question:** the human writes the answer in the ticket. A new session runs `start <id>`.
-- There is no command that sets Todo, Done by hand, or Cancelled. The human edits the ticket.
+- **Answering a question:** the human writes the answer on the page and clears Waiting. A new session runs `start <id>`.
+- There is no command that sets Todo, Done by hand, or Cancelled. The human edits the page.
 
 ## Claims and parallel work
 
-After creating the worktree, `start` runs the `setup` command from `jtek.json`, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
+After creating the worktree, `start` runs the `setup` command from `jtek.json`, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo on the board, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
 
 `start` creates `<git-common-dir>/jtek/work/<id>/`. Creating a directory is atomic, so when two sessions start the same id, one is refused. Each ticket gets the worktree `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 
@@ -64,9 +63,7 @@ After creating the worktree, `start` runs the `setup` command from `jtek.json`, 
 
 A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human runs `start <id> --resume`.
 
-Notion has no atomic claim. The directory above is the lock for sessions on one machine. If sessions run on several machines, the launcher must set In Progress in Notion before it starts a session. For that reason `start --from-file` accepts a ticket that is already In Progress, and a local ticket must be Todo.
-
-A relaunch for a Notion ticket may pass only the id. `start` then reuses the saved snapshot. Pass `--from-file` again when the page changed.
+Notion has no atomic claim. The directory above is the lock for sessions on one machine. `start` writes In Progress on the page as its last step, and gives the claim back when that write fails.
 
 ## Result
 
@@ -85,7 +82,7 @@ ci: pass | fail | pending | none | unknown | -
 evidence: <path> (3 seen, 0 not run) (+2 attached in <folder>) | -
 attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
-source: local:<path> | <url>
+source: <page link>
 note: <one line>
 ```
 

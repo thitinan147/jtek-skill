@@ -10,7 +10,7 @@ Run these whenever you change the text of a skill or a playbook. A change that r
    python3 evals/run.py build bug-wordcount /tmp/eval-1
    ```
 
-   It prints the prompt to give the agent.
+   It prints how to start the test board, the environment the agent session needs, and the prompt to give the agent. The test board is a stand-in for Notion on this machine (`tests/fake_notion.py`), so an eval never touches a real workspace.
 2. **Run** a fresh agent session with that prompt, and nothing else. Use the agent you want to test (Claude Code, Cursor, ...). It must not see this repository's history or an earlier run.
 3. When the result says `needs-review`, start a second fresh session and tell it only to follow `skills/jt-review/SKILL.md` for the same ticket. Then let the first agent, or a third session, run `/jt-work <id>` again.
 4. **Grade** what is left:

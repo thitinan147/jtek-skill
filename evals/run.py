@@ -4,13 +4,16 @@
     python3 evals/run.py build <scenario> <empty-dir>
     python3 evals/run.py grade <scenario> <dir>
 
-The agent run in between is yours to start, with any agent. Standard library only.
+The agent run in between is yours to start, with any agent. The board is a stand-in
+for Notion that runs on this machine. Standard library only.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -19,6 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS = ROOT / "evals" / "scenarios"
 SKILL = ROOT / "skills" / "jt-work" / "SKILL.md"
+BOARD = ROOT / "tests" / "fake_notion.py"
+sys.path.insert(0, str(BOARD.parent))
+from fake_notion import FakeNotion  # noqa: E402
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -41,12 +47,26 @@ def build(name: str, dest: Path) -> None:
     git("init", "-q", "-b", "main", cwd=repo)
     git("config", "user.email", "eval@example.invalid", cwd=repo)
     git("config", "user.name", "eval", cwd=repo)
+    prefix, number = scenario["ticket"].rsplit("-", 1)
+    board = FakeNotion(prefix=prefix, path=dest / "board.json")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        board.port = probe.getsockname()[1]
+    text = (folder / "ticket.md").read_text()
+    head, body = text.split("\n## ", 1)
+    fields = dict(re.findall(r"^([a-z]+): (.*)$", head, re.M))
+    board.add(head.splitlines()[0].lstrip("# "), fields.get("status", "Todo"), "## " + body, int(number),
+              Kind=fields.get("kind", ""))
+    config = json.loads((repo / "jtek.json").read_text())
+    (repo / "jtek.json").write_text(json.dumps({"notion": board.database, **config}, indent=2) + "\n")
     git("add", "-A", cwd=repo)
     git("commit", "-q", "-m", "init", cwd=repo)
-    tickets = repo / ".git" / "jtek" / "tickets"
-    tickets.mkdir(parents=True)
-    shutil.copy(folder / "ticket.md", tickets / f"{scenario['ticket']}.md")
     print(f"repository: {repo}")
+    print("first, in another terminal, start the test board and leave it running:")
+    print(f"  python3 {BOARD} serve {dest / 'board.json'}")
+    print("start the agent session with these in its environment:")
+    for key, value in board.env().items():
+        print(f"  export {key}={value}")
     print("prompt for a fresh agent session:")
     print(f"  Follow the skill at {SKILL} for ticket id {scenario['ticket']} in the repository {repo}.")
     print("  This repository has no forge. End with the result block.")

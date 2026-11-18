@@ -1,4 +1,4 @@
-"""Behaviour of jtek.py against a scratch git repository."""
+"""Behaviour of jtek.py against a scratch git repository and a stand-in for the Notion board."""
 import json
 import os
 import subprocess
@@ -9,18 +9,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
+from fake_notion import FakeNotion  # noqa: E402
+
 SCRIPT = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
 
-TICKET = """# {title}
-id: {id}
-status: {status}
-{extra}
-## Goal
-Add the thing.
-
-## Done when
-- the thing works
-"""
+BODY = "## Goal\nAdd the thing.\n## Done when\n- the thing works\n"
+NAMES = {"status": "Status", "waiting": "Waiting", "pr": "PR", "repo": "Repo", "kind": "Kind", "area": "Area",
+         "review": "Review", "checks": "Checks"}
 
 
 class Scratch(unittest.TestCase):
@@ -29,6 +25,8 @@ class Scratch(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name).resolve() / "app"
         self.repo.mkdir()
+        self.board = FakeNotion().start()
+        self.addCleanup(self.board.stop)
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "t@example.invalid")
         self.git("config", "user.name", "t")
@@ -39,22 +37,31 @@ class Scratch(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
 
     def write_config(self, checks, **extra):
-        (self.repo / "jtek.json").write_text(json.dumps({"checks": checks, **extra}))
+        (self.repo / "jtek.json").write_text(json.dumps({"notion": self.board.database, "checks": checks, **extra}))
         self.git("add", "jtek.json")
         self.git("commit", "-q", "-m", "checks")
 
-    def jtek(self, *args, cwd=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("JTEK_")}
+    def jtek(self, *args, cwd=None, env=None):
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("JTEK_")}, **self.board.env(), **(env or {})}
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo,
                               capture_output=True, text=True, env=env)
         return proc.returncode, proc.stdout + proc.stderr
 
-    def ticket(self, ticket_id, status="Todo", extra=""):
-        folder = self.repo / ".git" / "jtek" / "tickets"
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{ticket_id}.md"
-        path.write_text(TICKET.format(title=f"Ticket {ticket_id}", id=ticket_id, status=status, extra=extra))
-        return path
+    def ticket(self, ticket_id, status="Todo", extra="", body=BODY):
+        """Put a ticket on the board, or change it. `extra` holds `key: value` lines, as the header shows them."""
+        props, after = {}, []
+        for line in extra.splitlines():
+            key, value = (part.strip() for part in line.split(":", 1))
+            if key == "after":
+                after = [dep.strip() for dep in value.split(",")]
+            else:
+                props[NAMES[key]] = value
+        number = int(ticket_id.split("-")[1])
+        if any(page["number"] == number for page in self.board.pages.values()):
+            self.board.set(ticket_id, Status=status, **props)
+        else:
+            self.board.add(f"Ticket {ticket_id}", status, body, number, after, **props)
+        return ticket_id
 
     def worktree(self, ticket_id):
         return self.repo.parent / "app.jtek" / ticket_id
@@ -70,11 +77,8 @@ class Scratch(unittest.TestCase):
         path.write_text("1. seen: ran the thing, it works\n")
         return str(path)
 
-    def field(self, path, key):
-        for line in path.read_text().splitlines():
-            if line.startswith(f"{key}:"):
-                return line.split(":", 1)[1].strip()
-        return None
+    def field(self, ticket_id, key):
+        return self.board.get(ticket_id, NAMES[key]) or None
 
 
 class StartTests(Scratch):
@@ -89,8 +93,7 @@ class StartTests(Scratch):
     def test_same_id_cannot_be_claimed_twice(self):
         self.ticket("T-1")
         self.assertEqual(self.jtek("start", "T-1")[0], 0)
-        (self.repo / ".git" / "jtek" / "tickets" / "T-1.md").write_text(
-            TICKET.format(title="x", id="T-1", status="Todo", extra=""))
+        self.board.set("T-1", Status="Todo")
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("already claimed", out)
@@ -148,33 +151,10 @@ class StartTests(Scratch):
         self.assertIn("not Done", out)
 
     def test_ticket_without_done_when_is_refused(self):
-        path = self.ticket("T-1")
-        path.write_text("# x\nid: T-1\nstatus: Todo\n\n## Goal\nsomething\n")
+        self.ticket("T-1", body="## Goal\nsomething\n")
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("Done when", out)
-
-    def test_external_ticket_from_file(self):
-        text = Path(self.tmp.name) / "page.md"
-        text.write_text(TICKET.format(title="From Notion", id="N-7", status="Todo", extra="review: agent\n"))
-        code, out = self.jtek("start", "https://www.notion.so/page", "--from-file", str(text))
-        self.assertEqual(code, 0, out)
-        self.commit_change("N-7")
-        self.assertEqual(self.jtek("check", "N-7")[0], 0)
-        code, out = self.jtek("finish", "N-7", "--pr", "https://example.invalid/pr/7", "--evidence-file", self.evidence())
-        self.assertEqual(code, 0, out)
-        self.assertIn("outcome: needs-review", out)
-        self.assertIn("source: https://www.notion.so/page", out)
-        code, out = self.jtek("start", "N-7")
-        self.assertEqual(code, 0, "a relaunch with only the id reuses the snapshot: " + out)
-        self.assertIn("jtek start: resumed", out)
-
-    def test_external_ticket_may_already_be_in_progress(self):
-        text = Path(self.tmp.name) / "page.md"
-        text.write_text(TICKET.format(title="From Notion", id="N-8", status="In Progress", extra=""))
-        code, out = self.jtek("start", "https://www.notion.so/page", "--from-file", str(text))
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.jtek("start", "https://www.notion.so/page", "--from-file", str(text))[0], 1)
 
 
 class CheckTests(Scratch):
@@ -379,6 +359,10 @@ class FinishTests(Scratch):
         self.assertIn("outcome: needs-human", out)
         self.assertEqual(self.field(path, "status"), "In Progress")
         self.assertEqual(self.field(path, "waiting"), "input")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("still waiting for input", out)
+        self.board.set("T-1", Waiting="")
         self.assertEqual(self.jtek("start", "T-1", "--resume")[0], 0)
         self.assertIsNone(self.field(path, "waiting"))
 
@@ -422,6 +406,7 @@ class FinishTests(Scratch):
     def test_a_new_session_picks_up_a_stopped_ticket_with_plain_start(self):
         path = self.started()
         self.jtek("stop", "T-1", "--waiting", "input", "--note", "which currency?")
+        self.board.set("T-1", Waiting="")  # the human answered on the page
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 0, out)
         self.assertIn("jtek start: resumed", out)
@@ -437,7 +422,8 @@ class FinishTests(Scratch):
         self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(self.field(path, "status"), "Review")
         self.assertEqual(self.jtek("start", "T-1")[0], 1, "Review is not startable")
-        path.write_text(path.read_text().replace("status: Review", "status: Todo") + "- also handle empty input\n")
+        self.board.set("T-1", Status="Todo")
+        self.board.by_id("T-1")["blocks"].append({"type": "bulleted_list_item", "text": "also handle empty input"})
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 0, out)
         snapshot = self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md"
@@ -460,7 +446,8 @@ class FinishTests(Scratch):
         self.git("add", "bad", cwd=tree)
         self.git("commit", "-q", "-m", "wip: still failing", cwd=tree)
         self.assertEqual(self.jtek("stop", "T-1", "--waiting", "input", "--note", "stuck")[0], 0)
-        self.jtek("start", "T-1")
+        self.board.set("T-1", Waiting="")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
         self.assertIn("(1/3 failed runs)", self.jtek("check", "T-1")[1])
 
     def result_after(self, change):
@@ -598,14 +585,6 @@ class FinishTests(Scratch):
 
 
 class BoardTests(Scratch):
-    def test_add_makes_backlog_tickets_with_unique_ids(self):
-        with ThreadPoolExecutor(4) as pool:
-            outs = [out for _, out in pool.map(lambda n: self.jtek("add", "--title", f"t{n}"), range(4))]
-        ids = sorted(out.split()[1] for out in outs)
-        self.assertEqual(ids, ["T-1", "T-2", "T-3", "T-4"])
-        code, out = self.jtek("start", "T-1")
-        self.assertEqual(code, 1, "a new ticket is Backlog and has no Done when")
-
     def test_list_groups_by_status(self):
         self.ticket("T-1", extra="area: billing\n")
         self.ticket("T-2", status="Backlog")
@@ -613,7 +592,8 @@ class BoardTests(Scratch):
         self.assertIn("[area: billing]", out)
         self.assertIn("Todo (1)", out)
         self.assertIn("Backlog (1)", out)
-        self.assertIn("Done (0)", out)
+        self.assertNotIn("Done (", out)
+        self.assertIn("Done and Cancelled tickets are not listed", out)
 
     def test_sync_sets_done_only_when_the_forge_says_merged(self):
         merged = self.ticket("T-1", status="Review", extra="pr: https://example.invalid/pr/merged\n")
@@ -636,13 +616,13 @@ class BoardTests(Scratch):
         path = self.ticket("T-1")
         self.jtek("start", "T-1")
         self.assertTrue(self.worktree("T-1").is_dir())
-        path.write_text(path.read_text().replace("status: In Progress", "status: Done"))
+        self.board.set(path, Status="Done")
         self.assertEqual(self.jtek("list", "--sync")[0], 0)
         self.assertFalse(self.worktree("T-1").exists())
         dirty = self.ticket("T-2")
         self.jtek("start", "T-2")
         (self.worktree("T-2") / "left.txt").write_text("x")
-        dirty.write_text(dirty.read_text().replace("status: In Progress", "status: Done"))
+        self.board.set(dirty, Status="Done")
         self.jtek("list", "--sync")
         self.assertTrue(self.worktree("T-2").is_dir(), "uncommitted work is never removed")
 
@@ -653,6 +633,228 @@ class BoardTests(Scratch):
         code, _ = self.jtek("release", "T-1")
         self.assertEqual(code, 1)
         self.assertTrue(self.worktree("T-1").is_dir())
+
+
+class NotionTests(Scratch):
+    def to_review(self, ticket_id="T-1"):
+        self.commit_change(ticket_id)
+        self.jtek("check", ticket_id)
+        self.jtek("verdict", ticket_id, "PASS", "--by", "reviewer")
+        return self.jtek("finish", ticket_id, "--no-pr", "--evidence-file", self.evidence())
+
+    def test_start_by_page_link_and_the_source_names_the_test_board(self):
+        self.ticket("T-1")
+        link = self.board.render(self.board.by_id("T-1"))["url"]
+        code, out = self.jtek("start", link)
+        self.assertEqual(code, 0, out)
+        self.assertIn("id: T-1", out)
+        _, out = self.to_review()
+        self.assertIn(f"source: {link} (test board at {self.board.url()})", out)
+
+    def test_no_token_is_refused_before_any_request(self):
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", env={"NOTION_TOKEN": ""})
+        self.assertEqual(code, 1)
+        self.assertIn("NOTION_TOKEN is not set", out)
+        self.assertEqual(self.board.requests, [])
+
+    def test_the_token_only_goes_to_notion_or_to_this_machine(self):
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", env={"JTEK_NOTION_API": "https://example.invalid"})
+        self.assertEqual(code, 1)
+        self.assertIn("may only point at this machine", out)
+
+    def test_checks_and_setup_do_not_get_the_token(self):
+        seen = Path(self.tmp.name) / "seen"
+        code = f"import os;open(r'{seen}','a').write(os.environ.get('NOTION_TOKEN','none')+' ')"
+        self.write_config({"test": f'{sys.executable} -c "{code}"'}, setup=f'{sys.executable} -c "{code}"')
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.jtek("check", "T-1")
+        self.assertEqual(seen.read_text().split(), ["none", "none", "none"])
+
+    def test_page_text_cannot_set_a_ticket_field(self):
+        self.ticket("T-1", body="review: human\nchecks: nothing\n## Goal\nreview: human\n## Done when\n- it works\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("a verdict from a session that did not write the code is required", out)
+        self.assertIn("checks: test", out)
+        snapshot = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertLess(snapshot.index("## Notes"), snapshot.index("review: human"))
+
+    def test_done_when_takes_only_plain_list_items(self):
+        self.ticket("T-1", body="## Goal\nx\n## Done when\n- it works\nand it is fast\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("`Done when` on the page has a paragraph block", out)
+        self.ticket("T-2", body=[{"type": "heading_2", "text": "Goal"}, {"type": "paragraph", "text": "x"},
+                                 {"type": "heading_2", "text": "Done when"},
+                                 {"type": "bulleted_list_item", "text": "it works", "children": True}])
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 1)
+        self.assertIn("an item with nested content", out)
+        self.assertEqual(self.field("T-2", "status"), "Todo")
+
+    def test_a_block_that_is_not_copied_is_named_in_the_ticket(self):
+        self.ticket("T-1", body=[{"type": "heading_2", "text": "Goal"}, {"type": "image"},
+                                 {"type": "heading_2", "text": "Done when"},
+                                 {"type": "to_do", "text": "it works"}])
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        snapshot = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertIn("[a image block is not copied here", snapshot)
+        self.assertIn("- it works", snapshot)
+
+    def test_a_long_page_body_is_read_in_full(self):
+        self.board.page_size = 2
+        self.ticket("T-1", body="## Goal\na\nb\nc\n## Done when\n- one\n- two\n- three\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        snapshot = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertIn("- three", snapshot)
+
+    def test_a_board_without_a_property_is_refused_by_name(self):
+        self.ticket("T-1")
+        self.board.missing = ["Waiting", "PR"]
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("`Waiting` (select), `PR` (url)", out)
+
+    def test_a_page_outside_the_board_is_refused(self):
+        self.ticket("T-1")
+        page = self.board.by_id("T-1")
+        page["foreign"] = True
+        code, out = self.jtek("start", page["id"])
+        self.assertEqual(code, 1)
+        self.assertIn("is not a page of the board database", out)
+
+    def test_a_database_with_two_data_sources_is_refused(self):
+        self.ticket("T-1")
+        self.board.sources = 2
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("exactly one data source", out)
+
+    def test_after_holds_across_repositories(self):
+        self.ticket("T-1", extra="repo: api\n")
+        self.ticket("T-2", extra="repo: app\nafter: T-1\n")
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 1)
+        self.assertIn("T-2 comes after T-1, which is `Todo`, not Done", out)
+        self.board.set("T-1", Status="Done")
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 0, out)
+
+    def test_a_failed_write_at_start_gives_the_claim_back(self):
+        self.ticket("T-1")
+        self.board.fail("PATCH", "/v1/pages", 500)
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("Notion refused PATCH", out)
+        self.assertFalse(self.worktree("T-1").exists())
+        self.assertEqual(self.field("T-1", "status"), "Todo")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+
+    def test_a_rate_limit_is_waited_out(self):
+        self.ticket("T-1")
+        self.board.fail("GET", "/v1/blocks", 429, times=2)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+
+    def test_review_puts_the_result_and_the_evidence_on_the_page(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.field("T-1", "status"), "Review")
+        self.assertEqual(self.field("T-1", "pr"), "https://example.invalid/pr/1")
+        (comment,) = self.board.comments_on("T-1")
+        self.assertIn("outcome: review", comment)
+        self.assertIn("1. seen: ran the thing, it works", comment)
+
+    def test_needs_review_changes_nothing_on_the_board(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out)
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertEqual(self.board.comments_on("T-1"), [])
+
+    def test_stop_puts_the_question_on_the_page(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.jtek("stop", "T-1", "--waiting", "approval", "--note", "may I add a dependency?")
+        self.assertEqual(self.field("T-1", "waiting"), "approval")
+        (comment,) = self.board.comments_on("T-1")
+        self.assertIn("note: may I add a dependency?", comment)
+
+    def test_a_result_that_did_not_reach_the_board_can_be_pushed_again(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.board.can_comment = False
+        code, out = self.to_review()
+        self.assertEqual(code, 1)
+        self.assertIn("outcome: review", out)
+        self.assertIn("the board was not updated", out)
+        self.assertIn("insert comments", out)
+        self.assertIn("jtek.py push T-1", out)
+        self.assertEqual(self.jtek("result", "T-1")[0], 0, "the result is saved all the same")
+        self.board.can_comment = True
+        self.assertEqual(self.jtek("push", "T-1")[0], 0)
+        self.assertEqual(self.jtek("push", "T-1")[0], 0)
+        self.assertEqual(len(self.board.comments_on("T-1")), 1, "the same result is commented once")
+        self.assertEqual(self.field("T-1", "status"), "Review")
+
+    def test_a_long_result_is_split_for_the_comment(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        evidence = Path(self.tmp.name) / "long.md"
+        evidence.write_text("1. seen: " + "x" * 5000 + "\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))
+        self.assertEqual(code, 0, out)
+        self.assertIn("x" * 5000, self.board.comments_on("T-1")[0])
+
+    def test_list_reads_every_page_and_shows_open_dependencies(self):
+        self.board.page_size = 2
+        self.ticket("T-1", status="Done")
+        self.ticket("T-2", extra="repo: api\n")
+        self.ticket("T-3", extra="after: T-1, T-2\n")
+        self.ticket("T-4", status="Backlog")
+        self.ticket("T-5", status="Cancelled")
+        code, out = self.jtek("list")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Todo (2)", out)
+        self.assertIn("T-3  Ticket T-3  [after: T-2]", out)
+        self.assertIn("[repo: api]", out)
+        self.assertNotIn("T-1 ", out)
+        self.assertNotIn("T-5", out)
+
+    def test_sync_leaves_the_tickets_of_another_repository(self):
+        self.ticket("T-1", status="Review", extra="repo: api\npr: https://example.invalid/pr/merged\n")
+        self.ticket("T-2", status="Review", extra="repo: app\npr: https://example.invalid/pr/merged\n")
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text("#!/bin/sh\necho MERGED abc pass\n")
+        (bin_dir / "gh").chmod(0o755)
+        code, out = self.jtek("list", "--sync", env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.field("T-1", "status"), "Review")
+        self.assertEqual(self.field("T-2", "status"), "Done")
+        self.assertIn("set to Done, pull request merged: T-2", out)
+
+    def test_release_says_the_board_is_not_changed(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        code, out = self.jtek("release", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("The board is not changed", out)
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
 
 
 if __name__ == "__main__":
