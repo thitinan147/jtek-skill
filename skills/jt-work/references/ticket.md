@@ -9,6 +9,7 @@ The same format is used for a local file and for text fetched from Notion or ano
 id: T-12
 status: Todo
 kind: feature
+area: billing
 checks: lint, test
 after: T-10
 
@@ -25,6 +26,7 @@ What should be true when this is done, and why.
 - **`id`:** letters, digits, `.`, `_`, `-`. It names the branch `jtek/<id>` and the worktree.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
 - **`after`:** optional. Ids that must be Done first. Checked for local tickets only.
+- **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together, and `jtek.py list` shows it.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
 - **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket. The waiver is ignored when the change touches a file on the `attention:` line.
 - **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.

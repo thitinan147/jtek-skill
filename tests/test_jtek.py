@@ -596,9 +596,10 @@ class BoardTests(Scratch):
         self.assertEqual(code, 1, "a new ticket is Backlog and has no Done when")
 
     def test_list_groups_by_status(self):
-        self.ticket("T-1")
+        self.ticket("T-1", extra="area: billing\n")
         self.ticket("T-2", status="Backlog")
         _, out = self.jtek("list")
+        self.assertIn("[area: billing]", out)
         self.assertIn("Todo (1)", out)
         self.assertIn("Backlog (1)", out)
         self.assertIn("Done (0)", out)

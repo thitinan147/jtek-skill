@@ -725,7 +725,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 fields["note"] = f"PR state: {state}"
         if args.sync and status == "Done":
             tidy_done(path.stem)
-        extra = "".join(f"  [{key}: {fields[key]}]" for key in ("waiting", "after", "pr", "note") if fields.get(key))
+        extra = "".join(f"  [{key}: {fields[key]}]" for key in ("area", "kind", "waiting", "after", "pr", "note") if fields.get(key))
         rows.setdefault(status, []).append(f"  {path.stem}  {ticket['title']}{extra}")
     for status, items in rows.items():
         print(f"{status} ({len(items)})")

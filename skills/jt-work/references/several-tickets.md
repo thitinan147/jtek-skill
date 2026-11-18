@@ -11,7 +11,7 @@ Work them one at a time, in the order given. This skill still never picks a tick
 Go on in this session only if every line holds. Otherwise end the session.
 
 1. **The last ticket ended cleanly.** Its result is `review` or `needs-review`, and it did not take more than one failed `check` run. A ticket that fought you leaves wrong assumptions behind.
-2. **The next ticket is in the code you already read.** Same module, same feature, or the same kind of change. If you would have to read a different part of the codebase, a fresh session reads it just as fast and carries nothing over.
+2. **The next ticket is in the code you already read.** It has the same `area:` as the last one. When `area:` is not set, judge by module, feature, or kind of change. If you would have to read a different part of the codebase, a fresh session reads it just as fast and carries nothing over.
 3. **The session is still short.** You have not had your earlier context summarised or dropped, and you are not re-reading files you read before because you forgot them.
 4. **The next ticket does not wait on this one.** If it has `after:` with a ticket that is not Done, `start` refuses it. Do not work around that.
 
@@ -26,6 +26,15 @@ Go on in this session only if every line holds. Otherwise end the session.
 ## Reviewing
 
 A session never gives the verdict on a ticket it wrote, however many tickets it worked. Every one of them needs a different session for `jt-review`.
+
+## For whoever starts the sessions
+
+Grouping is decided before a session starts, by the human or the launcher. The four checks above are only the session's brake.
+
+- **Put together:** up to three small tickets with the same `area:` that do not depend on each other.
+- **Give its own session:** a ticket in another area, a large ticket, a `refactor`, a bug you expect to be hard, and any ticket with `after:`.
+- **Run in parallel sessions instead:** tickets you want done sooner. One session works one ticket at a time.
+- `jtek.py list` shows each Todo ticket's `area`, `kind`, and `after`.
 
 ## How the session ends
 
