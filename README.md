@@ -6,7 +6,8 @@
 
 ## What it does
 
-- **One ticket, one session, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
+- **One ticket, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
+- **A session may take several tickets in a row, when it fits.** Give `/jt-work` several ids. The session goes on to the next one only if the last ended cleanly, the next is in code it already read, and the session is still short. Otherwise it stops and lists the ids it did not start.
 - **Tickets from a local file or from Notion.** Both are turned into the same snapshot, so the rest of the work is identical.
 - **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
 - **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit, a session that did not write the change records `PASS`, the evidence is saved, and a pull request link is given. Add `review: human` to a small ticket to waive the verdict. When `gh` can read the link, the script also requires the pull request to be open at that commit.
@@ -59,6 +60,7 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 |---|---|
 | Add a local ticket | `jtek.py add --title "..."`, fill in the file, set `status: Todo` |
 | Work a local ticket | `/jt-work T-12` |
+| Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection) |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Fix a pull request after CI or review comments | set the ticket back to `Todo`, then `/jt-work T-12` |

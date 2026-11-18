@@ -1,12 +1,14 @@
 ---
 name: jt-work
-description: Works one ticket from start to a pull request in its own git worktree by running each step's skill in order, then stops for the human to review and merge. Use when the user invokes /jt-work, names a ticket id, a ticket file, or a Notion ticket link to implement, or when another agent hands over one ticket to work.
-argument-hint: "<ticket id | ticket file | Notion URL>"
+description: Works a ticket from start to a pull request in its own git worktree by running each step's skill in order, then stops for the human to review and merge. Use when the user invokes /jt-work, names one or more ticket ids, a ticket file, or a Notion ticket link to implement, or when another agent hands over tickets to work.
+argument-hint: "<ticket id | ticket file | Notion URL> [more ids]"
 ---
 
 # jt-work
 
-One ticket, one session, one worktree. Several sessions may run at once, each on a different ticket. This skill never picks the next ticket and never merges. The human, or the bot that launched this session, does both.
+One ticket at a time, each in its own worktree, with its own pull request and its own result. Several sessions may run at once, each on a different ticket. This skill never picks the next ticket and never merges. The human, or the bot that launched this session, does both.
+
+A fresh session per ticket is the default. When you are given several ids, you may work the next one in this session only when the rules in [references/several-tickets.md](references/several-tickets.md) hold. Read that file before the second ticket.
 
 This skill owns the order of the steps and the script. Each step's judgement lives in its own skill. A step skill does not know what comes next. Only this skill and its playbooks do.
 
@@ -73,6 +75,6 @@ The human answers in the ticket. A new session then runs `/jt-work <id>` again, 
 
 ## End every session with the result
 
-The last thing you write is the `jtek-result` block that `finish` or `stop` printed, unchanged. A person or a bot reads it.
+The last thing you write is the `jtek-result` block that `finish` or `stop` printed, unchanged. A person or a bot reads it. After several tickets, print each block in order, then the ids you did not start.
 
 Setup for a new repository: [references/setup.md](references/setup.md).
