@@ -18,6 +18,7 @@ Do this before the first edit. The output is a short list, not a document. Keep 
 1. Find how this codebase already solves the same kind of problem, and plan to follow it.
 2. If the nearest example is a workaround, do not copy it. Note it for the evidence.
 3. Look for a function, a helper, or an installed package that already does what you need. Plan to use it.
+4. If the codebase has no precedent for this kind of change, sketch two different shapes in a few lines each, and choose one. Say in the evidence which you chose and why.
 
 ## 3. Name the proof
 

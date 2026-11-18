@@ -54,4 +54,8 @@ A harness that was never run is a draft. Do not hand it over as done.
 
 List what you wrote and what you could not cover. The human reviews `.jtek/` and `jtek.json` and commits them on the base branch.
 
+## Keeping it true
+
+Run this skill again when the harness stops matching the app: a renamed screen, a new start command, a feature with no file. Run the `verify` check, fix `.jtek/` and the script only, and end with one word and the reason: `clean` (nothing to change), `changed` (list the files), or `blocked` (the app itself is broken; say where).
+
 If the app cannot be run at all, stop and report exactly what is missing. Do not write a harness around a different path and call the feature covered.

@@ -65,6 +65,11 @@ class Scratch(unittest.TestCase):
         self.git("add", name, cwd=tree)
         self.git("commit", "-q", "-m", "work", cwd=tree)
 
+    def evidence(self):
+        path = Path(self.tmp.name) / "evidence.md"
+        path.write_text("- ran the thing, saw it work\n")
+        return str(path)
+
     def field(self, path, key):
         for line in path.read_text().splitlines():
             if line.startswith(f"{key}:"):
@@ -106,7 +111,7 @@ class StartTests(Scratch):
             # run later commands from inside the worktree, as a ticket session does
             steps.append(self.jtek("check", tid, cwd=self.worktree(tid)))
             steps.append(self.jtek("verdict", tid, "PASS", "--by", "reviewer", cwd=self.worktree(tid)))
-            steps.append(self.jtek("finish", tid, "--pr", f"https://example.invalid/pr/{tid}", cwd=self.worktree(tid)))
+            steps.append(self.jtek("finish", tid, "--pr", f"https://example.invalid/pr/{tid}", "--evidence-file", self.evidence(), cwd=self.worktree(tid)))
             return steps
 
         with ThreadPoolExecutor(2) as pool:
@@ -145,7 +150,7 @@ class StartTests(Scratch):
         self.assertEqual(code, 0, out)
         self.commit_change("N-7")
         self.assertEqual(self.jtek("check", "N-7")[0], 0)
-        code, out = self.jtek("finish", "N-7", "--pr", "https://example.invalid/pr/7")
+        code, out = self.jtek("finish", "N-7", "--pr", "https://example.invalid/pr/7", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: needs-review", out)
         self.assertIn("source: https://www.notion.so/page", out)
@@ -263,11 +268,6 @@ class CheckTests(Scratch):
 
 
 class FinishTests(Scratch):
-    def evidence(self):
-        path = Path(self.tmp.name) / "evidence.md"
-        path.write_text("- ran the thing, saw it work\n")
-        return str(path)
-
     def started(self, extra=""):
         path = self.ticket("T-1", extra=extra)
         self.assertEqual(self.jtek("start", "T-1")[0], 0)
@@ -278,14 +278,14 @@ class FinishTests(Scratch):
         self.started()
         self.assertEqual(self.jtek("check", "T-1")[0], 0)
         self.commit_change("T-1", "more.txt")
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("checks have not passed on the current commit", out)
 
     def test_finish_needs_a_pr(self):
         self.started()
         self.jtek("check", "T-1")
-        code, out = self.jtek("finish", "T-1")
+        code, out = self.jtek("finish", "T-1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("no PR yet", out)
 
@@ -299,25 +299,25 @@ class FinishTests(Scratch):
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: needs-review", out)
         self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
-        code, out = self.jtek("finish", "T-1", "--no-pr")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertIn("outcome: review", out)
         self.assertIn("evidence.md", out.split("evidence:")[1].splitlines()[0])
         self.assertIn("No pull request", out)
         self.assertEqual(self.field(path, "status"), "Review")
 
-    def test_human_only_review_is_the_default(self):
-        path = self.started()
+    def test_a_ticket_can_waive_the_agent_review(self):
+        path = self.started("review: human\n")
         self.jtek("check", "T-1")
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: review", out)
-        self.assertIn("verdict: not requested", out)
+        self.assertIn("verdict: waived by the ticket", out)
         self.assertEqual(self.field(path, "status"), "Review")
 
-    def test_review_agent_without_verdict_is_needs_review(self):
-        path = self.started("review: agent\n")
+    def test_without_a_verdict_the_result_is_needs_review_by_default(self):
+        path = self.started()
         self.jtek("check", "T-1")
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: needs-review", out)
         self.assertEqual(self.field(path, "status"), "In Progress")
@@ -328,7 +328,7 @@ class FinishTests(Scratch):
         self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
         self.commit_change("T-1", "more.txt")
         self.jtek("check", "T-1")
-        _, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        _, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertIn("outcome: needs-review", out)
         self.assertEqual(self.field(path, "status"), "In Progress")
 
@@ -340,10 +340,10 @@ class FinishTests(Scratch):
         self.git("add", "other.txt")
         self.git("commit", "-q", "-m", "unrelated change on main")
         self.git("rebase", "-q", "main", cwd=self.worktree("T-1"))
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1, "checks must run again on the rebased commit")
         self.assertEqual(self.jtek("check", "T-1")[0], 0)
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: review", out)
         self.assertEqual(self.field(path, "status"), "Review")
@@ -357,7 +357,7 @@ class FinishTests(Scratch):
         notes = Path(self.tmp.name) / "notes.md"
         notes.write_text("- reproduces: crash on empty input\n")
         self.assertEqual(self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))[0], 0)
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("verdict is FAIL", out)
 
@@ -385,11 +385,11 @@ class FinishTests(Scratch):
         self.started()
         self.jtek("check", "T-1")
         self.fake_gh("OPEN 0000000000000000000000000000000000000000")
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("push the branch", out)
         self.fake_gh("OPEN " + self.git("rev-parse", "HEAD", cwd=self.worktree("T-1")))
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertNotIn("not verified", out)
 
@@ -397,14 +397,14 @@ class FinishTests(Scratch):
         self.started()
         self.jtek("check", "T-1")
         self.fake_gh("")
-        _, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        _, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertIn("not verified", out)
 
     def test_untracked_file_blocks_finish_and_is_named(self):
         self.started()
         (self.worktree("T-1") / "new_module.py").write_text("x = 1\n")
         self.jtek("check", "T-1")
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("new_module.py", out)
 
@@ -423,7 +423,7 @@ class FinishTests(Scratch):
         path = self.started()
         self.jtek("check", "T-1")
         self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
-        self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(self.field(path, "status"), "Review")
         self.assertEqual(self.jtek("start", "T-1")[0], 1, "Review is not startable")
         path.write_text(path.read_text().replace("status: Review", "status: Todo") + "- also handle empty input\n")
@@ -486,6 +486,25 @@ class FinishTests(Scratch):
         self.git("commit", "-q", "-m", "a test")
         out = self.result_after(lambda tree: (tree / "test_old.py").unlink())
         self.assertIn("test_old.py (test deleted)", out)
+
+    def test_evidence_is_required_short_and_kept(self):
+        self.started("review: human\n")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        self.assertEqual(code, 1)
+        self.assertIn("no evidence yet", out)
+        long_file = Path(self.tmp.name) / "long.md"
+        long_file.write_text("\n".join(f"- line {n}" for n in range(60)))
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", str(long_file))
+        self.assertEqual(code, 1)
+        self.assertIn("keep it to 40", out)
+        shot = Path(self.tmp.name) / "after.png"
+        shot.write_bytes(b"png")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1",
+                              "--evidence-file", self.evidence(), "--attach", str(shot))
+        self.assertEqual(code, 0, out)
+        self.assertIn("(+1 attached", out)
+        self.assertTrue((self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence" / "after.png").exists())
 
     def test_stop_refuses_uncommitted_files(self):
         self.started()

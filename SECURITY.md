@@ -18,6 +18,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 - It cannot tell who ran a command. An agent that ignores its instructions could commit to the base branch, edit a ticket file to `status: Todo`, or record a verdict on its own change. The skills forbid these. Do not put `jtek.py release` or `jtek.py verdict` on an always-allow list in the session that writes code.
 - It does not prove the reviewer is a different session. `verdict --by` is a label.
+- It does not check that the evidence is true. The evidence is the author's account, written for the human to read first. The checks and the reviewer's own runs are what test the change.
 
 ## What the skills do outside the repository
 

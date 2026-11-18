@@ -25,6 +25,7 @@ WAITING = ["input", "approval"]
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONFIG = "jtek.json"
 MAX_FAILED_RUNS = 3
+MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
 # Files a human should look at first when a ticket touches them.
 SENSITIVE = [
@@ -271,8 +272,11 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     check_line = " ".join(f"{r['name']}={r['status']}" for r in checks.get("results", [])) or "not run"
     if checks.get("sha"):
         check_line += f" @{checks['sha'][:7]}"
-    evidence = str(work / "evidence.md") if (work / "evidence.md").exists() else ("in the pull request" if meta.get("pr") else "-")
-    verdict_line = "none" if meta.get("review") else "not requested"
+    evidence = str(work / "evidence.md") if (work / "evidence.md").exists() else "-"
+    attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
+    if attached:
+        evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
+    verdict_line = "none" if meta.get("review") else "waived by the ticket"
     if verdict:
         verdict_line = f"{verdict['verdict']} by {verdict['by']} @{verdict['sha'][:7]}"
     lines = [
@@ -429,8 +433,8 @@ def cmd_start(args: argparse.Namespace) -> None:
         }
 
     meta["checks"] = selected
-    # The human merges every pull request. A second agent reviews only when the ticket asks for it.
-    meta["review"] = ticket["fields"].get("review", "").lower() == "agent"
+    # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
+    meta["review"] = ticket["fields"].get("review", "").lower() != "human"
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     mirror(meta, {"status": "In Progress", "waiting": ""})
@@ -441,7 +445,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"base: {meta['base']}")
     print(f"ticket: {work / 'ticket.md'}  (a copy taken now; read this file)")
     print(f"checks: {', '.join(selected)}")
-    print(f"review: {'agent (a non-author verdict is required)' if meta['review'] else 'human only'}")
+    print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
     print("next: work only inside the worktree, commit, then `jtek.py check " + ticket_id + "`")
@@ -544,13 +548,28 @@ def cmd_finish(args: argparse.Namespace) -> None:
     if checks.get("dirty") or checks.get("sha") != sha or not passed or not ran_all:
         raise Refuse(f"checks have not passed on the current commit {sha[:7]}; run `jtek.py check {args.id}`")
     if args.evidence_file:
-        (work / "evidence.md").write_text(Path(args.evidence_file).read_text())
-    if args.no_pr:
-        if not (work / "evidence.md").exists():
+        text = Path(args.evidence_file).read_text()
+        lines = [line for line in text.splitlines() if line.strip()]
+        if not lines:
+            raise Refuse("the evidence file is empty")
+        if len(lines) > MAX_EVIDENCE_LINES:
             raise Refuse(
-                "with no pull request there is nowhere else for the evidence; write what you ran and saw for each "
-                "`Done when` item to a file and pass --evidence-file <file>"
+                f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
+                f"{MAX_EVIDENCE_LINES}. Say what you ran and saw for each `Done when` item, and cut the rest"
             )
+        (work / "evidence.md").write_text(text)
+    for item in args.attach or []:
+        source = Path(item)
+        if not source.is_file():
+            raise Refuse(f"cannot attach {item}: not a file")
+        (work / "evidence").mkdir(exist_ok=True)
+        (work / "evidence" / source.name).write_bytes(source.read_bytes())
+    if not (work / "evidence.md").exists():
+        raise Refuse(
+            "no evidence yet; the human reviews the evidence before the diff. Write what you ran and saw for each "
+            "`Done when` item to a file and pass --evidence-file <file>. Use the same text as the pull request body"
+        )
+    if args.no_pr:
         pr_note = f" No pull request: the branch {meta['branch']} is local."
     elif not meta["pr"]:
         raise Refuse(
@@ -698,7 +717,8 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("id")
     finish.add_argument("--pr")
     finish.add_argument("--no-pr", action="store_true", help="the repository has no forge; the branch stays local")
-    finish.add_argument("--evidence-file", help="what was run and seen for each item; required with --no-pr")
+    finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; required once")
+    finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
 
     stop = sub.add_parser("stop", help="stop and wait for the human")

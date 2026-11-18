@@ -26,7 +26,7 @@ What should be true when this is done, and why.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
 - **`after`:** optional. Ids that must be Done first. Checked for local tickets only.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
-- **`review: agent`:** optional. The human adds it to a risky ticket. The change then needs a `PASS` from a session that did not write it before it reaches Review. Without it, the human's own review of the pull request is the review.
+- **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket.
 - **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.
 - **`## Out of scope`:** behaviour that must stay exactly as it is now.
 
@@ -42,7 +42,7 @@ What should be true when this is done, and why.
 | Backlog | Written down, not released. | Human or bot |
 | Todo | Released for an agent to take. | Human only |
 | In Progress | A session has claimed it. | `jtek.py start` |
-| Review | Checks pass and a pull request is open (or the repository has no forge). With `review: agent`, a non-author verdict is PASS too. | `jtek.py finish` |
+| Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | `jtek.py finish` |
 | Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | `jtek.py list --sync`, or the bot |
 | Cancelled | Dropped. | Human |
 
@@ -76,17 +76,17 @@ status: In Progress | Review
 outcome: review | needs-review | needs-human
 waiting: input | approval | -
 checks: lint=pass test=pass @1a2b3c4
-verdict: not requested | none | PASS by reviewer @1a2b3c4
+verdict: none | PASS by reviewer @1a2b3c4 | waived by the ticket
 pr: <url>
-evidence: in the pull request | <path> | -
+evidence: <path> (+2 attached in <folder>) | -
 attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: local:<path> | <url>
 note: <one line>
 ```
 
-- **`evidence`:** where to read what was run and seen for each `Done when` item. With no pull request it is a file under `work/<id>/`.
+- **`evidence`:** the file that says what was run and seen for each `Done when` item, at most 40 lines, and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff.
 - **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check or `setup` runs, a deleted test, and anything matching `watch` in `jtek.json`. `-` means none.
 - **`review`:** ready for the human to review and merge.
-- **`needs-review`:** only for a ticket with `review: agent`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.
+- **`needs-review`:** the usual result of the first `finish`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.
 - **`needs-human`:** read `waiting` and `note`.

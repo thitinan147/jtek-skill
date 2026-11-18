@@ -37,7 +37,7 @@ Use the real user path, not an internal function or a test-only endpoint. Captur
 
 ## 4. Say only what you saw
 
-- Write down the command or steps and the result for each item. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
+- Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.
 

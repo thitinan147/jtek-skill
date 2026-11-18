@@ -4,18 +4,18 @@
 
 This version is a rewrite. It does not read the `jt-queue/` files of earlier versions.
 
-- Ten skills, one per step: `jt-work` (start, check, stop, and the order of the steps, in playbooks for a feature, a bug, and a refactor), `jt-understand`, `jt-build`, `jt-debug`, `jt-verify`, `jt-cleanup`, `jt-ship`, `jt-review` (an optional non-author verdict), `jt-learn`, and `jt-harness` (builds a repository's verify guide, feature map, and `verify` check). The spec skills, `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, `gate.py`, and the `jt-queue/` files are removed.
+- Eleven skills, one per step: `jt-work` (start, check, stop, and the order of the steps, in playbooks for a feature, a bug, and a refactor), `jt-understand`, `jt-build`, `jt-debug`, `jt-verify`, `jt-cleanup`, `jt-ship`, `jt-review` (the non-author verdict), `jt-babysit` (conflicts, failing CI, and review comments on an open pull request), `jt-learn`, and `jt-harness` (builds a repository's verify guide, feature map, and `verify` check). The spec skills, `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, `gate.py`, and the `jt-queue/` files are removed.
 - jtek no longer names or calls any other skill set.
 - `jtek.py` replaces the gate. `start` claims a ticket and creates its worktree, `check` runs the declared checks, `verdict` records the reviewer's result, `finish` moves the ticket to Review, and `stop` waits for the human.
 - Several tickets can run at once, each in its own session and worktree. A claim is an atomic directory under the git common directory, so the same ticket cannot be taken twice.
 - Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` is the only file added to a repository.
 - A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot.
 - Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
-- Review requires passing checks on the current commit and a pull request. The human reviews and merges. A ticket with `review: agent` also needs a `PASS` or `PASS+NOTES` verdict on that commit from a session that did not write it. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
+- Review requires passing checks on the current commit, a `PASS` or `PASS+NOTES` verdict from a session that did not write the change, saved evidence, and a pull request. The human merges. A ticket with `review: human` waives the verdict. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
 - `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.
 - The result has an `attention:` line. It names `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check runs, a deleted test, and `watch` matches when the ticket changes them.
 - Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
-- `finish --evidence-file` saves what was run and seen. It is required with `--no-pr`, and the result has an `evidence:` line.
+- `finish --evidence-file` saves what was run and seen, in at most 40 lines. It is required, and it is also the pull request body. `--attach` keeps screenshots and output with it. The result has an `evidence:` line.
 - A green run on the base is remembered per base commit, so parallel tickets do not repeat it.
 - `list --sync` removes the worktree of each Done ticket, unless it has uncommitted files.
 - `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.

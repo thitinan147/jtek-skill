@@ -1,16 +1,17 @@
 # jtek-skill
 
-**The inner loop for a coding agent: take one ticket, build it in its own worktree, pass the project's real checks, and stop at a pull request for you to review and merge.**
+**The inner loop for a coding agent: take one ticket, build it in its own worktree, pass the project's real checks, get a verdict from a session that did not write it, and stop at a pull request with the evidence for you to merge.**
 
-`jtek-skill` is ten small [Agent Skills](https://agentskills.io/) and one Python script. `jt-work` runs the steps in order, and each step has its own skill. It uses no other skill set. Choosing the next ticket, starting sessions, and merging are the outer loop. You do those yourself, or a bot does them for you.
+`jtek-skill` is eleven small [Agent Skills](https://agentskills.io/) and one Python script. `jt-work` runs the steps in order, and each step has its own skill. It uses no other skill set. Choosing the next ticket, starting sessions, and merging are the outer loop. You do those yourself, or a bot does them for you.
 
 ## What it does
 
 - **One ticket, one session, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
 - **Tickets from a local file or from Notion.** Both are turned into the same snapshot, so the rest of the work is identical.
 - **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
-- **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit and a pull request link is given. You review and merge it. For a risky ticket, add `review: agent`, and a session that did not write the change must record `PASS` first. When `gh` can read the link, the script also requires the pull request to be open at that commit.
+- **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit, a session that did not write the change records `PASS`, the evidence is saved, and a pull request link is given. Add `review: human` to a small ticket to waive the verdict. When `gh` can read the link, the script also requires the pull request to be open at that commit.
 - **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
+- **You review the evidence first.** Every result points to at most 40 lines that say what was run and seen for each item, with screenshots or output attached.
 - **You merge.** There is no merge command.
 - **A red base is caught first.** `start` runs the checks on the base before any edit, and refuses when one already fails.
 - **The result says where to look first.** Its `attention:` line names a changed check script, CI config, lockfile, or deleted test.
@@ -58,7 +59,8 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 | Add a local ticket | `jtek.py add --title "..."`, fill in the file, set `status: Todo` |
 | Work a local ticket | `/jt-work T-12` |
 | Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection) |
-| Get a second look on a risky ticket | add `review: agent`, then `/jt-review T-12` in a fresh session |
+| Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
+| Fix a pull request after CI or review comments | set the ticket back to `Todo`, then `/jt-work T-12` |
 | See the local board and tidy finished worktrees | `jtek.py list --sync` |
 | Give a ticket back | `jtek.py release T-12` |
 
@@ -75,7 +77,8 @@ A bot runs the same commands. It reads the `jtek-result` block at the end of the
 | See it work | `jt-verify` | Runs the real thing and reports only what was seen |
 | Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
 | Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
-| Second look | `jt-review` | Optional. A session that did not write the change tries to break it |
+| Second look | `jt-review` | A session that did not write the change tries to break it, and records the verdict |
+| The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
 | After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
 | Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
 
@@ -88,7 +91,7 @@ Each skill also works on its own, for example `/jt-verify` on any change. Instal
 | Backlog | Written down, not released | You or the bot |
 | Todo | Released for an agent | You only |
 | In Progress | A session has claimed it | `jtek.py start` |
-| Review | Checks pass, pull request open | `jtek.py finish` |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open | `jtek.py finish` |
 | Done | Pull request merged | Read from the forge |
 | Cancelled | Dropped | You |
 
