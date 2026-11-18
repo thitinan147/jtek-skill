@@ -123,6 +123,17 @@ class StartTests(Scratch):
             self.assertEqual(self.field(paths[tid], "status"), "Review")
         self.assertEqual(self.git("status", "--porcelain"), "", "the main checkout stays untouched")
 
+    def test_a_ticket_for_another_repository_is_refused(self):
+        self.ticket("T-1", extra="repo: api\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("is for the repository `api`, and this one is `app`", out)
+        self.ticket("T-2", extra="repo: app\n")
+        self.assertEqual(self.jtek("start", "T-2")[0], 0)
+        self.write_config({"test": f"{sys.executable} -c pass"}, name="web")
+        self.ticket("T-3", extra="repo: web\n")
+        self.assertEqual(self.jtek("start", "T-3")[0], 0, "the name in jtek.json wins over the folder name")
+
     def test_only_todo_can_start(self):
         self.ticket("T-1", status="Backlog")
         code, out = self.jtek("start", "T-1")

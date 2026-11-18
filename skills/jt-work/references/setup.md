@@ -17,6 +17,8 @@ Two things go into the repository: `jtek.json`, and the `.jtek/` folder (how to 
 
 The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. Set `JTEK_BASE` to override it.
 
+**`name`** is optional. It is how tickets refer to this repository in their `repo:` line. Without it, the folder name is used.
+
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 
 Every `start` runs the checks once on the base before any edit, so keep the base green. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.

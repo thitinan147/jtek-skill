@@ -375,6 +375,13 @@ def cmd_start(args: argparse.Namespace) -> None:
     base = base_branch()
     declared = load_checks(base)
     selected = validate_ticket(ticket, declared)
+    wanted_repo = ticket["fields"].get("repo", "")
+    this_repo = str(load_config(base).get("name") or main_root().name)
+    if wanted_repo and wanted_repo != this_repo:
+        raise Refuse(
+            f"{ticket_id} is for the repository `{wanted_repo}`, and this one is `{this_repo}`. "
+            "Start the session in that repository"
+        )
     status = ticket["fields"].get("status", "")
     work = work_dir(ticket_id)
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
@@ -725,7 +732,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 fields["note"] = f"PR state: {state}"
         if args.sync and status == "Done":
             tidy_done(path.stem)
-        extra = "".join(f"  [{key}: {fields[key]}]" for key in ("area", "kind", "waiting", "after", "pr", "note") if fields.get(key))
+        extra = "".join(f"  [{key}: {fields[key]}]" for key in ("repo", "area", "kind", "waiting", "after", "pr", "note") if fields.get(key))
         rows.setdefault(status, []).append(f"  {path.stem}  {ticket['title']}{extra}")
     for status, items in rows.items():
         print(f"{status} ({len(items)})")

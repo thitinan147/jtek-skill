@@ -26,6 +26,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.
 - `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
 - `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
+- A ticket may name its repository with `repo:`. `start` refuses one that is for another repository, so one board can serve a frontend and a backend.
 - Every session ends with the same `jtek-result` block.
 - The skills never choose the next ticket and never merge.
 - `evals/` has two scenarios with hidden acceptance tests, a builder, and a grader that reads the repository an agent leaves behind.
