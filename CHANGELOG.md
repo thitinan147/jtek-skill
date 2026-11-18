@@ -14,6 +14,10 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - Review requires passing checks on the current commit, a `PASS` or `PASS+NOTES` verdict from a session that did not write the change, saved evidence, and a pull request. The human merges. A ticket with `review: human` waives the verdict. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
 - `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.
 - The result has an `attention:` line. It names `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check runs, a deleted test, and `watch` matches when the ticket changes them.
+- The evidence must account for every `Done when` item as `seen:` or `not run:`, and the result counts both.
+- The `attention:` line also names an existing test file that lost or changed lines. A ticket that touches an attention file cannot waive the review.
+- `finish` reads the pull request's CI state with `gh`, shows it as `ci:`, and refuses while it is failing.
+- The `jtek.json` template offers `secrets` and `audit` checks. `show` prints the check commands for the reviewer.
 - Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
 - `finish --evidence-file` saves what was run and seen, in at most 40 lines. It is required, and it is also the pull request body. `--attach` keeps screenshots and output with it. The result has an `evidence:` line.
 - A green run on the base is remembered per base commit, so parallel tickets do not repeat it.

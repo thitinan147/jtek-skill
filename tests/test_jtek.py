@@ -67,7 +67,7 @@ class Scratch(unittest.TestCase):
 
     def evidence(self):
         path = Path(self.tmp.name) / "evidence.md"
-        path.write_text("- ran the thing, saw it work\n")
+        path.write_text("1. seen: ran the thing, it works\n")
         return str(path)
 
     def field(self, path, key):
@@ -375,7 +375,7 @@ class FinishTests(Scratch):
         bin_dir = Path(self.tmp.name) / "bin"
         bin_dir.mkdir(exist_ok=True)
         fake = bin_dir / "gh"
-        fake.write_text(f"#!/bin/sh\necho {output}\n")
+        fake.write_text(f"#!/bin/sh\necho {output}\n")  # state, head commit, CI state
         fake.chmod(0o755)
         old_path = os.environ["PATH"]
         os.environ["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
@@ -505,6 +505,66 @@ class FinishTests(Scratch):
         self.assertEqual(code, 0, out)
         self.assertIn("(+1 attached", out)
         self.assertTrue((self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence" / "after.png").exists())
+
+    def test_evidence_must_account_for_every_item(self):
+        self.started("review: human\n")
+        self.jtek("check", "T-1")
+        vague = Path(self.tmp.name) / "vague.md"
+        vague.write_text("Everything works as expected.\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(vague))
+        self.assertEqual(code, 1)
+        self.assertIn("1. the thing works", out)
+        honest = Path(self.tmp.name) / "honest.md"
+        honest.write_text("1. not run: the app needs a database I do not have\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(honest))
+        self.assertEqual(code, 0, out)
+        self.assertIn("(0 seen, 1 not run)", out)
+
+    def test_red_ci_refuses_and_pending_ci_is_shown(self):
+        self.started("review: human\n")
+        self.jtek("check", "T-1")
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        self.fake_gh(f"OPEN {head} fail")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1)
+        self.assertIn("CI is failing", out)
+        self.fake_gh(f"OPEN {head} pending")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("ci: pending", out)
+
+    def test_a_waiver_is_ignored_when_sensitive_files_change(self):
+        path = self.started("review: human\n")
+        tree = self.worktree("T-1")
+        (tree / "jtek.json").write_text(json.dumps({"checks": {"test": "true"}}))
+        self.git("commit", "-qam", "touch the config", cwd=tree)
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("`review: human` is ignored", out)
+        self.assertEqual(self.field(path, "status"), "In Progress")
+
+    def test_attention_names_an_existing_test_that_lost_lines(self):
+        (self.repo / "test_old.py").write_text("def test_a():\n    assert 1 == 1\n")
+        self.git("add", "test_old.py")
+        self.git("commit", "-q", "-m", "a test")
+        out = self.result_after(lambda tree: (tree / "test_old.py").write_text("def test_a():\n    assert True\n"))
+        self.assertIn("test_old.py (1 test lines removed or changed)", out)
+
+    def test_adding_tests_to_an_existing_file_is_not_flagged(self):
+        (self.repo / "test_old.py").write_text("def test_a():\n    assert 1 == 1\n")
+        self.git("add", "test_old.py")
+        self.git("commit", "-q", "-m", "a test")
+        def add(tree):
+            with open(tree / "test_old.py", "a") as handle:
+                handle.write("\ndef test_b():\n    assert 2 == 2\n")
+        self.assertIn("attention: -", self.result_after(add))
+
+    def test_show_prints_the_check_commands(self):
+        self.started()
+        _, out = self.jtek("show", "T-1")
+        self.assertIn(f"check test: {sys.executable} -c pass", out)
 
     def test_stop_refuses_uncommitted_files(self):
         self.started()

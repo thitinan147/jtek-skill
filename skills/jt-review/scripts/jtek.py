@@ -229,6 +229,12 @@ def patch_id(worktree: Path, base: str) -> str:
 DIRTY_HINT = "commit them, or add build output to .gitignore"
 
 
+def done_when_items(work: Path) -> list[str]:
+    ticket = parse_ticket((work / "ticket.md").read_text())
+    return [m.group(1).strip() for line in ticket["sections"].get("done when", [])
+            if (m := re.match(r"^\s*-\s*(\S.*)$", line))]
+
+
 def attention(meta: dict) -> str:
     """Name what the human should look at before the diff: files that decide whether checks pass."""
     worktree = Path(meta["worktree"])
@@ -253,6 +259,11 @@ def attention(meta: dict) -> str:
         for token in tokens:
             run_by.setdefault(token.removeprefix("./"), name)
     watch = SENSITIVE + [w for w in config.get("watch", []) if isinstance(w, str)]
+    removed: dict[str, int] = {}
+    for line in git("diff", "--numstat", span, cwd=worktree, check=False).splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[1].isdigit():
+            removed[parts[2]] = int(parts[1])
     notes = []
     for path in changed:
         if path in run_by:
@@ -261,6 +272,9 @@ def attention(meta: dict) -> str:
             notes.append(path)
         elif path in deleted and "test" in path.lower():
             notes.append(f"{path} (test deleted)")
+        elif "test" in path.lower() and removed.get(path):
+            # Adding tests is normal. Removing or rewriting lines of an existing test is how a check gets weakened.
+            notes.append(f"{path} ({removed[path]} test lines removed or changed)")
     return ", ".join(notes) or "-"
 
 
@@ -272,7 +286,12 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     check_line = " ".join(f"{r['name']}={r['status']}" for r in checks.get("results", [])) or "not run"
     if checks.get("sha"):
         check_line += f" @{checks['sha'][:7]}"
-    evidence = str(work / "evidence.md") if (work / "evidence.md").exists() else "-"
+    evidence = "-"
+    if (work / "evidence.md").exists():
+        text = (work / "evidence.md").read_text()
+        seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
+        not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
+        evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run)"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
@@ -288,6 +307,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"checks: {check_line}",
         f"verdict: {verdict_line}",
         f"pr: {meta.get('pr') or '-'}",
+        f"ci: {meta.get('ci') or '-'}",
         f"evidence: {evidence}",
         f"attention: {attention(meta)}",
         f"branch: {meta['branch']}",
@@ -305,10 +325,11 @@ def cmd_init(args: argparse.Namespace) -> None:
     path = Path(git("rev-parse", "--show-toplevel")) / CONFIG
     if path.exists():
         raise Refuse(f"{path} already exists")
-    write_json(path, {"setup": "", "checks": {"lint": "", "types": "", "test": "", "verify": ""}})
+    write_json(path, {"setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
+    print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
     print("Delete a check the project does not have. The human commits this file on the base branch.")
 
 
@@ -557,6 +578,16 @@ def cmd_finish(args: argparse.Namespace) -> None:
                 f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
                 f"{MAX_EVIDENCE_LINES}. Say what you ran and saw for each `Done when` item, and cut the rest"
             )
+        items = done_when_items(work)
+        missing = [
+            f"{n}. {item}" for n, item in enumerate(items, 1)
+            if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
+        ]
+        if missing:
+            raise Refuse(
+                "the evidence must account for every `Done when` item. Start one line per item with its number and "
+                "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
+            )
         (work / "evidence.md").write_text(text)
     for item in args.attach or []:
         source = Path(item)
@@ -577,14 +608,23 @@ def cmd_finish(args: argparse.Namespace) -> None:
             "Only when this repository has no forge to open one on, pass --no-pr"
         )
     else:
-        state, head = pr_info(meta["pr"])
+        state, head, ci = pr_info(meta["pr"])
         if state != "unknown" and (state != "OPEN" or head != sha):
             raise Refuse(f"{meta['pr']} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
+        if ci == "fail":
+            raise Refuse(f"CI is failing on {meta['pr']}; a pull request with red CI is not ready for the human. Fix it first")
+        meta["ci"] = ci
+        write_json(work / "meta.json", meta)
         pr_note = "" if state == "OPEN" else " The PR link was not verified because gh could not read it."
     verdict = read_json(work / "verdict.json")
     if verdict.get("patch") != patch_id(Path(meta["worktree"]), meta["base"]):
         verdict = {}  # a verdict belongs to one change; new content needs a new verdict
-    if meta.get("review") and not verdict:
+    needs_verdict = meta.get("review")
+    if not needs_verdict and attention(meta) != "-":
+        # The human waived the review for a small ticket, but this one touches files that decide whether checks pass.
+        needs_verdict = True
+        pr_note += " `review: human` is ignored because the change touches the files on the attention line."
+    if needs_verdict and not verdict:
         print(write_result(args.id, "needs-review", "In Progress",
                            note="start a session that did not write this code and run jt-review for this id." + pr_note),
               end="")
@@ -623,21 +663,37 @@ def cmd_show(args: argparse.Namespace) -> None:
     print(f"ticket: {work_dir(args.id) / 'ticket.md'}")
     print(f"worktree: {meta['worktree']}")
     print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {meta['base']}...HEAD")
-    print(f"checks: {', '.join(meta['checks'])}")
+    try:
+        declared = load_checks(meta["base"])
+    except Refuse:
+        declared = {}
+    for name in meta["checks"]:
+        print(f"check {name}: {declared.get(name, '(no longer declared)')}")
     print(f"pr: {meta.get('pr') or '-'}")
 
 
-def pr_info(url: str) -> tuple[str, str]:
-    """Return (state, head commit) from the forge, or ("unknown", "") when gh cannot answer."""
+CI_QUERY = (
+    '.state + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
+    '| if length == 0 then "none" '
+    'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED") then "fail" '
+    'elif all(.[]; . == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass" else "pending" end)'
+)
+
+
+def pr_info(url: str) -> tuple[str, str, str]:
+    """Return (state, head commit, CI state) from the forge, or ("unknown", "", "unknown") when gh cannot answer.
+    CI state is pass, fail, pending, or none."""
     try:
         proc = subprocess.run(
-            ["gh", "pr", "view", url, "--json", "state,headRefOid", "-q", '.state + " " + .headRefOid'],
+            ["gh", "pr", "view", url, "--json", "state,headRefOid,statusCheckRollup", "-q", CI_QUERY],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return "unknown", ""
+        return "unknown", "", "unknown"
     parts = proc.stdout.split()
-    return (parts[0], parts[1]) if proc.returncode == 0 and len(parts) == 2 else ("unknown", "")
+    if proc.returncode != 0 or len(parts) < 2:
+        return "unknown", "", "unknown"
+    return parts[0], parts[1], parts[2] if len(parts) > 2 else "unknown"
 
 
 def tidy_done(ticket_id: str) -> None:
@@ -657,7 +713,9 @@ def cmd_list(args: argparse.Namespace) -> None:
         fields = ticket["fields"]
         status = fields.get("status", "Backlog")
         if args.sync and status == "Review" and fields.get("pr"):
-            state, _ = pr_info(fields["pr"])  # Done is read back from the forge, never assumed
+            state, _, ci = pr_info(fields["pr"])  # Done is read back from the forge, never assumed
+            if state == "OPEN" and ci in ("fail", "pending"):
+                fields["note"] = f"CI: {ci}"
             if state == "MERGED":
                 set_fields(path, {"status": "Done"})
                 status = "Done"

@@ -33,7 +33,7 @@ Run Start below first. Then pick the playbook from the ticket's `kind:` line. Wi
 - **bug:** [playbooks/bug.md](playbooks/bug.md). See it fail before you fix it.
 - **refactor:** [playbooks/refactor.md](playbooks/refactor.md). Lock the behaviour before you move code.
 
-The playbook gives the order and the step numbers. Copy its steps into your todo list before the first one, and do them in order. A step that does not apply stays in the list as `n/a: <reason>`. Do not drop it. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
+The playbook gives the order and the step numbers. Copy its steps into your todo list before the first one, and do them in order. With no todo tool, write the list in the session and update it as you go. A step that does not apply stays in the list as `n/a: <reason>`. Do not drop it. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
 
 ## Start
 
@@ -55,7 +55,7 @@ The playbook gives the order and the step numbers. Copy its steps into your todo
 
 ## Second look
 
-Every change needs a verdict from a session that did not write it, so the first `finish` prints `outcome: needs-review`. Passing checks and your own evidence are not a verdict. The only exception is a ticket where the human wrote `review: human`.
+Every change needs a verdict from a session that did not write it, so the first `finish` prints `outcome: needs-review`. Passing checks and your own evidence are not a verdict. The only exception is a ticket where the human wrote `review: human`, and the script ignores that line when the change touches a file on the `attention:` line.
 
 - **You can start a fresh session** that cannot see this chat: start one, tell it only to follow the `jt-review` skill for this id, wait, then run `jtek.py finish` again.
 - **You cannot:** end with the `needs-review` result. The launcher starts the reviewer.

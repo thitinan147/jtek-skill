@@ -26,9 +26,9 @@ What should be true when this is done, and why.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
 - **`after`:** optional. Ids that must be Done first. Checked for local tickets only.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
-- **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket.
+- **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket. The waiver is ignored when the change touches a file on the `attention:` line.
 - **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.
-- **`## Out of scope`:** behaviour that must stay exactly as it is now.
+- **`## Out of scope`:** behaviour that must stay exactly as it is now. Write the behaviour, not only the topic: "titles with non-ASCII letters give the same slug as today" is clearer than "non-ASCII letters".
 
 ## Where tickets live
 
@@ -78,15 +78,17 @@ waiting: input | approval | -
 checks: lint=pass test=pass @1a2b3c4
 verdict: none | PASS by reviewer @1a2b3c4 | waived by the ticket
 pr: <url>
-evidence: <path> (+2 attached in <folder>) | -
+ci: pass | fail | pending | none | unknown | -
+evidence: <path> (3 seen, 0 not run) (+2 attached in <folder>) | -
 attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: local:<path> | <url>
 note: <one line>
 ```
 
-- **`evidence`:** the file that says what was run and seen for each `Done when` item, at most 40 lines, and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff.
-- **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check or `setup` runs, a deleted test, and anything matching `watch` in `jtek.json`. `-` means none.
+- **`ci`:** the state of the pull request's checks on the forge, read with `gh`. `finish` refuses while it is `fail`.
+- **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones, with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
+- **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file whose path is written in a check or `setup` command, a deleted test file, an existing test file that lost or changed lines, and anything matching `watch` in `jtek.json`. Adding tests is not flagged. `-` means none.
 - **`review`:** ready for the human to review and merge.
 - **`needs-review`:** the usual result of the first `finish`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.
 - **`needs-human`:** read `waiting` and `note`.

@@ -24,7 +24,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 - **Worktrees:** `start` creates `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 - **State:** tickets, claims, check logs, review notes, and results are under `<git-common-dir>/jtek/` and are not committed. Check logs can contain secrets that a command printed.
-- **Network:** the script calls `gh pr view` (read-only) in `list --sync`. Nothing else.
+- **Network:** the script calls `gh pr view` (read-only) in `finish` and `list --sync`. Nothing else.
 - **Push:** the `jt-ship` skill tells the agent to push the ticket branch and open a pull request. This sends your code to that remote on purpose.
 - **Merge:** never. There is no command for it.
 - **Notion:** the agent reads the ticket page and writes its status and a result comment with whatever Notion connection it has. The script does not talk to Notion.

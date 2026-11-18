@@ -24,6 +24,8 @@ Do this before the first edit. The output is a short list, not a document. Keep 
 
 For each `Done when` item, write one line: how you will see it work for real. A declared check counts. So does running the feature and looking at the output. "The code looks right" does not count.
 
+An item that asks for a quality with no number or named standard ("fast", "secure", "accessible") cannot be seen working either.
+
 If an item has no way to be seen working, stop: `jtek.py stop <id> --waiting input --note "<which item cannot be verified>"`.
 
 ## 4. Settle what the ticket leaves open

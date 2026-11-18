@@ -11,10 +11,11 @@
 - **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
 - **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit, a session that did not write the change records `PASS`, the evidence is saved, and a pull request link is given. Add `review: human` to a small ticket to waive the verdict. When `gh` can read the link, the script also requires the pull request to be open at that commit.
 - **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
-- **You review the evidence first.** Every result points to at most 40 lines that say what was run and seen for each item, with screenshots or output attached.
+- **You review the evidence first.** Every result points to at most 40 lines that account for each `Done when` item as `seen` or `not run`, with screenshots or output attached. Evidence that skips an item is refused.
+- **Red CI never reaches you.** `finish` refuses while the pull request's checks are failing.
 - **You merge.** There is no merge command.
 - **A red base is caught first.** `start` runs the checks on the base before any edit, and refuses when one already fails.
-- **The result says where to look first.** Its `attention:` line names a changed check script, CI config, lockfile, or deleted test.
+- **The result says where to look first.** Its `attention:` line names a changed check script, CI config, lockfile, deleted test, or existing test that lost lines. A ticket that touches one cannot waive the review.
 - **One result format.** Every session ends with the same short block, whether you ran it by hand or a bot launched it.
 
 ## Install
@@ -34,7 +35,7 @@ npx skills add thitinan147/jtek-skill
 /plugin install jtek@jtek-skill
 ```
 
-Requirements: `git` 2.31 or later and Python 3.10 or later. `gh` is optional and is used only to read whether a pull request is merged.
+Requirements: `git` 2.31 or later and Python 3.10 or later. `gh` is optional. It is used only to read a pull request's state, head commit, and CI result.
 
 ## Set up a repository
 
