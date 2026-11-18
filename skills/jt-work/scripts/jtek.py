@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -741,14 +742,10 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     """Say what is set up and what is missing, in the order to fix it. Read-only: it runs no check."""
     rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
 
-    def tool(command: list[str]) -> str:
-        try:
-            proc = subprocess.run(command, capture_output=True, text=True, timeout=30)
-        except (OSError, subprocess.TimeoutExpired):
-            return ""
-        return (proc.stdout + proc.stderr).strip() if proc.returncode == 0 else ""
-
-    found = re.search(r"(\d+)\.(\d+)", tool(["git", "--version"]))
+    try:
+        found = re.search(r"(\d+)\.(\d+)", git("--version", check=False))
+    except OSError:
+        raise Refuse("git is not installed; install git 2.31 or later") from None
     version = (int(found.group(1)), int(found.group(2))) if found else (0, 0)
     rows.append(("ok" if version >= (2, 31) else "missing", f"git {version[0]}.{version[1]}", "install git 2.31 or later"))
     rows.append(("ok" if sys.version_info >= (3, 10) else "missing",
@@ -777,15 +774,17 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             rows.append(("ok", "checks: " + ", ".join(checks), ""))
         rows.append(("ok" if "verify" in checks and not empty else "optional", "a `verify` check that runs the real app",
                      "run the jt-harness skill once; without it a passing check only means the code compiles"))
-        guide = subprocess.run(["git", "cat-file", "-e", f"{base}:.jtek/verify.md"], capture_output=True).returncode == 0
+        guide = bool(git("rev-parse", "--verify", "--quiet", f"{base}:.jtek/verify.md", check=False))
         rows.append(("ok" if guide else "optional", f".jtek/verify.md on {base}",
                      "run the jt-harness skill once, review what it wrote, and commit it"))
-    rows.append(("ok" if tool(["git", "remote", "get-url", "origin"]) else "optional", "a remote named origin",
+    rows.append(("ok" if git("remote", "get-url", "origin", check=False) else "optional", "a remote named origin",
                  "without a forge, tickets end with `finish --no-pr` and the human sets Done"))
-    rows.append(("ok" if tool(["gh", "auth", "status"]) else "optional", "`gh` is installed and signed in",
-                 "run `gh auth login`; it is needed to open pull requests and to read their state"))
+    rows.append(("ok" if shutil.which("gh") else "optional", "`gh` is installed",
+                 "install the GitHub CLI; it is needed to open pull requests and to read their state"))
     for state, what, todo in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
+    if shutil.which("gh"):
+        print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
     print("not checked: Notion. This script cannot see it. Ask your agent to read the board with its Notion tool\n"
           "         and compare the properties with references/notion.md of the jt-work skill.")
     if any(state == "missing" for state, _, _ in rows):
