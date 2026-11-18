@@ -8,6 +8,7 @@ Standard library only. Python 3.10+.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -24,6 +25,11 @@ ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONFIG = "jtek.json"
 MAX_FAILED_RUNS = 3
 DEFAULT_TIMEOUT = 1800
+# Files a human should look at first when a ticket touches them.
+SENSITIVE = [
+    CONFIG, ".jtek/*", ".github/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "poetry.lock", "uv.lock", "Cargo.lock", "go.sum", "Gemfile.lock",
+]
 
 TEMPLATE = """# {title}
 id: {id}
@@ -79,15 +85,22 @@ def base_branch() -> str:
     raise Refuse("cannot find the base branch; set JTEK_BASE")
 
 
-def load_checks(base: str) -> dict[str, str]:
-    """Checks come from the base branch, never from the ticket or the worktree."""
+def load_config(base: str) -> dict:
+    """The config comes from the base branch, never from the ticket or the worktree."""
     proc = subprocess.run(["git", "show", f"{base}:{CONFIG}"], capture_output=True, text=True)
     if proc.returncode != 0:
         raise Refuse(f"{CONFIG} is not committed on {base}; run `jtek.py init`, fill it in, and have the human merge it")
     try:
-        checks = json.loads(proc.stdout).get("checks", {})
+        config = json.loads(proc.stdout)
     except json.JSONDecodeError as err:
         raise Refuse(f"{CONFIG} on {base} is not valid JSON: {err}") from err
+    if not isinstance(config, dict):
+        raise Refuse(f"{CONFIG} on {base} must be a JSON object")
+    return config
+
+
+def load_checks(base: str) -> dict[str, str]:
+    checks = load_config(base).get("checks", {})
     if not isinstance(checks, dict) or not checks:
         raise Refuse(f"{CONFIG} on {base} declares no checks; a ticket needs at least one real check")
     for name, cmd in checks.items():
@@ -214,6 +227,41 @@ def patch_id(worktree: Path, base: str) -> str:
 DIRTY_HINT = "commit them, or add build output to .gitignore"
 
 
+def attention(meta: dict) -> str:
+    """Name what the human should look at before the diff: files that decide whether checks pass."""
+    worktree = Path(meta["worktree"])
+    if not worktree.is_dir():
+        return "-"
+    span = f"{meta['base']}...HEAD"
+    changed = git("diff", "--name-only", span, cwd=worktree, check=False).splitlines()
+    deleted = git("diff", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
+    try:
+        config = load_config(meta["base"])
+    except Refuse:
+        config = {}
+    commands = dict(config.get("checks", {})) if isinstance(config.get("checks"), dict) else {}
+    if config.get("setup"):
+        commands["setup"] = config["setup"]
+    run_by: dict[str, str] = {}
+    for name, command in commands.items():
+        try:
+            tokens = shlex.split(str(command))
+        except ValueError:
+            continue
+        for token in tokens:
+            run_by.setdefault(token.removeprefix("./"), name)
+    watch = SENSITIVE + [w for w in config.get("watch", []) if isinstance(w, str)]
+    notes = []
+    for path in changed:
+        if path in run_by:
+            notes.append(f"{path} (run by `{run_by[path]}`)")
+        elif any(fnmatch.fnmatch(path, pattern) for pattern in watch):
+            notes.append(path)
+        elif path in deleted and "test" in path.lower():
+            notes.append(f"{path} (test deleted)")
+    return ", ".join(notes) or "-"
+
+
 def write_result(ticket_id: str, outcome: str, status: str, note: str = "", waiting: str = "") -> str:
     work = work_dir(ticket_id)
     meta = load_meta(ticket_id)
@@ -234,6 +282,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"checks: {check_line}",
         f"verdict: {verdict_line}",
         f"pr: {meta.get('pr') or '-'}",
+        f"attention: {attention(meta)}",
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
         f"note: {note or '-'}",
@@ -249,8 +298,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     path = Path(git("rev-parse", "--show-toplevel")) / CONFIG
     if path.exists():
         raise Refuse(f"{path} already exists")
-    write_json(path, {"checks": {"lint": "", "types": "", "test": "", "verify": ""}})
+    write_json(path, {"setup": "", "checks": {"lint": "", "types": "", "test": "", "verify": ""}})
     print(f"wrote {path}")
+    print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("Delete a check the project does not have. The human commits this file on the base branch.")
 
@@ -341,18 +391,26 @@ def cmd_start(args: argparse.Namespace) -> None:
         except Refuse:
             work.rmdir()
             raise
+        logs = state_dir() / "baseline" / ticket_id
+
+        def give_back(reason: str, log: Path) -> Refuse:
+            git("worktree", "remove", "--force", str(worktree))
+            git("branch", "-D", branch)
+            work.rmdir()
+            return Refuse(f"{reason}, so {ticket_id} was not started and is still Todo.\nlog: {log}\n{log_tail(log)}")
+
+        setup = load_config(base).get("setup", "")
+        if isinstance(setup, str) and setup.strip():
+            # A new worktree has no installed dependencies. Install them before anything runs.
+            if not run_command(setup, worktree, logs / "setup.log"):
+                raise give_back(f"the setup command from {CONFIG} failed in the new worktree", logs / "setup.log")
         if not args.no_baseline:
             # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
-            logs = state_dir() / "baseline" / ticket_id
             _, failed = run_checks(worktree, selected, declared, logs)
             if failed:
-                git("worktree", "remove", "--force", str(worktree))
-                git("branch", "-D", branch)
-                work.rmdir()
-                raise Refuse(
-                    f"check `{failed}` fails on {base} before any change, so {ticket_id} was not started "
-                    f"and is still Todo. Fix {base} first, or pass --no-baseline.\nlog: {logs / (failed + '.log')}\n"
-                    + log_tail(logs / f"{failed}.log")
+                raise give_back(
+                    f"check `{failed}` fails on {base} before any change (fix {base} first, or pass --no-baseline)",
+                    logs / f"{failed}.log",
                 )
         meta = {
             "id": ticket_id, "kind": kind, "source": source,
@@ -378,24 +436,28 @@ def cmd_start(args: argparse.Namespace) -> None:
     print("next: work only inside the worktree, commit, then `jtek.py check " + ticket_id + "`")
 
 
+def run_command(command: str, worktree: Path, log: Path) -> bool:
+    """Run one declared command without a shell. The ticket id is in the environment so that
+    a command can pick its own port or data folder when several worktrees run at once."""
+    env = {**os.environ, "JTEK_TICKET": worktree.name, "JTEK_WORKTREE": str(worktree)}
+    log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(log, "w") as handle:
+            proc = subprocess.run(shlex.split(command), cwd=worktree, stdout=handle,
+                                  stderr=subprocess.STDOUT, timeout=DEFAULT_TIMEOUT, env=env)
+        return proc.returncode == 0
+    except (OSError, ValueError, subprocess.TimeoutExpired) as err:
+        with open(log, "a") as handle:
+            handle.write(f"\njtek: {err}\n")
+        return False
+
+
 def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path) -> tuple[list[dict], str | None]:
     """Run checks in order and stop at the first failure. Return the results and the failed name."""
-    logs.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []
     for name in names:
         started = time.time()
-        log = logs / f"{name}.log"
-        try:
-            with open(log, "w") as handle:
-                proc = subprocess.run(
-                    shlex.split(declared[name]), cwd=worktree, stdout=handle,
-                    stderr=subprocess.STDOUT, timeout=DEFAULT_TIMEOUT,
-                )
-            ok = proc.returncode == 0
-        except (OSError, subprocess.TimeoutExpired) as err:
-            with open(log, "a") as handle:
-                handle.write(f"\njtek: {err}\n")
-            ok = False
+        ok = run_command(declared[name], worktree, logs / f"{name}.log")
         results.append({"name": name, "status": "pass" if ok else "fail", "seconds": round(time.time() - started, 1)})
         if not ok:
             return results, name

@@ -13,6 +13,7 @@
 - **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
 - **You merge.** There is no merge command.
 - **A red base is caught first.** `start` runs the checks on the base before any edit, and refuses when one already fails.
+- **The result says where to look first.** Its `attention:` line names a changed check script, CI config, lockfile, or deleted test.
 - **One result format.** Every session ends with the same short block, whether you ran it by hand or a bot launched it.
 
 ## Install
@@ -43,7 +44,7 @@ python3 <skill-dir>/scripts/jtek.py init
 This writes `jtek.json`. Fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
 ```
 
 Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive the app, and a feature map) and proposes the `verify` check. Do this before agents work tickets: without it, a passing check only means the code compiles.

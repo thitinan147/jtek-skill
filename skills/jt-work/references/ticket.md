@@ -53,7 +53,7 @@ What should be true when this is done, and why.
 
 ## Claims and parallel work
 
-Before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. Pass `--no-baseline` to skip this when the checks are slow.
+After creating the worktree, `start` runs the `setup` command from `jtek.json`, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. Pass `--no-baseline` to skip this when the checks are slow.
 
 `start` creates `<git-common-dir>/jtek/work/<id>/`. Creating a directory is atomic, so when two sessions start the same id, one is refused. Each ticket gets the worktree `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 
@@ -78,11 +78,13 @@ waiting: input | approval | -
 checks: lint=pass test=pass @1a2b3c4
 verdict: not requested | none | PASS by reviewer @1a2b3c4
 pr: <url>
+attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: local:<path> | <url>
 note: <one line>
 ```
 
+- **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check or `setup` runs, a deleted test, and anything matching `watch` in `jtek.json`. `-` means none.
 - **`review`:** ready for the human to review and merge.
 - **`needs-review`:** only for a ticket with `review: agent`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.
 - **`needs-human`:** read `waiting` and `note`.

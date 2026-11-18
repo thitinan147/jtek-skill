@@ -38,8 +38,8 @@ class Scratch(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=cwd or self.repo, check=True,
                               capture_output=True, text=True).stdout.strip()
 
-    def write_config(self, checks):
-        (self.repo / "jtek.json").write_text(json.dumps({"checks": checks}))
+    def write_config(self, checks, **extra):
+        (self.repo / "jtek.json").write_text(json.dumps({"checks": checks, **extra}))
         self.git("add", "jtek.json")
         self.git("commit", "-q", "-m", "checks")
 
@@ -217,6 +217,25 @@ class CheckTests(Scratch):
         self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
         self.ticket("T-1")
         self.assertEqual(self.jtek("start", "T-1", "--no-baseline")[0], 0)
+
+    def test_setup_runs_in_the_new_worktree_before_the_checks(self):
+        marker = Path(self.tmp.name) / "setup-ran"
+        code = f"import os;open(r'{marker}','w').write(os.environ['JTEK_TICKET']+' '+os.getcwd())"
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup=f'{sys.executable} -c "{code}"')
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        ticket, cwd = marker.read_text().split(" ", 1)
+        self.assertEqual(ticket, "T-1")
+        self.assertEqual(Path(cwd).resolve(), self.worktree("T-1").resolve())
+
+    def test_failed_setup_gives_the_claim_back(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup=f"{sys.executable} -c raise(SystemExit(1))")
+        path = self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("setup command", out)
+        self.assertEqual(self.field(path, "status"), "Todo")
+        self.assertFalse(self.worktree("T-1").exists())
 
     def test_fail_fast_in_declared_order(self):
         self.write_config({"lint": f"{sys.executable} -c raise(SystemExit(1))", "test": f"{sys.executable} -c pass"})
@@ -407,6 +426,41 @@ class FinishTests(Scratch):
         self.assertEqual(self.jtek("stop", "T-1", "--waiting", "input", "--note", "stuck")[0], 0)
         self.jtek("start", "T-1")
         self.assertIn("(1/3 failed runs)", self.jtek("check", "T-1")[1])
+
+    def result_after(self, change):
+        self.started()
+        tree = self.worktree("T-1")
+        change(tree)
+        self.git("add", "-A", cwd=tree)
+        self.git("commit", "-q", "-m", "more", cwd=tree)
+        self.jtek("check", "T-1")
+        return self.jtek("finish", "T-1", "--no-pr")[1]
+
+    def test_attention_is_empty_for_an_ordinary_change(self):
+        self.assertIn("attention: -", self.result_after(lambda tree: (tree / "a.txt").write_text("a")))
+
+    def test_attention_names_the_config_and_ci_files(self):
+        def change(tree):
+            (tree / "jtek.json").write_text(json.dumps({"checks": {"test": "true"}}))
+            (tree / ".github").mkdir()
+            (tree / ".github" / "ci.yml").write_text("x")
+        out = self.result_after(change)
+        self.assertIn("jtek.json", out.split("attention:")[1].splitlines()[0])
+        self.assertIn(".github/ci.yml", out.split("attention:")[1].splitlines()[0])
+
+    def test_attention_names_a_script_that_a_check_runs(self):
+        (self.repo / "verify_it.py").write_text("raise SystemExit(0)\n")
+        self.git("add", "verify_it.py")
+        self.write_config({"verify": f"{sys.executable} verify_it.py"})
+        out = self.result_after(lambda tree: (tree / "verify_it.py").write_text("raise SystemExit(0)  # weakened\n"))
+        self.assertIn("verify_it.py (run by `verify`)", out)
+
+    def test_attention_names_a_deleted_test(self):
+        (self.repo / "test_old.py").write_text("x = 1\n")
+        self.git("add", "test_old.py")
+        self.git("commit", "-q", "-m", "a test")
+        out = self.result_after(lambda tree: (tree / "test_old.py").unlink())
+        self.assertIn("test_old.py (test deleted)", out)
 
     def test_stop_refuses_uncommitted_files(self):
         self.started()

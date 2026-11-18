@@ -12,6 +12,10 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot.
 - Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
 - Review requires passing checks on the current commit and a pull request. The human reviews and merges. A ticket with `review: agent` also needs a `PASS` or `PASS+NOTES` verdict on that commit from a session that did not write it. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
+- `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.
+- The result has an `attention:` line. It names `jtek.json`, `.jtek/`, CI config, lockfiles, a file that a check runs, a deleted test, and `watch` matches when the ticket changes them.
+- Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
+- `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.
 - `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
 - `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
 - Every session ends with the same `jtek-result` block.

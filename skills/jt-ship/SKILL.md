@@ -15,7 +15,7 @@ Ship only after `jtek.py check <id>` passed on the current commit and you have s
    - What changed and why, in two or three sentences.
    - Each `Done when` item, with the command or steps you ran and what you saw. Attach the screenshot or output when there is one.
    - Choices you made where the ticket was open.
-   - What you could not run, and anything the reviewer should look at first.
+   - What you could not run, and anything the reviewer should look at first. If you changed a file that a check runs, CI config, a lockfile, or deleted a test, say so and say why.
 4. **The repository has no forge to open a pull request on:** do not push. Use `--no-pr` in the next step.
 5. Never pass a link you did not get from the forge.
 
