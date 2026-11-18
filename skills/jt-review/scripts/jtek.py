@@ -469,7 +469,9 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
-    print("next: work only inside the worktree, commit, then `jtek.py check " + ticket_id + "`")
+    kind = ticket["fields"].get("kind", "") or "not set; decide from the Goal"
+    print(f"kind: {kind}")
+    print("next: follow the playbook for this kind, step by step. Work only inside the worktree")
 
 
 def run_command(command: str, worktree: Path, log: Path) -> bool:

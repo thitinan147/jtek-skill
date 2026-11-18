@@ -20,7 +20,7 @@ Write it for a person who has not seen the session, in at most 40 lines, not cou
 Save the evidence to a temporary file outside the worktree. Add `--attach <file>` for each screenshot, recording, or output file that shows the change working.
 
 - **The repository has a forge:** push the branch `jtek/<id>` and open a pull request that is ready for review, not a draft. Title: `type(scope): summary`. The evidence file is the body. Then run `jtek.py finish <id> --pr <url> --evidence-file <file>`. When `gh` is installed, the script checks that the pull request is open at your current commit. Never pass a link you did not get from the forge.
-- **The repository has no forge:** do not push. Run `jtek.py finish <id> --no-pr --evidence-file <file>`.
+- **The repository has no forge:** do not push. Run `jtek.py finish <id> --no-pr --evidence-file <file>`. The human then reads the evidence and reviews the local branch `jtek/<id>`.
 
 ## 3. Read the result
 

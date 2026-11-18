@@ -19,7 +19,7 @@ When you start from a bug you reproduced, and no check has failed, your reproduc
 
 ## 2. Find the cause
 
-1. Ask what changed. Compare with the base branch: `git diff <base>...HEAD`.
+1. If it worked before your change, ask what changed: `git diff <base>...HEAD`. If the bug is already on the base branch, skip this.
 2. Find a nearby case that works, and list what differs from the failing one.
 3. Follow the wrong value back to where it first becomes wrong.
 4. State one cause as a sentence that could be shown false: "X fails because Y".

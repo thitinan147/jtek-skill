@@ -5,7 +5,7 @@ description: Reads a ticket and the code it touches before any edit, and names h
 
 # jt-understand
 
-Do this before the first edit. The output is a short list, not a document. Keep it in the session. Do not write a plan file.
+Do this before the first edit. The output is a short list, not a document. Write it as text in the session, where the human can see it. Do not write a plan file.
 
 ## 1. Read
 
@@ -30,7 +30,7 @@ If an item has no way to be seen working, stop: `jtek.py stop <id> --waiting inp
 
 ## 4. Settle what the ticket leaves open
 
-- **Small and easy to change later:** choose the reading that changes less. Write the choice down for the evidence.
+- **Small and easy to change later:** choose the reading that changes less of what users see today, even when it takes more code. Write the choice down for the evidence.
 - **Costly to undo, or it changes what the ticket is for:** stop with `--waiting input` and ask one question.
 
 ## Done when

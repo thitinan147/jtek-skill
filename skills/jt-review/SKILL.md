@@ -23,7 +23,7 @@ You are the reviewer. You did not write this change. If this session wrote any o
 3. Check that the diff stays inside the ticket and out of `Out of scope`.
 4. Check that no test was deleted, skipped, or loosened, and that no check was weakened.
 5. For each line the change deleted, ask what it was there for. Read its history when it looks like a guard.
-6. Test the author's tests once. Break one changed line on purpose, run the tests, and see one fail. Then undo the break and confirm the worktree is clean. If no test fails, that is a finding.
+6. Test the author's tests once. Break one changed line on purpose and run every declared check. If no check fails, that is a finding. A check that still passes does not cover this change: name it in a note. Then undo the break and confirm the worktree is clean.
 
 ## 3. Count only what reproduces
 
@@ -33,7 +33,7 @@ A behaviour change you can show but that the ticket may have intended is a note.
 
 ## 4. Record the verdict
 
-Write the findings first, then the notes, as a short Markdown list in a temporary file outside the worktree. With no findings, write `Findings: none`. Then run one of:
+Write the findings first, then the notes, as a short Markdown list in a file in your system's temporary folder, outside the worktree. With no findings, write `Findings: none`. Then run one of:
 
 - `jtek.py verdict <id> PASS --by <your agent or session name>`: every `Done when` item is true, and nothing reproduces.
 - `jtek.py verdict <id> PASS+NOTES --by <name> --notes-file <file>`: the same, with notes the human should read.
