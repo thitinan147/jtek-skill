@@ -1,226 +1,110 @@
 # jtek-skill
 
-**Let your coding agent draft a spec, work a task queue, and stop at review until a script, not the agent, says the work is ready.**
+**The inner loop for a coding agent: take one ticket, build it in its own worktree, pass the project's real checks, and stop at a pull request for you to review and merge.**
 
-`jtek-skill` is a set of [Agent Skills](https://agentskills.io/). One group drafts a story into `spec.md` (acceptance criteria and test steps) and leaves every decision with a person. The other runs a task queue in `jt-queue/`: the agent commits on a branch, and a deterministic Python gate ([`gate.py`](skills/jt-work/scripts/gate.py)) checks the diff, tests, and lint and typecheck when the board sets them. Only then does the task move to `review:`. You hold the merge key.
+`jtek-skill` is ten small [Agent Skills](https://agentskills.io/) and one Python script. `jt-work` runs the steps in order, and each step has its own skill. It uses no other skill set. Choosing the next ticket, starting sessions, and merging are the outer loop. You do those yourself, or a bot does them for you.
 
-*Constrain the outcome, not the agent. The AI proposes. People decide.*
+## What it does
 
-The docs use a [Diátaxis layout](docs/index.md).
-
-## Why
-
-- Agents say "done" when they are not. Here "done" is something a script checks.
-- You do not script every step. The agent chooses how; the gate checks what came out.
-- Spec text is a fact with a source, a proposal, or a question. An approval or a decision signed by an AI fails `check.py`.
-- Queue files are plain text under `jt-queue/`. Spec files are plain Markdown. No service and no account. Dependencies are `git` and Python.
+- **One ticket, one session, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
+- **Tickets from a local file or from Notion.** Both are turned into the same snapshot, so the rest of the work is identical.
+- **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
+- **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit and a pull request link is given. You review and merge it. For a risky ticket, add `review: agent`, and a session that did not write the change must record `PASS` first. When `gh` can read the link, the script also requires the pull request to be open at that commit.
+- **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
+- **You merge.** There is no merge command.
+- **One result format.** Every session ends with the same short block, whether you ran it by hand or a bot launched it.
 
 ## Install
 
-Pick **one** method. Installing both the plugin and the skills CLI gives you every skill twice.
+Pick one method.
 
-**Any agent (Claude Code, Codex, Cursor, ...)** with [skills.sh](https://skills.sh/thitinan147/jtek-skill):
+**Any agent (Claude Code, Cursor, Antigravity, Codex, ...)** with [skills.sh](https://skills.sh/thitinan147/jtek-skill):
 
 ```bash
-# Everything, pinned (recommended)
-npx skills add thitinan147/jtek-skill#v25.0.0
-
-# Or follow the default branch
 npx skills add thitinan147/jtek-skill
 ```
 
-Add `-g` to install for all your projects instead of the current one.
-
-**Claude Code plugin** (installs the whole set; commands are also `/jtek:<name>`):
+**Claude Code plugin:**
 
 ```text
-/plugin marketplace add thitinan147/jtek-skill#v25.0.0
+/plugin marketplace add thitinan147/jtek-skill
 /plugin install jtek@jtek-skill
 ```
 
-Without `#v25.0.0` the marketplace follows the default branch.
+Requirements: `git` 2.31 or later and Python 3.10 or later. `gh` is optional and is used only to read whether a pull request is merged.
 
-### Install what you need
-
-Each skill is a folder of its own. The name is a separate argument, with a space: `--skill jt-help`. (`--skill=jt-help` is ignored by current installers and installs every skill.)
-
-| Skill | Command | Who | Install just this |
-|---|---|---|---|
-| [`jt-help`](skills/jt-help/SKILL.md) | `/jt-help` | anyone | `npx skills add thitinan147/jtek-skill --skill jt-help` |
-| [`jt-spec-split`](skills/jt-spec-split/SKILL.md) | `/jt-spec-split` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-spec-split` |
-| [`jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | `/jt-spec-ac` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-spec-ac` |
-| [`jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | `/jt-spec-handoff` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-spec-handoff` |
-| [`jt-board`](skills/jt-board/SKILL.md) | `/jt-board` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-board` |
-| [`jt-setup`](skills/jt-setup/SKILL.md) | `/jt-setup` | human confirms the commands | `npx skills add thitinan147/jtek-skill --skill jt-setup` |
-| [`jt-add-task`](skills/jt-add-task/SKILL.md) | `/jt-add-task` | human approves each task | `npx skills add thitinan147/jtek-skill --skill jt-add-task` |
-| [`jt-work`](skills/jt-work/SKILL.md) | `/jt-work` | agent | `npx skills add thitinan147/jtek-skill --skill jt-work` |
-| [`jt-review`](skills/jt-review/SKILL.md) | `/jt-review` | **human-only** | `npx skills add thitinan147/jtek-skill --skill jt-review` |
-
-Pin the same way: `npx skills add thitinan147/jtek-skill#v25.0.0 --skill jt-work`.
-
-In Codex the commands are `$jt-help`, `$jt-setup`, and so on.
-
-Then read [SECURITY.md](SECURITY.md). The gate runs your test command, so a human must approve it first. **New here? Read [Getting started](docs/getting-started.md).** Spec drafts: [Spec documents](docs/spec.md).
-
-## Quick start
-
-```text
-/jt-help
-/jt-setup
-/jt-add-task Add rate limiting to POST /api/login
-/jt-work
-/jt-review
-```
-
-A story, before or beside the queue:
-
-```text
-/jt-spec-split room-booking
-/jt-spec-ac BOOK-12-book-room
-/jt-spec-handoff BOOK-12-book-room
-/jt-board room-booking
-```
-
-## How it works
-
-```text
-Spec (human types the command)          Queue
-/jt-spec-split   flow → story map        /jt-setup      board.md and AGENTS.md, human confirms commands
-/jt-spec-ac      story, rules, AC        /jt-add-task   brief, then tasks
-/jt-spec-handoff test steps              /jt-work       ready tasks, in order
-/jt-board        board.html, or flow     /jt-review     human: merge / send-back / drop
-```
-
-1. **Commit the queue context; keep secrets local.** Commit `jt-queue/board.md`, `brief.md`, `claims.md` (who claimed a task, when, and which paths are leased), `team-lessons.md` (what went wrong, how to fix it, and `enforced by`), `tasks/<id>/task.md`, `plan.md` (including `## decisions`), and `tasks/<id>/handoff.md` (a short resume note) so another machine can resume. Leave `lessons.md` uncommitted (notes for this agent, not the shared file). The second time the same shared lesson is recorded, the gate proposes a denylist line, a lint rule, a gate check, or a test. A human runs `gate.py lesson-approve`. Until then it is not a rule. A refusal prints `fix:` when the fix is known. After approval, a follow-up chore can list the existing hits. Changed lines fail immediately. Lines the diff did not touch do not fail while that chore is open. Leave `.git/jt-queue/` uncommitted: `approved-commands.json` is permission to run shell commands and must not travel in a commit, `logs/` can hold secrets, `attempts.json` is this machine's round counter, `gate-runs.jsonl` is this machine's gate pass/fail log (id, time, result, and reason; never command output), and `worktrees/` is this machine's task checkout. Also leave `.env` files and private keys out. `/jt-work` is one command. `--loop` plans a batch and does not merge. With no id it works every ready task in board order and skips a blocked one and one owned by someone else. `/jt-work BOOK-12` works only that ticket. It records the owner, leases `files:`, and uses one git worktree per task. A stale claim is shown and is not taken until a human runs `gate.py release --id`. That release prints the path of `handoff.md`. When `/jt-work` stops without a merge (a gate failure, `ask:`, `send-back:`, release, the session ending, or the round cap), it replaces that note: state, what was done, what is left, the failing gate step and a one-line error, files touched, and the next command. The next run reads the note as data, not as instructions. The note does not copy command logs. Spec files live under `scrum-spec/` (or `docs_root`) and are meant to be committed. The folder name and the marker `<!-- scrum-spec -->` stay, because `check.py` reads them. The commands do not use that word. A human approves the spec once; that covers the tasks derived from it. `## Roles` names that approver, the human who reviews pull requests, and the human who merges. human-only lists paths or topics (for example `src/auth/**` or payments) the project does not want an AI to change alone. The gate refuses that diff until the task records `human-sign-off` for the same approver. `/jt-review` and `/jt-board` stay human-only. The agent never merges.
-2. **The gate checks before review.** The agent cannot mark a task `review:` itself. `Quick` tasks need the test command to pass. `Standard` tasks need a diff outside `jt-queue/`, a `plan.md` whose evidence covers every `pass:` line, and a review that cites the latest commit. The gate stops at the first failure, cheapest first: secret scan, deprecated names, typecheck, lint, tests, then verify. Pre-commit hooks, when installed, are an earlier warning and are not one of those checks. When the board sets `<TYPECHECK_CMD>`, `<LINT_CMD>`, or `<VERIFY_CMD>`, that command must pass. Size is separate: `small` (no spec; affected tests only when the board says how, otherwise the full suite), `medium` (short spec, full gate), `large` (full spec). The agent sets `size:`; you can override it on the board line. The gate may raise it (`escalate:`) and never lowers it. On Standard, `medium` and `large` also need `## ai-review` in `plan.md` before review. `small` and Quick skip it. `/jt-work` asks one fresh-context reviewer (`/interrogate`, else `/pr`, else `/ponytail-review` on high-risk). That reviewer does not approve or merge.
-3. **You hold the merge key.** Only `/jt-review`, run by a human, can close or send back a task. The spec commands never commit.
-
-| Command | Who | What it does |
-|---|---|---|
-| [`/jt-help`](skills/jt-help/SKILL.md) | anyone | Lists every command, the order, and which are human-only. |
-| [`/jt-spec-split`](skills/jt-spec-split/SKILL.md) | **human-only** | Split a flow into a story map and one folder per confirmed story. |
-| [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | **human-only** | Draft story, rules, acceptance criteria, and questions. |
-| [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | **human-only** | Write test steps once nothing blocks the AC. |
-| [`/jt-board`](skills/jt-board/SKILL.md) | **human-only** | Write a FigJam-style `board.html`, or `/jt-board flow` for queue lead time, gate fails, rework, review time, escaped defects, each task's owner, which tasks have a handoff note, and which shared lessons are still `not yet` enforced. |
-| [`/jt-setup`](skills/jt-setup/SKILL.md) | human confirms | Write `jt-queue/board.md` and `AGENTS.md`. An existing file is merged. |
-| [`/jt-add-task`](skills/jt-add-task/SKILL.md) | spec approval covers derived tasks | Agree the brief, then add tasks. |
-| [`/jt-work`](skills/jt-work/SKILL.md) | agent | Work ready tasks in order, or one ticket id. Claims the task, leases its files, uses one worktree, and writes a handoff note when it stops without merging. Cannot merge. |
-| [`/jt-review`](skills/jt-review/SKILL.md) | **human-only** | Inspect `review:` and write `merge:`, `send-back:`, or `drop:`. |
-
-## Names
-
-A ticket keeps the id it already has. Jira `BOOK-12`, GitHub `#45`, and a Notion id are all fine. The skills require an id on `ticket:` and do not check its shape.
-
-- Commit and pull request title: `type(scope): summary (<ticket-id>)`, for example `feat(booking): add room search API (BOOK-12)`. The type is the task kind (`feat`, `fix`, `refactor`, `test`, `docs`, `chore`, and the other kinds the board already uses). Scope is optional.
-- Task branch: `type/<ticket-id>-short-slug`, for example `feat/BOOK-12-room-search` (type and slug are lowercase, with hyphens; the ticket id is copied as written). Legacy `task-<id>-<slug>` still works; the gate prints `branch-deprecated:` when it finds one. Quote ticket ids in the shell when needed, for example `/jt-work '#45'`.
-
-## Install before use
-
-[jtek-skill](#install) above is only the skills. The tables below are a fixed checklist (no machine scanning): copy-paste install commands, the jtek step each tool plugs into, and the board slot when the gate runs the command. None of these replace `gate.py` or a human `/jt-review`. At [`/jt-setup`](skills/jt-setup/SKILL.md), confirm `TEST_CMD`, `AFFECTED_TEST_CMD`, `LINT_CMD`, `SECURITY_CMD`, `VERIFY_CMD`, and `DENYLIST` on `board.md` (the shipped template includes these, plus `TYPECHECK_CMD`). The same step writes `AGENTS.md`: those commands, the flow spec -> tasks -> work -> gate -> human merge, the house rules, and where `jt-queue/` files live. `CLAUDE.md` imports that file (`@AGENTS.md`) and does not copy it. An existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board is merged, not replaced. After the gate passes, `/jt-work` uses **one** fresh-context reviewer (`/interrogate`, else Matt `/pr`, else `/ponytail-review` on high-risk). Do not stack AI reviewers. The AI does not approve or merge.
-
-The same list ships in [`skills/jt-help/references/install-before-use.md`](skills/jt-help/references/install-before-use.md) for `/jt-help`. If a required **skill** is not installed, jt- commands still run using the one-line fallback in each `SKILL.md` (not the old long prompts).
-
-### Required
-
-| Tool | Install | JTek step | Why | Board slot |
-| --- | --- | --- | --- | --- |
-| [superpowers `executing-plans`](https://www.skills.sh/obra/superpowers/executing-plans) | `npx skills add obra/superpowers --skill executing-plans` | [`/jt-work`](skills/jt-work/SKILL.md) | Plan then execute Standard tasks; gate evidence unchanged | — |
-| [superpowers `test-driven-development`](https://www.skills.sh/obra/superpowers/test-driven-development) | `npx skills add obra/superpowers --skill test-driven-development` | [`/jt-work`](skills/jt-work/SKILL.md) | Red-green-refactor before `reach-review` | — |
-| [superpowers `brainstorming`](https://www.skills.sh/obra/superpowers/brainstorming) | `npx skills add obra/superpowers --skill brainstorming` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | When the idea is unclear before drafting AC | — |
-| [grill-me](https://www.skills.sh/mattpocock/grill-me) | `npx skills add mattpocock/skills --skill grill-me` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Questions that unblock AC (`check.py` outcomes unchanged) | — |
-| [Playwright CLI](https://playwright.dev/docs/getting-started-cli) + [skills](https://playwright.dev/agent-cli/skills) | `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` | [`/jt-work`](skills/jt-work/SKILL.md) | Agent drives the app with `playwright-cli -s=<ticket-id>` (one session per worktree; not Playwright MCP), reads console and network errors, and lists a screenshot per AC id. The gate runs `npx playwright test` / `toHaveScreenshot` and does not update snapshots in that task | `VERIFY_CMD` |
-| pstack [`create-verification-skill`](https://www.skills.sh/backnotprop/pstack/create-verification-skill) | `npx skills add backnotprop/pstack --skill create-verification-skill` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Project-local verify skill for the real user surface | — |
-| pstack [`statechart`](https://www.skills.sh/backnotprop/pstack/statechart) | `npx skills add backnotprop/pstack --skill statechart` | [`/jt-spec-ac`](skills/jt-spec-ac/SKILL.md) | Stateful systems: model states before AC freeze | — |
-| pstack [`no-comments`](https://www.skills.sh/backnotprop/pstack/no-comments) | `npx skills add backnotprop/pstack --skill no-comments` | [`/jt-work`](skills/jt-work/SKILL.md) (before PR) | Strip comment noise before review | — |
-| pstack [`interrogate`](https://www.skills.sh/backnotprop/pstack/interrogate) | `npx skills add backnotprop/pstack --skill interrogate` | [`/jt-work`](skills/jt-work/SKILL.md) after the gate passes | The one fresh-context reviewer when this skill is installed | — |
-| pstack [`maintain-verification-skill`](https://www.skills.sh/backnotprop/pstack/maintain-verification-skill) | `npx skills add backnotprop/pstack --skill maintain-verification-skill` | after large code changes | Re-align verify skill with the app | — |
-| [mise](https://mise.jdx.dev/installing-mise.html) | `curl -fsSL https://mise.run \| sh` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Pin tool versions; detect can source commands from `mise.toml` | `TEST_CMD`, `LINT_CMD` |
-| [pre-commit](https://pre-commit.com/#install) + [typos](https://github.com/crate-ci/typos) / [actionlint](https://github.com/rhysd/actionlint) / [zizmor](https://docs.zizmor.sh/integrations/) | `python3 -m pip install pre-commit` then `pre-commit install` | on `git commit` | `/jt-setup` proposes a pinned `.pre-commit-config.yaml` and waits. Typos, workflow lint, and Actions security run on commit. The gate does not fail if pre-commit is absent | — |
-| [reviewdog](https://github.com/reviewdog/reviewdog#installation) | `go install github.com/reviewdog/reviewdog/cmd/reviewdog@latest` | [`/jt-review`](skills/jt-review/SKILL.md) | Post lint or check annotations on PR lines | — |
-| Vitest affected | `npx vitest --changed` in `AFFECTED_TEST_CMD` (requires Vitest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Narrow tests on `small` tasks | `AFFECTED_TEST_CMD` |
-| Jest related | `npx jest --findRelatedTests {files}` in `AFFECTED_TEST_CMD` (requires Jest in the repo) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Related tests on `small` tasks | `AFFECTED_TEST_CMD` |
-| [pytest-testmon](https://pypi.org/project/pytest-testmon/) | `pytest --testmon` in `AFFECTED_TEST_CMD` after `pip install pytest-testmon` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Affected pytest modules on `small` tasks | `AFFECTED_TEST_CMD` |
-| [TruffleHog](https://github.com/trufflesecurity/trufflehog/blob/main/README.md#-installation) | `curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \| sh -s -- -b /usr/local/bin` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Secret scan. The gate runs `SECURITY_CMD` when that program is installed; otherwise it uses the built-in secret check and never prints the value | `SECURITY_CMD` |
-| [Semgrep](https://docs.semgrep.dev/getting-started/cli) | `python3 -m pip install semgrep` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Static analysis; gate runs non-empty `LINT_CMD` on Standard tasks | `LINT_CMD` or `SECURITY_CMD` |
-| [OSV-Scanner](https://google.github.io/osv-scanner/installation/) | `brew install osv-scanner` or `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Dependency CVEs from OSV | `SECURITY_CMD` |
-| [Knip](https://knip.dev/overview/getting-started) | `npm install -D knip typescript @types/node` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Unused exports and dependencies. The gate runs `VERIFY_CMD` after tests when the cell is set | `VERIFY_CMD` |
-| [commitlint](https://commitlint.js.org/guides/getting-started) | `npm install -D @commitlint/cli @commitlint/config-conventional` | [`/jt-work`](skills/jt-work/SKILL.md) | Conventional commit messages locally | — |
-| [action-semantic-pull-request](https://github.com/amannn/action-semantic-pull-request#installation) | Add `uses: amannn/action-semantic-pull-request@v6` to a workflow | [`/jt-review`](skills/jt-review/SKILL.md) | Enforce semantic PR titles on GitHub | — |
-| [release-please](https://github.com/googleapis/release-please-action#basic-configuration) | Add `uses: googleapis/release-please-action@v4` to a workflow | after merge | Versioned releases from conventional commits | — |
-| [Dependabot](https://docs.github.com/en/code-security/dependabot) | Enable in repo **Settings → Code security** | ongoing | Dependency update PRs (human merges) | — |
-| [GitHub Secret Scanning](https://docs.github.com/en/code-security/secret-scanning) | Enable in **Settings → Code security** | on push | Hosted secret detection | — |
-
-### Recommended skills
-
-| Skill | Install | JTek step | Why |
-| --- | --- | --- | --- |
-| Matt Pocock `/pr` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill pr` | [`/jt-work`](skills/jt-work/SKILL.md) when `/interrogate` is not installed | The one fresh-context reviewer in that case |
-| Matt Pocock `/retro` ([repo](https://github.com/mattpocock/skills)) | `npx skills add mattpocock/skills --skill retro` | after [`/jt-review`](skills/jt-review/SKILL.md) | Retrospective on the agent environment |
-| [ponytail `/ponytail-review`](https://github.com/DietrichGebert/ponytail) | `npx skills add DietrichGebert/ponytail --skill ponytail-review` | [`/jt-work`](skills/jt-work/SKILL.md) only for high-risk, when neither reviewer above is installed | The one reviewer in that case; a human still merges |
-| [Matt Pocock `handoff`](https://www.skills.sh/mattpocock/handoff) | `npx skills add mattpocock/skills --skill handoff` | [`/jt-spec-handoff`](skills/jt-spec-handoff/SKILL.md) | Test steps without duplicating AC text |
-| [superpowers `systematic-debugging`](https://www.skills.sh/obra/superpowers/systematic-debugging) | `npx skills add obra/superpowers --skill systematic-debugging` | [`/jt-work`](skills/jt-work/SKILL.md) | Debug when the gate refuses |
-| [anthropics `webapp-testing`](https://github.com/anthropics/skills) | `npx skills add anthropics/skills --skill webapp-testing` | [`/jt-work`](skills/jt-work/SKILL.md) (local web) | Playwright helpers (`pip install playwright` + `playwright install chromium` when the skill runs Python scripts) |
-
-### Optional (when the repo fits)
-
-| Tool | Install | JTek step | Why | Board slot |
-| --- | --- | --- | --- | --- |
-| [Testcontainers](https://testcontainers-python.readthedocs.io/en/latest/index.html) | `python3 -m pip install "testcontainers[postgres]"` (pick an extra) | [`/jt-setup`](skills/jt-setup/SKILL.md) | Real DB or services in tests (needs Docker) | `TEST_CMD` |
-| [Pact Python](https://docs.pact.io/implementation_guides/python/readme) | `pip install pact-python` | [`/jt-setup`](skills/jt-setup/SKILL.md) | Contracts across frontend and backend repos | `TEST_CMD` |
-| [nektos act](https://nektosact.com/installation/) | `curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh \| sudo bash` | before push | Run GitHub Actions locally | — |
-| [Unleash](https://docs.getunleash.io/) self-hosted | Follow Unleash Docker docs | when feature flags land | Feature toggles in production | — |
-
-## Migration from `/scrum-spec` and the old queue names
-
-v24 is breaking for command names. Queue files and spec files do not need a rewrite. The marker `<!-- scrum-spec -->`, `scrum-spec/config.md`, and every `check.py` rule are unchanged. `gate.py` still checks the same things; `next` prints the new command for each action.
-
-| Old | New |
-|---|---|
-| `/scrum-spec` or `/scrum-spec help` | `/jt-help` |
-| `/scrum-spec split` | `/jt-spec-split` |
-| `/scrum-spec ac` | `/jt-spec-ac` |
-| `/scrum-spec handoff` | `/jt-spec-handoff` |
-| `/scrum-spec board` | `/jt-board` |
-| `/jt-work-queue` when there is no board | `/jt-setup` |
-| `/jt-work-queue` to agree the brief or add a task | `/jt-add-task` |
-| `/jt-work-queue` to implement | `/jt-work` |
-| `/jt-review-work` | `/jt-review` |
-| `/jtek:jt-work-queue`, `/jtek:jt-review-work` | `/jtek:jt-setup`, `/jtek:jt-add-task`, `/jtek:jt-work`, `/jtek:jt-review` |
-
-The gate's `brief` and `add-task` actions both name `/jt-add-task`. There is no separate brief command. Details: [MIGRATING.md](MIGRATING.md).
-
-## Documentation
-
-- [Getting started](docs/getting-started.md): one queue round, with the gate's output
-- [Spec documents](docs/spec.md): story map, acceptance criteria, test steps, the checker
-- [Usage guide](docs/usage.md): priorities, task kinds, two repos
-- [File and gate contract](skills/jt-work/references/contract.md)
-- [Security and trust model](SECURITY.md)
-- [Changelog](CHANGELOG.md) and [migrating](MIGRATING.md)
-
-## Platform support
-
-| | Status |
-|---|---|
-| macOS, Linux | Supported. CI runs the tests on Ubuntu with Python 3.10 and 3.13. |
-| Windows | **Not supported yet.** The gate uses POSIX process groups (`os.killpg`) and `fcntl`. Use WSL. |
-| Claude Code | Install from a release tag with skills.sh, or load the plugin. |
-| Codex, Cursor, Grok Build, Antigravity | Follows the Agent Skills format. Reports are welcome. |
-
-Needs `git` and Python 3.10 or later (standard library only). The GitHub CLI (`gh`) is optional. `/jt-board flow` uses it for merged-at and for issues labelled `bug` when it is installed; otherwise those sources print `unknown`. Large PDFs need poppler (`poppler-utils`).
-
-## Security
-
-`jtek-skill` runs shell commands on your machine (your test, lint, and typecheck commands, and any task `start`/`click`). It is not a sandbox. A human must approve those exact commands with `gate.py approve-commands` first. `check.py` only reads files. `board.py` writes `board.html`, and that page loads Google Fonts when opened. `flow.py` only reads the queue, git history, and `gh` when it is installed. See [SECURITY.md](SECURITY.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run the tests with:
+## Set up a repository
 
 ```bash
-python3 -m unittest discover -s tests
+python3 <skill-dir>/scripts/jtek.py init
 ```
+
+This writes `jtek.json`. Fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
+
+```json
+{"checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+```
+
+Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive the app, and a feature map) and proposes the `verify` check. Do this before agents work tickets: without it, a passing check only means the code compiles.
+
+`jtek.json` and `.jtek/` are all jtek adds to the repository. Tickets, claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+
+## Use it
+
+| You want to | Do this |
+|---|---|
+| Add a local ticket | `jtek.py add --title "..."`, fill in the file, set `status: Todo` |
+| Work a local ticket | `/jt-work T-12` |
+| Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection) |
+| Get a second look on a risky ticket | add `review: agent`, then `/jt-review T-12` in a fresh session |
+| See the local board | `jtek.py list --sync` |
+| Give a ticket back | `jtek.py release T-12` |
+
+A bot runs the same commands. It reads the `jtek-result` block at the end of the session to decide what to do next.
+
+## Skills
+
+| Step | Skill | What it does |
+|---|---|---|
+| Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
+| Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
+| Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
+| A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs |
+| See it work | `jt-verify` | Runs the real thing and reports only what was seen |
+| Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
+| Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
+| Second look | `jt-review` | Optional. A session that did not write the change tries to break it |
+| After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
+| Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
+
+Each skill also works on its own, for example `/jt-verify` on any change. Install the whole set: the script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run `jtek.py`.
+
+## Statuses
+
+| Status | Meaning | Who sets it |
+|---|---|---|
+| Backlog | Written down, not released | You or the bot |
+| Todo | Released for an agent | You only |
+| In Progress | A session has claimed it | `jtek.py start` |
+| Review | Checks pass, pull request open | `jtek.py finish` |
+| Done | Pull request merged | Read from the forge |
+| Cancelled | Dropped | You |
+
+`waiting: input` or `waiting: approval` is a field on an In Progress ticket. It is not a status. The ticket format and the result block are in [ticket.md](skills/jt-work/references/ticket.md).
+
+## Limits
+
+- **The Notion path has not been run against a real workspace.** The script side (`start --from-file`) is tested. Reading the page and writing the status back are steps the agent does with its own Notion tool.
+- **The script cannot tell who ran a command.** Nothing in code stops an agent from editing a ticket to `Todo`, or from recording a verdict on its own change. The skills forbid both.
+- **Claims are per machine.** For sessions on several machines, the launcher must mark the ticket In Progress in Notion before it starts a session.
+- Tested on macOS with Python 3.14. CI runs Python 3.10 and 3.13 on Linux.
+
+See [SECURITY.md](SECURITY.md) for what the script runs on your machine.
+
+## Earlier versions
+
+Versions up to 25 were a work queue with spec skills and a larger gate. This version keeps only the inner loop. The old set is in the git history before 26.0.0.
 
 ## License
 
-[MIT](LICENSE)
+MIT

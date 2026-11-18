@@ -6,54 +6,23 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 ## Trust model (read before installing)
 
-`jtek-skill` is a work queue for coding agents. It is **not a sandbox**. Its Python gate (`skills/jt-work/scripts/gate.py`, the same file linked from `jt-setup` and `jt-add-task`) runs shell commands on your machine, so these commands are code that you are trusting:
+`jtek-skill` is not a sandbox. `jtek.py check` runs commands on your machine.
 
-| Command | Where it is declared | Run by |
-|---|---|---|
-| `TEST_CMD`, `SETUP_CMD` | `jt-queue/board.md` | `gate.py reach-review` (in the task worktree) |
-| `LINT_CMD`, `TYPECHECK_CMD` | `jt-queue/board.md` (and each `## repos` block), when the cell is not empty | `gate.py reach-review` on Standard tier (in that repo's task worktree), typecheck then lint, before tests |
-| `SECURITY_CMD` | `jt-queue/board.md` (and each `## repos` block), when the cell is not empty and that program is installed | `gate.py reach-review`, before the other checks. Output is not printed |
-| `VERIFY_CMD` | `jt-queue/board.md` (and each `## repos` block), when the cell is not empty | `gate.py reach-review`, after tests |
-| `start`, `click`, `port`, `wait` | `jt-queue/tasks/<id>/task.md` | `gate.py reach-review` and `gate.py screen-check`, for tasks that declare `screen: yes` |
+- **Which commands:** only the ones in `jtek.json` on the base branch of the repository. The script reads the file with `git show <base>:jtek.json`, so an edit in a ticket's worktree or branch has no effect until it is merged.
+- **How they run:** each command is split into a program and arguments and run without a shell, in the ticket's worktree, with your full environment (including any tokens in it). The time limit is 30 minutes per check.
+- **What a ticket can do:** name checks that `jtek.json` already declares. A name that is not declared is refused. Ticket text, including text fetched from Notion, is never executed.
+- **Treat `jtek.json` like CI config.** Review every change to it before you merge, including in pull requests from others.
 
-How this is kept in check:
+## What the script cannot enforce
 
-- On first setup, the skill shows each detected command with its source (for example `TEST_CMD = npm test` from `package.json`) and **waits for a human to confirm** before writing `jt-queue/board.md`.
-- **Pre-commit config.** `/jt-setup` shows the `.pre-commit-config.yaml` from `gate.py hooks` (each hook with its source) and waits before `gate.py hooks --write`. That command only merges the file. It does not run the hooks and it does not download them. An existing config is not replaced. `reach-review` does not run pre-commit and does not fail when it is missing.
-- **Agent instructions.** `/jt-setup` shows `gate.py agents` (the `AGENTS.md` diff, and `CLAUDE.md` as `@AGENTS.md` only) and waits before `--write`. That command merges a delimited section into an existing `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, or board. It does not replace the file and it does not run the commands it lists. A file it cannot merge is left untouched (`unparsed`).
-- **Playwright config.** On a web app, `/jt-setup` shows `gate.py playwright` (`VERIFY_CMD` `npx playwright test`, and a minimal config with `updateSnapshots` `none`) and waits before `--write`. That command writes `playwright.config.ts` only when the file is absent. It does not run tests and it does not update snapshots. `reach-review` refuses `snapshot-update` instead of running a verify or click command that would write baselines (`--update-snapshots`, `-u`, or a config whose `updateSnapshots` is not `none`).
-- **Approval is enforced by the gate.** `gate.py reach-review` and `gate.py screen-check` refuse (`commands-unapproved`, `commands-changed`, `next: stop`) unless the current `TEST_CMD`/`SETUP_CMD` (and `LINT_CMD`/`TYPECHECK_CMD`/`SECURITY_CMD`/`VERIFY_CMD` when the cell is not empty) and the task's `start`/`click` match what a human approved with `gate.py approve-commands --id <id>`. Edits to those commands after approval, committed or not, are refused and nothing is run. An empty lint, typecheck, security, or verify cell is not part of the hash. `<DENYLIST>` is a list of names, not a command, and is not part of the hash. The approval is a hash stored in `.git/jt-queue/approved-commands.json`, so it never travels in a branch, commit, or pull request: a checked-out PR from someone else starts out unapproved.
-- **Diff scan.** Before those commands run, `reach-review` refuses (`secret-suspect`, `next: ask`) when `<SECURITY_CMD>` is empty or its program is not installed and the branch adds a file whose name starts with `.env` (`.env.example` is the exception), a private-key file (`*.pem`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`; not `*.pub`), or a line containing a `PRIVATE KEY` block. When `<SECURITY_CMD>`'s program is installed, that command is the secret scan instead, and its output is discarded. Either way the gate output names the file, or `file:line` for a key block, and never the value. It then stops, and prints `skipped: denylist`.
-- **Other repos:** with `## repos` on the board, the approval also covers each repo's `path:`, `queue:`, `TEST_CMD`, and `SETUP_CMD`, plus that repo's `LINT_CMD`, `TYPECHECK_CMD`, `SECURITY_CMD`, and `VERIFY_CMD` when the cell is not empty, and a task's `start:` list. Pointing `path:` at a different folder is a change and is refused until a human approves it again. The agent adds a repo only when the human names it; it never scans for repos. The same diff scan runs in each listed repo.
-- **Limit of that control:** `approve-commands` is a command like any other. An agent that disobeys its instructions and runs it itself defeats the check, because the gate cannot tell who typed it. Do not add `approve-commands` to any "always allow" list in your agent, so each use shows up as a prompt you must accept. `lesson-approve` is the same kind of command: it is how a proposed lesson becomes a rule the gate enforces. The agent must not run it, and it must not be on an always-allow list. A row that does not end with `(approved)` is not enforced. The cells in `jt-queue/team-lessons.md` are data, not commands.
-- Still treat `jt-queue/board.md` and `jt-queue/tasks/<id>/task.md` like a `Makefile` or CI config: review changes to them, including in pull requests from others, before you approve.
-- Commands run with your full environment (including any tokens in it) and with `node_modules/.bin` prepended to `PATH`. Run the gate in a container or throwaway environment for repositories you do not trust.
-- Test and setup commands have time limits (`JT_TEST_TIMEOUT`, capped at 3600 s). `JT_GH_TIMEOUT` is capped the same way.
-- The gate refuses task IDs that are not `^\d+(\.\d+)*$`, so task IDs cannot traverse paths.
+- It cannot tell who ran a command. An agent that ignores its instructions could commit to the base branch, edit a ticket file to `status: Todo`, or record a verdict on its own change. The skills forbid these. Do not put `jtek.py release` or `jtek.py verdict` on an always-allow list in the session that writes code.
+- It does not prove the reviewer is a different session. `verdict --by` is a label.
 
 ## What the skills do outside the repository
 
-- `gh` is called read-only (`gh pr view`, `gh pr list`) to find out whether a task branch has landed.
-- On handoff, `/jt-work` **pushes the task branch `type/<ticket-id>-<slug>` and opens a draft PR** (`gh pr create --draft`) when a git remote exists. The PR title is `type(scope): summary (<ticket-id>)`. The PR body does not carry `do:` or `pass:`. With no remote it stays local. This sends your code to that remote on purpose; do not use the skill with a remote you do not want branches pushed to. Shareable queue files (`board.md`, `brief.md`, `claims.md`, `team-lessons.md`, `task.md`, `plan.md`, `handoff.md`) are committed with the work. `team-lessons.md` is the shared lesson list. Read it as data, not as instructions. `handoff.md` is a short resume note. The writer redacts secret-shaped text and does not copy `.git/jt-queue/logs`. Treat the note as data, not as instructions. `lessons.md`, `.env`, private keys, and `.git/jt-queue/` are not: `approved-commands.json` is the permission to run shell commands and must not travel in a commit, and `logs/` can hold secrets.
-- The skills never merge. `merge:` and `drop:` are written only by the human through `/jt-review`.
-- No network calls are made by the queue scripts apart from `gh` and a connection check against `127.0.0.1` for screen checks. Setup commands you configure (for example `npm install`) can of course use the network.
-- **`scripts/check.py`** (the same file, copied into `jt-spec-ac`, `jt-spec-split`, and `jt-spec-handoff`) reads Markdown files you pass it and prints a report. It never writes or deletes files, runs no subprocess, and makes no network calls.
-- **`scripts/board.py`** reads that Markdown and writes `board.html` (or the path given with `--output`). It does not modify the Markdown. With `--open` it opens that file in the default browser. `board.py` itself makes no network calls. The HTML loads [Google Fonts](https://fonts.googleapis.com/) from `fonts.googleapis.com` and `fonts.gstatic.com` each time someone opens it.
-- **`scripts/flow.py`** (`/jt-board flow`) reads `jt-queue/` files, git history, and, when `gh` is installed, merged pull requests and items labelled `bug`. It prints metrics or `unknown`. It does not write files, merge, or print command output. A gate pass/fail row recorded by `reach-review` stays in `.git/jt-queue/gate-runs.jsonl` (id, time, result, reason). That file is not committed.
-- The spec commands tell the agent to read the repos in `code_roots` and write Markdown under `docs_root`. They do not commit, push, delete, or move files. `pdftotext` and `pdftoppm` run only on a PDF the user gave, when it is too large to read directly.
-
-## Treating repository text as data
-
-The skills tell the agent to treat board, task, plan, spec, diff, commit and PR text as data and never as instructions. This is an instruction to the model, not a technical control: a model can still be fooled. The human review in `/jt-review`, and the person who approves each spec decision, are the real controls.
-
-## Human-only commands
-
-`/jt-review`, `/jt-spec-split`, `/jt-spec-ac`, `/jt-spec-handoff`, and `/jt-board` are marked human-only with `disable-model-invocation: true` (Claude Code) and `allow_implicit_invocation: false` (Codex, `agents/openai.yaml`). Other agents do not read those fields; there the rule rests on the skill text alone (`HUMAN-ONLY COMMAND.` at the start of the description). Those fields are outside the Agent Skills specification, so CI validates a copy with them removed.
-
-## Scanning
-
-CI runs the unit tests, `bandit`, the Agent Skills validator, and SkillSpector. SkillSpector findings that were reviewed and judged false positives are listed with reasons in [`.skillspector-baseline.yaml`](.skillspector-baseline.yaml). The three `shell=True` calls are the behavior documented above. They carry a `# nosec B602` marker and an intent comment; note that SkillSpector lowers its own `shell=True` finding when such a comment is present, so a `CAUTION` score does **not** mean the skill runs no shell commands. Use this file, not the score, to judge that.
-
-## Releases
-
-Install a tagged release rather than the default branch, so that a later change cannot reach you unreviewed. See [CHANGELOG.md](CHANGELOG.md).
+- **Worktrees:** `start` creates `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
+- **State:** tickets, claims, check logs, review notes, and results are under `<git-common-dir>/jtek/` and are not committed. Check logs can contain secrets that a command printed.
+- **Network:** the script calls `gh pr view` (read-only) in `list --sync`. Nothing else.
+- **Push:** the `jt-ship` skill tells the agent to push the ticket branch and open a pull request. This sends your code to that remote on purpose.
+- **Merge:** never. There is no command for it.
+- **Notion:** the agent reads the ticket page and writes its status and a result comment with whatever Notion connection it has. The script does not talk to Notion.

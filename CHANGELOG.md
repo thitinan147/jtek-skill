@@ -1,5 +1,21 @@
 # Changelog
 
+## 26.0.0 - inner loop only
+
+This version is a rewrite. It does not read the `jt-queue/` files of earlier versions.
+
+- Ten skills, one per step: `jt-work` (start, check, stop, and the order of the steps, in playbooks for a feature, a bug, and a refactor), `jt-understand`, `jt-build`, `jt-debug`, `jt-verify`, `jt-cleanup`, `jt-ship`, `jt-review` (an optional non-author verdict), `jt-learn`, and `jt-harness` (builds a repository's verify guide, feature map, and `verify` check). The spec skills, `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, `gate.py`, and the `jt-queue/` files are removed.
+- jtek no longer names or calls any other skill set.
+- `jtek.py` replaces the gate. `start` claims a ticket and creates its worktree, `check` runs the declared checks, `verdict` records the reviewer's result, `finish` moves the ticket to Review, and `stop` waits for the human.
+- Several tickets can run at once, each in its own session and worktree. A claim is an atomic directory under the git common directory, so the same ticket cannot be taken twice.
+- Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` is the only file added to a repository.
+- A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot.
+- Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
+- Review requires passing checks on the current commit and a pull request. The human reviews and merges. A ticket with `review: agent` also needs a `PASS` or `PASS+NOTES` verdict on that commit from a session that did not write it. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
+- Every session ends with the same `jtek-result` block.
+- The skills never choose the next ticket and never merge.
+- Skill and plugin metadata are `26.0.0`.
+
 ## 25.0.0 - the queue can plan a batch and still stop for a human
 
 - Specs keep `## Roles`. The approver, reviewer, and merger are people. `human-only` paths and topics are project-defined. A diff there is `refused: human-only` until the task has the spec approver's `human-sign-off`. `/jt-board` and `/jt-review` stay human-only. The agent does not merge.

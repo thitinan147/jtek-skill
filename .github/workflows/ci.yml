@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        skill: [jt-add-task, jt-board, jt-help, jt-review, jt-setup, jt-spec-ac, jt-spec-handoff, jt-spec-split, jt-work]
+        skill: [jt-build, jt-cleanup, jt-debug, jt-harness, jt-learn, jt-review, jt-ship, jt-understand, jt-verify, jt-work]
     permissions:
       contents: read
       security-events: write
@@ -69,7 +69,7 @@ jobs:
       - name: Scan (static, no LLM)
         run: |
           mkdir -p sarif
-          skillspector scan "skills/${{ matrix.skill }}" --no-llm --baseline .skillspector-baseline.yaml \
+          skillspector scan "skills/${{ matrix.skill }}" --no-llm \
             --format sarif --output "sarif/${{ matrix.skill }}.sarif"
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         if: always()

@@ -1,4 +1,4 @@
-# Proposed by /jt-setup. Early warning only; gate.py stays the judge.
+# Early warning only; CI is the judge.
 default_install_hook_types:
   - pre-commit
   - commit-msg

@@ -1,6 +1,0 @@
-interface:
-  display_name: "JT Review"
-  short_description: "Human-only review and decision command for jt-queue/board.md"
-
-policy:
-  allow_implicit_invocation: false

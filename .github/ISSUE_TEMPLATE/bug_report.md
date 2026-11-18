@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in the gate or a skill did not behave as documented
+about: The script or a skill did not behave as documented
 labels: bug
 ---
 
@@ -16,7 +16,7 @@ labels: bug
 - Agent (Claude Code, Codex, Cursor, ...):
 - OS and Python version:
 
-**Gate output** (include the `detail:` and `hint:` lines; remove anything private)
+**Script output** (include the `refused:` line; remove anything private)
 
 ```text
 
