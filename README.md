@@ -8,7 +8,7 @@
 
 - **One ticket, one worktree.** Start as many sessions as you want, each on a different ticket. A second session that takes the same ticket is refused.
 - **A session may take several tickets in a row, when it fits.** Give `/jt-work` several ids. The session goes on to the next one only if the last ended cleanly, the next is in code it already read, and the session is still short. Otherwise it stops and lists the ids it did not start.
-- **The board is a Notion database.** The script reads each ticket's page and writes the status, the pull request link, and the result back, so a session needs no Notion tool.
+- **The board is a Notion database.** The agent reads each ticket's page with its Notion tool, such as the Notion MCP connector, and writes back exactly what the script's `board:` line says.
 - **The project declares the checks.** `jtek.json` on the base branch lists them. A ticket can name a check. It cannot add a command.
 - **"Done" is not the agent's word.** A ticket reaches Review only when the checks pass on the current commit, a session that did not write the change records `PASS`, the evidence is saved, and a pull request link is given. Add `review: human` to a small ticket to waive the verdict. When `gh` can read the link, the script also requires the pull request to be open at that commit.
 - **A stopped ticket can be picked up.** A session that needs an answer ends with a question. Run `/jt-work <id>` again after you answer, and it continues in the same worktree.
@@ -36,11 +36,11 @@ npx skills add thitinan147/jtek-skill
 /plugin install jtek@jtek-skill
 ```
 
-Requirements: `git` 2.31 or later, Python 3.10 or later, and a Notion workspace for the board. `gh` is optional. It is used only to read a pull request's state, head commit, and CI result.
+Requirements: `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool for the board. `gh` is optional. It is used only to read a pull request's state, head commit, and CI result.
 
 ## Set up the board
 
-The board is one Notion database. Create an integration with the read content, update content, and insert comments capabilities, share only the board database with it, and put its token in the environment as `NOTION_TOKEN`. The properties the database needs are in [notion.md](skills/jt-work/references/notion.md).
+The board is one Notion database. Connect the Notion tool in your agent (in Claude Code: `/mcp`, then Notion), and create the database with the properties in [notion.md](skills/jt-work/references/notion.md). An agent with the tool can create it for you.
 
 ## Set up a repository
 
@@ -48,10 +48,10 @@ The board is one Notion database. Create an integration with the read content, u
 python3 <skill-dir>/scripts/jtek.py init
 ```
 
-This writes `jtek.json`. Set `notion` to the board database, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
+This writes `jtek.json`. Fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"notion": "<database id or link>", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
 ```
 
 Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive the app, and a feature map) and proposes the `verify` check. Do this before agents work tickets: without it, a passing check only means the code compiles.
@@ -67,7 +67,7 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Fix a pull request after CI or review comments | set the page back to Todo, then `/jt-work T-12` |
-| See the open tickets, set merged ones to Done, and tidy finished worktrees | `jtek.py list --sync` |
+| Ask what each open ticket needs, or which are merged | see [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 | Give a ticket back | `jtek.py release T-12` |
 
 A program that starts sessions runs the same commands. It reads the `jtek-result` block at the end of the session to decide what to do next.
@@ -96,18 +96,18 @@ Each skill also works on its own, for example `/jt-verify` on any change. Instal
 |---|---|---|
 | Backlog | Written down, not released | You |
 | Todo | Released for an agent | You only |
-| In Progress | A session has claimed it | `jtek.py start` |
-| Review | Checks pass, verdict is PASS, evidence saved, pull request open | `jtek.py finish` |
-| Done | Pull request merged | `jtek.py list --sync`, read from the forge |
+| In Progress | A session has claimed it | The session, after `jtek.py start` |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open | The session, after `jtek.py finish` |
+| Done | Pull request merged | Read from the forge by `jtek.py sync` |
 | Cancelled | Dropped | You |
 
 Waiting, with `input` or `approval`, is a property of an In Progress ticket. It is not a status. The ticket format and the result block are in [ticket.md](skills/jt-work/references/ticket.md).
 
 ## Limits
 
-- **Nothing here has been run against a real Notion workspace.** The tests use a stand-in for the Notion API that was written from the same reading of the reference as the client. Run `jtek.py list` first: it only reads.
-- **Every session holds the Notion token.** Share only the board database with the integration.
-- **The script cannot tell who ran a command.** Nothing in code stops an agent from using the token to set a page to Todo, or from recording a verdict on its own change. The skills forbid both.
+- **Nothing here has been run against a real Notion workspace.** Reading the page and writing the `board:` line are steps the agent does with its Notion tool, and no agent has done them yet.
+- **The script cannot check the board.** It cannot tell whether the page was copied faithfully or whether the `board:` line was written.
+- **The script cannot tell who ran a command.** Nothing in code stops an agent from setting a page to Todo with its Notion tool, or from recording a verdict on its own change. The skills forbid both.
 - **Claims are per machine.** Two machines can both read a page as Todo before either writes In Progress.
 - Tested on macOS with Python 3.14. CI runs Python 3.10 and 3.13 on Linux.
 

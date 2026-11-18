@@ -2,7 +2,7 @@
 
 ## Ticket format
 
-A ticket is a page on the Notion board. `jtek.py start` copies it into this format, and that copy is the file you read. The header lines come from the page's properties, and the sections from its body.
+A ticket is a page on the Notion board. The session reads the page with its Notion tool and saves it in this format, as [notion.md](notion.md) says. The header lines come from the page's properties, and the sections from its body. `jtek.py start` keeps a copy, and that copy is the file to work from.
 
 ```markdown
 # Short title
@@ -25,9 +25,9 @@ What should be true when this is done, and why.
 
 - **`id`:** the page's Ticket ID. It names the branch `jtek/<id>` and the worktree.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
-- **`after`:** optional. Tickets that must be Done first. They may belong to any repository on the board. `start` refuses while one is not Done.
+- **`after`:** optional. The tickets in After that are not Done yet. They may belong to any repository on the board. `start` refuses a new ticket that has this line.
 - **`repo`:** optional. The repository the ticket is for, when one board serves several. It is the `name` in that repository's `jtek.json`, or its folder name. `start` refuses a ticket whose `repo` is another one.
-- **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together, and `jtek.py list` shows it.
+- **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
 - **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket. The waiver is ignored when the change touches a file on the `attention:` line.
 - **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.
@@ -43,9 +43,9 @@ The page in Notion is the source of truth. The layout of the board is in [notion
 |---|---|---|
 | Backlog | Written down, not released. | Human |
 | Todo | Released for an agent to take. | Human only |
-| In Progress | A session has claimed it. | `jtek.py start` |
-| Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | `jtek.py finish` |
-| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | `jtek.py list --sync` |
+| In Progress | A session has claimed it. | the session, after `jtek.py start` allows it |
+| Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | the session, after `jtek.py finish` prints `outcome: review` |
+| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | whoever runs `jtek.py sync`, when it prints `board: Status=Done` |
 | Cancelled | Dropped. | Human |
 
 - **Waiting** is a property, not a status. `input` means the agent has a question. `approval` means a step needs permission. The ticket stays In Progress.
@@ -63,7 +63,7 @@ After creating the worktree, `start` runs the `setup` command from `jtek.json`, 
 
 A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human runs `start <id> --resume`.
 
-Notion has no atomic claim. The directory above is the lock for sessions on one machine. `start` writes In Progress on the page as its last step, and gives the claim back when that write fails.
+Notion has no atomic claim. The directory above is the lock for sessions on one machine. The session writes In Progress on the page only after `start` allows it.
 
 ## Result
 
@@ -84,8 +84,10 @@ attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: <page link>
 note: <one line>
+board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | -
 ```
 
+- **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md). `-` means nothing.
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh`. `finish` refuses while it is `fail`.
 - **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones, with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
 - **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file whose path is written in a check or `setup` command, a deleted test file, an existing test file that lost or changed lines, and anything matching `watch` in `jtek.json`. Adding tests is not flagged. `-` means none.

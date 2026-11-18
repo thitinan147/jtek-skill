@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """jtek inner loop: one ticket, one session, one worktree.
 
-The board is a Notion database. Claims, logs, and results live under the
+The board is a Notion database, which the agent reads and writes with its own
+Notion tool. This script never talks to Notion: it takes the ticket as a file
+and prints what to write back. Claims, logs, and results live under the
 repository's common git directory, so every worktree sees the same claims and
 no tracked file is shared between sessions.
 Standard library only. Python 3.10+.
@@ -18,9 +20,6 @@ import shlex
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
 STATUSES = ["Backlog", "Todo", "In Progress", "Review", "Done", "Cancelled"]
@@ -127,9 +126,13 @@ def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
     sections = ticket["sections"]
     if not any(line.strip() for line in sections.get("goal", [])):
         raise Refuse("ticket has no `## Goal`")
-    done = [line for line in sections.get("done when", []) if re.match(r"^\s*-\s*\S", line)]
+    done = [line for line in sections.get("done when", []) if re.match(r"^-\s*\S", line)]
     if not done:
         raise Refuse("ticket has no item under `## Done when`")
+    other = [line for line in sections.get("done when", []) if line.strip() and not re.match(r"^-\s*\S", line)]
+    if other:
+        raise Refuse("`Done when` may hold only top-level list items, one outcome each, because every item must be "
+                     f"answered in the evidence. Not an item: {other[0].strip()[:80]}")
     wanted = [name.strip() for name in ticket["fields"].get("checks", "").split(",") if name.strip()]
     unknown = [name for name in wanted if name not in checks]
     if unknown:
@@ -237,6 +240,15 @@ def attention(meta: dict) -> str:
     return ", ".join(notes) or "-"
 
 
+def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
+    """What the session must now write on the ticket's page with its Notion tool. `-` means nothing."""
+    if outcome == "review":
+        return "Status=Review; Waiting=; " + (f"PR={pr}; " if pr else "") + "comment=result+evidence"
+    if outcome == "needs-human":
+        return f"Waiting={waiting}; comment=result"
+    return "-"
+
+
 def write_result(ticket_id: str, outcome: str, status: str, note: str = "", waiting: str = "") -> str:
     work = work_dir(ticket_id)
     meta = load_meta(ticket_id)
@@ -272,294 +284,30 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
         f"note: {note or '-'}",
+        f"board: {board_line(outcome, waiting, meta.get('pr', ''))}",
     ]
     text = "\n".join(lines) + "\n"
     (work / "result.md").write_text(text)
     return text
 
 
-# ---- the board (Notion) -----------------------------------------------------
-# Every request to Notion is made in this section.
+# ---- the board ----------------------------------------------------------------
 
-NOTION_API = "https://api.notion.com"
-NOTION_VERSION = "2026-03-11"
-TOKEN_ENV = "NOTION_TOKEN"
-# field -> (property name on the board, property type)
-PROPS = {
-    "id": ("Ticket ID", "unique_id"), "status": ("Status", "status"), "repo": ("Repo", "select"),
-    "kind": ("Kind", "select"), "area": ("Area", "select"), "after": ("After", "relation"),
-    "review": ("Review", "select"), "waiting": ("Waiting", "select"), "pr": ("PR", "url"),
-    "checks": ("Checks", "rich_text"),
-}
-LIST_BLOCKS = ("bulleted_list_item", "numbered_list_item", "to_do")
-TEXT_BLOCKS = ("paragraph", "quote", "callout", "code")
-
-
-def api_base() -> str:
-    override = os.environ.get("JTEK_NOTION_API", "").rstrip("/")
-    if not override:
-        return NOTION_API
-    parsed = urllib.parse.urlparse(override)
-    if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
-        # The token goes to this address, so it may only be a test board on this machine.
-        raise Refuse("JTEK_NOTION_API is for tests and may only point at this machine; unset it")
-    return override
-
-
-def notion(method: str, path: str, body: dict | None = None) -> dict:
-    token = os.environ.get(TOKEN_ENV)
-    if not token:
-        raise Refuse(f"{TOKEN_ENV} is not set; the board is in Notion, and jtek.py needs an integration token to read it")
-    base = api_base()
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": f"Bearer {token}", "Notion-Version": NOTION_VERSION, "Content-Type": "application/json"}
-    for attempt in range(4):
-        request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
-        try:
-            # The address is Notion's, or an http(s) address on this machine: api_base() refuses anything else.
-            with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
-                return json.loads(response.read() or b"{}")
-        except urllib.error.HTTPError as err:
-            if err.code == 429 and attempt < 3:
-                wait = err.headers.get("Retry-After", "1")
-                time.sleep(min(int(wait) if wait.isdigit() else 1, 30))
-                continue
-            try:
-                message = json.loads(err.read()).get("message", "")
-            except ValueError:
-                message = ""
-            hint = {
-                401: f"Check {TOKEN_ENV}",
-                403: "The integration lacks a capability: read content, update content, or insert comments",
-                404: "Share the board database with the integration",
-            }.get(err.code, "")
-            raise Refuse(f"Notion refused {method} {path.split('?')[0]} ({err.code}): {message}"
-                         + (f". {hint}" if hint else "")) from None
-        except (OSError, ValueError) as err:
-            raise Refuse(f"cannot reach Notion at {base}: {err}") from None
-    raise Refuse("Notion kept answering 429; try again later")
-
-
-def hex_id(ref: str) -> str:
-    """The 32 hex digits of a Notion id, from a bare id or from a link. Empty when there is none."""
-    tail = urllib.parse.urlparse(ref).path.rstrip("/").rsplit("/", 1)[-1] if "/" in ref else ref
-    match = re.search(r"([0-9a-f]{32})$", tail.replace("-", "").lower())
-    return match.group(1) if match else ""
-
-
-def board(base: str) -> str:
-    """Return the id of the board's one data source. The database is named in jtek.json on the base branch."""
-    database = hex_id(str(load_config(base).get("notion") or ""))
-    if not database:
-        raise Refuse(f"{CONFIG} on {base} has no `notion`; set it to the id or the link of the board database")
-    cache = state_dir() / "board.json"
-    cached = read_json(cache)
-    if cached.get("database") == database and cached.get("api") == api_base():
-        return cached["source"]
-    sources = notion("GET", f"/v1/databases/{database}").get("data_sources") or []
-    if len(sources) != 1:
-        raise Refuse(f"the board database must have exactly one data source, and it has {len(sources)}")
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    write_json(cache, {"database": database, "api": api_base(), "source": sources[0]["id"]})
-    return sources[0]["id"]
-
-
-def plain(rich: list | None) -> str:
-    """Text of a rich-text value on one line, so that page text can never start a new header line."""
-    return " ".join("".join(part.get("plain_text", "") for part in rich or []).split())
-
-
-def prop(page: dict, key: str):
-    name, kind = PROPS[key]
-    value = page.get("properties", {}).get(name, {}).get(kind)
-    if kind == "unique_id":
-        value = value or {}
-        number = value.get("number")
-        return "" if number is None else (f"{value['prefix']}-{number}" if value.get("prefix") else str(number))
-    if kind in ("status", "select"):
-        return " ".join(str((value or {}).get("name", "")).split())
-    if kind == "relation":
-        return [item["id"] for item in value or []]
-    if kind == "rich_text":
-        return plain(value)
-    return value or ""
-
-
-def page_title(page: dict) -> str:
-    for value in page.get("properties", {}).values():
-        if value.get("type") == "title":
-            return plain(value.get("title"))
-    return ""
-
-
-def check_schema(page: dict) -> None:
-    properties = page.get("properties", {})
-    missing = [f"`{name}` ({kind})" for name, kind in PROPS.values() if properties.get(name, {}).get("type") != kind]
-    if missing:
-        raise Refuse("the board is missing properties, or they have another type: " + ", ".join(missing)
-                     + ". The layout is in references/notion.md of the jt-work skill")
-
-
-def find_page(ref: str, source: str) -> dict:
-    """Find a ticket by its id (`T-12`), by a page link, or by a page id. The page must be on the board."""
-    known = read_json(work_dir(ref) / "meta.json").get("page", "") if ID_RE.match(ref) else ""
-    page_id = known or hex_id(ref)
-    if page_id:
-        page = notion("GET", f"/v1/pages/{page_id}")
-        if hex_id(str(page.get("parent", {}).get("data_source_id", ""))) != hex_id(source):
-            raise Refuse(f"{ref} is not a page of the board database named in {CONFIG}")
-    else:
-        match = re.match(r"^(?:.+-)?(\d+)$", ref)
-        if not match:
-            raise Refuse(f"`{ref}` is not a ticket id such as T-12, and not a Notion page link")
-        found = notion("POST", f"/v1/data_sources/{source}/query", {
-            "filter": {"property": PROPS["id"][0], "unique_id": {"equals": int(match.group(1))}}, "page_size": 10,
-        }).get("results", [])
-        pages = [item for item in found if prop(item, "id") == ref]
-        if not pages:
-            raise Refuse(f"no ticket `{ref}` on the board")
-        page = pages[0]
-    if page.get("in_trash") or page.get("archived"):
-        raise Refuse(f"{ref} is in the trash in Notion")
-    return page
-
-
-def page_body(page_id: str) -> list[str]:
-    """The page body as ticket text. Anything under `Done when` that is not a plain list item is refused,
-    because that list decides what the evidence must show."""
-    lines: list[str] = []
-    section, cursor = "", ""
-    while True:
-        query = f"/v1/blocks/{page_id}/children?page_size=100" + (f"&start_cursor={cursor}" if cursor else "")
-        data = notion("GET", query)
-        for block in data.get("results", []):
-            kind = block.get("type", "")
-            text = plain(block.get(kind, {}).get("rich_text"))
-            if kind.startswith("heading_"):
-                section = text.lower()
-                lines += ["", f"## {text}", ""]
-                if block.get("has_children"):
-                    # A toggle heading keeps its content inside it, and that content is not read here.
-                    if section == "done when":
-                        raise Refuse("the `Done when` heading on the page is a toggle, so its items are hidden inside it. "
-                                     "Make it a plain heading with the items below it")
-                    lines.append("[this heading is a toggle, and what is inside it is not copied here; open the page to see it]")
-                continue
-            if kind == "divider" or (kind == "paragraph" and not text):
-                lines.append("")
-                continue
-            if not section:
-                # Text above the first heading goes in a section, so it cannot be read as a ticket field.
-                section = "notes"
-                lines += ["", "## Notes", ""]
-            nested = bool(block.get("has_children"))
-            if section == "done when" and (kind not in LIST_BLOCKS or nested):
-                what = "an item with nested content" if kind in LIST_BLOCKS else f"a {kind} block"
-                raise Refuse(f"`Done when` on the page has {what}. Make every outcome one top-level list item, "
-                             "because each item must be answered in the evidence")
-            if kind in LIST_BLOCKS:
-                lines.append(f"- {text}")
-            elif kind in TEXT_BLOCKS:
-                lines.append(text)
-            else:
-                lines.append(f"[a {kind} block is not copied here; open the page to see it]")
-            if nested:
-                lines.append("  [nested content is not copied here; open the page to see it]")
-        if not data.get("has_more"):
-            return lines
-        cursor = data.get("next_cursor") or ""
-
-
-def waits_on(page: dict) -> list[tuple[str, str]]:
-    """The tickets in After, as (id, status). They may belong to any repository on the board."""
-    if page.get("properties", {}).get(PROPS["after"][0], {}).get("has_more"):
-        raise Refuse("After lists more than 25 tickets; split the work")
-    found = []
-    for page_id in prop(page, "after"):
-        other = notion("GET", f"/v1/pages/{hex_id(page_id)}")
-        found.append((prop(other, "id") or page_id, prop(other, "status")))
-    return found
-
-
-def ticket_text(page: dict, after: list[tuple[str, str]]) -> str:
-    """Header lines come from properties only. The body comes after the first heading."""
-    head = [f"# {page_title(page)}", f"id: {prop(page, 'id')}", f"status: {prop(page, 'status')}"]
-    head += [f"{key}: {prop(page, key)}" for key in ("repo", "kind", "area", "checks") if prop(page, key)]
-    if prop(page, "review").lower() == "human":
-        head.append("review: human")
-    if after:
-        head.append("after: " + ", ".join(ticket_id for ticket_id, _ in after))
-    return "\n".join(head + page_body(hex_id(page["id"]))) + "\n"
-
-
-def set_page(page_id: str, **fields: str | None) -> None:
-    """Write Status, Waiting, or PR on a page. None clears Waiting or PR."""
-    properties: dict = {}
-    for key, value in fields.items():
-        name, kind = PROPS[key]
-        if kind == "url":
-            properties[name] = {"url": value or None}
-        else:
-            properties[name] = {kind: {"name": value} if value else None}
-    notion("PATCH", f"/v1/pages/{page_id}", {"properties": properties})
-
-
-def add_comment(page_id: str, text: str) -> None:
-    parts = [text[i:i + 2000] for i in range(0, len(text), 2000)][:100]
-    notion("POST", "/v1/comments", {"parent": {"page_id": page_id},
-                                    "rich_text": [{"text": {"content": part}} for part in parts]})
-
-
-def board_pages(source: str, query_filter: dict | None = None) -> list[dict]:
-    pages: list[dict] = []
-    cursor = ""
-    while True:
-        body: dict = {"page_size": 100}
-        if query_filter:
-            body["filter"] = query_filter
-        if cursor:
-            body["start_cursor"] = cursor
-        data = notion("POST", f"/v1/data_sources/{source}/query", body)
-        pages += data.get("results", [])
-        if not data.get("has_more"):
-            return pages
-        cursor = data.get("next_cursor") or ""
-
-
-def push_result(ticket_id: str) -> None:
-    """Put the saved result on the board. Safe to run again: the same result is commented once."""
-    work = work_dir(ticket_id)
-    meta = load_meta(ticket_id)
-    text = (work / "result.md").read_text()
-    lines = dict(line.split(": ", 1) for line in text.splitlines() if ": " in line)
-    outcome = lines.get("outcome", "")
-    if outcome == "needs-review":
-        return  # nothing changes for the human until the verdict is in
-    if outcome == "review":
-        status = prop(notion("GET", f"/v1/pages/{meta['page']}"), "status")
-        if status not in ("In Progress", "Review"):
-            # The human moved the ticket while the session worked. Their choice stays.
-            raise Refuse(f"the page is `{status}`, not In Progress, so it was left as it is")
-        set_page(meta["page"], status="Review", waiting=None, pr=meta.get("pr") or None)
-        if (work / "evidence.md").exists():
-            text += "\nevidence:\n" + (work / "evidence.md").read_text()
-    else:
-        set_page(meta["page"], waiting=lines.get("waiting", ""))
-    digest = hashlib.sha256(text.encode()).hexdigest()
-    marker = work / "pushed"
-    if not marker.exists() or marker.read_text().strip() != digest:
-        add_comment(meta["page"], text)
-        marker.write_text(digest + "\n")
-
-
-def conclude(ticket_id: str, text: str) -> None:
-    """Print the result, then put it on the board. The result file is already saved."""
-    print(text, end="")
+def load_board(path: str) -> list[dict]:
+    """Rows that the launcher read from the board with its Notion tool: one object per open ticket."""
     try:
-        push_result(ticket_id)
-    except Refuse as err:
-        raise Refuse(f"the result is saved, but the board was not updated: {err}\n"
-                     f"Run `jtek.py push {ticket_id}` when Notion can be reached") from None
+        rows = json.loads(Path(path).read_text())
+    except (OSError, ValueError) as err:
+        raise Refuse(f"cannot read the board file {path}: {err}") from None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) and row.get("id") for row in rows):
+        raise Refuse("the board file must be a JSON list of objects, each with `id` and `status`; "
+                     "see references/starting-sessions.md")
+    for row in rows:
+        after = row.get("after") or []
+        row["after"] = [item.strip() for item in after.split(",") if item.strip()] if isinstance(after, str) else list(after)
+        for key in ("status", "repo", "waiting", "pr", "title"):
+            row[key] = str(row.get(key) or "").strip()
+    return rows
 
 
 # ---- commands --------------------------------------------------------------
@@ -568,9 +316,8 @@ def cmd_init(args: argparse.Namespace) -> None:
     path = Path(git("rev-parse", "--show-toplevel")) / CONFIG
     if path.exists():
         raise Refuse(f"{path} already exists")
-    write_json(path, {"notion": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
+    write_json(path, {"setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
-    print("`notion` is the id or the link of the board database.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
@@ -578,25 +325,25 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_start(args: argparse.Namespace) -> None:
+    try:
+        text = Path(args.from_file).read_text()
+    except OSError as err:
+        raise Refuse(f"cannot read the ticket file: {err}") from None
+    ticket = parse_ticket(text)
+    fields = ticket["fields"]
+    ticket_id = check_id(fields.get("id", ""))
     base = base_branch()
     declared = load_checks(base)
-    page = find_page(args.ref, board(base))
-    check_schema(page)
-    page_id = hex_id(page["id"])
-    ticket_id = check_id(prop(page, "id"))
-    after = waits_on(page)
-    text = ticket_text(page, after)
-    ticket = parse_ticket(text)
     selected = validate_ticket(ticket, declared)
-    wanted_repo = prop(page, "repo")
+    wanted_repo = fields.get("repo", "")
     this_repo = str(load_config(base).get("name") or main_root().name)
     if wanted_repo and wanted_repo != this_repo:
         raise Refuse(
             f"{ticket_id} is for the repository `{wanted_repo}`, and this one is `{this_repo}`. "
             "Start the session in that repository"
         )
-    status = prop(page, "status")
-    waiting = prop(page, "waiting")
+    status = fields.get("status", "")
+    waiting = fields.get("waiting", "")
     work = work_dir(ticket_id)
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
     parked = (work / "result.md").exists()
@@ -609,9 +356,7 @@ def cmd_start(args: argparse.Namespace) -> None:
             raise Refuse(f"{ticket_id} is `{status}`; only a ticket in Todo or In Progress can resume")
         if waiting and status != "Todo":
             raise Refuse(f"{ticket_id} is still waiting for {waiting}. The human answers on the page and clears Waiting")
-        set_page(page_id, status="In Progress", waiting=None)
         (work / "result.md").unlink(missing_ok=True)
-        (work / "pushed").unlink(missing_ok=True)
         checks_path = work / "checks.json"
         if checks_path.exists():
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
@@ -622,9 +367,8 @@ def cmd_start(args: argparse.Namespace) -> None:
             raise Refuse(CLAIMED.format(id=ticket_id))
         if status != "Todo":
             raise Refuse(f"{ticket_id} is `{status or 'unset'}`, not Todo; the human releases a ticket by setting Status to Todo")
-        for dep, dep_status in after:
-            if dep_status != "Done":
-                raise Refuse(f"{ticket_id} comes after {dep}, which is `{dep_status or 'unset'}`, not Done")
+        if fields.get("after"):
+            raise Refuse(f"{ticket_id} comes after {fields['after']}, which is not Done")
         work.parent.mkdir(parents=True, exist_ok=True)
         try:
             work.mkdir()  # atomic claim: the second session to try loses
@@ -670,17 +414,8 @@ def cmd_start(args: argparse.Namespace) -> None:
                     )
                 green.parent.mkdir(parents=True, exist_ok=True)
                 green.write_text(base_sha + "\n")
-        try:
-            # Last, so that the board says In Progress only when the worktree is ready.
-            set_page(page_id, status="In Progress", waiting=None)
-        except Refuse:
-            undo()
-            raise
-        source = page.get("url") or page_id
-        if api_base() != NOTION_API:
-            source += f" (test board at {api_base()})"
         meta = {
-            "id": ticket_id, "page": page_id, "source": source,
+            "id": ticket_id, "source": args.ref,
             "base": base, "worktree": str(worktree), "branch": branch, "pr": "",
         }
 
@@ -690,6 +425,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
+    print("board: Status=In Progress; Waiting=")
     print(f"id: {ticket_id}")
     print(f"worktree: {meta['worktree']}")
     print(f"branch: {meta['branch']}")
@@ -708,7 +444,6 @@ def run_command(command: str, worktree: Path, log: Path) -> bool:
     """Run one declared command without a shell. The ticket id is in the environment so that
     a command can pick its own port or data folder when several worktrees run at once."""
     env = {**os.environ, "JTEK_TICKET": worktree.name, "JTEK_WORKTREE": str(worktree)}
-    env.pop(TOKEN_ENV, None)  # a check runs code from the worktree, and that code has no use for the board
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(log, "w") as handle:
@@ -858,13 +593,13 @@ def cmd_finish(args: argparse.Namespace) -> None:
         needs_verdict = True
         pr_note += " `review: human` is ignored because the change touches the files on the attention line."
     if needs_verdict and not verdict:
-        conclude(args.id, write_result(args.id, "needs-review", "In Progress",
-                                       note="start a session that did not write this code and run jt-review for this id." + pr_note))
+        print(write_result(args.id, "needs-review", "In Progress",
+                           note="start a session that did not write this code and run jt-review for this id." + pr_note), end="")
         return
     if verdict.get("verdict") == "FAIL":
         raise Refuse(f"verdict is FAIL; read {work / 'review.md'}, fix what reproduces, commit, check, and get a new verdict")
-    conclude(args.id, write_result(args.id, "review", "Review",
-                                   note="the human reviews and merges; jtek never merges." + pr_note))
+    print(write_result(args.id, "review", "Review",
+                       note="the human reviews and merges; jtek never merges." + pr_note), end="")
 
 
 def cmd_stop(args: argparse.Namespace) -> None:
@@ -877,7 +612,7 @@ def cmd_stop(args: argparse.Namespace) -> None:
                 "these files are not committed, and the next session would not know what they are. "
                 f"Commit them as `wip: <what is unfinished>`, or add build output to .gitignore\n{dirty}"
             )
-    conclude(args.id, write_result(args.id, "needs-human", "In Progress", note=args.note, waiting=args.waiting))
+    print(write_result(args.id, "needs-human", "In Progress", note=args.note, waiting=args.waiting), end="")
 
 
 def cmd_result(args: argparse.Namespace) -> None:
@@ -935,95 +670,52 @@ def tidy_done(ticket_id: str) -> None:
             subprocess.run(["git", "branch", "-d", meta["branch"]], capture_output=True)
 
 
-def cmd_push(args: argparse.Namespace) -> None:
-    if not (work_dir(args.id) / "result.md").exists():
-        raise Refuse(f"{args.id} has no result yet")
-    push_result(args.id)
-    print(f"the board has the result of {args.id}")
-
-
-def cmd_list(args: argparse.Namespace) -> None:
-    base = base_branch()
-    this_repo = str(load_config(base).get("name") or main_root().name)
-    name = PROPS["status"][0]
-    pages = board_pages(board(base), {"and": [
-        {"property": name, "status": {"does_not_equal": "Done"}},
-        {"property": name, "status": {"does_not_equal": "Cancelled"}},
-    ]})
-    if pages:
-        check_schema(pages[0])
-    ids = {hex_id(page["id"]): prop(page, "id") for page in pages}
-    rows: dict[str, list[str]] = {status: [] for status in STATUSES if status not in ("Done", "Cancelled")}
-    done: list[str] = []
-    for page in sorted(pages, key=lambda item: prop(item, "id")):
-        ticket_id, status = prop(page, "id"), prop(page, "status") or "Backlog"
-        fields = {key: prop(page, key) for key in ("repo", "area", "kind", "waiting", "pr")}
-        fields["after"] = ", ".join(ids[hex_id(dep)] for dep in prop(page, "after") if hex_id(dep) in ids)
-        mine = fields["repo"] in ("", this_repo)
-        if args.sync and mine and status == "Review" and fields["pr"]:
-            state, _, ci = pr_info(fields["pr"])  # Done is read back from the forge, never assumed
-            if state == "OPEN" and ci in ("fail", "pending"):
-                fields["note"] = f"CI: {ci}"
+def cmd_sync(args: argparse.Namespace) -> None:
+    """Done is read back from the forge, never assumed. Print what to write on the board, and tidy worktrees."""
+    this_repo = str(load_config(base_branch()).get("name") or main_root().name)
+    for row in sorted(load_board(args.board_file), key=lambda item: item["id"]):
+        if row["repo"] not in ("", this_repo):
+            continue
+        if row["status"] == "Review" and row["pr"]:
+            state, _, ci = pr_info(row["pr"])
             if state == "MERGED":
-                set_page(hex_id(page["id"]), status="Done")
-                done.append(ticket_id)
-                continue
-            if state not in ("OPEN", "unknown"):
-                fields["note"] = f"PR state: {state}"
-        extra = "".join(f"  [{key}: {fields[key]}]" for key in ("repo", "area", "kind", "waiting", "after", "pr", "note")
-                        if fields.get(key))
-        rows.setdefault(status, []).append(f"  {ticket_id}  {page_title(page)}{extra}")
-    for status, items in rows.items():
-        print(f"{status} ({len(items)})")
-        print("\n".join(items) if items else "  -")
-    if done:
-        print("set to Done, pull request merged: " + ", ".join(done))
-    print("Done and Cancelled tickets are not listed.")
-    if args.sync:
-        # Remove the worktree of a ticket this machine worked, only when its page says Done or Cancelled.
-        # A page that is merely absent from the list above proves nothing.
-        folder = state_dir() / "work"
-        for work in sorted(folder.iterdir()) if folder.is_dir() else []:
-            page_id = read_json(work / "meta.json").get("page")
-            if not page_id:
-                continue
-            try:
-                finished = prop(notion("GET", f"/v1/pages/{page_id}"), "status") in ("Done", "Cancelled")
-            except Refuse:
-                finished = False
-            if finished:
-                tidy_done(work.name)
+                print(f"{row['id']}\tboard: Status=Done\tthe pull request is merged")
+                tidy_done(row["id"])
+            elif state == "OPEN" and ci in ("fail", "pending"):
+                print(f"{row['id']}\t-\tCI: {ci}")
+            elif state not in ("OPEN", "unknown"):
+                print(f"{row['id']}\t-\tPR state: {state}")
+        elif row["status"] in ("Done", "Cancelled"):
+            tidy_done(row["id"])
 
 
-def next_step(page: dict, this_repo: str, open_ids: dict[str, str]) -> tuple[str, str]:
+def next_step(row: dict, this_repo: str) -> tuple[str, str]:
     """What one open ticket needs now, for whoever starts sessions. The first word is the action:
-    `work`, `review`, and `push` are for a session to do. Every other word means do not start one."""
-    ticket_id, status = prop(page, "id"), prop(page, "status") or "Backlog"
-    repo = prop(page, "repo")
-    if repo not in ("", this_repo):
-        return "other", f"belongs to the repository `{repo}`"
+    `work`, `review`, and `board` are for a session to do. Every other word means do not start one."""
+    ticket_id, status = row["id"], row["status"] or "Backlog"
+    if row["repo"] not in ("", this_repo):
+        return "other", f"belongs to the repository `{row['repo']}`"
     if status == "Backlog":
         return "hold", "not released; the human sets Todo"
+    if status in ("Done", "Cancelled"):
+        return "hold", "finished"
+    if status == "Review":
+        return "human", "review and merge " + (row["pr"] or "the branch")
     work = work_dir(ticket_id)
     claimed, parked = (work / "meta.json").exists(), (work / "result.md").exists()
-    outcome = ""
-    if parked:
-        outcome = dict(line.split(": ", 1) for line in (work / "result.md").read_text().splitlines() if ": " in line).get("outcome", "")
-    if outcome in ("review", "needs-human") and status != "Todo" and not (work / "pushed").exists():
-        return "push", "the result did not reach the board in full"
-    if status == "Review":
-        return "human", "review and merge " + (prop(page, "pr") or "the branch")
     if work.exists() and not parked:
         return "running", "a session holds the claim. If none is running, it died: the human runs start with --resume"
     if status == "Todo":
-        blocked = [open_ids[hex_id(dep)] for dep in prop(page, "after") if hex_id(dep) in open_ids]
-        if blocked:
-            return "hold", "comes after " + ", ".join(blocked)
+        if row["after"]:
+            return "hold", "comes after " + ", ".join(row["after"])
         return "work", "rework asked by the human" if claimed else "new"
-    if prop(page, "waiting"):
-        return "human", f"waiting for {prop(page, 'waiting')}; answer on the page and clear Waiting"
+    if row["waiting"]:
+        return "human", f"waiting for {row['waiting']}; answer on the page and clear Waiting"
     if not claimed:
         return "elsewhere", "In Progress, and not claimed on this machine"
+    outcome = dict(line.split(": ", 1) for line in (work / "result.md").read_text().splitlines() if ": " in line).get("outcome")
+    if outcome == "review":
+        return "board", f"the page does not show the result; write the `board:` line of `jtek.py result {ticket_id}`"
     if outcome == "needs-human":
         return "work", "the human answered"
     meta, verdict = load_meta(ticket_id), read_json(work / "verdict.json")
@@ -1035,20 +727,11 @@ def next_step(page: dict, this_repo: str, open_ids: dict[str, str]) -> tuple[str
 
 
 def cmd_next(args: argparse.Namespace) -> None:
-    base = base_branch()
-    this_repo = str(load_config(base).get("name") or main_root().name)
-    name = PROPS["status"][0]
-    pages = board_pages(board(base), {"and": [
-        {"property": name, "status": {"does_not_equal": "Done"}},
-        {"property": name, "status": {"does_not_equal": "Cancelled"}},
-    ]})
-    if pages:
-        check_schema(pages[0])
-    open_ids = {hex_id(page["id"]): prop(page, "id") for page in pages}
-    for page in sorted(pages, key=lambda item: prop(item, "id")):
-        action, reason = next_step(page, this_repo, open_ids)
+    this_repo = str(load_config(base_branch()).get("name") or main_root().name)
+    for row in sorted(load_board(args.board_file), key=lambda item: item["id"]):
+        action, reason = next_step(row, this_repo)
         if action != "other":
-            print(f"{prop(page, 'id')}\t{action}\t{reason}")
+            print(f"{row['id']}\t{action}\t{reason}")
 
 
 def cmd_release(args: argparse.Namespace) -> None:
@@ -1069,7 +752,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_init)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
-    start.add_argument("ref", help="a ticket id on the board, such as T-12, or the link of its Notion page")
+    start.add_argument("ref", help="the link of the ticket's Notion page; it becomes the `source:` of the result")
+    start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
     start.add_argument("--resume", action="store_true")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
     start.set_defaults(func=cmd_start)
@@ -1101,18 +785,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, text in (("result", cmd_result, "print the last result"),
                              ("show", cmd_show, "print what a reviewer needs"),
-                             ("push", cmd_push, "put the saved result on the board again, after Notion could not be reached"),
                              ("release", cmd_release, "human only: drop the claim and the worktree")):
         item = sub.add_parser(name, help=text)
         item.add_argument("id")
         item.set_defaults(func=func)
 
-    listing = sub.add_parser("list", help="print the open tickets of the board")
-    listing.add_argument("--sync", action="store_true",
-                         help="set Review tickets to Done when their PR is merged, and remove the worktrees of Done tickets")
-    listing.set_defaults(func=cmd_list)
-    sub.add_parser("next", help="for whoever starts sessions: what each open ticket of this repository needs now"
-                   ).set_defaults(func=cmd_next)
+    for name, func, text in (
+        ("next", cmd_next, "for whoever starts sessions: what each open ticket of this repository needs now"),
+        ("sync", cmd_sync, "read the pull request of each Review ticket from the forge, and remove the worktrees of finished tickets"),
+    ):
+        item = sub.add_parser(name, help=text)
+        item.add_argument("--board-file", required=True, help="the open tickets, read from the board and saved as JSON")
+        item.set_defaults(func=func)
     return parser
 
 

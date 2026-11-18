@@ -1,5 +1,4 @@
 """The eval builder and grader work on a scripted, known-good run."""
-import os
 import subprocess
 import sys
 import tempfile
@@ -9,15 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RUN = ROOT / "evals" / "run.py"
 JTEK = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
-sys.path.insert(0, str(ROOT / "tests"))
-from fake_notion import FakeNotion  # noqa: E402
-
-ENV: dict[str, str] = {}
 
 
 def run(*args, cwd=None):
-    proc = subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True,
-                          env={**os.environ, **ENV})
+    proc = subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
 
 
@@ -31,13 +25,8 @@ class EvalTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.dest = Path(self.tmp.name).resolve() / "run"
 
-    def board(self):
-        """Serve the board that `build` saved, as the person running an eval does in another terminal."""
-        board = FakeNotion(path=self.dest / "board.json").start()
-        self.addCleanup(board.stop)
-        self.addCleanup(ENV.clear)
-        ENV.update(board.env())
-        return board
+    def start(self):
+        return run(JTEK, "start", "https://www.notion.so/eval", "--from-file", self.dest / "ticket.md", cwd=self.dest / "app")
 
     def test_every_scenario_builds_and_an_untouched_one_fails_the_grade(self):
         for scenario in sorted(p.name for p in (ROOT / "evals" / "scenarios").iterdir()):
@@ -52,8 +41,7 @@ class EvalTests(unittest.TestCase):
     def test_a_correct_bug_fix_gets_full_marks(self):
         self.assertEqual(run(RUN, "build", "bug-wordcount", self.dest)[0], 0)
         repo = self.dest / "app"
-        board = self.board()
-        self.assertEqual(run(JTEK, "start", "B-1", cwd=repo)[0], 0)
+        self.assertEqual(self.start()[0], 0)
         tree = self.dest / "app.jtek" / "B-1"
         test = tree / "test_wordcount.py"
         test.write_text(test.read_text().replace(
@@ -69,7 +57,7 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(run(JTEK, "verdict", "B-1", "PASS", "--by", "reviewer", cwd=tree)[0], 0)
         code, out = run(JTEK, "finish", "B-1", "--no-pr", "--evidence-file", evidence, cwd=tree)
         self.assertIn("outcome: review", out)
-        self.assertEqual(board.get("B-1", "Status"), "Review")
+        self.assertIn("board: Status=Review", out)
         code, out = run(RUN, "grade", "bug-wordcount", self.dest)
         self.assertEqual(code, 0, out)
         self.assertNotIn("FAIL", out)
@@ -77,8 +65,7 @@ class EvalTests(unittest.TestCase):
     def test_a_fix_without_the_test_first_loses_that_mark(self):
         self.assertEqual(run(RUN, "build", "bug-wordcount", self.dest)[0], 0)
         repo = self.dest / "app"
-        self.board()
-        run(JTEK, "start", "B-1", cwd=repo)
+        self.start()
         tree = self.dest / "app.jtek" / "B-1"
         code = tree / "wordcount.py"
         code.write_text(code.read_text().replace('text.split(" ")', "text.split()"))

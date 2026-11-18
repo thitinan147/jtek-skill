@@ -34,7 +34,7 @@ Grouping is decided before a session starts, by the human or the launcher. The f
 - **Put together:** up to three small tickets with the same `area:` that do not depend on each other.
 - **Give its own session:** a ticket in another area, a large ticket, a `refactor`, a bug you expect to be hard, and any ticket with `after:`.
 - **Run in parallel sessions instead:** tickets you want done sooner. One session works one ticket at a time.
-- `jtek.py list` shows each Todo ticket's `area`, `kind`, and `after`.
+- The board shows each Todo ticket's Area, Kind, and After.
 
 ## How the session ends
 
