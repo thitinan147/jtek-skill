@@ -14,6 +14,7 @@ Thanks for helping. Issues and pull requests are welcome.
 3. Keep the skills dependency-free, and do not make a skill depend on another skill set.
 4. `jt-work` owns the order of the steps and the script. A step's judgement goes in that step's skill. `skills/jt-work/scripts/jtek.py` is the source. Copy it to `skills/jt-review/scripts/jtek.py` after every change. A test fails when the two differ. They are real copies because an installer may place each skill on its own.
 5. If you change a status, the ticket format, or the result block, update `skills/jt-work/references/ticket.md`, the README, and `CHANGELOG.md`, and add or adjust a test.
-6. Open a pull request that says what changed and why.
+6. If you change the text of a skill or a playbook, run the evals in [evals/README.md](evals/README.md) before and after, and say in the pull request what the scores were.
+7. Open a pull request that says what changed and why.
 
 Commit messages follow `type(scope): summary` (for example `fix(check): ...`).

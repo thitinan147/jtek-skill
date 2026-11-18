@@ -23,6 +23,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
 - Every session ends with the same `jtek-result` block.
 - The skills never choose the next ticket and never merge.
+- `evals/` has two scenarios with hidden acceptance tests, a builder, and a grader that reads the repository an agent leaves behind.
 - Skill and plugin metadata are `26.0.0`.
 
 ## 25.0.0 - the queue can plan a batch and still stop for a human

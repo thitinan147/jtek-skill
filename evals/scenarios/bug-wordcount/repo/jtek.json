@@ -1,0 +1,1 @@
+{"setup": "", "checks": {"test": "python3 -m unittest -q test_wordcount", "verify": "python3 scripts/verify.py"}}
