@@ -1,5 +1,10 @@
 # Changelog
 
+## 26.1.0 - a guided first run
+
+- `GETTING-STARTED.md` walks from nothing connected to the first merged ticket: what to connect, each step with what you should see, a first ticket to copy, and what each refusal means. The steps through Notion and a real pull request have not been walked yet, and the guide says so.
+- `jtek.py doctor` lists what is set up in a repository and what is missing, in the order to fix it. It only reads. It cannot see Notion.
+
 ## 26.0.0 - inner loop only
 
 This version is a rewrite. It does not read the `jt-queue/` files of earlier versions.

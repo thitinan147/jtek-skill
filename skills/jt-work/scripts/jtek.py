@@ -737,6 +737,62 @@ def cmd_next(args: argparse.Namespace) -> None:
             print(f"{row['id']}\t{action}\t{reason}")
 
 
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """Say what is set up and what is missing, in the order to fix it. Read-only: it runs no check."""
+    rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
+
+    def tool(command: list[str]) -> str:
+        try:
+            proc = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return (proc.stdout + proc.stderr).strip() if proc.returncode == 0 else ""
+
+    found = re.search(r"(\d+)\.(\d+)", tool(["git", "--version"]))
+    version = (int(found.group(1)), int(found.group(2))) if found else (0, 0)
+    rows.append(("ok" if version >= (2, 31) else "missing", f"git {version[0]}.{version[1]}", "install git 2.31 or later"))
+    rows.append(("ok" if sys.version_info >= (3, 10) else "missing",
+                 f"Python {sys.version_info[0]}.{sys.version_info[1]}", "run this script with Python 3.10 or later"))
+    config: dict = {}
+    try:
+        base = base_branch()
+        rows.append(("ok", f"base branch `{base}`", ""))
+        config = load_config(base)
+        rows.append(("ok", f"{CONFIG} is committed on {base}", ""))
+    except Refuse as err:
+        base = ""
+        rows.append(("missing", f"{CONFIG} on the base branch", str(err)))
+    if config:
+        board = str(config.get("board") or "")
+        rows.append(("ok" if board else "missing", "`board`: the Notion database link",
+                     f"set `board` in {CONFIG} to the link of the board database, and commit it on {base}"))
+        checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
+        empty = [name for name, command in checks.items() if not str(command).strip()]
+        if not checks:
+            rows.append(("missing", "checks", f"declare at least one check in {CONFIG}"))
+        elif empty:
+            rows.append(("missing", "checks without a command: " + ", ".join(empty),
+                         f"fill them in or delete them in {CONFIG}, and commit it on {base}"))
+        else:
+            rows.append(("ok", "checks: " + ", ".join(checks), ""))
+        rows.append(("ok" if "verify" in checks and not empty else "optional", "a `verify` check that runs the real app",
+                     "run the jt-harness skill once; without it a passing check only means the code compiles"))
+        guide = subprocess.run(["git", "cat-file", "-e", f"{base}:.jtek/verify.md"], capture_output=True).returncode == 0
+        rows.append(("ok" if guide else "optional", f".jtek/verify.md on {base}",
+                     "run the jt-harness skill once, review what it wrote, and commit it"))
+    rows.append(("ok" if tool(["git", "remote", "get-url", "origin"]) else "optional", "a remote named origin",
+                 "without a forge, tickets end with `finish --no-pr` and the human sets Done"))
+    rows.append(("ok" if tool(["gh", "auth", "status"]) else "optional", "`gh` is installed and signed in",
+                 "run `gh auth login`; it is needed to open pull requests and to read their state"))
+    for state, what, todo in rows:
+        print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
+    print("not checked: Notion. This script cannot see it. Ask your agent to read the board with its Notion tool\n"
+          "         and compare the properties with references/notion.md of the jt-work skill.")
+    if any(state == "missing" for state, _, _ in rows):
+        raise Refuse("something required is missing; fix the first `missing` line and run doctor again")
+    print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")
+
+
 def cmd_release(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
@@ -753,6 +809,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_init)
+    sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_doctor)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
     start.add_argument("ref", help="the link of the ticket's Notion page; it becomes the `source:` of the result")

@@ -780,5 +780,32 @@ class NextTests(Scratch):
         self.assertEqual(self.next()["T-1"][0], "board")
 
 
+class DoctorTests(Scratch):
+    def test_doctor_names_what_is_missing_in_order(self):
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1, out)
+        self.assertIn("missing  `board`: the Notion database link", out)
+        self.assertIn("not checked: Notion", out)
+        self.write_config({"test": f"{sys.executable} -c pass", "lint": ""}, board="https://www.notion.so/x")
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("checks without a command: lint", out)
+
+    def test_doctor_says_ready_and_what_is_optional(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x")
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("ok       checks: test", out)
+        self.assertIn("optional .jtek/verify.md on main", out)
+        self.assertIn("ready: write a ticket", out)
+
+    def test_doctor_without_a_config_says_how_to_start(self):
+        self.git("rm", "-q", "jtek.json")
+        self.git("commit", "-q", "-m", "drop")
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("run `jtek.py init`", out)
+
+
 if __name__ == "__main__":
     unittest.main()
