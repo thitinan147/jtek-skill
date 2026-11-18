@@ -10,7 +10,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - A session may work several tickets in a row when the last one ended cleanly, the next one is in code it already read, and the session is still short. Each ticket keeps its own worktree, evidence, pull request, and result.
 - Several tickets can run at once, each in its own session and worktree. A claim is an atomic directory under the git common directory, so the same ticket cannot be taken twice.
 - Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` is the only file added to a repository.
-- A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot.
+- A ticket can be a local file or text fetched from Notion (`start <url> --from-file <file>`). Both become the same snapshot. `references/notion.md` gives the database layout, who may set each status, and what a session writes back.
 - Statuses are Backlog, Todo, In Progress, Review, Done, and Cancelled. `waiting: input | approval` is a field on an In Progress ticket.
 - Review requires passing checks on the current commit, a `PASS` or `PASS+NOTES` verdict from a session that did not write the change, saved evidence, and a pull request. The human merges. A ticket with `review: human` waives the verdict. A change to the code makes the verdict stale. A rebase that changes nothing keeps it, and the checks run again.
 - `jtek.json` may declare `setup`, a command that installs dependencies in each new worktree, and `watch`, a list of file patterns.

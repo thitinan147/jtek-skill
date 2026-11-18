@@ -61,7 +61,7 @@ Then run the `jt-harness` skill once. It writes `.jtek/` (how to run and drive t
 | Add a local ticket | `jtek.py add --title "..."`, fill in the file, set `status: Todo` |
 | Work a local ticket | `/jt-work T-12` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
-| Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection) |
+| Work a Notion ticket | `/jt-work <Notion URL>` (the agent needs a Notion connection; the database layout is in [notion.md](skills/jt-work/references/notion.md)) |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Fix a pull request after CI or review comments | set the ticket back to `Todo`, then `/jt-work T-12` |
 | See the local board and tidy finished worktrees | `jtek.py list --sync` |

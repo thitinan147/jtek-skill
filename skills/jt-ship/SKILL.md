@@ -24,7 +24,7 @@ Save the evidence to a temporary file outside the worktree. Add `--attach <file>
 
 ## 3. Read the result
 
-- **`outcome: review`:** stop. The human reviews and merges. If the ticket came from Notion, set its status to Review there and add the result as a comment.
+- **`outcome: review`:** stop. The human reviews and merges. If the ticket came from Notion, update the page: Status Review, the pull request link, and the result block as a comment.
 - **`outcome: needs-review`:** the usual first result. A session that did not write the change records a verdict, and then `finish` runs again.
 - **`refused: verdict is FAIL`:** the change does not ship. Read the review notes the script names.
 - **`refused: CI is failing`:** the pull request is not ready for the human while its checks are red.
