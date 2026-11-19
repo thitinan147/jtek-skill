@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 26.3.0 - templates, and a picture of the whole factory
 
 - Templates, each with a blank form, a filled example, and its rules: the ticket page, the evidence, the review notes, `.jtek/verify.md` with a feature file, and `.jtek/rules.md`. `setup.md` has `jtek.json` examples for Node, Python, and Go. The README lists them.
 - The README has a picture of the whole factory: human in the loop, outer loop, and inner loop.
