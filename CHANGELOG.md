@@ -59,6 +59,8 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `evals/` has two scenarios with hidden acceptance tests, a builder, and a grader that reads the repository an agent leaves behind.
 - Skill and plugin metadata are `26.0.0`.
 
+Entries below 26.0.0 describe files that the rewrite removed. They are in the git history at commit `4c9d0f1`.
+
 ## 25.0.0 - the queue can plan a batch and still stop for a human
 
 - Specs keep `## Roles`. The approver, reviewer, and merger are people. `human-only` paths and topics are project-defined. A diff there is `refused: human-only` until the task has the spec approver's `human-sign-off`. `/jt-board` and `/jt-review` stay human-only. The agent does not merge.
@@ -163,7 +165,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 
 ## 24.3.0 - compose external method skills
 
-- `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; [playbooks.md](skills/jt-work/references/playbooks.md) is a short gate-habits fallback instead of inlined TDD and per-kind method text.
+- `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; playbooks.md is a short gate-habits fallback instead of inlined TDD and per-kind method text.
 - Spec skills invoke Matt Pocock **grill-me** and superpowers **brainstorming** for questioning (outcomes unchanged: `check.py`, blocking questions, `(Recommended)` options). `/jt-spec-handoff` follows Matt Pocock **handoff** style; the `spec.md` template and checker rules stay.
 - README and `skills/jt-help/references/install-before-use.md` move superpowers (`executing-plans`, `test-driven-development`, `brainstorming`) and **grill-me** to **Required**; official install links only in the reference file.
 - Pin installs with `v24.3.0`. Skill and plugin metadata are `24.3.0`.
@@ -196,13 +198,13 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `gate.py` checks the same things as v23. `next` prints the new command for the action. The refusal tokens, the approval hash, the `gates:` line, and the secret and test-weakening reports are unchanged.
 - `check.py` is unchanged, including a human name and date on approvals and D lines, and a failure when an AI signed one. `check.py` and `board.py` still share one `specdoc.py`. The marker `<!-- scrum-spec -->` and `scrum-spec/config.md` stay, because the checker reads them. Existing spec files and `jt-queue/` boards need no rewrite.
 - Names the skills write: a commit and a draft PR title are `type(scope): summary (<ticket-id>)`, using the id the ticket already has (`BOOK-12`, `#45`, a Notion id). The skills require an id and do not check its shape. `/jt-work` is one command with no `--loop` flag. It works ready tasks in board order and skips blocked ones, or only the ticket id it was given. The branch `gate.py` finds is still `task-<id>-<slug>`. The conventional branch `type/<ticket-id>-short-slug` is documented and not enforced.
-- See [MIGRATING.md](MIGRATING.md).
+- See MIGRATING.md.
 
 ## 23.0.0 - the gate runs the checks it already named
 
 - **Breaking:** a Standard task with no diff outside `jt-queue/` no longer passes `reach-review`. A `(feat)` branch with zero commits used to answer `allowed` and `repo-review: skip` with no plan and no evidence. It is now `review-diff` / `no diff outside jt-queue/ to review`.
 - **Breaking:** on Standard, a non-empty `<LINT_CMD>` or `<TYPECHECK_CMD>` runs in the task worktree after `<TEST_CMD>` and must exit 0 (`lint-failed`, `typecheck-failed`, and the matching timeouts; each counts as a round). An empty cell is `skip` and is not run. Quick tier does not run them. The same commands run per repo when a task lists `repos:`.
-- **Breaking for boards that already set those cells:** `LINT_CMD` and `TYPECHECK_CMD` are now part of the `approve-commands` hash (home table and each `## repos` block) when the cell is not empty. Setting or changing one is `commands-changed` until a human approves it again. Empty cells stay out of the hash, so a v22 approval still matches. See [MIGRATING.md](MIGRATING.md).
+- **Breaking for boards that already set those cells:** `LINT_CMD` and `TYPECHECK_CMD` are now part of the `approve-commands` hash (home table and each `## repos` block) when the cell is not empty. Setting or changing one is `commands-changed` until a human approves it again. Empty cells stay out of the hash, so a v22 approval still matches. See MIGRATING.md.
 - `allowed` prints one `gates:` line in a fixed order: `tests`, `lint`, `typecheck`, `screen`, `review-diff`, `security`, `test-weakening`.
 - `reach-review` refuses with `secret-suspect` and `next: ask` when the diff adds a file whose name starts with `.env` (`.env.example` is allowed), a private-key file (`*.pem`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`; not `*.pub`), or a `PRIVATE KEY` block. The output names the file or `file:line` and never the value.
 - A deleted test file, or an added `.skip` / `.only` / `xit` / `@skip` / `xfail` marker, is reported as `test-weakening` on `allowed`. It does not refuse: the same diff can be a rename or a skip the task asked for, and the human judges it the way they already judge `outside-files:`.
@@ -232,7 +234,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 ## 22.0.1 - easier to start
 
 - Claude Code plugin: `/plugin marketplace add thitinan147/jtek-skill#v22.0.1`, then `/plugin install jtek@jtek-skill`. The skills are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`.
-- New [Getting started](docs/getting-started.md) guide: the words the skill uses, and one real round from setup to merge with the gate's actual output.
+- New Getting started guide: the words the skill uses, and one real round from setup to merge with the gate's actual output.
 - README rewritten for new users. The full walkthrough moved to `docs/usage.md`, and the v20/v21 upgrade notes to `MIGRATING.md`. Added `CONTRIBUTING.md`, issue templates, and a platform table (Windows is not supported yet; use WSL).
 - Fix: when `## evidence` in `plan.md` misses a `pass:` line, the `hint:` no longer tells the agent to add a `## review-diff` section it already has.
 - `jt-work-queue` SKILL.md: the tier table lists only the two gate tiers. Diff review and asking instead of guessing are separate rules, with the same content as before.
