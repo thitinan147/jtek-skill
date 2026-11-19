@@ -27,7 +27,9 @@ One Notion database is the board, and each page is a ticket. You read and write 
 
 Notion's Status property has three fixed groups. Put Backlog and Todo under **To-do**, In Progress and Review under **In progress**, and Done and Cancelled under **Complete**.
 
-The page body has headings for `Goal`, `Done when`, and `Out of scope`. `Done when` holds only top-level list items, one outcome each.
+The page body has headings named exactly `Goal`, `Done when`, and `Out of scope`, of any heading size. `Done when` holds only top-level list items, one outcome each.
+
+Status option names must be spelled as in the table. Notion's own default is `In progress`: the script accepts another case, and refuses a name the table does not have, such as `Not started`.
 
 ## Read the page into a ticket file
 
@@ -39,7 +41,7 @@ Write a temporary file outside the repository in the ticket format of [ticket.md
 
 - **Header lines come from properties only:** `# <Name>`, then `id:` from Ticket ID and `status:` from Status. Add `repo:`, `kind:`, `area:`, `checks:`, `waiting:`, and `pr:` when the property is set, and `review: human` when Review is `human`.
 - **`after:`** lists only the related tickets whose Status is not Done. Leave the line out when all are Done. Look at each related page's Status. Do not guess.
-- **The body** goes below the header, starting at its first heading, copied as it is. Put text that sits above the first heading under `## Notes`, so it cannot be read as a header line.
+- **The body** goes below the header, starting at its first heading, copied as it is. Write every heading as `## <text>`, whatever its size on the page. Put text that sits above the first heading under `## Notes`, so it cannot be read as a header line.
 - **Every list item is written as `- `,** whether the page shows a bullet, a number, or a checkbox. A nested item keeps its indent.
 - **Do not repair the page.** If `Done when` has nested items or other text, copy it as it is. `start` will refuse, and the human fixes the page.
 - **What you cannot copy as text,** such as an image, a table, or a closed toggle: write one line that names it, and open it when the work needs it.

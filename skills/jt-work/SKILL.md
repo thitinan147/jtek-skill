@@ -60,7 +60,7 @@ Every change needs a verdict from a session that did not write it, so the first 
 
 - **You can start a fresh session** that cannot see this chat: start one, tell it only to follow the `jt-review` skill for this id, wait, then run `jtek.py finish` again.
 - **You cannot:** end with the `needs-review` result. Whoever started this session starts the reviewer.
-- **The verdict is FAIL:** read the review notes. Reproduce each finding before you change anything. Fix what reproduces, say which did not and why, then go back to the Check step and ask for a new verdict.
+- **The verdict is FAIL:** read the review notes. Reproduce each finding before you change anything. Fix what reproduces, say which did not and why, then go back to the Check step, see the change work again, pass new evidence to `finish`, and ask for a new verdict.
 
 ## Stop and wait
 

@@ -20,17 +20,20 @@ The board is set up once, as [notion.md](notion.md) says. Then two things go int
 
 The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. Set `JTEK_BASE` to override it.
 
-**`name`** is optional. It is how tickets refer to this repository in their `repo:` line. Without it, the folder name is used.
+**`name`** is how tickets refer to this repository in their `repo:` line. Set it. Without it, the folder name is used, and a clone under another folder name refuses its own tickets.
+
+**`forge`** is optional. Set it to `false` when the repository has a remote that is not a forge, so that tickets may end with `finish --no-pr`.
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 
 Every `start` runs the checks once on the base before any edit, so keep the base green. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
 
-## Human commands
+## Commands that are not part of working a ticket
 
-These are for the human. An agent does not run them.
+- **Tickets** are written in Notion. Set Status to Todo to release one.
+- **`jtek.py doctor`:** what is set up in this repository and what is missing. Anyone may run it. It only reads.
+- **`jtek.py next --board-file <file>` and `jtek.py sync --board-file <file>`:** what each open ticket needs, and which Review tickets are merged. Whoever starts the sessions runs them: the human, or an agent that was asked to. See [starting-sessions.md](starting-sessions.md).
+- **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It reads the page and adds `--resume` to `start`. A session adds `--resume` only when the human said so.
+- **`jtek.py release <id>`:** drop a claim and its worktree. Only the human decides this, and an agent runs it only when the human asks. It refuses while the worktree has uncommitted files, and while a `start` for that ticket is still running. The branch is kept, and the next `start` for that ticket goes on from it. The one exception is a `start` that was interrupted before any work: its empty branch is removed. The page is not changed.
 
-- Tickets are written in Notion. Set Status to Todo to release one.
-- `jtek.py next --board-file <file>` and `jtek.py sync --board-file <file>`: what each open ticket needs, and which Review tickets are merged. Both read a file that lists the board's tickets. See [starting-sessions.md](starting-sessions.md).
-- **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It reads the page and adds `--resume` to `start`. A session never adds `--resume` on its own.
-- `jtek.py release <id>`: drop a claim and its worktree. Git refuses when the worktree has uncommitted changes. The branch is kept, and the page is not changed.
+`init`, `doctor`, `next`, `sync`, and `release` run only from the `jt-work` skill's copy of the script.

@@ -34,6 +34,9 @@ DEFAULT_TIMEOUT = 1800
 SENSITIVE = [
     CONFIG, ".jtek/*", ".github/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
     "poetry.lock", "uv.lock", "Cargo.lock", "go.sum", "Gemfile.lock",
+    # Files that commonly define what a check command runs.
+    "Makefile", "makefile", "GNUmakefile", "justfile", "Justfile", "package.json", "pyproject.toml", "setup.cfg",
+    "tox.ini", "noxfile.py", "pytest.ini", "conftest.py",
 ]
 
 class Refuse(Exception):
@@ -122,6 +125,14 @@ def parse_ticket(text: str) -> dict:
     return {"title": title, "fields": fields, "sections": sections}
 
 
+def canon_status(value: str) -> str:
+    """Notion's own spelling is `In progress`. Accept any case, and refuse a status this board does not have."""
+    found = next((s for s in STATUSES if s.lower() == " ".join(value.split()).lower()), None)
+    if value and not found:
+        raise Refuse(f"`{value}` is not a status of the board; it has: {', '.join(STATUSES)}")
+    return found or ""
+
+
 def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
     sections = ticket["sections"]
     if not any(line.strip() for line in sections.get("goal", [])):
@@ -156,17 +167,32 @@ def work_dir(ticket_id: str) -> Path:
 
 
 def read_json(path: Path) -> dict:
-    return json.loads(path.read_text()) if path.exists() else {}
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {}
+    except ValueError:
+        raise Refuse(f"{path} is damaged; a write was probably interrupted. If it is a ticket's meta.json, run "
+                     "`jtek.py release <id>` and start again: the commits stay on the branch. "
+                     "Any other file: delete it and run the command that wrote it") from None
+    return data if isinstance(data, dict) else {}
 
 
 def write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    """Write beside the file and rename, so a killed run never leaves half a file."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
 
 
-def load_meta(ticket_id: str) -> dict:
+def load_meta(ticket_id: str, tree: bool = False) -> dict:
+    """With `tree`, the worktree must still be there."""
     meta = read_json(work_dir(ticket_id) / "meta.json")
-    if not meta:
-        raise Refuse(f"{ticket_id} is not started; run `jtek.py start {ticket_id}`")
+    if not meta or meta.get("starting"):
+        if work_dir(ticket_id).exists():
+            raise Refuse(claimed(ticket_id))
+        raise Refuse(f"{ticket_id} is not started; read its page and run `jtek.py start`")
+    if tree and not Path(meta["worktree"]).is_dir():
+        raise Refuse(f"the worktree of {ticket_id} is gone: {meta['worktree']}. Run `jtek.py release {ticket_id}`; "
+                     f"the commits are on the branch {meta['branch']}")
     return meta
 
 
@@ -178,14 +204,61 @@ def head_state(worktree: Path) -> tuple[str, str]:
 
 
 CLAIMED = (
-    "{id} is already claimed and its session has not ended with a result. "
-    "Pick another ticket. If that session died, the human runs start with --resume"
+    "{id} is already claimed and its session has not ended with a result. Pick another ticket. "
+    "If that session died, the human tells a new session to take it over, and that session adds --resume"
 )
+
+
+def starting_now(meta: dict) -> bool:
+    """True while the `start` that wrote this claim is still running."""
+    try:
+        pid = int(meta.get("pid") or 0)
+        if not meta.get("starting") or pid <= 0:
+            return False
+        os.kill(pid, 0)  # signal 0 only asks whether that process is alive
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def claimed(ticket_id: str) -> str:
+    """Why a ticket that has a claim cannot be started now."""
+    meta = read_json(work_dir(ticket_id) / "meta.json")
+    if meta.get("worktree") and not meta.get("starting"):
+        return CLAIMED.format(id=ticket_id)
+    if starting_now(meta):
+        return f"another session is starting {ticket_id} right now. Pick another ticket"
+    return f"an earlier start of {ticket_id} was interrupted. Run `jtek.py release {ticket_id}`, then start again"
+
+
 def patch_id(worktree: Path, base: str) -> str:
-    """Identify the change by its content, so a rebase that changes nothing keeps its verdict."""
-    diff = subprocess.run(["git", "diff", f"{base}...HEAD"], cwd=worktree, capture_output=True, text=True)
-    proc = subprocess.run(["git", "patch-id", "--stable"], input=diff.stdout, capture_output=True, text=True)
-    return proc.stdout.split()[0] if proc.stdout.split() else ""
+    """Identify the change by its content, so a rebase that changes nothing keeps its verdict.
+    Whitespace counts: in Python or YAML, an indent is a change of behaviour."""
+    diff = subprocess.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
+    kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
+    return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
+
+
+def ticket_id_of_text(work: Path) -> str:
+    """Identify what the ticket asks for, so that a ticket the human changed needs new evidence and a new verdict."""
+    sections = parse_ticket((work / "ticket.md").read_text())["sections"]
+    return hashlib.sha256(json.dumps(sections, sort_keys=True).encode()).hexdigest()
+
+
+def current_verdict(ticket_id: str, meta: dict) -> dict:
+    """The verdict, when it is for the change and the ticket as they are now."""
+    work = work_dir(ticket_id)
+    verdict = read_json(work / "verdict.json")
+    worktree = Path(meta["worktree"])
+    if (not verdict.get("verdict") or not worktree.is_dir() or verdict.get("patch") != patch_id(worktree, meta["base"])
+            or verdict.get("ticket") != ticket_id_of_text(work)):
+        return {}
+    return verdict
+
+
+def needs_verdict(meta: dict) -> bool:
+    """The human may waive the review for a small ticket, but not for one that touches files that decide whether checks pass."""
+    return bool(meta.get("review")) or attention(meta) != "-"
 
 
 DIRTY_HINT = "commit them, or add build output to .gitignore"
@@ -194,7 +267,7 @@ DIRTY_HINT = "commit them, or add build output to .gitignore"
 def done_when_items(work: Path) -> list[str]:
     ticket = parse_ticket((work / "ticket.md").read_text())
     return [m.group(1).strip() for line in ticket["sections"].get("done when", [])
-            if (m := re.match(r"^\s*-\s*(\S.*)$", line))]
+            if (m := re.match(r"^-\s*(\S.*)$", line))]
 
 
 def attention(meta: dict) -> str:
@@ -203,8 +276,9 @@ def attention(meta: dict) -> str:
     if not worktree.is_dir():
         return "-"
     span = f"{meta['base']}...HEAD"
-    changed = git("diff", "--name-only", span, cwd=worktree, check=False).splitlines()
-    deleted = git("diff", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
+    # A rename is shown as a deletion and an addition, so a renamed test that lost lines is still seen.
+    changed = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", span, cwd=worktree, check=False).splitlines()
+    deleted = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
     try:
         config = load_config(meta["base"])
     except Refuse:
@@ -220,21 +294,24 @@ def attention(meta: dict) -> str:
             continue
         for token in tokens:
             run_by.setdefault(token.removeprefix("./"), name)
-    watch = SENSITIVE + [w for w in config.get("watch", []) if isinstance(w, str)]
+    extra = config.get("watch") or []
+    watch = SENSITIVE + [w for w in ([extra] if isinstance(extra, str) else extra if isinstance(extra, list) else [])
+                         if isinstance(w, str)]
     removed: dict[str, int] = {}
-    for line in git("diff", "--numstat", span, cwd=worktree, check=False).splitlines():
+    for line in git("-c", "core.quotePath=false", "diff", "--no-renames", "--numstat", span, cwd=worktree, check=False).splitlines():
         parts = line.split("\t")
         if len(parts) == 3 and parts[1].isdigit():
             removed[parts[2]] = int(parts[1])
     notes = []
     for path in changed:
+        is_test = "test" in path.lower() or "spec" in path.lower()
         if path in run_by:
             notes.append(f"{path} (run by `{run_by[path]}`)")
-        elif any(fnmatch.fnmatch(path, pattern) for pattern in watch):
+        elif any(fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(path.rsplit("/", 1)[-1], pattern) for pattern in watch):
             notes.append(path)
-        elif path in deleted and "test" in path.lower():
+        elif path in deleted and is_test:
             notes.append(f"{path} (test deleted)")
-        elif "test" in path.lower() and removed.get(path):
+        elif is_test and removed.get(path):
             # Adding tests is normal. Removing or rewriting lines of an existing test is how a check gets weakened.
             notes.append(f"{path} ({removed[path]} test lines removed or changed)")
     return ", ".join(notes) or "-"
@@ -253,7 +330,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     work = work_dir(ticket_id)
     meta = load_meta(ticket_id)
     checks = read_json(work / "checks.json")
-    verdict = read_json(work / "verdict.json")
+    verdict = current_verdict(ticket_id, meta)
     check_line = " ".join(f"{r['name']}={r['status']}" for r in checks.get("results", [])) or "not run"
     if checks.get("sha"):
         check_line += f" @{checks['sha'][:7]}"
@@ -266,7 +343,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
-    verdict_line = "none" if meta.get("review") else "waived by the ticket"
+    verdict_line = "none" if needs_verdict(meta) else "waived by the ticket"
     if verdict:
         verdict_line = f"{verdict['verdict']} by {verdict['by']} @{verdict['sha'][:7]}"
     lines = [
@@ -283,7 +360,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"attention: {attention(meta)}",
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
-        f"note: {note or '-'}",
+        f"note: {' '.join(note.split()) or '-'}",
         f"board: {board_line(outcome, waiting, meta.get('pr', ''))}",
     ]
     text = "\n".join(lines) + "\n"
@@ -291,45 +368,29 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     return text
 
 
-# ---- the board ----------------------------------------------------------------
+def ticket_paths(ticket_id: str) -> tuple[Path, str]:
+    root = main_root()
+    return root.parent / f"{root.name}.jtek" / ticket_id, f"jtek/{ticket_id}"
 
-def load_board(path: str) -> list[dict]:
-    """Rows that the launcher read from the board with its Notion tool: one object per open ticket."""
+
+def cmd_other(args: argparse.Namespace) -> None:
+    """Commands for the human and the launcher live in launcher.py and doctor.py beside this file.
+    The copy of this file in the jt-review skill does not have them."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
-        rows = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as err:
-        raise Refuse(f"cannot read the board file {path}: {err}") from None
-    if not isinstance(rows, list) or not all(isinstance(row, dict) and row.get("id") for row in rows):
-        raise Refuse("the board file must be a JSON list of objects, each with `id` and `status`; "
-                     "see references/starting-sessions.md")
-    for row in rows:
-        after = row.get("after") or []
-        row["after"] = [item.strip() for item in after.split(",") if item.strip()] if isinstance(after, str) else list(after)
-        for key in ("status", "repo", "waiting", "pr", "title"):
-            row[key] = str(row.get(key) or "").strip()
-    return rows
+        import launcher
+    except ImportError:
+        raise Refuse(f"`{args.command}` is in launcher.py, in the scripts folder of the jt-work skill; run jtek.py from there") from None
+    launcher.COMMANDS[args.command](sys.modules[__name__], args)
 
 
 # ---- commands --------------------------------------------------------------
 
-def cmd_init(args: argparse.Namespace) -> None:
-    path = Path(git("rev-parse", "--show-toplevel")) / CONFIG
-    if path.exists():
-        raise Refuse(f"{path} already exists")
-    write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
-    print(f"wrote {path}")
-    print("`board` is the link of the Notion database that holds the tickets. The agent reads it to find a ticket.")
-    print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
-    print("Fill in one command per check (no shell operators; put a pipeline in a script).")
-    print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
-    print("Delete a check the project does not have. The human commits this file on the base branch.")
-
-
 def cmd_start(args: argparse.Namespace) -> None:
     try:
         text = Path(args.from_file).read_text()
-    except OSError as err:
-        raise Refuse(f"cannot read the ticket file: {err}") from None
+    except (OSError, ValueError) as err:
+        raise Refuse(f"cannot read the ticket file as text: {err}") from None
     ticket = parse_ticket(text)
     fields = ticket["fields"]
     ticket_id = check_id(fields.get("id", ""))
@@ -343,23 +404,29 @@ def cmd_start(args: argparse.Namespace) -> None:
             f"{ticket_id} is for the repository `{wanted_repo}`, and this one is `{this_repo}`. "
             "Start the session in that repository"
         )
-    status = fields.get("status", "")
+    status = canon_status(fields.get("status", ""))
     waiting = fields.get("waiting", "")
     work = work_dir(ticket_id)
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
     parked = (work / "result.md").exists()
 
     if args.resume or parked:
-        meta = load_meta(ticket_id)
-        if not Path(meta["worktree"]).is_dir():
-            raise Refuse(f"worktree for {ticket_id} is gone; nothing to resume")
+        meta = load_meta(ticket_id, tree=True)
         if status not in ("Todo", "In Progress"):
             raise Refuse(f"{ticket_id} is `{status}`; only a ticket in Todo or In Progress can resume")
-        asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
+        try:
+            asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
+        except FileNotFoundError:  # another session picked it up between the two lines
+            raise Refuse(CLAIMED.format(id=ticket_id)) from None
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
             raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
-        (work / "result.md").unlink(missing_ok=True)
+        if parked:
+            try:
+                # A rename happens once, so two sessions cannot both pick up the same parked ticket.
+                (work / "result.md").rename(work / "last-result.md")
+            except FileNotFoundError:
+                raise Refuse(CLAIMED.format(id=ticket_id)) from None
         checks_path = work / "checks.json"
         if checks_path.exists():
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
@@ -367,7 +434,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     else:
         resumed = False
         if work.exists():
-            raise Refuse(CLAIMED.format(id=ticket_id))
+            raise Refuse(claimed(ticket_id))
         if status != "Todo":
             raise Refuse(f"{ticket_id} is `{status or 'unset'}`, not Todo; the human releases a ticket by setting Status to Todo")
         if fields.get("after"):
@@ -376,21 +443,30 @@ def cmd_start(args: argparse.Namespace) -> None:
         try:
             work.mkdir()  # atomic claim: the second session to try loses
         except FileExistsError:
-            raise Refuse(CLAIMED.format(id=ticket_id)) from None
-        root = main_root()
-        worktree = root.parent / f"{root.name}.jtek" / ticket_id
-        branch = f"jtek/{ticket_id}"
+            raise Refuse(claimed(ticket_id)) from None
+        worktree, branch = ticket_paths(ticket_id)
+        # A branch left by `release` holds earlier work on this ticket. Go on from it, and never delete it.
+        kept = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
+        # From here on a killed run leaves a claim that says so, and `release` can remove what it made.
+        write_json(work / "meta.json", {"starting": True, "pid": os.getpid(), "kept": kept, "base": base})
         try:
             worktree.parent.mkdir(parents=True, exist_ok=True)
-            git("worktree", "add", "-b", branch, str(worktree), base)
+            git("worktree", "prune")  # forget a worktree whose folder was deleted by hand
+            git("worktree", "add", *([str(worktree), branch] if kept else ["-b", branch, str(worktree), base]))
         except Refuse:
+            (work / "meta.json").unlink()
             work.rmdir()
             raise
+        meta = {"id": ticket_id, "source": " ".join(args.ref.split()), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
+        write_json(work / "meta.json", {**meta, "starting": True, "pid": os.getpid(), "kept": kept})
         logs = state_dir() / "baseline" / ticket_id
 
         def undo() -> None:
-            git("worktree", "remove", "--force", str(worktree))
-            git("branch", "-D", branch)
+            git("worktree", "remove", "--force", str(worktree), check=False)
+            if not kept:
+                git("branch", "-D", branch, check=False)
+            for path in sorted(work.rglob("*"), reverse=True):
+                path.rmdir() if path.is_dir() else path.unlink()
             work.rmdir()
 
         def give_back(reason: str, log: Path) -> Refuse:
@@ -402,7 +478,7 @@ def cmd_start(args: argparse.Namespace) -> None:
             # A new worktree has no installed dependencies. Install them before anything runs.
             if not run_command(setup, worktree, logs / "setup.log"):
                 raise give_back(f"the setup command from {CONFIG} failed in the new worktree", logs / "setup.log")
-        if not args.no_baseline:
+        if not args.no_baseline and not kept:
             # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
             # One green run per base commit and command set is enough, so parallel tickets do not repeat it.
             base_sha = git("rev-parse", base)
@@ -417,10 +493,6 @@ def cmd_start(args: argparse.Namespace) -> None:
                     )
                 green.parent.mkdir(parents=True, exist_ok=True)
                 green.write_text(base_sha + "\n")
-        meta = {
-            "id": ticket_id, "source": args.ref,
-            "base": base, "worktree": str(worktree), "branch": branch, "pr": "",
-        }
 
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
@@ -428,6 +500,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
+    if not resumed and kept:
+        print(f"note: the branch {branch} already existed, so the work goes on from its commits")
     print("board: Status=In Progress; Waiting=")
     print(f"id: {ticket_id}")
     print(f"worktree: {meta['worktree']}")
@@ -476,7 +550,7 @@ def log_tail(log: Path) -> str:
 
 
 def cmd_check(args: argparse.Namespace) -> None:
-    meta = load_meta(args.id)
+    meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
     worktree = Path(meta["worktree"])
     declared = load_checks(meta["base"])
@@ -485,6 +559,9 @@ def cmd_check(args: argparse.Namespace) -> None:
         raise Refuse(f"{CONFIG} on {meta['base']} no longer declares: {', '.join(missing)}")
     sha, dirty = head_state(worktree)
     previous = read_json(work / "checks.json")
+    if previous.get("failed_runs", 0) >= MAX_FAILED_RUNS:
+        raise Refuse(f"{MAX_FAILED_RUNS} check runs have failed. A fourth guess usually means the design is wrong, not "
+                     f"the line. Stop: `jtek.py stop {args.id} --waiting input --note \"<the cause you suspect>\"`")
     logs = work / "logs"
     results, failed = run_checks(worktree, meta["checks"], declared, logs)
     failed_runs = previous.get("failed_runs", 0) + 1 if failed else 0
@@ -508,30 +585,75 @@ def cmd_check(args: argparse.Namespace) -> None:
               "Run check again after any new commit")
 
 
+def read_file(path: str, what: str) -> str:
+    try:
+        return Path(path).read_text()
+    except (OSError, ValueError) as err:
+        raise Refuse(f"cannot read the {what} file: {err}") from None
+
+
 def cmd_verdict(args: argparse.Namespace) -> None:
-    meta = load_meta(args.id)
+    meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
     sha, dirty = head_state(Path(meta["worktree"]))
     if dirty:
-        raise Refuse(f"a verdict is for a commit, and these files are not committed; {DIRTY_HINT}\n{dirty}")
+        raise Refuse("a verdict is for a commit, and these files are not committed. If your review made them, remove "
+                     f"them. If the author left them, give FAIL and say so in the notes\n{dirty}"
+                     if args.verdict == "PASS" else f"remove the files your review made, then record the verdict\n{dirty}")
+    patch = patch_id(Path(meta["worktree"]), meta["base"])
+    if not patch:
+        raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
     if args.verdict != "PASS" and not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with the findings")
     if args.notes_file:
-        (work / "review.md").write_text(Path(args.notes_file).read_text())
+        (work / "review.md").write_text(read_file(args.notes_file, "notes"))
+    else:
+        (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
     write_json(work / "verdict.json", {
-        "verdict": args.verdict, "by": args.by, "sha": sha,
-        "patch": patch_id(Path(meta["worktree"]), meta["base"]),
+        "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
+        "patch": patch, "ticket": ticket_id_of_text(work),
     })
-    print(f"verdict: {args.verdict} by {args.by} @{sha[:7]}")
+    print(f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}")
+
+
+def check_evidence(work: Path, text: str) -> None:
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise Refuse("the evidence file is empty")
+    items = done_when_items(work)
+    limit = max(MAX_EVIDENCE_LINES, len(items) + 10)
+    if len(lines) > limit:
+        raise Refuse(
+            f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
+            f"{limit}. Say what you ran and saw for each `Done when` item, and cut the rest"
+        )
+    missing = [
+        f"{n}. {item}" for n, item in enumerate(items, 1)
+        if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
+    ]
+    if missing:
+        raise Refuse(
+            "the evidence must account for every `Done when` item. Start one line per item with its number and "
+            "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
+        )
 
 
 def cmd_finish(args: argparse.Namespace) -> None:
-    meta = load_meta(args.id)
+    meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
-    if args.pr:
-        meta["pr"] = args.pr
-        write_json(work / "meta.json", meta)
-    sha, dirty = head_state(Path(meta["worktree"]))
+    worktree = Path(meta["worktree"])
+    last = work / "result.md"
+    if last.exists() and "outcome: needs-human" in last.read_text():
+        raise Refuse(f"{args.id} stopped with a question. The human answers on the page and sets Status to Todo; then start again")
+    if args.pr and args.no_pr:
+        raise Refuse("pass --pr <url> or --no-pr, not both")
+    if args.pr and not re.match(r"^https?://[^\s;]+$", args.pr):
+        raise Refuse("--pr takes the link of the pull request, as the forge gave it")
+    config = load_config(meta["base"])
+    if args.no_pr and config.get("forge") is not False and git("remote", cwd=worktree, check=False):
+        raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
+                     f"--pr <url>. If the remote is not a forge, the human sets `\"forge\": false` in {CONFIG}")
+    sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
     passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])
     ran_all = [r["name"] for r in checks.get("results", [])] == meta["checks"]
@@ -539,63 +661,61 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse(f"these files are not committed; {DIRTY_HINT} and run `jtek.py check {args.id}`\n{dirty}")
     if checks.get("dirty") or checks.get("sha") != sha or not passed or not ran_all:
         raise Refuse(f"checks have not passed on the current commit {sha[:7]}; run `jtek.py check {args.id}`")
+    patch = patch_id(worktree, meta["base"])
+    if not patch:
+        raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to review. If the ticket "
+                     f"needs no change, stop and say so: `jtek.py stop {args.id} --waiting input --note \"...\"`")
+    about = ticket_id_of_text(work)
+    saved = work / "evidence.md"
     if args.evidence_file:
-        text = Path(args.evidence_file).read_text()
-        lines = [line for line in text.splitlines() if line.strip()]
-        if not lines:
-            raise Refuse("the evidence file is empty")
-        if len(lines) > MAX_EVIDENCE_LINES:
-            raise Refuse(
-                f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
-                f"{MAX_EVIDENCE_LINES}. Say what you ran and saw for each `Done when` item, and cut the rest"
-            )
-        items = done_when_items(work)
-        missing = [
-            f"{n}. {item}" for n, item in enumerate(items, 1)
-            if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
-        ]
-        if missing:
-            raise Refuse(
-                "the evidence must account for every `Done when` item. Start one line per item with its number and "
-                "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
-            )
-        (work / "evidence.md").write_text(text)
+        text = read_file(args.evidence_file, "evidence")
+        check_evidence(work, text)
+        saved.write_text(text)
+        meta.update(evidence_patch=patch, evidence_ticket=about)
+        write_json(work / "meta.json", meta)  # kept even when a later rule refuses this finish
+    elif not saved.exists():
+        raise Refuse(
+            "no evidence yet; the human reviews the evidence before the diff. Write what you ran and saw for each "
+            "`Done when` item to a file and pass --evidence-file <file>. Use the same text as the pull request body"
+        )
+    elif meta.get("evidence_patch") != patch:
+        raise Refuse("the code changed after the evidence was saved, so the evidence describes an older change. "
+                     "See each `Done when` item work again, and pass --evidence-file <file>")
+    elif meta.get("evidence_ticket") != about:
+        check_evidence(work, saved.read_text())
+        raise Refuse("the ticket changed after the evidence was saved. Read the ticket file again, do what it now asks, "
+                     "and pass --evidence-file <file>")
+    else:
+        check_evidence(work, saved.read_text())  # the ticket may have gained an item since
     for item in args.attach or []:
         source = Path(item)
         if not source.is_file():
             raise Refuse(f"cannot attach {item}: not a file")
         (work / "evidence").mkdir(exist_ok=True)
         (work / "evidence" / source.name).write_bytes(source.read_bytes())
-    if not (work / "evidence.md").exists():
-        raise Refuse(
-            "no evidence yet; the human reviews the evidence before the diff. Write what you ran and saw for each "
-            "`Done when` item to a file and pass --evidence-file <file>. Use the same text as the pull request body"
-        )
+    pr = args.pr or meta.get("pr", "")
+    ci = ""
     if args.no_pr:
+        pr = ""
         pr_note = f" No pull request: the branch {meta['branch']} is local."
-    elif not meta["pr"]:
+    elif not pr:
         raise Refuse(
             "no PR yet; open it (ready, not draft) and pass --pr <url>. "
             "Only when this repository has no forge to open one on, pass --no-pr"
         )
     else:
-        state, head, ci = pr_info(meta["pr"])
+        state, head, ci = pr_info(pr)
         if state != "unknown" and (state != "OPEN" or head != sha):
-            raise Refuse(f"{meta['pr']} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
+            raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
         if ci == "fail":
-            raise Refuse(f"CI is failing on {meta['pr']}; a pull request with red CI is not ready for the human. Fix it first")
-        meta["ci"] = ci
-        write_json(work / "meta.json", meta)
+            raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
         pr_note = "" if state == "OPEN" else " The PR link was not verified because gh could not read it."
-    verdict = read_json(work / "verdict.json")
-    if verdict.get("patch") != patch_id(Path(meta["worktree"]), meta["base"]):
-        verdict = {}  # a verdict belongs to one change; new content needs a new verdict
-    needs_verdict = meta.get("review")
-    if not needs_verdict and attention(meta) != "-":
-        # The human waived the review for a small ticket, but this one touches files that decide whether checks pass.
-        needs_verdict = True
+    meta.update(pr=pr, ci=ci)
+    write_json(work / "meta.json", meta)
+    verdict = current_verdict(args.id, meta)
+    if not meta.get("review") and needs_verdict(meta):
         pr_note += " `review: human` is ignored because the change touches the files on the attention line."
-    if needs_verdict and not verdict:
+    if needs_verdict(meta) and not verdict:
         print(write_result(args.id, "needs-review", "In Progress",
                            note="start a session that did not write this code and run jt-review for this id." + pr_note), end="")
         return
@@ -643,7 +763,7 @@ def cmd_show(args: argparse.Namespace) -> None:
 CI_QUERY = (
     '.state + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
     '| if length == 0 then "none" '
-    'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED") then "fail" '
+    'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail" '
     'elif all(.[]; . == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass" else "pending" end)'
 )
 
@@ -664,111 +784,17 @@ def pr_info(url: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2] if len(parts) > 2 else "unknown"
 
 
-def tidy_done(ticket_id: str) -> None:
-    """Remove the worktree of a finished ticket. Git refuses when it has uncommitted files, and then it stays."""
-    meta = read_json(work_dir(ticket_id) / "meta.json")
-    if meta and Path(meta["worktree"]).is_dir():
-        if subprocess.run(["git", "worktree", "remove", meta["worktree"]], capture_output=True).returncode == 0:
-            # -d deletes only a merged branch, so unmerged work is never lost here
-            subprocess.run(["git", "branch", "-d", meta["branch"]], capture_output=True)
-
-
-def cmd_sync(args: argparse.Namespace) -> None:
-    """Done is read back from the forge, never assumed. Print what to write on the board, and tidy worktrees."""
-    this_repo = str(load_config(base_branch()).get("name") or main_root().name)
-    for row in sorted(load_board(args.board_file), key=lambda item: item["id"]):
-        if row["repo"] not in ("", this_repo):
-            continue
-        if row["status"] == "Review" and row["pr"]:
-            state, _, ci = pr_info(row["pr"])
-            if state == "MERGED":
-                print(f"{row['id']}\tboard: Status=Done\tthe pull request is merged")
-                tidy_done(row["id"])
-            elif state == "OPEN" and ci in ("fail", "pending"):
-                print(f"{row['id']}\t-\tCI: {ci}")
-            elif state not in ("OPEN", "unknown"):
-                print(f"{row['id']}\t-\tPR state: {state}")
-        elif row["status"] in ("Done", "Cancelled"):
-            tidy_done(row["id"])
-
-
-def next_step(row: dict, this_repo: str) -> tuple[str, str]:
-    """What one open ticket needs now, for whoever starts sessions. The first word is the action:
-    `work`, `review`, and `board` are for a session to do. Every other word means do not start one."""
-    ticket_id, status = row["id"], row["status"] or "Backlog"
-    if row["repo"] not in ("", this_repo):
-        return "other", f"belongs to the repository `{row['repo']}`"
-    if status == "Backlog":
-        return "hold", "not released; the human sets Todo"
-    if status in ("Done", "Cancelled"):
-        return "hold", "finished"
-    if status == "Review":
-        return "human", "review and merge " + (row["pr"] or "the branch")
-    work = work_dir(ticket_id)
-    claimed, parked = (work / "meta.json").exists(), (work / "result.md").exists()
-    if work.exists() and not parked:
-        return "running", "a session holds the claim. If none is running, it died: the human runs start with --resume"
-    if status == "Todo":
-        if row["after"]:
-            return "hold", "comes after " + ", ".join(row["after"])
-        return "work", "the human answered, or asked for rework" if claimed else "new"
-    if row["waiting"]:
-        return "human", f"waiting for {row['waiting']}; answer on the page and set Status to Todo"
-    if not claimed:
-        return "elsewhere", "In Progress, and not claimed on this machine"
-    outcome = dict(line.split(": ", 1) for line in (work / "result.md").read_text().splitlines() if ": " in line).get("outcome")
-    if outcome == "review":
-        return "board", f"the page does not show the result; write the `board:` line of `jtek.py result {ticket_id}`"
-    if outcome == "needs-human":
-        return "board", f"the page does not show the question; write the `board:` line of `jtek.py result {ticket_id}`"
-    meta, verdict = load_meta(ticket_id), read_json(work / "verdict.json")
-    if not verdict or verdict.get("patch") != patch_id(Path(meta["worktree"]), meta["base"]):
-        return "review", "needs a verdict from a session that did not write the change"
-    if verdict.get("verdict") == "FAIL":
-        return "work", "the verdict is FAIL; the findings are in the review notes"
-    return "work", "the verdict is in; finish"
-
-
-def cmd_next(args: argparse.Namespace) -> None:
-    this_repo = str(load_config(base_branch()).get("name") or main_root().name)
-    for row in sorted(load_board(args.board_file), key=lambda item: item["id"]):
-        action, reason = next_step(row, this_repo)
-        if action != "other":
-            print(f"{row['id']}\t{action}\t{reason}")
-
-
-def cmd_doctor(args: argparse.Namespace) -> None:
-    """The code is in doctor.py beside this file, to keep this file small."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    try:
-        import doctor
-    except ImportError:
-        raise Refuse("doctor.py is in the scripts folder of the jt-work skill; run jtek.py from there") from None
-    doctor.run(sys.modules[__name__])
-
-
-def cmd_release(args: argparse.Namespace) -> None:
-    meta = load_meta(args.id)
-    work = work_dir(args.id)
-    if Path(meta["worktree"]).is_dir():
-        git("worktree", "remove", meta["worktree"])  # git refuses when it has uncommitted changes
-    for path in sorted(work.rglob("*"), reverse=True):
-        path.rmdir() if path.is_dir() else path.unlink()
-    work.rmdir()
-    print(f"released {args.id}; branch {meta['branch']} is kept. The board is not changed: set Status on the page yourself")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jtek.py", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_init)
-    sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_doctor)
+    sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_other)
+    sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_other)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
     start.add_argument("ref", help="the link of the ticket's Notion page; it becomes the `source:` of the result")
     start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
-    start.add_argument("--resume", action="store_true")
+    start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
     start.set_defaults(func=cmd_start)
 
@@ -786,8 +812,8 @@ def build_parser() -> argparse.ArgumentParser:
     finish = sub.add_parser("finish", help="move to Review when checks and verdict hold on the current commit")
     finish.add_argument("id")
     finish.add_argument("--pr")
-    finish.add_argument("--no-pr", action="store_true", help="the repository has no forge; the branch stays local")
-    finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; required once")
+    finish.add_argument("--no-pr", action="store_true", help="only for a repository with no remote, or with `\"forge\": false` in jtek.json")
+    finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; needed again whenever the code changed")
     finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
 
@@ -799,14 +825,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, text in (("result", cmd_result, "print the last result"),
                              ("show", cmd_show, "print what a reviewer needs"),
-                             ("release", cmd_release, "human only: drop the claim and the worktree")):
+                             ("release", cmd_other, "only when the human asks: drop the claim and the worktree")):
         item = sub.add_parser(name, help=text)
         item.add_argument("id")
         item.set_defaults(func=func)
 
     for name, func, text in (
-        ("next", cmd_next, "for whoever starts sessions: what each open ticket of this repository needs now"),
-        ("sync", cmd_sync, "read the pull request of each Review ticket from the forge, and remove the worktrees of finished tickets"),
+        ("next", cmd_other, "for whoever starts sessions: what each open ticket of this repository needs now"),
+        ("sync", cmd_other, "read the pull request of each Review ticket from the forge, and remove the worktrees of finished tickets"),
     ):
         item = sub.add_parser(name, help=text)
         item.add_argument("--board-file", required=True, help="the open tickets, read from the board and saved as JSON")
@@ -821,6 +847,16 @@ def main(argv: list[str] | None = None) -> int:
     except Refuse as err:
         print(f"refused: {err}")
         return 1
+    except KeyboardInterrupt:
+        print("refused: interrupted. If this was `start`, run `jtek.py release <id>` before you start the ticket again")
+        return 130
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as err:
+        # Not a rule, but a file or a value this script did not expect. Say it plainly instead of a traceback.
+        if os.environ.get("JTEK_DEBUG"):
+            raise
+        print(f"refused: unexpected {type(err).__name__}: {err}. A file under {state_dir()} or an input file may be "
+              "damaged or edited by hand. Set JTEK_DEBUG=1 to see where")
+        return 2
     return 0
 
 

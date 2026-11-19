@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.1.0-111111?style=flat-square" alt="Version 26.1.0">
+  <img src="https://img.shields.io/badge/version-26.2.0-111111?style=flat-square" alt="Version 26.2.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -23,7 +23,7 @@
 
 You know the pull request. Forty files. "All tests pass." The feature does not start.
 
-An agent will tell you the work is done. jtek does not take its word. A ticket reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and every `Done when` item has a line that says what was run and what was seen.
+An agent will tell you the work is done. jtek does not take its word. A ticket reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and every `Done when` item has a line that says what was run and seen, or why it was not run.
 
 Then it stops. You read the evidence. You merge.
 
@@ -49,7 +49,7 @@ note: the human reviews and merges; jtek never merges.
 board: Status=Review; Waiting=; PR=https://github.com/you/app/pull/41; comment=result+evidence
 ```
 
-Read `evidence` first, then `attention`, then the diff. `attention` names the files that decide whether checks pass: a changed check script, CI config, a lockfile, a deleted test, or an existing test that lost lines.
+Read `evidence` first, then `attention`, then the diff. `attention` names files that decide whether checks pass: a changed check script, CI config, a lockfile, `Makefile` or `package.json`, a deleted test, or an existing test that lost lines. It works from a list of known names. Add your project's own with `watch` in `jtek.json`.
 
 ## How it works
 
@@ -57,7 +57,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names the fi
 2. **A session takes it.** The agent reads the page with its Notion tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
-5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so new code needs a new one.
+5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
 6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the Notion page.
 7. **You merge.** There is no merge command.
 
@@ -67,7 +67,7 @@ If the agent is stuck or has a question, it stops and puts the question on the p
 
 ## The prompt
 
-The whole set is eleven Markdown files and one Python script. Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only.
+The whole set is eleven skills and one Python script. Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Two small files beside it, `launcher.py` and `doctor.py`, hold the commands that are not part of working a ticket.
 
 It uses no other skill set.
 
@@ -90,7 +90,7 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. `gh` is optional: it reads a pull request's state and CI result.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it.
 
 ## Set up
 
@@ -100,19 +100,19 @@ Three things, once. For every step with what you should see, from connecting Not
 
 Keep the database's link: it goes into `jtek.json` in the next step.
 
-**2. The checks.** In each repository:
+**2. The checks.** In each repository, ask the agent:
 
-```bash
-python3 <skill-dir>/scripts/jtek.py init
+```text
+Run jtek.py init in this repository.
 ```
 
-This writes `jtek.json`. Set `board` to the database's link, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
+The script is inside the installed `jt-work` skill, and the agent knows where that is. This writes `jtek.json`. Set `board` to the database's link and `name` to the name tickets use for this repository, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"board": "https://www.notion.so/...", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
 ```
 
-A command is one program with arguments. Put a pipeline in a script. `jtek.py doctor` says what is still missing.
+A command is one program with arguments. Put a pipeline in a script. Ask the agent to run `jtek.py doctor`: it says what is still missing.
 
 **3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/` (how to run and drive the real app, and a feature map) and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
@@ -127,7 +127,7 @@ A command is one program with arguments. Put a pipeline in a script. `jtek.py do
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Answer a question, or ask for a fix | Write on the page, set Status to Todo, then `/jt-work T-12` |
-| Give a ticket back | `jtek.py release T-12` |
+| Give a ticket back, or clean up a start that was interrupted | Ask the agent to run `jtek.py release T-12`. A branch that holds work is kept, and the next start goes on from it |
 | Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
 Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
@@ -158,7 +158,7 @@ Each skill also works on its own, for example `/jt-verify` on any change.
 | Backlog | Written down, not released | You |
 | Todo | Released for an agent | You only |
 | In Progress | A session has claimed it | The session, after `jtek.py start` |
-| Review | Checks pass, verdict is PASS, evidence saved, pull request open | The session, after `jtek.py finish` |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no remote) | The session, after `jtek.py finish` |
 | Done | Pull request merged | Read from the forge by `jtek.py sync` |
 | Cancelled | Dropped | You |
 
@@ -168,7 +168,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 79 tests. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 108 tests, and two outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 
@@ -183,7 +183,7 @@ No. There is no command for it.
 It can say so. The script wants the checks, the evidence, and a verdict for the current content of the change.
 
 **Can the agent weaken a check to pass?**
-Not by editing `jtek.json`: the script reads it from the base branch. A check's own script is read from the worktree, so a ticket can change it. The result names it on the `attention:` line, and that ticket cannot waive the review.
+Not by editing `jtek.json`: the script reads it from the base branch. What a check runs is read from the worktree, so a ticket can change it. The result names such a file on the `attention:` line when it is a known name or on your `watch` list, and that ticket cannot waive the review. A file the list does not know is not named.
 
 **Can it give the verdict on its own change?**
 The script cannot tell who ran a command. The skills forbid it, and nothing in code stops an agent that ignores them. See [SECURITY.md](SECURITY.md).

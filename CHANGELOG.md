@@ -1,5 +1,46 @@
 # Changelog
 
+## 26.2.0 - fixes from two outside reviews
+
+An independent review of 26.1.0 found ways to reach Review without meeting the rules, and claims that could not be recovered. A second review checked the fixes and found defects in them. Each fix has a test.
+
+**Reaching Review**
+
+- A verdict counts whitespace, and it is bound to the ticket text as well as to the change. Re-indenting a line after a PASS needs a new verdict. So does a change the human makes to the ticket. An external diff tool or a text conversion in the git config cannot hide a change from it.
+- `finish` checks the saved evidence against the ticket's current `Done when` items every time. It refuses evidence that was saved before the code or the ticket last changed.
+- `finish` and `verdict` refuse a branch that has no change.
+- `--no-pr` is refused in a repository that has a remote, unless `jtek.json` says `"forge": false`. `--pr` and `--no-pr` together are refused, and `--pr` takes only a link.
+- `finish` is refused while the ticket waits for the human.
+- `attention:` sees a renamed test that lost lines, a deleted spec file, paths with non-ASCII characters, and the usual files that define a check command, such as `Makefile` and `package.json`. `watch` may be one pattern or a list.
+- The result shows only a verdict that counts now, and says `none`, not `waived`, when a waiver was ignored.
+- A fourth `check` after three failed runs is refused.
+- The `--note` of `stop`, the reviewer name, the page link, and the fields of a board file are each kept on one line, so none can add a line to the result or to the output of `next` and `sync`.
+
+**Claims**
+
+- A `start` that was killed half way leaves a claim that says so. `release` cleans it up, and the next `start` works.
+- `release` never loses work. It refuses while a `start` for that ticket is running and while the worktree has uncommitted files. It deletes a branch only when an interrupted start made it and it holds no commit. It also recovers a ticket whose worktree folder or `meta.json` was deleted or damaged.
+- A `start` after `release` goes on from the kept branch.
+- Two sessions cannot both pick up one parked ticket.
+
+**Input**
+
+- A missing worktree, a missing evidence or notes file, a damaged state file, and unexpected values in a board file give `refused:` and not a traceback. State files are written whole or not at all.
+- Status names are matched without regard to case, so Notion's `In progress` works. A status the board does not have is refused. Board rows are all checked before any line is printed.
+- `sync` prints a line for every ticket in Review, Done, or Cancelled, so silence never means success.
+- A ticket with more than 30 `Done when` items gets room for one evidence line per item.
+- `doctor` no longer says `ready:` for an empty `jtek.json` or for a check without a command, and it names commands that need a shell.
+
+**Layout and docs**
+
+- `init`, `doctor`, `next`, `sync`, and `release` moved to `launcher.py` beside the script. They run from the `jt-work` skill only.
+- Fixed the places where two files disagreed about who runs `next`, `sync`, `release`, and `--resume`, and removed leftovers from v25.
+
+**Known, and not changed**
+
+- The script trusts the session's git access. A session that removes the remote, or passes a link that `gh` cannot read, is not stopped. See SECURITY.md.
+- `attention:` works from a list of known file names. A file that decides a check and is not on the list, such as `jest.config.js`, is not named unless you add it to `watch`.
+
 ## 26.1.0 - a guided first run
 
 - `GETTING-STARTED.md` walks from nothing connected to the first merged ticket: what to connect, each step with what you should see, a first ticket to copy, and what each refusal means. The steps through Notion and a real pull request have not been walked yet, and the guide says so.
@@ -14,7 +55,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `jtek.py` replaces the gate. `start` claims a ticket and creates its worktree, `check` runs the declared checks, `verdict` records the reviewer's result, `finish` moves the ticket to Review, and `stop` waits for the human.
 - A session may work several tickets in a row when the last one ended cleanly, the next one is in code it already read, and the session is still short. Each ticket keeps its own worktree, evidence, pull request, and result.
 - Several tickets can run at once, each in its own session and worktree. A claim is an atomic directory under the git common directory, so the same ticket cannot be taken twice.
-- Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` is the only file added to a repository.
+- Checks are declared in `jtek.json` and read from the base branch. A ticket can name a check and cannot add a command. `jtek.json` and the `.jtek/` folder are all that is added to a repository.
 - The board is a Notion database, and nothing else. The agent reads a ticket's page with its Notion tool, such as the Notion MCP connector, saves it as a ticket file, and runs `start <page link> --from-file <file>`. `start`, `finish`, and `stop` print a `board:` line that says exactly what to write on the page, and the script never talks to Notion. `After` may point at a ticket of any repository. `jtek.json` names the board as `board`, and a ticket that stopped with a question starts again only after the human sets Todo. `references/notion.md` gives the database layout and the rules. Local ticket files and `jtek.py add` are removed.
 - `jtek.py next --board-file` tells whoever starts sessions what each open ticket needs: `work`, `review`, `board`, or nothing. `jtek.py sync --board-file` says which Review tickets are merged. A human, a Claude Code session, or a bot follows the same contract, in `references/starting-sessions.md`.
 - A feature that spans two repositories is one ticket per repository, joined by a contract file and checks that read it. `references/two-repos.md` gives the setup and what each check catches.
@@ -29,7 +70,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - Declared commands run with `JTEK_TICKET` and `JTEK_WORKTREE` set.
 - `finish --evidence-file` saves what was run and seen, in at most 40 lines. It is required, and it is also the pull request body. `--attach` keeps screenshots and output with it. The result has an `evidence:` line.
 - A green run on the base is remembered per base commit, so parallel tickets do not repeat it.
-- `list --sync` removes the worktree of each Done ticket, unless it has uncommitted files.
+- `sync` removes the worktree of each Done ticket, unless it has uncommitted files.
 - `jt-work` gives the path of each step skill, for agents that cannot load a skill by name.
 - `start` runs the ticket's checks on the base before any edit. If one fails, the ticket is not started and stays Todo. `--no-baseline` skips this.
 - `stop` refuses while the worktree has uncommitted files. Unfinished work is committed as `wip: ...` first.
@@ -38,6 +79,8 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - The skills never choose the next ticket and never merge.
 - `evals/` has two scenarios with hidden acceptance tests, a builder, and a grader that reads the repository an agent leaves behind.
 - Skill and plugin metadata are `26.0.0`.
+
+Entries below 26.0.0 describe files that the rewrite removed. They are in the git history at commit `4c9d0f1`.
 
 ## 25.0.0 - the queue can plan a batch and still stop for a human
 
@@ -143,7 +186,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 
 ## 24.3.0 - compose external method skills
 
-- `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; [playbooks.md](skills/jt-work/references/playbooks.md) is a short gate-habits fallback instead of inlined TDD and per-kind method text.
+- `/jt-work` invokes obra/superpowers **executing-plans** and **test-driven-development** for Standard work; playbooks.md is a short gate-habits fallback instead of inlined TDD and per-kind method text.
 - Spec skills invoke Matt Pocock **grill-me** and superpowers **brainstorming** for questioning (outcomes unchanged: `check.py`, blocking questions, `(Recommended)` options). `/jt-spec-handoff` follows Matt Pocock **handoff** style; the `spec.md` template and checker rules stay.
 - README and `skills/jt-help/references/install-before-use.md` move superpowers (`executing-plans`, `test-driven-development`, `brainstorming`) and **grill-me** to **Required**; official install links only in the reference file.
 - Pin installs with `v24.3.0`. Skill and plugin metadata are `24.3.0`.
@@ -176,13 +219,13 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 - `gate.py` checks the same things as v23. `next` prints the new command for the action. The refusal tokens, the approval hash, the `gates:` line, and the secret and test-weakening reports are unchanged.
 - `check.py` is unchanged, including a human name and date on approvals and D lines, and a failure when an AI signed one. `check.py` and `board.py` still share one `specdoc.py`. The marker `<!-- scrum-spec -->` and `scrum-spec/config.md` stay, because the checker reads them. Existing spec files and `jt-queue/` boards need no rewrite.
 - Names the skills write: a commit and a draft PR title are `type(scope): summary (<ticket-id>)`, using the id the ticket already has (`BOOK-12`, `#45`, a Notion id). The skills require an id and do not check its shape. `/jt-work` is one command with no `--loop` flag. It works ready tasks in board order and skips blocked ones, or only the ticket id it was given. The branch `gate.py` finds is still `task-<id>-<slug>`. The conventional branch `type/<ticket-id>-short-slug` is documented and not enforced.
-- See [MIGRATING.md](MIGRATING.md).
+- See MIGRATING.md.
 
 ## 23.0.0 - the gate runs the checks it already named
 
 - **Breaking:** a Standard task with no diff outside `jt-queue/` no longer passes `reach-review`. A `(feat)` branch with zero commits used to answer `allowed` and `repo-review: skip` with no plan and no evidence. It is now `review-diff` / `no diff outside jt-queue/ to review`.
 - **Breaking:** on Standard, a non-empty `<LINT_CMD>` or `<TYPECHECK_CMD>` runs in the task worktree after `<TEST_CMD>` and must exit 0 (`lint-failed`, `typecheck-failed`, and the matching timeouts; each counts as a round). An empty cell is `skip` and is not run. Quick tier does not run them. The same commands run per repo when a task lists `repos:`.
-- **Breaking for boards that already set those cells:** `LINT_CMD` and `TYPECHECK_CMD` are now part of the `approve-commands` hash (home table and each `## repos` block) when the cell is not empty. Setting or changing one is `commands-changed` until a human approves it again. Empty cells stay out of the hash, so a v22 approval still matches. See [MIGRATING.md](MIGRATING.md).
+- **Breaking for boards that already set those cells:** `LINT_CMD` and `TYPECHECK_CMD` are now part of the `approve-commands` hash (home table and each `## repos` block) when the cell is not empty. Setting or changing one is `commands-changed` until a human approves it again. Empty cells stay out of the hash, so a v22 approval still matches. See MIGRATING.md.
 - `allowed` prints one `gates:` line in a fixed order: `tests`, `lint`, `typecheck`, `screen`, `review-diff`, `security`, `test-weakening`.
 - `reach-review` refuses with `secret-suspect` and `next: ask` when the diff adds a file whose name starts with `.env` (`.env.example` is allowed), a private-key file (`*.pem`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`; not `*.pub`), or a `PRIVATE KEY` block. The output names the file or `file:line` and never the value.
 - A deleted test file, or an added `.skip` / `.only` / `xit` / `@skip` / `xfail` marker, is reported as `test-weakening` on `allowed`. It does not refuse: the same diff can be a rename or a skip the task asked for, and the human judges it the way they already judge `outside-files:`.
@@ -212,7 +255,7 @@ This version is a rewrite. It does not read the `jt-queue/` files of earlier ver
 ## 22.0.1 - easier to start
 
 - Claude Code plugin: `/plugin marketplace add thitinan147/jtek-skill#v22.0.1`, then `/plugin install jtek@jtek-skill`. The skills are also available as `/jtek:jt-work-queue` and `/jtek:jt-review-work`.
-- New [Getting started](docs/getting-started.md) guide: the words the skill uses, and one real round from setup to merge with the gate's actual output.
+- New Getting started guide: the words the skill uses, and one real round from setup to merge with the gate's actual output.
 - README rewritten for new users. The full walkthrough moved to `docs/usage.md`, and the v20/v21 upgrade notes to `MIGRATING.md`. Added `CONTRIBUTING.md`, issue templates, and a platform table (Windows is not supported yet; use WSL).
 - Fix: when `## evidence` in `plan.md` misses a `pass:` line, the `hint:` no longer tells the agent to add a `## review-diff` section it already has.
 - `jt-work-queue` SKILL.md: the tier table lists only the two gate tiers. Diff review and asking instead of guessing are separate rules, with the same content as before.
