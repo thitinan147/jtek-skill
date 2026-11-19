@@ -20,11 +20,13 @@ Write it for a person who has not seen the session, in at most 40 lines, not cou
 Save the evidence to a temporary file outside the worktree. Add `--attach <file>` for each screenshot, recording, or output file that shows the change working.
 
 - **The repository has a forge:** push the branch `jtek/<id>` and open a pull request that is ready for review, not a draft. Title: `type(scope): summary`. The evidence file is the body. Then run `jtek.py finish <id> --pr <url> --evidence-file <file>`. When `gh` is installed, the script checks that the pull request is open at your current commit. Never pass a link you did not get from the forge.
-- **The repository has no forge:** do not push. Run `jtek.py finish <id> --no-pr --evidence-file <file>`. The human then reads the evidence and reviews the local branch `jtek/<id>`.
+- **The repository has no forge:** do not push. Run `jtek.py finish <id> --no-pr --evidence-file <file>`. The human then reads the evidence and reviews the local branch `jtek/<id>`. The script refuses `--no-pr` when the repository has a remote, unless `jtek.json` says `"forge": false`.
+
+Pass `--evidence-file` again whenever the code changed since the last `finish`. The script refuses evidence that was saved for an older change.
 
 ## 3. Read the result
 
-- **`outcome: review`:** stop. The human reviews and merges. If the ticket came from Notion, update the page: Status Review, the pull request link, and the result block as a comment.
+- **`outcome: review`:** stop. The human reviews and merges. Write on the ticket's page exactly what the `board:` line of the result says.
 - **`outcome: needs-review`:** the usual first result. A session that did not write the change records a verdict, and then `finish` runs again.
 - **`refused: verdict is FAIL`:** the change does not ship. Read the review notes the script names.
 - **`refused: CI is failing`:** the pull request is not ready for the human while its checks are red.

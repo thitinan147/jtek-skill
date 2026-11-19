@@ -13,7 +13,7 @@ Most steps are things you say to your agent. Text in a `text` block is a prompt.
 | A coding agent that loads skills (Claude Code, Cursor, Codex, ...) | It does the work | Yes |
 | `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
 | Notion, as a tool in the agent | The board lives there | Yes |
-| GitHub, through the `gh` command | To open pull requests and read their state and CI | For pull requests |
+| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes |
 | Your project's own commands for lint, types, and tests | They are the checks | At least one |
 | A way to run your real app from the command line | So the agent can see a change work | Strongly advised |
 
@@ -43,7 +43,9 @@ gh auth login
 gh auth status
 ```
 
-**You should see:** `Logged in to github.com`. Without `gh`, jtek still works, but tickets end without a pull request and you set Done by hand.
+**You should see:** `Logged in to github.com`.
+
+A repository with no remote at all needs none of this: its tickets end without a pull request, and you set Done by hand.
 
 ## 3. Connect Notion and create the board
 
@@ -54,9 +56,9 @@ gh auth status
 
 ```text
 Read the Notion database at <link>. Compare its properties with the table in
-skills/jt-work/references/notion.md. List every property that is missing,
-misnamed, or has another type, and every Status option that is missing.
-Change nothing.
+the notion.md reference of the jt-work skill. List every property that is
+missing, misnamed, or has another type, and every Status option that is missing
+or spelled differently. Change nothing.
 ```
 
 **You should see:** an empty list. Fix what it names and ask again.
@@ -67,7 +69,8 @@ Do this in each repository the board serves.
 
 ```text
 Run jtek.py init in this repository. Then read the package scripts and the CI
-config, and propose one command per check for jtek.json. Set "board" to <link>.
+config, and propose one command per check for jtek.json. Set "board" to <link>
+and "name" to <the name tickets will use for this repository>.
 Show me the file. Do not commit it.
 ```
 
@@ -77,7 +80,9 @@ Read the file. A command is one program with arguments: a pipeline goes into a s
 Run jtek.py doctor.
 ```
 
-**You should see:** no `missing` line, and `ready:` at the end. Lines marked `optional` are step 5.
+**You should see:** no `missing` line, and `ready:` at the end. The `optional` lines about `verify` and `.jtek/verify.md` are step 5.
+
+If it says it cannot find the base branch, the repository has no commit yet: make the first commit.
 
 ## 5. Build the harness
 
@@ -99,7 +104,7 @@ Pick something small and safe. Create a page on the board:
 
 - **Name:** `Add a --version flag to the command-line tool`
 - **Kind:** `feature`
-- **Repo:** the `name` in this repository's `jtek.json`, or its folder name
+- **Repo:** the `name` in this repository's `jtek.json`
 - **Body:**
 
 ```markdown
@@ -114,7 +119,9 @@ Running the tool with --version prints its version, so a user can report it in a
 - the output of every other flag stays exactly as it is now
 ```
 
-`Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
+The three headings must be named exactly like this. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
+
+Notion gives the page an id, such as `T-1`. If you made other pages while testing, yours has another number: use that one below.
 
 Set **Status** to **Todo**. Nothing happens until you start a session.
 
@@ -134,6 +141,8 @@ Open a session in the repository:
 4. It opens a pull request, and ends with a `jtek-result` block that says `outcome: needs-review`.
 
 That outcome is correct. A change needs a verdict from a session that did not write it.
+
+An agent that can start a separate session by itself may do steps 8 and 9 on its own, and end with `outcome: review`. Then go to step 10.
 
 ## 8. Get the verdict
 
@@ -162,7 +171,7 @@ Open a **new** session in the repository. It must not be the one from step 7.
 Then set the page to **Done**, or ask an agent:
 
 ```text
-Read the board and run jtek.py sync, as skills/jt-work/references/starting-sessions.md says.
+Read the board and run jtek.py sync, as the starting-sessions.md reference of the jt-work skill says.
 ```
 
 **You should see:** the page is **Done**, and the folder `<repo>.jtek/T-1` is gone.
@@ -192,6 +201,11 @@ The same three steps ask for a fix on a ticket that is in Review.
 | `fails on <base> before any change` | Your base branch is red | Fix the base branch first |
 | `` `Done when` may hold only top-level list items `` | The page has other text or nested items there | Fix the page |
 | `is already claimed` | Another session has the ticket | Wait for it, or tell a new session that the earlier one died |
+| `an earlier start ... was interrupted` | A `start` was killed half way | Ask the agent to run `jtek.py release <id>`, then start again |
+| `the worktree ... is gone` | The ticket's folder was deleted | The same: `jtek.py release <id>`. The commits are on the branch |
+| `has a remote, so the change needs a pull request` | `--no-pr` is only for a repository without a forge | The agent opens a pull request |
+| `the code changed after the evidence was saved` | The evidence describes an older change | The agent sees it work again and passes new evidence |
+| `check runs have failed` | Three runs failed | The agent stops and asks you |
 | `checks have not passed on the current commit` | A commit came after the last check | The agent runs `check` again |
 | `CI is failing` | The pull request is red on the forge | The agent fixes it before it reaches you |
 | `stopped with a question` | The ticket waits for you | Answer, then set Todo |

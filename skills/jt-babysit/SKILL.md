@@ -38,5 +38,5 @@ Do not agree with a comment to be agreeable. Check that the suggestion is correc
 
 1. Commit, and run `jtek.py check <id>`.
 2. See the change work again when the fix touched behaviour.
-3. Add what changed to the evidence file, and run `jtek.py finish <id> --pr <url> --evidence-file <file>` again. A changed patch needs a new verdict.
+3. The saved evidence is the file on the `evidence:` line of `jtek.py result <id>`. Copy it to a temporary file, add what changed, and run `jtek.py finish <id> --pr <url> --evidence-file <file>` again. A changed patch needs a new verdict.
 4. If there are **Ask** items, stop with `jtek.py stop <id> --waiting input --note "<the one question>"` instead.

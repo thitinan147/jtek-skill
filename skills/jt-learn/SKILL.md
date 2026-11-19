@@ -39,7 +39,6 @@ A new lint rule, check, or test must fail on the real past mistake. Run it again
 1. Fix the ticket's own work first, in its worktree.
 2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so.
 3. A change to lint config, CI, or `jtek.json` is the human's to commit on the base branch.
-4. If the ticket is local, add `fix: <mechanism>` to its header so the correction is on record.
 
 ## 5. Keep the rule table small
 

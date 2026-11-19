@@ -89,8 +89,9 @@ board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=inpu
 
 - **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md). `-` means nothing.
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh`. `finish` refuses while it is `fail`.
+- **`verdict`:** only a verdict for the change as it is now is shown. `none` means one is still needed.
 - **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones, with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
-- **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, a file whose path is written in a check or `setup` command, a deleted test file, an existing test file that lost or changed lines, and anything matching `watch` in `jtek.json`. Adding tests is not flagged. `-` means none.
+- **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, CI config, lockfiles, the usual files that define a check command (`Makefile`, `package.json`, `pyproject.toml`, and the like), a file whose path is written in a check or `setup` command, a deleted test or spec file, an existing test or spec file that lost or changed lines (also when it was renamed), and anything matching `watch` in `jtek.json`. Adding tests is not flagged. `-` means none. The list is a set of known names, not proof: add your project's own to `watch`.
 - **`review`:** ready for the human to review and merge.
 - **`needs-review`:** the usual result of the first `finish`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.
 - **`needs-human`:** read `waiting` and `note`.

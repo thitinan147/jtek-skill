@@ -4,7 +4,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
 ## Ask what each ticket needs
 
-1. Read the board (the database named as `board` in `jtek.json`) with your Notion tool, and save the tickets that are not Done or Cancelled as a JSON file outside the repository:
+1. Read the board (the database named as `board` in `jtek.json`) with your Notion tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`:
 
    ```json
    [{"id": "T-12", "title": "...", "status": "Todo", "repo": "api", "waiting": "", "pr": "", "after": ["T-10"]}]
@@ -21,11 +21,12 @@ A session works the tickets it is given. Something else decides which ticket run
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
+| `stuck` | Nothing. Tell the human: the reason says which command cleans it up. |
 | `elsewhere` | Nothing. Another machine has the ticket. |
 
 After a session ends, read the board and run `next` again. The action for that ticket has changed.
 
-Now and then, run `jtek.py sync --board-file <file>`. For each ticket in Review whose pull request the forge reports as merged, it prints `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets.
+Now and then, run `jtek.py sync --board-file <file>`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled. When the forge reports a pull request as merged, the line has `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets, and says when it kept one.
 
 ## Rules for whoever starts sessions
 
