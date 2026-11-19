@@ -71,6 +71,10 @@ def run(j, args=None) -> None:
             rows.append(("missing", "commands that need a shell: " + ", ".join(shell),
                          "a command runs without a shell, so `&&`, `|`, `>`, `$(...)` and `$VAR` do nothing; "
                          "put the pipeline in a script and name the script"))
+        try:
+            j.load_settings(base)
+        except j.Refuse as err:
+            rows.append(("missing", "the optional settings", f"{err}; fix it in {j.CONFIG}, and commit it on {base}"))
         rows.append(("ok" if str(checks.get("verify") or "").strip() else "optional", "a `verify` check that runs the real app",
                      "run the jt-harness skill once; without it a passing check only means the code compiles"))
         guide = bool(j.git("rev-parse", "--verify", "--quiet", f"{base}:.jtek/verify.md", check=False))

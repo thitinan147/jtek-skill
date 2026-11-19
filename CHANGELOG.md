@@ -5,6 +5,17 @@
 - `max_failed_runs` in `jtek.json` sets how many failed `check` runs end a session. It was fixed at 3, which stopped a model that would have found the cause on the next try.
 - `pr_state` in `jtek.json` names a command that reads a pull request, so GitLab, Bitbucket, and other forges work. It gets the link and prints the state, the head commit, and the CI state. Without it, `gh` is used as before.
 - `headings` in `jtek.json` lets tickets use a team's own words for `Goal`, `Done when`, and `Out of scope`.
+- `examples/pr-state-gitlab.py` is a `pr_state` command for GitLab to copy. It is tested against a stand-in for `glab`, not a real GitLab.
+- A third outside review found defects, and each fix has a test:
+  - A verdict and the evidence no longer survive the same edit moved to another place in a file. The identity of a change now includes the content of every file it leaves behind. A verdict recorded by an earlier version must be given again, and a rebase drops the verdict when the base changed a file the change also touches.
+  - The `pr_state` command runs in the main checkout, so a ticket's branch cannot change the program that runs. When it fails or prints anything but the three words, `finish` refuses. Before, any other spelling of a red CI passed.
+  - A draft pull request is refused, as the docs already said.
+  - A heading given twice is refused, and a heading inside a code block is text. Before, the later one silently replaced the real `Done when` items.
+  - `sync` deletes a branch only when its commits are on the base, or the forge says the pull request merged at the branch's last commit. Before, a pushed branch of a cancelled ticket could be deleted unmerged.
+  - `release` and `sync` keep a worktree whose commits are not on its branch, such as commits on a detached HEAD, and can remove a clean worktree that has submodules.
+  - A reviewer can record FAIL when the author left uncommitted files.
+  - A bad `max_failed_runs`, `pr_state`, or `headings` is found by `doctor` and `start`, not by the first `check`. `headings` takes only the three names.
+  - Only the human setting Todo gives a ticket new check runs. A session that resumes does not.
 - The README says what a project can change, what jtek does not decide, what still assumes today's agents, and where it does not fit yet.
 
 ## 26.3.0 - templates, and a picture of the whole factory

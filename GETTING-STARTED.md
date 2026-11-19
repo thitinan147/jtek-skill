@@ -119,7 +119,7 @@ Running the tool with --version prints its version, so a user can report it in a
 - the output of every other flag stays exactly as it is now
 ```
 
-The three headings must be named exactly like this. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
+The three headings must be named exactly like this, or with the words that `headings` in `jtek.json` gives them. A heading appears once. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
 
 Notion gives the page an id, such as `T-1`. If you made other pages while testing, yours has another number: use that one below.
 
@@ -174,7 +174,7 @@ Then set the page to **Done**, or ask an agent:
 Read the board and run jtek.py sync, as the starting-sessions.md reference of the jt-work skill says.
 ```
 
-**You should see:** the page is **Done**, and the folder `<repo>.jtek/T-1` is gone.
+**You should see:** the page is **Done**, and the folder `<repo>.jtek/T-1` is gone. The branch is deleted too when the forge says the pull request merged at the branch's last commit.
 
 That is the whole flow.
 
@@ -209,6 +209,8 @@ The same three steps ask for a fix on a ticket that is in Review.
 | `the code changed after the evidence was saved` | The evidence describes an older change | The agent sees it work again and passes new evidence |
 | `check runs have failed` | Three runs failed, or the number in `max_failed_runs` | The agent stops and asks you |
 | `checks have not passed on the current commit` | A commit came after the last check | The agent runs `check` again |
+| ``the `pr_state` command of jtek.json ...`` | Your own forge command failed, or did not print the three words | Fix the command. See [setup.md](skills/jt-work/references/setup.md) |
+| `is a draft` | The pull request is not marked ready | The agent marks it ready |
 | `CI is failing` | The pull request is red on the forge | The agent fixes it before it reaches you |
 | `stopped with a question` | The ticket waits for you | Answer, then set Todo |
 

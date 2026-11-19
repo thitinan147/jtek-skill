@@ -104,25 +104,75 @@ def load_checks(base: str) -> dict[str, str]:
     return checks
 
 
+HEADINGS = ["Goal", "Done when", "Out of scope"]
+
+
+def load_settings(base: str) -> dict:
+    """The optional settings of jtek.json, checked in one place so `doctor` and `start` find a bad value,
+    and not the first `check` after the ticket is claimed."""
+    config = load_config(base)
+    limit = config.get("max_failed_runs", MAX_FAILED_RUNS)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise Refuse(f"`max_failed_runs` in {CONFIG} must be a whole number of at least 1")
+    pr_state = config.get("pr_state") or ""
+    if not isinstance(pr_state, str):
+        raise Refuse(f'`pr_state` in {CONFIG} must be one command as text, such as "python3 scripts/pr-state.py"')
+    names = config.get("headings", {})
+    form = '{"Goal": "...", "Done when": "...", "Out of scope": "..."}'
+    if not isinstance(names, dict) or any(not isinstance(v, str) or not v.strip() for v in names.values()):
+        raise Refuse(f"`headings` in {CONFIG} must be an object such as {form}")
+    unknown = [key for key in names if key not in HEADINGS]
+    if unknown:
+        raise Refuse(f"`headings` in {CONFIG} has the name `{unknown[0]}`. Its names are exactly: {', '.join(HEADINGS)}")
+    own = {key: " ".join(value.split()).lower() for key, value in names.items()}
+    if len(set(own.values())) != len(own):
+        raise Refuse(f"`headings` in {CONFIG} gives two headings the same words")
+    clash = [key for key, value in own.items() if any(value == other.lower() and other != key for other in HEADINGS)]
+    if clash:
+        raise Refuse(f"`headings` in {CONFIG} names `{clash[0]}` with the English name of another heading")
+    return {"max_failed_runs": limit, "pr_state": pr_state.strip(), "headings": own}
+
+
 # ---- ticket text -----------------------------------------------------------
+
+def fenced(lines: list[str]):
+    """Yield (line, inside a code fence). A heading quoted in a fence is text, not a heading."""
+    fence = ""
+    for line in lines:
+        mark = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            yield line, True
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) and not line.strip().strip(fence[0]):
+                fence = ""
+        elif mark:
+            fence = mark.group(1)
+            yield line, True
+        else:
+            yield line, False
+
 
 def parse_ticket(text: str) -> dict:
     fields: dict[str, str] = {}
     sections: dict[str, list[str]] = {}
+    repeated: list[str] = []
     title, current = "", None
-    for line in text.splitlines():
-        if line.startswith("## "):
+    for line, inside in fenced(text.splitlines()):
+        if line.startswith("## ") and not inside:
             current = line[3:].strip().lower()
-            sections[current] = []
+            if current in sections:
+                repeated.append(line[3:].strip())
+            sections.setdefault(current, [])
         elif current is not None:
             sections[current].append(line)
+        elif inside:
+            continue
         elif line.startswith("# ") and not title:
             title = line[2:].strip()
         else:
             match = re.match(r"^([A-Za-z][A-Za-z -]*):\s*(.*)$", line)
             if match:
                 fields[match.group(1).strip().lower()] = match.group(2).strip()
-    return {"title": title, "fields": fields, "sections": sections}
+    return {"title": title, "fields": fields, "sections": sections, "repeated": repeated}
 
 
 def canon_status(value: str) -> str:
@@ -135,6 +185,9 @@ def canon_status(value: str) -> str:
 
 def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
     sections = ticket["sections"]
+    if ticket.get("repeated"):
+        raise Refuse(f"the ticket has the heading `{ticket['repeated'][0]}` twice, so it is not clear which one counts. "
+                     "The human gives each heading once; an example of a heading goes inside a code block")
     if not any(line.strip() for line in sections.get("goal", [])):
         raise Refuse("ticket has no `## Goal`")
     done = [line for line in sections.get("done when", []) if re.match(r"^-\s*\S", line)]
@@ -232,11 +285,16 @@ def claimed(ticket_id: str) -> str:
 
 
 def patch_id(worktree: Path, base: str) -> str:
-    """Identify the change by its content, so a rebase that changes nothing keeps its verdict.
+    """Identify the change by its content: the diff, and the full content of every file it leaves behind.
+    A rebase keeps the verdict unless the base changed a file this change also touches.
     Whitespace counts: in Python or YAML, an indent is a change of behaviour."""
     diff = subprocess.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
     kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
-    return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
+    # Hunk positions are left out above, so the same edit at another place of a file would look the same.
+    # The content each changed file ends with tells the two apart.
+    after = git("diff", "--raw", "--no-abbrev", "--no-renames", "-z", f"{base}...HEAD", cwd=worktree)
+    files = re.sub(r":\d+ \d+ [0-9a-f]+ ([0-9a-f]+) ", r"\1 ", after).encode()
+    return hashlib.sha256(b"\n".join(kept) + b"\0" + files).hexdigest() if diff.stdout.strip() else ""
 
 
 def ticket_id_of_text(work: Path) -> str:
@@ -393,12 +451,13 @@ def cmd_start(args: argparse.Namespace) -> None:
     except (OSError, ValueError) as err:
         raise Refuse(f"cannot read the ticket file as text: {err}") from None
     base = base_branch()
-    names = load_config(base).get("headings") or {}
-    if not isinstance(names, dict) or any(not isinstance(v, str) for v in names.values()):
-        raise Refuse(f'`headings` in {CONFIG} must be an object such as {{"Goal": "...", "Done when": "...", "Out of scope": "..."}}')
-    for english, own in names.items():
+    english = {own: name for name, own in load_settings(base)["headings"].items()}
+    if english:
         # The copy the session works from always has the three English headings, whatever the page calls them.
-        text = re.sub(rf"(?im)^##[ \t]+{re.escape(own.strip())}[ \t]*$", f"## {english}", text)
+        lines = [f"## {english[' '.join(line[3:].split()).lower()]}"
+                 if line.startswith("## ") and not inside and " ".join(line[3:].split()).lower() in english else line
+                 for line, inside in fenced(text.splitlines())]
+        text = "\n".join(lines) + "\n"
     ticket = parse_ticket(text)
     fields = ticket["fields"]
     ticket_id = check_id(fields.get("id", ""))
@@ -435,7 +494,8 @@ def cmd_start(args: argparse.Namespace) -> None:
             except FileNotFoundError:
                 raise Refuse(CLAIMED.format(id=ticket_id)) from None
         checks_path = work / "checks.json"
-        if checks_path.exists():
+        if checks_path.exists() and status == "Todo":
+            # Only the human sets Todo, so only the human gives a ticket new tries.
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
         resumed = True
     else:
@@ -566,9 +626,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         raise Refuse(f"{CONFIG} on {meta['base']} no longer declares: {', '.join(missing)}")
     sha, dirty = head_state(worktree)
     previous = read_json(work / "checks.json")
-    limit = load_config(meta["base"]).get("max_failed_runs", MAX_FAILED_RUNS)
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        raise Refuse(f"`max_failed_runs` in {CONFIG} must be a whole number of at least 1")
+    limit = load_settings(meta["base"])["max_failed_runs"]
     if previous.get("failed_runs", 0) >= limit:
         raise Refuse(f"{limit} check runs have failed. One more guess usually means the design is wrong, not "
                      f"the line. Stop: `jtek.py stop {args.id} --waiting input --note \"<the cause you suspect>\"`")
@@ -606,10 +664,10 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
     sha, dirty = head_state(Path(meta["worktree"]))
-    if dirty:
-        raise Refuse("a verdict is for a commit, and these files are not committed. If your review made them, remove "
-                     f"them. If the author left them, give FAIL and say so in the notes\n{dirty}"
-                     if args.verdict == "PASS" else f"remove the files your review made, then record the verdict\n{dirty}")
+    if dirty and args.verdict != "FAIL":
+        # FAIL opens nothing, so it is allowed here: a reviewer must not have to delete the author's files to say so.
+        raise Refuse("a pass is for a commit, and these files are not committed. If your review made them, remove "
+                     f"them. If the author left them, give FAIL and say so in the notes\n{dirty}")
     patch = patch_id(Path(meta["worktree"]), meta["base"])
     if not patch:
         raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
@@ -715,11 +773,13 @@ def cmd_finish(args: argparse.Namespace) -> None:
         )
     else:
         state, head, ci = pr_info(pr, meta["base"])
+        if state == "DRAFT":
+            raise Refuse(f"{pr} is a draft. Mark it ready for review, then finish again")
         if state != "unknown" and (state != "OPEN" or head != sha):
             raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
         if ci == "fail":
             raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
-        pr_note = "" if state == "OPEN" else " The PR link was not verified because gh could not read it."
+        pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."
     meta.update(pr=pr, ci=ci)
     write_json(work / "meta.json", meta)
     verdict = current_verdict(args.id, meta)
@@ -771,30 +831,43 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 
 CI_QUERY = (
-    '.state + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
+    '(if .isDraft then "DRAFT" else .state end) + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
     '| if length == 0 then "none" '
     'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail" '
     'elif all(.[]; . == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass" else "pending" end)'
 )
 
 
+PR_STATES = ["OPEN", "DRAFT", "MERGED", "CLOSED"]
+CI_STATES = ["pass", "fail", "pending", "none"]
+
+
 def pr_info(url: str, base: str = "") -> tuple[str, str, str]:
-    """Return (state, head commit, CI state) from the forge, or ("unknown", "", "unknown") when it cannot answer.
-    State is OPEN, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
-    GitHub is read with `gh`. For another forge, `pr_state` in jtek.json names a command that gets the link
-    as its last argument and prints those three words."""
-    command = ["gh", "pr", "view", url, "--json", "state,headRefOid,statusCheckRollup", "-q", CI_QUERY]
+    """Return (state, head commit, CI state) of a pull request.
+    State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
+    GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown").
+    For another forge, `pr_state` in jtek.json names a command that gets the link as its last argument and
+    prints those three words. It runs in the main checkout, so a ticket's branch cannot change what runs.
+    A project that names its own command gets a refusal, and not "unknown", when that command does not answer."""
+    custom = load_settings(base or base_branch())["pr_state"]
+    command = ["gh", "pr", "view", url, "--json", "state,isDraft,headRefOid,statusCheckRollup", "-q", CI_QUERY]
+    problem = ""
     try:
-        custom = str(load_config(base or base_branch()).get("pr_state") or "")
-        if custom.strip():
+        if custom:
             command = shlex.split(custom) + [url]
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=60)
-    except (OSError, ValueError, Refuse, subprocess.TimeoutExpired):
-        return "unknown", "", "unknown"
-    parts = proc.stdout.split()
-    if proc.returncode != 0 or len(parts) < 2:
-        return "unknown", "", "unknown"
-    return parts[0], parts[1], parts[2] if len(parts) > 2 else "unknown"
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=main_root())
+        parts = proc.stdout.split()
+        if proc.returncode != 0:
+            problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
+        elif (len(parts) != 3 or parts[0] not in PR_STATES or parts[2] not in CI_STATES
+              or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[1])):
+            problem = (f"printed `{' '.join(parts)[:120]}`. It must print three words: {', '.join(PR_STATES[:-1])} or "
+                       f"{PR_STATES[-1]}; the full head commit; and {', '.join(CI_STATES[:-1])} or {CI_STATES[-1]}")
+    except (OSError, ValueError, subprocess.TimeoutExpired) as err:
+        problem = f"did not run: {type(err).__name__}: {err}"
+    if problem and custom:
+        raise Refuse(f"the `pr_state` command of {CONFIG} {problem}")
+    return ("unknown", "", "unknown") if problem else (parts[0], parts[1], parts[2])
 
 
 def build_parser() -> argparse.ArgumentParser:

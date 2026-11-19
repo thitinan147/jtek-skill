@@ -56,15 +56,21 @@ def sync(j, args) -> None:
             continue
         ticket_id, status = row["id"], row["status"]
         if status in ("Done", "Cancelled"):
-            print(f"{ticket_id}\t-\t{status}; " + (tidy_done(j, ticket_id) or "nothing to tidy on this machine"))
+            print(f"{ticket_id}\t-\t{status}; " + (tidy_done(j, ticket_id, row["pr"]) or "nothing to tidy on this machine"))
         elif status != "Review":
             continue
         elif not row["pr"]:
             print(f"{ticket_id}\t-\tno pull request on the page; the human sets Done after merging")
+        elif not j.re.match(r"^https?://[^\s;]+$", row["pr"]):
+            print(f"{ticket_id}\t-\tthe PR on the page is not a link; the human sets Done after merging")
         else:
-            state, _, ci = j.pr_info(row["pr"], j.base_branch())
+            try:
+                state, head, ci = j.pr_info(row["pr"], j.base_branch())
+            except j.Refuse as err:
+                print(f"{ticket_id}\t-\tcould not read {row['pr']}: {err}")
+                continue
             if state == "MERGED":
-                print(f"{ticket_id}\tboard: Status=Done\tthe pull request is merged; " + (tidy_done(j, ticket_id) or "nothing to tidy"))
+                print(f"{ticket_id}\tboard: Status=Done\tthe pull request is merged; " + (tidy_done(j, ticket_id, head=head) or "nothing to tidy"))
             elif state == "unknown":
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `gh` installed and signed in?")
             elif state == "OPEN":
@@ -129,17 +135,44 @@ def next_(j, args) -> None:
             print(f"{row['id']}\t{action}\t{reason}")
 
 
-def tidy_done(j, ticket_id: str) -> str:
-    """Remove the worktree of a finished ticket. Git refuses when it has uncommitted files, and then it stays.
+def off_branch(j, worktree: Path, branch: str) -> str:
+    """Commits of the worktree that its branch does not have, for example made on a detached HEAD.
+    Removing the worktree would leave them on no branch."""
+    count = j.git("rev-list", "--count", f"refs/heads/{branch}..HEAD", cwd=worktree, check=False)
+    return "" if count == "0" else (f"{worktree} has commits that are not on the branch {branch}. Check the branch out "
+                                    "there, or give those commits a branch of their own")
+
+
+def tidy_done(j, ticket_id: str, pr: str = "", head: str | None = None) -> str:
+    """Remove the worktree of a finished ticket, and its branch when the work is known to be merged.
+    A worktree with uncommitted files stays. A branch is deleted only when all its commits are on the base, or
+    the forge says the pull request merged at exactly the branch's commit; a squash merge is the second case.
     Return what happened, or an empty string when there was nothing to remove."""
     meta = j.read_json(j.work_dir(ticket_id) / "meta.json")
     if not meta.get("worktree") or not Path(meta["worktree"]).is_dir():
         return ""
-    if subprocess.run(["git", "worktree", "remove", meta["worktree"]], capture_output=True).returncode != 0:
-        return f"worktree kept, because it has uncommitted files: {meta['worktree']}"
-    # -d deletes only a merged branch, so unmerged work is never lost here
-    j.git("branch", "-d", meta["branch"], check=False)
-    return "worktree removed"
+    worktree, branch = Path(meta["worktree"]), meta["branch"]
+    if j.git("status", "--porcelain", cwd=worktree, check=False):
+        return f"worktree kept, because it has uncommitted files: {worktree}"
+    tip = j.git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    loose = off_branch(j, worktree, branch) if tip else ""
+    if loose:
+        return f"worktree kept: {loose}"
+    try:
+        j.git("worktree", "remove", "--force", str(worktree))  # it is clean; --force is for a worktree with submodules
+    except j.Refuse as err:
+        return f"worktree kept: {err}"
+    merged = j.git("rev-list", "--count", f"{meta['base']}..refs/heads/{branch}", check=False) == "0"
+    if not merged and head is None and j.re.match(r"^https?://[^\s;]+$", pr):
+        try:
+            state, head, _ = j.pr_info(pr, meta["base"])
+            head = head if state == "MERGED" else ""
+        except j.Refuse:
+            head = ""
+    if tip and (merged or head == tip):
+        j.git("branch", "-D", branch, check=False)
+        return "worktree and branch removed"
+    return f"worktree removed; the branch {branch} is kept, because this script cannot see that its commits are merged"
 
 
 def release(j, args) -> None:
@@ -161,11 +194,15 @@ def release(j, args) -> None:
     fresh = bool(meta.get("starting")) and meta.get("kept") is False and own == "0"
     if worktree.is_dir():
         if fresh:
+            if j.git("status", "--porcelain", "--untracked-files=no", cwd=worktree, check=False):
+                raise j.Refuse(f"{worktree} has edits to tracked files. Restore or commit them, then release again")
             j.git("worktree", "remove", "--force", str(worktree))  # holds only what the setup command made
         elif j.git("status", "--porcelain", cwd=worktree, check=False):
             raise j.Refuse(f"{worktree} has uncommitted files. Commit or remove them, then release again")
+        elif exists and off_branch(j, worktree, branch):
+            raise j.Refuse(off_branch(j, worktree, branch) + ", then release again")
         else:
-            j.git("worktree", "remove", str(worktree))
+            j.git("worktree", "remove", "--force", str(worktree))  # it is clean; --force is for submodules
     j.git("worktree", "prune", check=False)  # a worktree whose folder was deleted by hand is forgotten here
     if fresh and exists:
         j.git("branch", "-D", branch, check=False)

@@ -389,11 +389,11 @@ class FinishTests(Scratch):
     def test_finish_refuses_a_pr_that_is_not_at_the_current_commit(self):
         self.started()
         self.jtek("check", "T-1")
-        self.fake_gh("OPEN 0000000000000000000000000000000000000000")
+        self.fake_gh("OPEN 0000000000000000000000000000000000000000 pass")
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("push the branch", out)
-        self.fake_gh("OPEN " + self.git("rev-parse", "HEAD", cwd=self.worktree("T-1")))
+        self.fake_gh("OPEN " + self.git("rev-parse", "HEAD", cwd=self.worktree("T-1")) + " none")
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
         self.assertNotIn("not verified", out)
@@ -599,7 +599,8 @@ class BoardTests(Scratch):
         bin_dir = Path(self.tmp.name) / "bin"
         bin_dir.mkdir()
         fake = bin_dir / "gh"
-        fake.write_text('#!/bin/sh\ncase "$3" in *merged) echo MERGED abc;; *) echo OPEN abc;; esac\n')
+        head = "a" * 40
+        fake.write_text(f'#!/bin/sh\ncase "$3" in *merged) echo MERGED {head} none;; *) echo OPEN {head} none;; esac\n')
         fake.chmod(0o755)
         return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
 
@@ -1208,6 +1209,203 @@ class ProjectSettings(FindingsBase):
         self.assertEqual(code, 0, out)
         self.assertIn("`pr_state`: this repository reads pull requests with its own command", out)
         self.assertNotIn("`gh` is installed", out)
+
+
+class ThirdReview(Scratch):
+    """Defects a third outside review reproduced."""
+
+    def forge(self, words, code=0):
+        script = Path(self.tmp.name) / f"forge_{abs(hash((words, code)))}.py"
+        script.write_text(f"import sys\nprint({words!r})\nsys.exit({code})\n")
+        return f"{sys.executable} {script}"
+
+    def ready(self, ticket_id="T-1"):
+        self.ticket(ticket_id)
+        self.jtek("start", ticket_id)
+        self.commit_change(ticket_id)
+        self.jtek("check", ticket_id)
+        self.jtek("verdict", ticket_id, "PASS", "--by", "reviewer")
+        return self.git("rev-parse", "HEAD", cwd=self.worktree(ticket_id))
+
+    def test_the_same_edit_at_another_place_needs_a_new_verdict(self):
+        block = "    if env:\n        a = 1\n        b = 2\n        limit = 10\n        c = 3\n        d = 4\n        return limit\n"
+        (self.repo / "limits.py").write_text("def limit(env):\n" + block + "    else:\n        pass\n" + block)
+        self.git("add", "limits.py")
+        self.git("commit", "-q", "-m", "limits")
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        tree = self.worktree("T-1")
+        lines = (tree / "limits.py").read_text().splitlines(keepends=True)
+        first = [i for i, line in enumerate(lines) if "limit = 10" in line]
+        (tree / "limits.py").write_text("".join(l.replace("10", "1000") if i == first[0] else l for i, l in enumerate(lines)))
+        self.git("commit", "-qam", "the first limit", cwd=tree)
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        (tree / "limits.py").write_text("".join(l.replace("10", "1000") if i == first[1] else l for i, l in enumerate(lines)))
+        self.git("commit", "-qam", "the second limit instead", cwd=tree)
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--no-pr")
+        self.assertEqual(code, 1, out)
+        self.assertIn("the code changed after the evidence was saved", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out)
+
+    def test_a_forge_command_must_answer_in_the_three_words(self):
+        head = self.ready()
+        link = "https://gitlab.example.invalid/app/-/merge_requests/7"
+        for words, code in ((f"OPEN {head} FAIL", 0), (f"OPEN {head} failed", 0), (f"OPEN {head}", 0), ("OPEN", 0),
+                            ("", 0), (f"OPEN {head[:7]} pass", 0), (f"CLOSED {head} fail", 3)):
+            with self.subTest(words=words, code=code):
+                self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge(words, code))
+                status, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence())
+                self.assertEqual(status, 1, out)
+                self.assertIn("the `pr_state` command of jtek.json", out)
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state="no-such-program-jtek")
+        status, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence())
+        self.assertEqual(status, 1, out)
+        self.assertIn("did not run", out)
+        self.board.set("T-1", Status="Review", PR=link)
+        self.assertIn(f"T-1\t-\tcould not read {link}", self.jtek("sync")[1])
+
+    def test_a_draft_is_not_ready(self):
+        head = self.ready()
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge(f"DRAFT {head} pass"))
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertIn("is a draft", out)
+
+    def test_the_forge_command_of_a_ticket_branch_never_runs(self):
+        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts" / "state.py").write_text("print('CLOSED " + "0" * 40 + " fail')\n")
+        self.git("add", "scripts")
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=f"{sys.executable} scripts/state.py")
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        tree = self.worktree("T-1")
+        (tree / "scripts" / "state.py").write_text(
+            "import subprocess\nprint('OPEN', subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip(), 'pass')\n")
+        self.git("commit", "-qam", "work", cwd=tree)
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        for place in (tree, self.repo):
+            code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence(), cwd=place)
+            self.assertEqual(code, 1, out)
+            self.assertIn("is CLOSED", out)
+
+    def test_a_heading_given_twice_is_refused_and_one_in_a_code_block_is_text(self):
+        twice = "## Goal\nG\n## Done when\n- one\n- two\n## Notes\n## Done when\n- only this\n"
+        self.ticket("T-1", body=twice)
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("has the heading `Done when` twice", out)
+        quoted = "## Goal\nG\n## Done when\n- one\n- two\n## Notes\n```\n## Done when\n- only this\n```\n"
+        self.ticket("T-2", body=quoted)
+        self.assertEqual(self.jtek("start", "T-2")[0], 0)
+        self.commit_change("T-2")
+        self.jtek("check", "T-2")
+        code, out = self.jtek("finish", "T-2", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)  # one line of evidence does not answer two items
+
+    def test_own_headings_inside_a_code_block_are_left_alone(self):
+        names = {"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ"}
+        self.write_config({"test": f"{sys.executable} -c pass"}, headings=names)
+        self.ticket("T-1", body="## เป้าหมาย\nดูตัวอย่าง\n```\n## เสร็จเมื่อ\n- ตัวอย่าง\n```\n## เสร็จเมื่อ\n- ของจริง\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        copy = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertIn("```\n## เสร็จเมื่อ\n- ตัวอย่าง\n```", copy)
+        self.assertIn("## Done when\n- ของจริง", copy)
+
+    def test_bad_settings_are_found_before_a_ticket_is_claimed(self):
+        ok = {"test": f"{sys.executable} -c pass"}
+        bad = [{"max_failed_runs": 0}, {"max_failed_runs": "3"}, {"max_failed_runs": True}, {"pr_state": ["glab", "mr"]},
+               {"headings": {"Goal\\1": "G"}}, {"headings": {"Aim": "G"}}, {"headings": {"Goal": "X", "Done when": "x"}},
+               {"headings": {"Goal": "Why", "Done when": "Goal"}}, {"headings": {"Goal": ""}}, {"headings": []}]
+        for number, extra in enumerate(bad, 1):
+            with self.subTest(extra=extra):
+                self.write_config(ok, board="https://www.notion.so/x", **extra)
+                self.ticket(f"T-{number}")
+                code, out = self.jtek("start", f"T-{number}")
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"`{next(iter(extra))}` in jtek.json", out)
+                self.assertFalse(self.worktree(f"T-{number}").exists())
+                code, out = self.jtek("doctor")
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"`{next(iter(extra))}` in jtek.json", out)
+
+    def test_sync_keeps_a_branch_it_cannot_see_merged(self):
+        remote = Path(self.tmp.name) / "remote.git"
+        self.git("init", "-q", "--bare", str(remote))
+        self.git("remote", "add", "origin", str(remote))
+        self.git("push", "-q", "origin", "main")
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.git("push", "-q", "-u", "origin", "jtek/T-1", cwd=self.worktree("T-1"))
+        self.board.set("T-1", Status="Cancelled")
+        code, out = self.jtek("sync")
+        self.assertIn("the branch jtek/T-1 is kept", out)
+        self.assertFalse(self.worktree("T-1").exists())
+        self.assertTrue(self.git("rev-parse", "--verify", "refs/heads/jtek/T-1"))
+
+    def test_sync_removes_the_branch_of_a_squash_merge_only_at_the_same_commit(self):
+        ok = {"test": f"{sys.executable} -c pass"}
+        for ticket_id, same in (("T-1", False), ("T-2", True)):
+            self.ticket(ticket_id)
+            self.jtek("start", ticket_id)
+            self.commit_change(ticket_id, name=f"{ticket_id}.txt")
+            head = self.git("rev-parse", "HEAD", cwd=self.worktree(ticket_id))
+            self.write_config(ok, pr_state=self.forge(f"MERGED {head if same else 'b' * 40} none"))
+            self.board.set(ticket_id, Status="Review", PR="https://example.invalid/pr/1")
+            code, out = self.jtek("sync")
+            self.assertIn(f"{ticket_id}\tboard: Status=Done", out)
+            self.assertFalse(self.worktree(ticket_id).exists())
+            left = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/jtek/{ticket_id}"],
+                                  cwd=self.repo, capture_output=True).returncode == 0
+            self.assertEqual(left, not same, out)
+
+    def test_commits_on_a_detached_head_are_never_dropped(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        tree = self.worktree("T-1")
+        self.git("checkout", "-q", "--detach", cwd=tree)
+        self.commit_change("T-1", name="second.txt")
+        code, out = self.jtek("release", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("commits that are not on the branch jtek/T-1", out)
+        self.board.set("T-1", Status="Done")
+        self.assertIn("worktree kept", self.jtek("sync")[1])
+        self.assertTrue(tree.is_dir())
+
+    def test_a_reviewer_can_fail_a_change_whose_author_left_files(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        (self.worktree("T-1") / "wip.txt").write_text("the author's\n")
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("1. wip.txt is not committed\n")
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 1)
+        code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.worktree("T-1") / "wip.txt").exists())
+
+    def test_only_the_human_gives_a_ticket_new_tries(self):
+        self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"}, max_failed_runs=2)
+        self.ticket("T-1")
+        self.jtek("start", "T-1", "--no-baseline")
+        self.jtek("check", "T-1")
+        self.jtek("check", "T-1")
+        self.assertIn("2 check runs have failed", self.jtek("check", "T-1")[1])
+        code, out = self.jtek("start", "T-1", "--resume")
+        self.assertEqual(code, 0, out)
+        self.assertIn("2 check runs have failed", self.jtek("check", "T-1")[1])
+
+    def test_sync_does_not_pass_a_value_that_is_not_a_link_to_the_forge(self):
+        self.ticket("T-1", status="Review", extra="pr: --repo=other/thing\n")
+        code, out = self.jtek("sync")
+        self.assertIn("T-1\t-\tthe PR on the page is not a link", out)
 
 
 class NextTests(Scratch):

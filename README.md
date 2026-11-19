@@ -143,7 +143,7 @@ The rules are fixed. The numbers and names around them are yours, in `jtek.json`
 |---|---|---|
 | `checks`, `setup` | The commands that decide "passing", in any language or build system | none: you declare them |
 | `max_failed_runs` | How many failed check runs end a session. Raise it for a model that often finds the cause on a later try | 3 |
-| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge | `gh`, for GitHub |
+| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge. [An example for GitLab](examples/pr-state-gitlab.py) | `gh`, for GitHub |
 | `headings` | The names of the three ticket headings, in your team's language | `Goal`, `Done when`, `Out of scope` |
 | `watch` | More files that the `attention:` line should name | a list of common names |
 | `forge` | `false` when the remote is not a forge, so tickets end without a pull request | `true` |
@@ -339,7 +339,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 112 tests, and two outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 128 tests, and three outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 

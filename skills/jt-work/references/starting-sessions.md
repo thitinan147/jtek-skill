@@ -26,7 +26,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
 After a session ends, read the board and run `next` again. The action for that ticket has changed.
 
-Now and then, run `jtek.py sync --board-file <file>`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled. When the forge reports a pull request as merged, the line has `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets, and says when it kept one.
+Now and then, run `jtek.py sync --board-file <file>`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled. When the forge reports a pull request as merged, the line has `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets, and says when it kept one. It deletes a ticket's branch only when every commit is on the base, or the forge says the pull request merged at the branch's last commit.
 
 ## Rules for whoever starts sessions
 

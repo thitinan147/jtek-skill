@@ -47,4 +47,4 @@ If you could not run the change, give `FAIL` and say why. Passing checks and a c
 
 Do not fix the code, push, or merge. If a pull request exists, post the verdict and notes on it as a comment. End with the verdict line the script printed.
 
-A verdict belongs to one change. When the author changes the code again, the verdict is stale and a new review is needed, even when only whitespace changed. A rebase that changes nothing keeps it.
+A verdict belongs to one change. When the author changes the code again, the verdict is stale and a new review is needed, even when only whitespace changed. A rebase keeps it, unless the base changed a file that the change also touches.
