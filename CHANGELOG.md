@@ -1,5 +1,12 @@
 # Changelog
 
+## 26.4.0 - the project sets the numbers and the names
+
+- `max_failed_runs` in `jtek.json` sets how many failed `check` runs end a session. It was fixed at 3, which stopped a model that would have found the cause on the next try.
+- `pr_state` in `jtek.json` names a command that reads a pull request, so GitLab, Bitbucket, and other forges work. It gets the link and prints the state, the head commit, and the CI state. Without it, `gh` is used as before.
+- `headings` in `jtek.json` lets tickets use a team's own words for `Goal`, `Done when`, and `Out of scope`.
+- The README says what a project can change, what jtek does not decide, what still assumes today's agents, and where it does not fit yet.
+
 ## 26.3.0 - templates, and a picture of the whole factory
 
 - Templates, each with a blank form, a filled example, and its rules: the ticket page, the evidence, the review notes, `.jtek/verify.md` with a feature file, and `.jtek/rules.md`. `setup.md` has `jtek.json` examples for Node, Python, and Go. The README lists them.

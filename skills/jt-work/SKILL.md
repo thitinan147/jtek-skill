@@ -51,7 +51,7 @@ The playbook gives the order and the step numbers. Copy its steps into your todo
 
 1. Run `jtek.py check <id>`. It runs the checks the base branch declares in `jtek.json`, in order, and stops at the first failure.
 2. On a failure, use `jt-debug`, then commit and run `check` again.
-3. After three failed runs the script tells you to stop. Stop.
+3. After three failed runs the script tells you to stop, and refuses another run. Stop. The project may set another number as `max_failed_runs` in `jtek.json`.
 4. Run `check` again after every new commit. `finish` only accepts checks that passed on the current commit.
 
 ## Second look

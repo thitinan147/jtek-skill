@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.3.0-111111?style=flat-square" alt="Version 26.3.0">
+  <img src="https://img.shields.io/badge/version-26.4.0-111111?style=flat-square" alt="Version 26.4.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -107,7 +107,7 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
 
 ## Set up
 
@@ -134,6 +134,32 @@ A command is one program with arguments. Put a pipeline in a script. Ask the age
 **3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/` (how to run and drive the real app, and a feature map) and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
 `jtek.json` and `.jtek/` are all jtek adds to a repository. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+
+## Fit it to your project
+
+The rules are fixed. The numbers and names around them are yours, in `jtek.json`:
+
+| Key | What it changes | Default |
+|---|---|---|
+| `checks`, `setup` | The commands that decide "passing", in any language or build system | none: you declare them |
+| `max_failed_runs` | How many failed check runs end a session. Raise it for a model that often finds the cause on a later try | 3 |
+| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge | `gh`, for GitHub |
+| `headings` | The names of the three ticket headings, in your team's language | `Goal`, `Done when`, `Out of scope` |
+| `watch` | More files that the `attention:` line should name | a list of common names |
+| `forge` | `false` when the remote is not a forge, so tickets end without a pull request | `true` |
+| `name` | What tickets call this repository | the folder name |
+
+Details: [setup.md](skills/jt-work/references/setup.md).
+
+**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
+
+**What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building. Run the [evals](evals/README.md) when you change models, and cut the text that no longer raises the score.
+
+**Where it does not fit yet.**
+
+- A project whose real behaviour cannot be run from a command line, such as some mobile apps, games, and hardware. The checks still work. The `verify` step has little to run.
+- Windows. Nothing has been tested there.
+- A project without git, or one where a second worktree cannot be set up by a command.
 
 ## Commands
 
@@ -284,7 +310,7 @@ The full forms, with the rules each one stands for:
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
 | Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
-| A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs |
+| A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs, or the number the project set |
 | See it work | `jt-verify` | Runs the real thing and reports only what was seen |
 | Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
 | Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
@@ -313,7 +339,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 108 tests, and two outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 112 tests, and two outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 
@@ -341,6 +367,12 @@ Set Review to `human` on that ticket. The waiver is ignored when the change touc
 
 **Two repositories, one feature?**
 Two tickets, joined by a contract file and a check on each side. [two-repos.md](skills/jt-work/references/two-repos.md).
+
+**Does it hold back a stronger model?**
+The rules check results, not method. The one number that could, the limit on failed check runs, is yours to set. See [Fit it to your project](#fit-it-to-your-project).
+
+**GitLab? A ticket in Thai?**
+Yes to both: `pr_state` and `headings` in `jtek.json`.
 
 **Is this a software factory?**
 It is the part inside one session. What picks the next ticket is up to you.

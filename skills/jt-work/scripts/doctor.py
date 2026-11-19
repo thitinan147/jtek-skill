@@ -63,8 +63,9 @@ def run(j, args=None) -> None:
         else:
             rows.append(("ok", "checks: " + ", ".join(checks), ""))
         commands = {name: command for name, command in checks.items() if isinstance(command, str)}
-        if isinstance(config.get("setup"), str) and config["setup"].strip():
-            commands["setup"] = config["setup"]
+        for key in ("setup", "pr_state"):
+            if isinstance(config.get(key), str) and config[key].strip():
+                commands[key] = config[key]
         shell = [name for name, command in commands.items() if uses_shell(command)]
         if shell:
             rows.append(("missing", "commands that need a shell: " + ", ".join(shell),
@@ -77,11 +78,16 @@ def run(j, args=None) -> None:
                      "run the jt-harness skill once, review what it wrote, and commit it"))
     rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
                  "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
-    rows.append(("ok" if shutil.which("gh") else "optional", "`gh` is installed",
-                 "install the GitHub CLI; it is needed to open pull requests and to read their state"))
+    own_forge = bool(config and str(config.get("pr_state") or "").strip())
+    if own_forge:
+        rows.append(("ok", "`pr_state`: this repository reads pull requests with its own command", ""))
+    else:
+        rows.append(("ok" if shutil.which("gh") else "optional", "`gh` is installed",
+                     "install the GitHub CLI, or for another forge set `pr_state` in jtek.json; "
+                     "it is needed to read a pull request's state"))
     for state, what, todo in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
-    if shutil.which("gh"):
+    if shutil.which("gh") and not own_forge:
         print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
     print("not checked: Notion. This script cannot see it. Ask your agent to read the board with its Notion tool\n"
           "         and compare the properties with references/notion.md of the jt-work skill.")

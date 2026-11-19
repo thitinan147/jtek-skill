@@ -37,6 +37,12 @@ The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. S
 
 **`name`** is how tickets refer to this repository in their `repo:` line. Set it. Without it, the folder name is used, and a clone under another folder name refuses its own tickets.
 
+**`max_failed_runs`** is optional, and 3 when it is left out. After that many failed `check` runs in one session, the script refuses another and the session stops to ask. Raise it when your agent finds the cause on a later try more often than it wastes the run.
+
+**`pr_state`** is optional. The script reads a pull request with `gh`, which is GitHub's tool. For GitLab, Bitbucket, or another forge, set `pr_state` to a command of your own. It gets the pull request's link as its last argument and prints three words: the state (`OPEN`, `MERGED`, or `CLOSED`), the head commit, and the CI state (`pass`, `fail`, `pending`, or `none`). For example `"pr_state": "scripts/mr-state.sh"`. It runs without a shell, like a check.
+
+**`headings`** is optional. Tickets may use your own words for the three headings: `{"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ", "Out of scope": "นอกขอบเขต"}`. The copy the session works from has the English ones.
+
 **`forge`** is optional. Set it to `false` when the repository has a remote that is not a forge, so that tickets may end with `finish --no-pr`.
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.

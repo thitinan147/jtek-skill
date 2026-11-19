@@ -38,6 +38,6 @@ When you start from a bug you reproduced, and no check has failed, your reproduc
 
 ## 5. Stop at three
 
-After three failed `check` runs the script tells you to stop. A fourth guess usually means the design is wrong, not the line. Run `jtek.py stop <id> --waiting input --note "<the cause you suspect and what you tried>"`.
+After three failed `check` runs the script tells you to stop. The project may set another number. One more guess usually means the design is wrong, not the line. Run `jtek.py stop <id> --waiting input --note "<the cause you suspect and what you tried>"`.
 
 A declared check that fails on the base branch too, for a reason outside your ticket, is not yours to fix here. Stop and say so.

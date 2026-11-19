@@ -8,7 +8,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 `jtek-skill` is not a sandbox. `jtek.py check` runs commands on your machine, and so does `jtek.py start`, which runs the same checks once on the base before any edit.
 
-- **Which commands:** only the checks and the `setup` command in `jtek.json` on the base branch of the repository. The script reads the file with `git show <base>:jtek.json`, so an edit in a ticket's worktree or branch has no effect until it is merged.
+- **Which commands:** only the checks, the `setup` command, and the `pr_state` command in `jtek.json` on the base branch of the repository. The script reads the file with `git show <base>:jtek.json`, so an edit in a ticket's worktree or branch has no effect until it is merged.
 - **How they run:** each command is split into a program and arguments and run without a shell, in the ticket's worktree, with your full environment (including any tokens in it). The time limit is 30 minutes per check.
 - **What a ticket can do:** name checks that `jtek.json` already declares. A name that is not declared is refused. Ticket text is read from Notion by the agent and is never executed. The agent is told to take ticket fields from the page's properties only. The script cannot check that, so a session that copies a line such as `review: human` from the page body into the header would waive the review.
 - **Treat `jtek.json` like CI config.** Review every change to it before you merge, including in pull requests from others.
@@ -25,7 +25,7 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 - **Worktrees:** `start` creates `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 - **State:** a copy of each ticket, claims, check logs, review notes, and results are under `<git-common-dir>/jtek/` and are not committed. Check logs can contain secrets that a command printed.
-- **Network:** the script calls `gh pr view` (read-only) in `finish` and `sync`. Nothing else.
+- **Network:** the script calls `gh pr view` (read-only) in `finish` and `sync`, or the `pr_state` command when the project set one. Nothing else.
 - **Push:** the `jt-ship` skill tells the agent to push the ticket branch and open a pull request. This sends your code to that remote on purpose.
 - **Merge:** never. There is no command for it.
 - **Notion:** the script does not talk to Notion. The agent reads the ticket page with its Notion tool, and writes Status, Waiting, PR, and one comment per result, as the script's `board:` line says. The comment holds the result block and the evidence text. Diffs and logs are not sent.

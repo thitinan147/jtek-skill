@@ -27,7 +27,7 @@ One Notion database is the board, and each page is a ticket. You read and write 
 
 Notion's Status property has three fixed groups. Put Backlog and Todo under **To-do**, In Progress and Review under **In progress**, and Done and Cancelled under **Complete**.
 
-The page body has headings named exactly `Goal`, `Done when`, and `Out of scope`, of any heading size. [ticket-template.md](ticket-template.md) has the form to set as the database's default template. `Done when` holds only top-level list items, one outcome each.
+The page body has headings named exactly `Goal`, `Done when`, and `Out of scope`, of any heading size. A project may name them in its own language with `headings` in `jtek.json`. [ticket-template.md](ticket-template.md) has the form to set as the database's default template. `Done when` holds only top-level list items, one outcome each.
 
 Status option names must be spelled as in the table. Notion's own default is `In progress`: the script accepts another case, and refuses a name the table does not have, such as `Not started`.
 

@@ -284,8 +284,9 @@ def attention(meta: dict) -> str:
     except Refuse:
         config = {}
     commands = dict(config.get("checks", {})) if isinstance(config.get("checks"), dict) else {}
-    if config.get("setup"):
-        commands["setup"] = config["setup"]
+    for key in ("setup", "pr_state"):
+        if config.get(key):
+            commands[key] = config[key]
     run_by: dict[str, str] = {}
     for name, command in commands.items():
         try:
@@ -391,10 +392,16 @@ def cmd_start(args: argparse.Namespace) -> None:
         text = Path(args.from_file).read_text()
     except (OSError, ValueError) as err:
         raise Refuse(f"cannot read the ticket file as text: {err}") from None
+    base = base_branch()
+    names = load_config(base).get("headings") or {}
+    if not isinstance(names, dict) or any(not isinstance(v, str) for v in names.values()):
+        raise Refuse(f'`headings` in {CONFIG} must be an object such as {{"Goal": "...", "Done when": "...", "Out of scope": "..."}}')
+    for english, own in names.items():
+        # The copy the session works from always has the three English headings, whatever the page calls them.
+        text = re.sub(rf"(?im)^##[ \t]+{re.escape(own.strip())}[ \t]*$", f"## {english}", text)
     ticket = parse_ticket(text)
     fields = ticket["fields"]
     ticket_id = check_id(fields.get("id", ""))
-    base = base_branch()
     declared = load_checks(base)
     selected = validate_ticket(ticket, declared)
     wanted_repo = fields.get("repo", "")
@@ -559,8 +566,11 @@ def cmd_check(args: argparse.Namespace) -> None:
         raise Refuse(f"{CONFIG} on {meta['base']} no longer declares: {', '.join(missing)}")
     sha, dirty = head_state(worktree)
     previous = read_json(work / "checks.json")
-    if previous.get("failed_runs", 0) >= MAX_FAILED_RUNS:
-        raise Refuse(f"{MAX_FAILED_RUNS} check runs have failed. A fourth guess usually means the design is wrong, not "
+    limit = load_config(meta["base"]).get("max_failed_runs", MAX_FAILED_RUNS)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise Refuse(f"`max_failed_runs` in {CONFIG} must be a whole number of at least 1")
+    if previous.get("failed_runs", 0) >= limit:
+        raise Refuse(f"{limit} check runs have failed. One more guess usually means the design is wrong, not "
                      f"the line. Stop: `jtek.py stop {args.id} --waiting input --note \"<the cause you suspect>\"`")
     logs = work / "logs"
     results, failed = run_checks(worktree, meta["checks"], declared, logs)
@@ -572,10 +582,10 @@ def cmd_check(args: argparse.Namespace) -> None:
         log = logs / f"{failed}.log"
         print(f"log: {log}")
         print(log_tail(log))
-        if failed_runs >= MAX_FAILED_RUNS:
+        if failed_runs >= limit:
             print(f"next: {failed_runs} failed runs; stop with `jtek.py stop {args.id} --waiting input --note ...`")
         else:
-            print(f"next: fix the cause, commit, run check again ({failed_runs}/{MAX_FAILED_RUNS} failed runs)")
+            print(f"next: fix the cause, commit, run check again ({failed_runs}/{limit} failed runs)")
         sys.exit(1)
     if dirty:
         print(f"next: all checks pass, but these files are not committed; {DIRTY_HINT} and run check again")
@@ -704,7 +714,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
             "Only when this repository has no forge to open one on, pass --no-pr"
         )
     else:
-        state, head, ci = pr_info(pr)
+        state, head, ci = pr_info(pr, meta["base"])
         if state != "unknown" and (state != "OPEN" or head != sha):
             raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
         if ci == "fail":
@@ -768,15 +778,18 @@ CI_QUERY = (
 )
 
 
-def pr_info(url: str) -> tuple[str, str, str]:
-    """Return (state, head commit, CI state) from the forge, or ("unknown", "", "unknown") when gh cannot answer.
-    CI state is pass, fail, pending, or none."""
+def pr_info(url: str, base: str = "") -> tuple[str, str, str]:
+    """Return (state, head commit, CI state) from the forge, or ("unknown", "", "unknown") when it cannot answer.
+    State is OPEN, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
+    GitHub is read with `gh`. For another forge, `pr_state` in jtek.json names a command that gets the link
+    as its last argument and prints those three words."""
+    command = ["gh", "pr", "view", url, "--json", "state,headRefOid,statusCheckRollup", "-q", CI_QUERY]
     try:
-        proc = subprocess.run(
-            ["gh", "pr", "view", url, "--json", "state,headRefOid,statusCheckRollup", "-q", CI_QUERY],
-            capture_output=True, text=True, timeout=60,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        custom = str(load_config(base or base_branch()).get("pr_state") or "")
+        if custom.strip():
+            command = shlex.split(custom) + [url]
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    except (OSError, ValueError, Refuse, subprocess.TimeoutExpired):
         return "unknown", "", "unknown"
     parts = proc.stdout.split()
     if proc.returncode != 0 or len(parts) < 2:

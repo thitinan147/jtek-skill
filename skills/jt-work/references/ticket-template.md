@@ -53,4 +53,4 @@ A user can add a phone number on the profile page, so that sales can call back.
 - **`Out of scope` names behaviour, not a topic.** "Titles with non-ASCII letters give the same slug as today" protects something. "Non-ASCII letters" does not.
 - **Small enough for one pull request.** If the items fall into two groups that could ship apart, write two tickets and link them with After.
 - **A bug says how to see it.** Put the steps and the wrong result in `Goal`. The first `Done when` item is the right result for those steps.
-- **The headings are named exactly** `Goal`, `Done when`, and `Out of scope`.
+- **The headings are named exactly** `Goal`, `Done when`, and `Out of scope`, or the words your project set as `headings` in `jtek.json`. The rest of the page can be in any language.

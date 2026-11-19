@@ -1144,6 +1144,72 @@ class SecondReview(FindingsBase):
         self.assertIn("nothing to review", out)
 
 
+class ProjectSettings(FindingsBase):
+    """What a project may set in jtek.json so that the rules fit it."""
+
+    def test_the_project_sets_how_many_failed_runs_end_a_session(self):
+        self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"}, max_failed_runs=5)
+        self.ticket("T-1")
+        self.jtek("start", "T-1", "--no-baseline")
+        outs = [self.jtek("check", "T-1")[1] for _ in range(5)]
+        self.assertIn("(4/5 failed runs)", outs[3])
+        self.assertIn("jtek.py stop T-1", outs[4])
+        self.assertIn("5 check runs have failed", self.jtek("check", "T-1")[1])
+        self.write_config({"test": f"{sys.executable} -c pass"}, max_failed_runs=0)
+        code, out = self.jtek("check", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("`max_failed_runs` in jtek.json must be a whole number", out)
+
+    def forge_script(self, words):
+        script = Path(self.tmp.name) / f"pr_state_{words.split()[0]}_{words.split()[-1]}.py"
+        script.write_text(f"import sys\nassert sys.argv[-1].startswith('https://'), sys.argv\nprint({words!r})\n")
+        return f"{sys.executable} {script}"
+
+    def test_another_forge_is_read_with_the_projects_own_command(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        link = "https://gitlab.example.invalid/app/-/merge_requests/7"
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge_script(f"OPEN {head} fail"))
+        code, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence())
+        self.assertEqual(code, 1)
+        self.assertIn("CI is failing", out)
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge_script(f"OPEN {head} pass"))
+        code, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("ci: pass", out)
+        self.assertNotIn("was not verified", out)
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge_script(f"MERGED {head} pass"))
+        code, out = self.jtek("sync")
+        self.assertIn("T-1\tboard: Status=Done", out)
+
+    def test_headings_may_be_in_the_teams_own_language(self):
+        names = {"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ", "Out of scope": "นอกขอบเขต"}
+        self.write_config({"test": f"{sys.executable} -c pass"}, headings=names)
+        self.ticket("T-1", body="## เป้าหมาย\nเพิ่มเบอร์โทร\n## เสร็จเมื่อ\n- บันทึกแล้วอ่านกลับได้\n## นอกขอบเขต\n- ช่องอื่นคงเดิม\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        copy = (self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md").read_text()
+        self.assertIn("## Done when\n- บันทึกแล้วอ่านกลับได้", copy)
+        self.ticket("T-2")  # the English headings still work
+        self.assertEqual(self.jtek("start", "T-2")[0], 0)
+        self.write_config({"test": f"{sys.executable} -c pass"}, headings=["Goal"])
+        self.ticket("T-3")
+        code, out = self.jtek("start", "T-3")
+        self.assertEqual(code, 1)
+        self.assertIn("`headings` in jtek.json must be an object", out)
+
+    def test_doctor_knows_a_forge_command(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x", pr_state="glab-state.sh")
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("`pr_state`: this repository reads pull requests with its own command", out)
+        self.assertNotIn("`gh` is installed", out)
+
+
 class NextTests(Scratch):
     def next(self):
         code, out = self.jtek("next")

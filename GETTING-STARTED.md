@@ -13,7 +13,7 @@ Most steps are things you say to your agent. Text in a `text` block is a prompt.
 | A coding agent that loads skills (Claude Code, Cursor, Codex, ...) | It does the work | Yes |
 | `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
 | Notion, as a tool in the agent | The board lives there | Yes |
-| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes |
+| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in `jtek.json` instead |
 | Your project's own commands for lint, types, and tests | They are the checks | At least one |
 | A way to run your real app from the command line | So the agent can see a change work | Strongly advised |
 
@@ -207,7 +207,7 @@ The same three steps ask for a fix on a ticket that is in Review.
 | `has no change against` | The branch is empty | Nothing to review. If the ticket needs no change, the agent stops and says so |
 | `has a remote, so the change needs a pull request` | `--no-pr` is only for a repository without a forge | The agent opens a pull request |
 | `the code changed after the evidence was saved` | The evidence describes an older change | The agent sees it work again and passes new evidence |
-| `check runs have failed` | Three runs failed | The agent stops and asks you |
+| `check runs have failed` | Three runs failed, or the number in `max_failed_runs` | The agent stops and asks you |
 | `checks have not passed on the current commit` | A commit came after the last check | The agent runs `check` again |
 | `CI is failing` | The pull request is red on the forge | The agent fixes it before it reaches you |
 | `stopped with a question` | The ticket waits for you | Answer, then set Todo |

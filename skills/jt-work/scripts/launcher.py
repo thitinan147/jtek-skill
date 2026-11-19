@@ -62,7 +62,7 @@ def sync(j, args) -> None:
         elif not row["pr"]:
             print(f"{ticket_id}\t-\tno pull request on the page; the human sets Done after merging")
         else:
-            state, _, ci = j.pr_info(row["pr"])
+            state, _, ci = j.pr_info(row["pr"], j.base_branch())
             if state == "MERGED":
                 print(f"{ticket_id}\tboard: Status=Done\tthe pull request is merged; " + (tidy_done(j, ticket_id) or "nothing to tidy"))
             elif state == "unknown":
