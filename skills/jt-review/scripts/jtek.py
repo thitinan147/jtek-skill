@@ -737,6 +737,16 @@ def cmd_next(args: argparse.Namespace) -> None:
             print(f"{row['id']}\t{action}\t{reason}")
 
 
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """The code is in doctor.py beside this file, to keep this file small."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import doctor
+    except ImportError:
+        raise Refuse("doctor.py is in the scripts folder of the jt-work skill; run jtek.py from there") from None
+    doctor.run(sys.modules[__name__])
+
+
 def cmd_release(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
@@ -753,6 +763,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_init)
+    sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_doctor)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
     start.add_argument("ref", help="the link of the ticket's Notion page; it becomes the `source:` of the result")

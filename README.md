@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.0.0-111111?style=flat-square" alt="Version 26.0.0">
+  <img src="https://img.shields.io/badge/version-26.1.0-111111?style=flat-square" alt="Version 26.1.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -94,7 +94,7 @@ Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool
 
 ## Set up
 
-Three things, once.
+Three things, once. For every step with what you should see, from connecting Notion to the first merged ticket, follow **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
 **1. The board.** Create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. In Claude Code: `/mcp`, then Notion.
 
@@ -112,7 +112,7 @@ This writes `jtek.json`. Set `board` to the database's link, fill in one command
 {"board": "https://www.notion.so/...", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
 ```
 
-A command is one program with arguments. Put a pipeline in a script.
+A command is one program with arguments. Put a pipeline in a script. `jtek.py doctor` says what is still missing.
 
 **3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/` (how to run and drive the real app, and a feature map) and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
@@ -168,7 +168,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 76 tests. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 79 tests. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 

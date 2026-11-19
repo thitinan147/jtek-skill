@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "26.0.0"
+VERSION = "26.1.0"
 ALL = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
 # Other skill sets and their commands. jtek must work without any of them.
 FOREIGN = [
