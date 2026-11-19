@@ -21,6 +21,8 @@ Read the code, scripts, and CI config to answer five questions. Ask the human on
 
 ## 2. Write `.jtek/verify.md`
 
+A starting point for this file and for a feature file is in [references/verify-template.md](references/verify-template.md).
+
 Short, with these sections, and exact commands in each:
 
 - **Launch:** start the app and wait for the ready signal.

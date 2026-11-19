@@ -126,7 +126,7 @@ Run jtek.py init in this repository.
 The script is inside the installed `jt-work` skill, and the agent knows where that is. This writes `jtek.json`. Set `board` to the database's link and `name` to the name tickets use for this repository, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
 ```
 
 A command is one program with arguments. Put a pipeline in a script. Ask the agent to run `jtek.py doctor`: it says what is still missing.
@@ -148,6 +148,19 @@ A command is one program with arguments. Put a pipeline in a script. Ask the age
 | Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
 Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
+
+## Templates
+
+| For | File | Who fills it in |
+|---|---|---|
+| A ticket page | [ticket-template.md](skills/jt-work/references/ticket-template.md) | You. Set it as the default template of the Notion database |
+| `jtek.json` for Node, Python, and Go | [setup.md](skills/jt-work/references/setup.md) | You, once per repository |
+| The evidence | [evidence.md](skills/jt-ship/references/evidence.md) | The agent. You read it before the diff |
+| The review notes | [notes.md](skills/jt-review/references/notes.md) | The reviewing session |
+| `.jtek/verify.md` and a feature file | [verify-template.md](skills/jt-harness/references/verify-template.md) | `jt-harness`, once per repository |
+| `.jtek/rules.md` | [rules-template.md](skills/jt-learn/references/rules-template.md) | `jt-learn`, after a mistake that happened twice |
+
+Each has a blank form, a filled example, and the rules it stands for. The last two have not been used on a real repository yet.
 
 ## Skills
 

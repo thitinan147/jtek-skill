@@ -33,6 +33,8 @@ What should be true when this is done, and why.
 - **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.
 - **`## Out of scope`:** behaviour that must stay exactly as it is now. Write the behaviour, not only the topic: "titles with non-ASCII letters give the same slug as today" is clearer than "non-ASCII letters".
 
+A blank form to copy, a filled example, and what makes a ticket workable: [ticket-template.md](ticket-template.md).
+
 ## Where tickets live
 
 The page in Notion is the source of truth. The layout of the board is in [notion.md](notion.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.

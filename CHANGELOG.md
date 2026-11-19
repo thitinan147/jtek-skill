@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Templates, each with a blank form, a filled example, and its rules: the ticket page, the evidence, the review notes, `.jtek/verify.md` with a feature file, and `.jtek/rules.md`. `setup.md` has `jtek.json` examples for Node, Python, and Go. The README lists them.
+- The README has a picture of the whole factory: human in the loop, outer loop, and inner loop.
+
 ## 26.2.0 - fixes from two outside reviews
 
 An independent review of 26.1.0 found ways to reach Review without meeting the rules, and claims that could not be recovered. A second review checked the fixes and found defects in them. Each fix has a test.
