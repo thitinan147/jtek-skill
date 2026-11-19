@@ -35,7 +35,7 @@ A behaviour change you can show but that the ticket may have intended is a note.
 
 Remove any file your own runs left in the worktree, because `verdict` refuses while it has uncommitted files. Do not commit anything. If the author left the files, that is a finding.
 
-Write the findings first, then the notes, as a short Markdown list in a file in your system's temporary folder, outside the worktree. With no findings, write `Findings: none`. Then run one of:
+Write the findings first, then the notes, as a short Markdown list in a file in your system's temporary folder, outside the worktree. The form, with a filled example, is in [references/notes.md](references/notes.md). With no findings, write `Findings: none`. Then run one of:
 
 - `jtek.py verdict <id> PASS --by <your agent or session name>`: every `Done when` item is true, and nothing reproduces.
 - `jtek.py verdict <id> PASS+NOTES --by <name> --notes-file <file>`: the same, with notes the human should read.

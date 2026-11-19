@@ -100,7 +100,7 @@ You can skip this step for a first try. Then a passing check only means the code
 
 ## 6. Write the first ticket
 
-Pick something small and safe. Create a page on the board:
+Pick something small and safe. Create a page on the board. The blank form and the rules behind it are in [ticket-template.md](skills/jt-work/references/ticket-template.md): set it as the database's default template, and every new page starts with the three headings.
 
 - **Name:** `Add a --version flag to the command-line tool`
 - **Kind:** `feature`

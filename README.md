@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.2.0-111111?style=flat-square" alt="Version 26.2.0">
+  <img src="https://img.shields.io/badge/version-26.3.0-111111?style=flat-square" alt="Version 26.3.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -126,7 +126,7 @@ Run jtek.py init in this repository.
 The script is inside the installed `jt-work` skill, and the agent knows where that is. This writes `jtek.json`. Set `board` to the database's link and `name` to the name tickets use for this repository, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
 
 ```json
-{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npx tsc --noEmit", "test": "npm test", "verify": "npx playwright test"}}
+{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
 ```
 
 A command is one program with arguments. Put a pipeline in a script. Ask the agent to run `jtek.py doctor`: it says what is still missing.
@@ -148,6 +148,134 @@ A command is one program with arguments. Put a pipeline in a script. Ask the age
 | Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
 Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
+
+## Templates
+
+Three files carry a ticket from your head to your review. Each has a form, and each form is short.
+
+**The ticket**, which you write. Set it as the default template of the Notion database, and every new page starts like this:
+
+```markdown
+## Goal
+A user can add a phone number on the profile page, so that sales can call back.
+
+## Done when
+- PATCH /me with a 10-digit `phone` returns 200, and GET /me returns the same number
+- a `phone` that is not 10 digits returns 422 and names the field
+- the profile page shows the saved number after a reload
+
+## Out of scope
+- the response for every other field of /me stays the same, byte for byte
+- no SMS confirmation yet
+```
+
+Every `Done when` item names an input and a result, so someone can see it work. `Out of scope` names behaviour that must not change.
+
+**The evidence**, which the agent writes and you read before the diff. One numbered line per `Done when` item, and the script refuses a file that skips one:
+
+```text
+The profile now stores a phone number. PATCH /me validates it with the existing validator, and the page shows it.
+
+1. seen: PATCH /me with phone "0812345678" on the local server -> 200, then GET /me returns "0812345678"
+2. seen: PATCH /me with phone "12ab" -> 422 {"field":"phone","error":"must be 10 digits"}
+3. not run: no browser on this machine, so the profile page was not opened. The API returns the value
+
+Notes:
+- reused the validator in lib/validate.ts
+- the number is stored as text, because a leading 0 is lost in a number
+```
+
+`seen:` means it was run and looked at. `not run:` is an honest answer, and it tells you what to check by hand. Here that is item 3.
+
+**The review notes**, which the second session writes. A finding has steps that fail when anyone runs them:
+
+```markdown
+Findings:
+- reproduces: PATCH /me with an empty phone returns 500, not 422
+  steps: start the server as `.jtek/verify.md` says, then PATCH /me with phone ""
+  expected: 422, by Done when item 2
+
+Notes:
+- did not reproduce: a phone with spaces. Tried "081 234 5678", got 422 as it should
+- the new tests cover items 1 and 2. Nothing tests item 3
+- I broke the length check on purpose, and the new test failed, so the test is real
+```
+
+<details>
+<summary><strong>The repository's own files:</strong> <code>jtek.json</code>, <code>.jtek/verify.md</code>, a feature file, and <code>.jtek/rules.md</code></summary>
+
+`jtek.json`, on the base branch. One command per check, read from there and never from a ticket's worktree:
+
+```json
+{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
+```
+
+`.jtek/verify.md`, written by `jt-harness`. How an agent starts the real app and checks it:
+
+```markdown
+## Launch
+- Install: `npm ci`
+- Port: 3000 plus the ticket's number, so two worktrees never share one. Ticket `T-12` uses 3012.
+- Start: `npm run dev -- --port <port>`
+- Ready when: `node scripts/ready.mjs <port>` exits 0. A listening port is not ready yet.
+
+## Doctor
+1. Port in use: another worktree is running. Take the port from the ticket's number as above.
+2. `ECONNREFUSED :5432`: the database is not up. Run `docker compose up -d db`.
+
+## Drive
+- API: `node scripts/api.mjs <port> GET /me` prints the status and the body.
+- Screen: open `/profile`, find the field by its label "Phone", type, and press the button named "Save".
+
+## Evidence
+- A command: the command, its output, and the exit code.
+- A write: read the stored value back with a second, read-only call.
+
+## Cleanup
+- Stop the server you started. `npm run db:reset` removes the rows the run created.
+```
+
+`.jtek/features/profile.md`, one file per main feature:
+
+```markdown
+## How a user gets to it
+Log in, then the avatar menu, then "Profile". Direct link: `/profile`.
+
+## How to drive it
+1. `node scripts/api.mjs <port> GET /me` shows the current values.
+2. `node scripts/api.mjs <port> PATCH /me name=New` changes one.
+
+## What to observe
+- PATCH returns 200 and the changed field. A second GET returns the new value.
+
+## Gotchas
+- The page caches `/me` for 30 seconds. Reload with the cache off.
+```
+
+`.jtek/rules.md`, kept by `jt-learn`. A rule goes in after a mistake happened twice, and each row names what enforces it:
+
+```markdown
+| Rule | Enforced by | Since | Why |
+|---|---|---|---|
+| Money is an integer number of cents | type `Cents` in `lib/money.ts` | 2026-03-02 | A rounding bug shipped twice |
+| Every endpoint checks the caller's tenant | test helper `forEachRoute` | 2026-04-11 | A ticket added a route with no check |
+| Do not mock the database in integration tests | prose | 2026-06-01 | To replace: a lint rule on `jest.mock('db')` |
+```
+
+These two `.jtek/` forms are starting points. No real repository has used them yet.
+
+</details>
+
+The full forms, with the rules each one stands for:
+
+| For | File | Who fills it in |
+|---|---|---|
+| A ticket page | [ticket-template.md](skills/jt-work/references/ticket-template.md) | You |
+| `jtek.json` for Node, Python, and Go | [setup.md](skills/jt-work/references/setup.md) | You, once per repository |
+| The evidence | [evidence.md](skills/jt-ship/references/evidence.md) | The agent |
+| The review notes | [notes.md](skills/jt-review/references/notes.md) | The reviewing session |
+| `.jtek/verify.md` and a feature file | [verify-template.md](skills/jt-harness/references/verify-template.md) | `jt-harness` |
+| `.jtek/rules.md` | [rules-template.md](skills/jt-learn/references/rules-template.md) | `jt-learn` |
 
 ## Skills
 

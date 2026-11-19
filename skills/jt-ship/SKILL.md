@@ -10,6 +10,7 @@ Ship only after `jtek.py check <id>` passed on the current commit and you have s
 ## 1. Write the evidence
 
 Write it for a person who has not seen the session, in at most 40 lines, not counting blank ones. The script refuses a longer one. The human reviews the evidence first and the diff second:
+   The form, with a filled example, is in [references/evidence.md](references/evidence.md).
    - What changed and why, in two or three sentences.
    - One line per `Done when` item, in the ticket's order, starting with its number and a status word: `1. seen: <command or steps> -> <what you saw>`, or `2. not run: <reason>`. The script refuses evidence that skips an item. `not run` is an honest answer. `seen` for something you did not see is not.
    - Choices you made where the ticket was open.
