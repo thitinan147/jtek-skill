@@ -21,7 +21,7 @@ A session works the tickets it is given. Something else decides which ticket run
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
-| `stuck` | Nothing. Tell the human: the reason says which command cleans it up. |
+| `stuck` | Nothing. Tell the human: a `start` died half way, or the claim is damaged. The reason says which command cleans it up. |
 | `elsewhere` | Nothing. Another machine has the ticket. |
 
 After a session ends, read the board and run `next` again. The action for that ticket has changed.

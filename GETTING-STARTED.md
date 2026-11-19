@@ -202,7 +202,9 @@ The same three steps ask for a fix on a ticket that is in Review.
 | `` `Done when` may hold only top-level list items `` | The page has other text or nested items there | Fix the page |
 | `is already claimed` | Another session has the ticket | Wait for it, or tell a new session that the earlier one died |
 | `an earlier start ... was interrupted` | A `start` was killed half way | Ask the agent to run `jtek.py release <id>`, then start again |
-| `the worktree ... is gone` | The ticket's folder was deleted | The same: `jtek.py release <id>`. The commits are on the branch |
+| `the worktree ... is gone` | The ticket's folder was deleted | The same: `jtek.py release <id>`, set the page to Todo, and start again. The commits are on the branch |
+| `the ticket changed after the evidence was saved` | You edited the ticket | The agent reads it again, does what it now asks, and passes new evidence. A new verdict is needed too |
+| `has no change against` | The branch is empty | Nothing to review. If the ticket needs no change, the agent stops and says so |
 | `has a remote, so the change needs a pull request` | `--no-pr` is only for a repository without a forge | The agent opens a pull request |
 | `the code changed after the evidence was saved` | The evidence describes an older change | The agent sees it work again and passes new evidence |
 | `check runs have failed` | Three runs failed | The agent stops and asks you |

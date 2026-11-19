@@ -170,13 +170,15 @@ def read_json(path: Path) -> dict:
     try:
         data = json.loads(path.read_text()) if path.exists() else {}
     except ValueError:
-        raise Refuse(f"{path} is damaged; a write was probably interrupted. Delete it and run the command that wrote it") from None
+        raise Refuse(f"{path} is damaged; a write was probably interrupted. If it is a ticket's meta.json, run "
+                     "`jtek.py release <id>` and start again: the commits stay on the branch. "
+                     "Any other file: delete it and run the command that wrote it") from None
     return data if isinstance(data, dict) else {}
 
 
 def write_json(path: Path, data: dict) -> None:
     """Write beside the file and rename, so a killed run never leaves half a file."""
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n")
     os.replace(tmp, path)
 
@@ -207,31 +209,49 @@ CLAIMED = (
 )
 
 
+def starting_now(meta: dict) -> bool:
+    """True while the `start` that wrote this claim is still running."""
+    try:
+        pid = int(meta.get("pid") or 0)
+        if not meta.get("starting") or pid <= 0:
+            return False
+        os.kill(pid, 0)  # signal 0 only asks whether that process is alive
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def claimed(ticket_id: str) -> str:
     """Why a ticket that has a claim cannot be started now."""
     meta = read_json(work_dir(ticket_id) / "meta.json")
-    if meta and not meta.get("starting"):
+    if meta.get("worktree") and not meta.get("starting"):
         return CLAIMED.format(id=ticket_id)
-    try:
-        os.kill(int(meta.get("pid", 0)) or -1, 0)  # signal 0 only asks whether that process is alive
+    if starting_now(meta):
         return f"another session is starting {ticket_id} right now. Pick another ticket"
-    except (OSError, ValueError):
-        return f"an earlier start of {ticket_id} was interrupted. Run `jtek.py release {ticket_id}`, then start again"
+    return f"an earlier start of {ticket_id} was interrupted. Run `jtek.py release {ticket_id}`, then start again"
 
 
 def patch_id(worktree: Path, base: str) -> str:
     """Identify the change by its content, so a rebase that changes nothing keeps its verdict.
     Whitespace counts: in Python or YAML, an indent is a change of behaviour."""
-    diff = subprocess.run(["git", "diff", "--binary", "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
+    diff = subprocess.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
     kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
     return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
 
 
+def ticket_id_of_text(work: Path) -> str:
+    """Identify what the ticket asks for, so that a ticket the human changed needs new evidence and a new verdict."""
+    sections = parse_ticket((work / "ticket.md").read_text())["sections"]
+    return hashlib.sha256(json.dumps(sections, sort_keys=True).encode()).hexdigest()
+
+
 def current_verdict(ticket_id: str, meta: dict) -> dict:
-    """The verdict, when it is for the change as it is now. A verdict belongs to one change."""
-    verdict = read_json(work_dir(ticket_id) / "verdict.json")
+    """The verdict, when it is for the change and the ticket as they are now."""
+    work = work_dir(ticket_id)
+    verdict = read_json(work / "verdict.json")
     worktree = Path(meta["worktree"])
-    if not verdict.get("verdict") or not worktree.is_dir() or verdict.get("patch") != patch_id(worktree, meta["base"]):
+    if (not verdict.get("verdict") or not worktree.is_dir() or verdict.get("patch") != patch_id(worktree, meta["base"])
+            or verdict.get("ticket") != ticket_id_of_text(work)):
         return {}
     return verdict
 
@@ -257,8 +277,8 @@ def attention(meta: dict) -> str:
         return "-"
     span = f"{meta['base']}...HEAD"
     # A rename is shown as a deletion and an addition, so a renamed test that lost lines is still seen.
-    changed = git("diff", "--no-renames", "--name-only", span, cwd=worktree, check=False).splitlines()
-    deleted = git("diff", "--no-renames", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
+    changed = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", span, cwd=worktree, check=False).splitlines()
+    deleted = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
     try:
         config = load_config(meta["base"])
     except Refuse:
@@ -278,7 +298,7 @@ def attention(meta: dict) -> str:
     watch = SENSITIVE + [w for w in ([extra] if isinstance(extra, str) else extra if isinstance(extra, list) else [])
                          if isinstance(w, str)]
     removed: dict[str, int] = {}
-    for line in git("diff", "--no-renames", "--numstat", span, cwd=worktree, check=False).splitlines():
+    for line in git("-c", "core.quotePath=false", "diff", "--no-renames", "--numstat", span, cwd=worktree, check=False).splitlines():
         parts = line.split("\t")
         if len(parts) == 3 and parts[1].isdigit():
             removed[parts[2]] = int(parts[1])
@@ -394,7 +414,10 @@ def cmd_start(args: argparse.Namespace) -> None:
         meta = load_meta(ticket_id, tree=True)
         if status not in ("Todo", "In Progress"):
             raise Refuse(f"{ticket_id} is `{status}`; only a ticket in Todo or In Progress can resume")
-        asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
+        try:
+            asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
+        except FileNotFoundError:  # another session picked it up between the two lines
+            raise Refuse(CLAIMED.format(id=ticket_id)) from None
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
             raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
@@ -421,19 +444,20 @@ def cmd_start(args: argparse.Namespace) -> None:
             work.mkdir()  # atomic claim: the second session to try loses
         except FileExistsError:
             raise Refuse(claimed(ticket_id)) from None
-        # From here on a killed run leaves a claim that says so, and `release` can remove what it made.
-        write_json(work / "meta.json", {"starting": True, "pid": os.getpid()})
         worktree, branch = ticket_paths(ticket_id)
-        # A branch left by `release` holds earlier work on this ticket. Go on from it.
+        # A branch left by `release` holds earlier work on this ticket. Go on from it, and never delete it.
         kept = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
+        # From here on a killed run leaves a claim that says so, and `release` can remove what it made.
+        write_json(work / "meta.json", {"starting": True, "pid": os.getpid(), "kept": kept, "base": base})
         try:
             worktree.parent.mkdir(parents=True, exist_ok=True)
+            git("worktree", "prune")  # forget a worktree whose folder was deleted by hand
             git("worktree", "add", *([str(worktree), branch] if kept else ["-b", branch, str(worktree), base]))
         except Refuse:
             (work / "meta.json").unlink()
             work.rmdir()
             raise
-        meta = {"id": ticket_id, "source": args.ref, "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
+        meta = {"id": ticket_id, "source": " ".join(args.ref.split()), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
         write_json(work / "meta.json", {**meta, "starting": True, "pid": os.getpid(), "kept": kept})
         logs = state_dir() / "baseline" / ticket_id
 
@@ -576,6 +600,9 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         raise Refuse("a verdict is for a commit, and these files are not committed. If your review made them, remove "
                      f"them. If the author left them, give FAIL and say so in the notes\n{dirty}"
                      if args.verdict == "PASS" else f"remove the files your review made, then record the verdict\n{dirty}")
+    patch = patch_id(Path(meta["worktree"]), meta["base"])
+    if not patch:
+        raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
     if args.verdict != "PASS" and not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with the findings")
     if args.notes_file:
@@ -584,22 +611,24 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
     write_json(work / "verdict.json", {
         "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
-        "patch": patch_id(Path(meta["worktree"]), meta["base"]),
+        "patch": patch, "ticket": ticket_id_of_text(work),
     })
-    print(f"verdict: {args.verdict} by {args.by} @{sha[:7]}")
+    print(f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}")
 
 
 def check_evidence(work: Path, text: str) -> None:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise Refuse("the evidence file is empty")
-    if len(lines) > MAX_EVIDENCE_LINES:
+    items = done_when_items(work)
+    limit = max(MAX_EVIDENCE_LINES, len(items) + 10)
+    if len(lines) > limit:
         raise Refuse(
             f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
-            f"{MAX_EVIDENCE_LINES}. Say what you ran and saw for each `Done when` item, and cut the rest"
+            f"{limit}. Say what you ran and saw for each `Done when` item, and cut the rest"
         )
     missing = [
-        f"{n}. {item}" for n, item in enumerate(done_when_items(work), 1)
+        f"{n}. {item}" for n, item in enumerate(items, 1)
         if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
     ]
     if missing:
@@ -618,6 +647,8 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse(f"{args.id} stopped with a question. The human answers on the page and sets Status to Todo; then start again")
     if args.pr and args.no_pr:
         raise Refuse("pass --pr <url> or --no-pr, not both")
+    if args.pr and not re.match(r"^https?://[^\s;]+$", args.pr):
+        raise Refuse("--pr takes the link of the pull request, as the forge gave it")
     config = load_config(meta["base"])
     if args.no_pr and config.get("forge") is not False and git("remote", cwd=worktree, check=False):
         raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
@@ -631,12 +662,16 @@ def cmd_finish(args: argparse.Namespace) -> None:
     if checks.get("dirty") or checks.get("sha") != sha or not passed or not ran_all:
         raise Refuse(f"checks have not passed on the current commit {sha[:7]}; run `jtek.py check {args.id}`")
     patch = patch_id(worktree, meta["base"])
+    if not patch:
+        raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to review. If the ticket "
+                     f"needs no change, stop and say so: `jtek.py stop {args.id} --waiting input --note \"...\"`")
+    about = ticket_id_of_text(work)
     saved = work / "evidence.md"
     if args.evidence_file:
         text = read_file(args.evidence_file, "evidence")
         check_evidence(work, text)
         saved.write_text(text)
-        meta["evidence_patch"] = patch
+        meta.update(evidence_patch=patch, evidence_ticket=about)
         write_json(work / "meta.json", meta)  # kept even when a later rule refuses this finish
     elif not saved.exists():
         raise Refuse(
@@ -646,6 +681,10 @@ def cmd_finish(args: argparse.Namespace) -> None:
     elif meta.get("evidence_patch") != patch:
         raise Refuse("the code changed after the evidence was saved, so the evidence describes an older change. "
                      "See each `Done when` item work again, and pass --evidence-file <file>")
+    elif meta.get("evidence_ticket") != about:
+        check_evidence(work, saved.read_text())
+        raise Refuse("the ticket changed after the evidence was saved. Read the ticket file again, do what it now asks, "
+                     "and pass --evidence-file <file>")
     else:
         check_evidence(work, saved.read_text())  # the ticket may have gained an item since
     for item in args.attach or []:
@@ -786,7 +825,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, text in (("result", cmd_result, "print the last result"),
                              ("show", cmd_show, "print what a reviewer needs"),
-                             ("release", cmd_other, "human only: drop the claim and the worktree")):
+                             ("release", cmd_other, "only when the human asks: drop the claim and the worktree")):
         item = sub.add_parser(name, help=text)
         item.add_argument("id")
         item.set_defaults(func=func)
@@ -808,11 +847,15 @@ def main(argv: list[str] | None = None) -> int:
     except Refuse as err:
         print(f"refused: {err}")
         return 1
-    except (OSError, ValueError, KeyError, TypeError) as err:
+    except KeyboardInterrupt:
+        print("refused: interrupted. If this was `start`, run `jtek.py release <id>` before you start the ticket again")
+        return 130
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as err:
         # Not a rule, but a file or a value this script did not expect. Say it plainly instead of a traceback.
         if os.environ.get("JTEK_DEBUG"):
             raise
-        print(f"refused: unexpected {type(err).__name__}: {err}. Set JTEK_DEBUG=1 to see where")
+        print(f"refused: unexpected {type(err).__name__}: {err}. A file under {state_dir()} or an input file may be "
+              "damaged or edited by hand. Set JTEK_DEBUG=1 to see where")
         return 2
     return 0
 

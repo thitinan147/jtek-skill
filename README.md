@@ -57,7 +57,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 2. **A session takes it.** The agent reads the page with its Notion tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
-5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one.
+5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
 6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the Notion page.
 7. **You merge.** There is no merge command.
 
@@ -127,7 +127,7 @@ A command is one program with arguments. Put a pipeline in a script. Ask the age
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Answer a question, or ask for a fix | Write on the page, set Status to Todo, then `/jt-work T-12` |
-| Give a ticket back, or clean up a start that was interrupted | Ask the agent to run `jtek.py release T-12`. The branch is kept, and the next start goes on from it |
+| Give a ticket back, or clean up a start that was interrupted | Ask the agent to run `jtek.py release T-12`. A branch that holds work is kept, and the next start goes on from it |
 | Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
 Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
@@ -158,7 +158,7 @@ Each skill also works on its own, for example `/jt-verify` on any change.
 | Backlog | Written down, not released | You |
 | Todo | Released for an agent | You only |
 | In Progress | A session has claimed it | The session, after `jtek.py start` |
-| Review | Checks pass, verdict is PASS, evidence saved, pull request open | The session, after `jtek.py finish` |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no remote) | The session, after `jtek.py finish` |
 | Done | Pull request merged | Read from the forge by `jtek.py sync` |
 | Cancelled | Dropped | You |
 
@@ -168,7 +168,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 96 tests, and one outside review whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 108 tests, and two outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 

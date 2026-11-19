@@ -35,10 +35,10 @@ def load_board(j, path: str) -> list[dict]:
     for row in rows:
         row["id"] = j.check_id(str(row["id"]))
         after = row.get("after") or []
-        row["after"] = [str(item).strip() for item in (after.split(",") if isinstance(after, str) else
-                                                       after if isinstance(after, list) else [after]) if str(item).strip()]
+        row["after"] = [" ".join(str(item).split()) for item in (after.split(",") if isinstance(after, str) else
+                                                               after if isinstance(after, list) else [after]) if str(item).strip()]
         for key in ("repo", "waiting", "pr", "title"):
-            row[key] = str(row.get(key) or "").strip()
+            row[key] = " ".join(str(row.get(key) or "").split())  # one line: a value cannot add a line to the output
         row["status"] = j.canon_status(str(row.get("status") or "")) or "Backlog"
     return sorted(rows, key=lambda item: item["id"])
 
@@ -86,8 +86,13 @@ def next_step(j, row: dict, repo: str) -> tuple[str, str]:
     if status == "Review":
         return "human", "review and merge " + (row["pr"] or "the branch")
     work = j.work_dir(ticket_id)
-    meta = j.read_json(work / "meta.json")
-    claimed, parked = bool(meta) and not meta.get("starting"), (work / "result.md").exists()
+    try:
+        meta = j.read_json(work / "meta.json")
+    except j.Refuse:
+        return "stuck", f"the claim's meta.json is damaged; the human runs `jtek.py release {ticket_id}`"
+    claimed, parked = bool(meta.get("worktree")) and not meta.get("starting"), (work / "result.md").exists()
+    if j.starting_now(meta):
+        return "running", "a session is starting it right now"
     if work.exists() and not claimed:
         return "stuck", f"an earlier start was interrupted; the human runs `jtek.py release {ticket_id}`"
     if claimed and not Path(meta["worktree"]).is_dir():
@@ -138,21 +143,38 @@ def tidy_done(j, ticket_id: str) -> str:
 
 
 def release(j, args) -> None:
+    """Drop a claim. Work is never lost here: a worktree with uncommitted files stays, and a branch is deleted
+    only when this script made it in a start that never finished, and it has no commit of its own."""
     work = j.work_dir(args.id)
     if not work.exists():
         raise j.Refuse(f"{args.id} is not claimed on this machine")
-    meta = j.read_json(work / "meta.json")
+    try:
+        meta = j.read_json(work / "meta.json")
+    except j.Refuse:
+        meta = {}  # damaged: treat everything as unknown, which is the careful path below
+    if j.starting_now(meta):
+        raise j.Refuse(f"a start of {args.id} is running right now (process {meta['pid']}). Wait for it, or end that session first")
     worktree, branch = (Path(meta["worktree"]), meta["branch"]) if meta.get("worktree") else j.ticket_paths(args.id)
-    unfinished = not meta or bool(meta.get("starting"))  # a start that was interrupted made no work to lose
+    base = meta.get("base") or j.base_branch()
+    exists = bool(j.git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
+    own = j.git("rev-list", "--count", f"{base}..{branch}", check=False) if exists else "0"
+    fresh = bool(meta.get("starting")) and meta.get("kept") is False and own == "0"
     if worktree.is_dir():
-        j.git("worktree", "remove", *(["--force"] if unfinished else []), str(worktree))  # git refuses uncommitted changes
-    if unfinished and not meta.get("kept"):
+        if fresh:
+            j.git("worktree", "remove", "--force", str(worktree))  # holds only what the setup command made
+        elif j.git("status", "--porcelain", cwd=worktree, check=False):
+            raise j.Refuse(f"{worktree} has uncommitted files. Commit or remove them, then release again")
+        else:
+            j.git("worktree", "remove", str(worktree))
+    j.git("worktree", "prune", check=False)  # a worktree whose folder was deleted by hand is forgotten here
+    if fresh and exists:
         j.git("branch", "-D", branch, check=False)
     for path in sorted(work.rglob("*"), reverse=True):
         path.rmdir() if path.is_dir() else path.unlink()
     work.rmdir()
-    print(f"released {args.id}; " + ("the interrupted start is cleaned up" if unfinished and not meta.get("kept")
-                                     else f"branch {branch} is kept, and the next start goes on from it")
+    kept = exists and not fresh
+    print(f"released {args.id}; " + (f"branch {branch} is kept, and the next start goes on from it" if kept
+                                     else "the interrupted start is cleaned up")
           + ". The board is not changed: set Status on the page yourself")
 
 

@@ -34,6 +34,6 @@ Every `start` runs the checks once on the base before any edit, so keep the base
 - **`jtek.py doctor`:** what is set up in this repository and what is missing. Anyone may run it. It only reads.
 - **`jtek.py next --board-file <file>` and `jtek.py sync --board-file <file>`:** what each open ticket needs, and which Review tickets are merged. Whoever starts the sessions runs them: the human, or an agent that was asked to. See [starting-sessions.md](starting-sessions.md).
 - **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It reads the page and adds `--resume` to `start`. A session adds `--resume` only when the human said so.
-- **`jtek.py release <id>`:** drop a claim and its worktree. Only the human decides this. Git refuses when the worktree has uncommitted changes. The branch is kept, and the next `start` for that ticket goes on from it. The page is not changed. It also cleans up a `start` that was interrupted.
+- **`jtek.py release <id>`:** drop a claim and its worktree. Only the human decides this, and an agent runs it only when the human asks. It refuses while the worktree has uncommitted files, and while a `start` for that ticket is still running. The branch is kept, and the next `start` for that ticket goes on from it. The one exception is a `start` that was interrupted before any work: its empty branch is removed. The page is not changed.
 
 `init`, `doctor`, `next`, `sync`, and `release` run only from the `jt-work` skill's copy of the script.

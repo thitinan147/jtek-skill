@@ -1,24 +1,45 @@
 # Changelog
 
-## 26.2.0 - fixes from an outside review
+## 26.2.0 - fixes from two outside reviews
 
-An independent review of 26.1.0 found ways to reach Review without meeting the rules, and claims that could not be recovered. Each fix has a test.
+An independent review of 26.1.0 found ways to reach Review without meeting the rules, and claims that could not be recovered. A second review checked the fixes and found defects in them. Each fix has a test.
 
-- A verdict now counts whitespace. Re-indenting a line after a PASS needs a new verdict.
-- `finish` checks the saved evidence against the ticket's current `Done when` items every time, and refuses evidence that was saved before the code last changed.
-- `--no-pr` is refused in a repository that has a remote, unless `jtek.json` says `"forge": false`. `--pr` and `--no-pr` together are refused.
+**Reaching Review**
+
+- A verdict counts whitespace, and it is bound to the ticket text as well as to the change. Re-indenting a line after a PASS needs a new verdict. So does a change the human makes to the ticket. An external diff tool or a text conversion in the git config cannot hide a change from it.
+- `finish` checks the saved evidence against the ticket's current `Done when` items every time. It refuses evidence that was saved before the code or the ticket last changed.
+- `finish` and `verdict` refuse a branch that has no change.
+- `--no-pr` is refused in a repository that has a remote, unless `jtek.json` says `"forge": false`. `--pr` and `--no-pr` together are refused, and `--pr` takes only a link.
 - `finish` is refused while the ticket waits for the human.
-- `attention:` now sees a renamed test that lost lines, a deleted spec file, and the usual files that define a check command, such as `Makefile` and `package.json`. `watch` may be one pattern or a list.
-- The result shows only a verdict that is for the change as it is now, and says `none`, not `waived`, when a waiver was ignored.
-- A `start` that was killed half way leaves a claim that says so. `release` cleans it up, and the next `start` works. A `start` after `release` goes on from the kept branch.
-- A missing worktree, a missing evidence or notes file, a damaged state file, and unexpected values in a board file now give `refused:` and not a traceback. State files are written whole or not at all.
+- `attention:` sees a renamed test that lost lines, a deleted spec file, paths with non-ASCII characters, and the usual files that define a check command, such as `Makefile` and `package.json`. `watch` may be one pattern or a list.
+- The result shows only a verdict that counts now, and says `none`, not `waived`, when a waiver was ignored.
 - A fourth `check` after three failed runs is refused.
+- The `--note` of `stop`, the reviewer name, the page link, and the fields of a board file are each kept on one line, so none can add a line to the result or to the output of `next` and `sync`.
+
+**Claims**
+
+- A `start` that was killed half way leaves a claim that says so. `release` cleans it up, and the next `start` works.
+- `release` never loses work. It refuses while a `start` for that ticket is running and while the worktree has uncommitted files. It deletes a branch only when an interrupted start made it and it holds no commit. It also recovers a ticket whose worktree folder or `meta.json` was deleted or damaged.
+- A `start` after `release` goes on from the kept branch.
+- Two sessions cannot both pick up one parked ticket.
+
+**Input**
+
+- A missing worktree, a missing evidence or notes file, a damaged state file, and unexpected values in a board file give `refused:` and not a traceback. State files are written whole or not at all.
 - Status names are matched without regard to case, so Notion's `In progress` works. A status the board does not have is refused. Board rows are all checked before any line is printed.
 - `sync` prints a line for every ticket in Review, Done, or Cancelled, so silence never means success.
-- A note or a reviewer name cannot add lines to the result block.
-- `doctor` no longer says `ready:` for an empty `jtek.json`, and it names checks that use shell operators.
+- A ticket with more than 30 `Done when` items gets room for one evidence line per item.
+- `doctor` no longer says `ready:` for an empty `jtek.json` or for a check without a command, and it names commands that need a shell.
+
+**Layout and docs**
+
 - `init`, `doctor`, `next`, `sync`, and `release` moved to `launcher.py` beside the script. They run from the `jt-work` skill only.
-- Docs: fixed the places where two files disagreed about who runs `next`, `sync`, and `--resume`, and removed leftovers from v25.
+- Fixed the places where two files disagreed about who runs `next`, `sync`, `release`, and `--resume`, and removed leftovers from v25.
+
+**Known, and not changed**
+
+- The script trusts the session's git access. A session that removes the remote, or passes a link that `gh` cannot read, is not stopped. See SECURITY.md.
+- `attention:` works from a list of known file names. A file that decides a check and is not on the list, such as `jest.config.js`, is not named unless you add it to `watch`.
 
 ## 26.1.0 - a guided first run
 

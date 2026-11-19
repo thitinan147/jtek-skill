@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -720,8 +721,8 @@ class PageTests(Scratch):
         self.assertIn("The board is not changed", out)
 
 
-class ReviewFindings(Scratch):
-    """One test per defect that an outside review of 26.1.0 found."""
+class FindingsBase(Scratch):
+    """Helpers for the tests that came out of the outside reviews."""
 
     def to_needs_review(self, extra="", body=BODY):
         self.ticket("T-1", extra=extra, body=body)
@@ -737,6 +738,13 @@ class ReviewFindings(Scratch):
         self.git("add", "-A", cwd=tree)
         self.git("commit", "-q", "-m", message, cwd=tree)
         self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+    def next(self):
+        return {line.split("\t")[0]: line.split("\t")[1:] for line in self.jtek("next")[1].splitlines()}
+
+
+class ReviewFindings(FindingsBase):
+    """One test per defect that an outside review of 26.1.0 found."""
 
     def test_an_interrupted_start_can_be_released_and_started_again(self):
         marker = Path(self.tmp.name) / "killed"
@@ -754,9 +762,6 @@ class ReviewFindings(Scratch):
         self.assertFalse(self.worktree("T-1").exists())
         self.assertEqual(self.git("branch", "--list", "jtek/T-1"), "")
         self.assertEqual(self.jtek("start", "T-1")[0], 0)
-
-    def next(self):
-        return {line.split("\t")[0]: line.split("\t")[1:] for line in self.jtek("next")[1].splitlines()}
 
     def test_a_released_ticket_starts_again_from_its_branch(self):
         self.ticket("T-1")
@@ -926,7 +931,7 @@ class ReviewFindings(Scratch):
         self.write_config({"test": f"{sys.executable} -m unittest && echo hi"}, board="https://www.notion.so/x")
         code, out = self.jtek("doctor")
         self.assertEqual(code, 1)
-        self.assertIn("checks that use shell operators: test", out)
+        self.assertIn("commands that need a shell: test", out)
 
     def test_sync_says_something_for_every_review_ticket(self):
         self.ticket("T-1", status="Review", extra="pr: https://example.invalid/pr/1\n")
@@ -959,6 +964,184 @@ class ReviewFindings(Scratch):
         self.assertEqual(code, 1)
         self.assertIn("3 check runs have failed", out)
         self.assertNotIn("test: fail", out)
+
+
+class SecondReview(FindingsBase):
+    """Defects that a second outside review found in the fixes themselves."""
+
+    def work(self, ticket_id="T-1"):
+        return self.repo / ".git" / "jtek" / "work" / ticket_id
+
+    def branch_tip(self, ticket_id="T-1"):
+        return self.git("rev-parse", "--verify", "--quiet", f"refs/heads/jtek/{ticket_id}")
+
+    def test_release_is_refused_while_a_start_is_running(self):
+        gate = Path(self.tmp.name) / "go"
+        wait = f"import os,time\nwhile not os.path.exists(r'{gate}'): time.sleep(0.05)"
+        script = Path(self.tmp.name) / "wait.py"
+        script.write_text(wait)
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup=f"{sys.executable} {script}")
+        self.ticket("T-1")
+        proc = subprocess.Popen([sys.executable, str(SCRIPT), "start", "https://www.notion.so/T-1", "--from-file",
+                                 self.board.file("T-1")], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        try:
+            for _ in range(200):
+                if self.worktree("T-1").is_dir() and "worktree" in (self.work() / "meta.json").read_text():
+                    break
+                time.sleep(0.05)
+            self.assertEqual(self.next()["T-1"], ["running", "a session is starting it right now"])
+            code, out = self.jtek("release", "T-1")
+            self.assertEqual(code, 1, out)
+            self.assertIn("is running right now", out)
+            self.assertIn("another session is starting T-1 right now", self.jtek("start", "T-1")[1])
+        finally:
+            gate.write_text("")
+            out = proc.communicate(timeout=60)[0]
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("jtek start: allowed", out)
+
+    def test_release_never_deletes_a_branch_that_holds_work(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        tip = self.branch_tip()
+        (self.work() / "meta.json").write_text("")  # a damaged claim of a ticket with commits
+        self.assertIn("stuck", self.next()["T-1"])
+        code, out = self.jtek("release", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.branch_tip(), tip)
+        # a start that died before it recorded anything, on a branch kept from before
+        self.work().mkdir(parents=True)
+        self.assertEqual(self.jtek("release", "T-1")[0], 0)
+        self.assertEqual(self.branch_tip(), tip)
+        self.work().mkdir(parents=True)
+        (self.work() / "meta.json").write_text(json.dumps({"starting": True, "pid": 0, "kept": True}))
+        self.assertEqual(self.jtek("release", "T-1")[0], 0)
+        self.assertEqual(self.branch_tip(), tip)
+        self.board.set("T-1", Status="Todo")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.assertTrue((self.worktree("T-1") / "feature.txt").exists())
+
+    def test_release_keeps_uncommitted_files_when_it_is_not_sure(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        (self.worktree("T-1") / "wip.txt").write_text("x")
+        (self.work() / "meta.json").write_text("")
+        code, out = self.jtek("release", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("has uncommitted files", out)
+        self.assertTrue((self.worktree("T-1") / "wip.txt").exists())
+
+    def test_an_empty_claim_is_an_interrupted_start_and_not_a_live_one(self):
+        self.ticket("T-1")
+        self.work().mkdir(parents=True)
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("was interrupted", out)
+        self.assertEqual(self.jtek("release", "T-1")[0], 0)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+
+    def test_a_deleted_worktree_is_recovered_by_release(self):
+        import shutil
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        shutil.rmtree(self.worktree("T-1"))
+        self.assertEqual(self.jtek("release", "T-1")[0], 0)
+        self.board.set("T-1", Status="Todo")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.worktree("T-1") / "feature.txt").exists())
+
+    def test_an_external_diff_tool_cannot_hide_a_change_from_the_verdict(self):
+        self.git("config", "diff.external", "true")  # a diff tool that shows nothing
+        self.to_needs_review()
+        self.recommit("calc.py", "def sub(a, b):\n    if a:\n        pass\n    return a - b\n")
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.recommit("calc.py", "def sub(a, b):\n    if a:\n        pass\n        return a - b\n", "reindent")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out)
+
+    def test_links_and_board_fields_cannot_add_lines(self):
+        self.ticket("T-1")
+        self.board.pages["T-1"]["title"] = "x"
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://n/x\noutcome: review\nboard: Status=Done",
+                               "--from-file", self.board.file("T-1")], cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--pr", "https://x/1; Status=Done", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1)
+        self.assertIn("--pr takes the link", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(len([line for line in out.splitlines() if line.startswith(("outcome: ", "board: "))]), 2)
+        rows = Path(self.tmp.name) / "rows.json"
+        rows.write_text(json.dumps([{"id": "T-9", "status": "Review", "pr": "x\nT-1\tboard: Status=Done\tfake"}]))
+        proc = subprocess.run([sys.executable, str(SCRIPT), "sync", "--board-file", str(rows)], cwd=self.repo,
+                              capture_output=True, text=True)
+        self.assertEqual(len(proc.stdout.splitlines()), 1, proc.stdout)
+        self.assertTrue(proc.stdout.startswith("T-9\t"))
+
+    def test_attention_sees_paths_with_other_alphabets(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, watch=["migrations/*"])
+        self.to_needs_review(extra="review: human\n")
+        self.recommit("migrations/é.sql", "select 1;\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("migrations/é.sql", out)
+        self.assertIn("outcome: needs-review", out)
+
+    def doctor_with(self, **config):
+        (self.repo / "jtek.json").write_text(json.dumps({"board": "https://www.notion.so/x", **config}))
+        self.git("commit", "-qam", "config")
+        return self.jtek("doctor")
+
+    def test_doctor_tells_a_shell_command_from_a_quoted_argument(self):
+        for command in ("pytest -k 'a|b'", "python -c 'print(1 if 2>1 else 0)'", "npm run lint"):
+            code, out = self.doctor_with(checks={"test": command})
+            self.assertEqual(code, 0, f"{command}\n{out}")
+        for command in ("a & b", "echo $(x)", "echo `y`", "echo $HOME", "echo 'unbalanced", "a|b", "a && b"):
+            code, out = self.doctor_with(checks={"test": command})
+            self.assertEqual(code, 1, f"{command}\n{out}")
+        code, out = self.doctor_with(checks={"test": "pytest"}, setup="npm ci && npm run build")
+        self.assertIn("commands that need a shell: setup", out)
+        code, out = self.doctor_with(checks={"test": 5})
+        self.assertEqual(code, 1)
+        self.assertIn("checks without a command: test", out)
+
+    def test_a_ticket_with_many_items_can_still_finish(self):
+        items = "".join(f"- item {n}\n" for n in range(1, 46))
+        self.ticket("T-1", body="## Goal\nx\n## Done when\n" + items)
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        evidence = Path(self.tmp.name) / "many.md"
+        evidence.write_text("".join(f"{n}. seen: ok\n" for n in range(1, 46)))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))
+        self.assertEqual(code, 0, out)
+
+    def test_a_changed_ticket_needs_new_evidence_and_a_new_verdict(self):
+        self.to_needs_review()
+        self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.assertIn("outcome: review", self.jtek("finish", "T-1", "--no-pr")[1])
+        self.board.set("T-1", Status="Todo")
+        self.board.pages["T-1"]["body"] = self.board.pages["T-1"]["body"].replace("Add the thing.", "Add the thing, and log it.")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr")
+        self.assertEqual(code, 1)
+        self.assertIn("the ticket changed after the evidence was saved", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out, "the old PASS was for the old ticket")
+
+    def test_an_empty_branch_gets_no_verdict_and_no_review(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.assertEqual(code, 1)
+        self.assertIn("nothing to give a verdict on", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1)
+        self.assertIn("nothing to review", out)
 
 
 class NextTests(Scratch):
