@@ -10,7 +10,7 @@ import shutil
 import sys
 
 
-def run(j) -> None:
+def run(j, args=None) -> None:
     """`j` is the jtek module, for its git helper and its config reader."""
     rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
 
@@ -22,7 +22,7 @@ def run(j) -> None:
     rows.append(("ok" if version >= (2, 31) else "missing", f"git {version[0]}.{version[1]}", "install git 2.31 or later"))
     rows.append(("ok" if sys.version_info >= (3, 10) else "missing",
                  f"Python {sys.version_info[0]}.{sys.version_info[1]}", "run this script with Python 3.10 or later"))
-    config: dict = {}
+    config: dict | None = None
     try:
         base = j.base_branch()
         rows.append(("ok", f"base branch `{base}`", ""))
@@ -30,8 +30,9 @@ def run(j) -> None:
         rows.append(("ok", f"{j.CONFIG} is committed on {base}", ""))
     except j.Refuse as err:
         base = ""
-        rows.append(("missing", f"{j.CONFIG} on the base branch", str(err)))
-    if config:
+        hint = "; if this repository has no commit yet, make the first commit" if "base branch" in str(err) else ""
+        rows.append(("missing", f"{j.CONFIG} on the base branch", str(err) + hint))
+    if config is not None:
         board = str(config.get("board") or "")
         rows.append(("ok" if board else "missing", "`board`: the Notion database link",
                      f"set `board` in {j.CONFIG} to the link of the board database, and commit it on {base}"))
@@ -44,7 +45,12 @@ def run(j) -> None:
                          f"fill them in or delete them in {j.CONFIG}, and commit it on {base}"))
         else:
             rows.append(("ok", "checks: " + ", ".join(checks), ""))
-        rows.append(("ok" if "verify" in checks and not empty else "optional", "a `verify` check that runs the real app",
+        shell = [name for name, command in checks.items()
+                 if any(mark in str(command).split() or mark in str(command) for mark in ("&&", "||", "|", ";", ">", "<"))]
+        if shell:
+            rows.append(("missing", "checks that use shell operators: " + ", ".join(shell),
+                         "a command runs without a shell; put the pipeline in a script and name the script"))
+        rows.append(("ok" if str(checks.get("verify") or "").strip() else "optional", "a `verify` check that runs the real app",
                      "run the jt-harness skill once; without it a passing check only means the code compiles"))
         guide = bool(j.git("rev-parse", "--verify", "--quiet", f"{base}:.jtek/verify.md", check=False))
         rows.append(("ok" if guide else "optional", f".jtek/verify.md on {base}",
