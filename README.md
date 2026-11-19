@@ -65,6 +65,23 @@ If the agent is stuck or has a question, it stops and puts the question on the p
 
 `jtek.py` never talks to Notion. The agent reads and writes the board with its own Notion tool, and the script says what to write.
 
+## The whole factory
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/factory-dark.svg">
+    <img src="assets/factory.svg" width="880" alt="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board in Notion: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: read the board, ask jtek.py next what each ticket needs, start a session, and ask again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict.">
+  </picture>
+</p>
+
+| Loop | Who | What it does | What it never does |
+|---|---|---|---|
+| **Human in the loop** | You | Writes the ticket, sets Todo, answers questions, reads the evidence, merges | |
+| **Outer loop** | You, a Claude Code session, or a bot | Reads the board, asks `jtek.py next` what each ticket needs, starts a session, asks again when it ends | Writes code, gives a verdict, sets Todo, merges |
+| **Inner loop** | One agent session per ticket | Builds the change in its own worktree, passes the checks, sees it work, opens the pull request. A second session gives the verdict | Picks the next ticket, merges |
+
+jtek is the inner loop, plus the one command the outer loop needs. Black boxes are yours. Green boxes run something real. Dashed lines are the ways back: a question for you, or a failed review.
+
 ## The prompt
 
 The whole set is eleven skills and one Python script. Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Two small files beside it, `launcher.py` and `doctor.py`, hold the commands that are not part of working a ticket.

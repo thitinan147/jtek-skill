@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" width="1000" height="650" role="img" aria-label="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board in Notion: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: read the board, ask jtek.py next what each ticket needs, start a session, and ask again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e6edf3"/></marker><marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#d29922"/></marker></defs>
+<rect width="1000" height="650" fill="#0d1117"/><g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<rect x="12" y="12" width="976" height="104" rx="10" fill="#151b23"/>
+<text x="28" y="38" font-size="11.5" font-weight="700" letter-spacing="0.4" fill="#e6edf3">HUMAN IN THE LOOP</text>
+<text x="28" y="56" font-size="10.5" fill="#9198a1">you decide what is</text>
+<text x="28" y="71" font-size="10.5" fill="#9198a1">built and merged</text>
+<rect x="175.0" y="52" width="150" height="44" rx="7" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.4"/>
+<text x="250" y="71" font-size="13" font-weight="600" text-anchor="middle" fill="#0d1117">Write the ticket</text>
+<text x="250" y="87" font-size="11" text-anchor="middle" fill="#0d1117">Goal · Done when</text>
+<rect x="340.0" y="52" width="120" height="44" rx="7" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.4"/>
+<text x="400" y="71" font-size="13" font-weight="600" text-anchor="middle" fill="#0d1117">Set Todo</text>
+<text x="400" y="87" font-size="11" text-anchor="middle" fill="#0d1117">release it</text>
+<rect x="470.0" y="52" width="150" height="44" rx="7" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.4"/>
+<text x="545" y="71" font-size="13" font-weight="600" text-anchor="middle" fill="#0d1117">Answer</text>
+<text x="545" y="87" font-size="11" text-anchor="middle" fill="#0d1117">then set Todo again</text>
+<rect x="665.0" y="52" width="190" height="44" rx="7" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.4"/>
+<text x="760" y="71" font-size="13" font-weight="600" text-anchor="middle" fill="#0d1117">Read the evidence, merge</text>
+<text x="760" y="87" font-size="11" text-anchor="middle" fill="#0d1117">jtek never merges</text>
+<rect x="12" y="128" width="976" height="96" rx="10" fill="#151b23"/>
+<text x="28" y="154" font-size="11.5" font-weight="700" letter-spacing="0.4" fill="#e6edf3">BOARD</text>
+<text x="28" y="172" font-size="10.5" fill="#9198a1">one Notion</text>
+<text x="28" y="187" font-size="10.5" fill="#9198a1">database</text>
+<rect x="192.0" y="162" width="116" height="30" rx="15.0" fill="#0d1117" stroke="#3d444d" stroke-width="1.3"/>
+<text x="250" y="181.5" font-size="12.5" font-weight="600" text-anchor="middle" fill="#e6edf3">Backlog</text>
+<rect x="342.0" y="162" width="116" height="30" rx="15.0" fill="#0d1117" stroke="#3d444d" stroke-width="1.3"/>
+<text x="400" y="181.5" font-size="12.5" font-weight="600" text-anchor="middle" fill="#e6edf3">Todo</text>
+<rect x="532.0" y="162" width="116" height="30" rx="15.0" fill="#0d1117" stroke="#3d444d" stroke-width="1.3"/>
+<text x="590" y="181.5" font-size="12.5" font-weight="600" text-anchor="middle" fill="#e6edf3">In Progress</text>
+<rect x="702.0" y="162" width="116" height="30" rx="15.0" fill="#0d1117" stroke="#3d444d" stroke-width="1.3"/>
+<text x="760" y="181.5" font-size="12.5" font-weight="600" text-anchor="middle" fill="#e6edf3">Review</text>
+<rect x="857.0" y="162" width="116" height="30" rx="15.0" fill="#0d1117" stroke="#3d444d" stroke-width="1.3"/>
+<text x="915" y="181.5" font-size="12.5" font-weight="600" text-anchor="middle" fill="#e6edf3">Done</text>
+<rect x="456.0" y="196" width="78" height="22" rx="11.0" fill="#0d1117" stroke="#d29922" stroke-width="1.3"/>
+<text x="495" y="211.5" font-size="11" font-weight="600" text-anchor="middle" fill="#d29922">Waiting</text>
+<path d="M308 177H342" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M458 177H532" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M648 177H702" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M818 177H857" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M250 96V162" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M400 96V162" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M495 196V140H545V96" fill="none" stroke="#d29922" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#aw)"/>
+<path d="M760 162V96" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M855 74H915V162" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="921" y="122" font-size="11" text-anchor="start" fill="#9198a1">merge</text>
+<rect x="12" y="236" width="976" height="118" rx="10" fill="#151b23"/>
+<text x="28" y="262" font-size="11.5" font-weight="700" letter-spacing="0.4" fill="#e6edf3">OUTER LOOP</text>
+<text x="28" y="280" font-size="10.5" fill="#9198a1">you, Claude Code,</text>
+<text x="28" y="295" font-size="10.5" fill="#9198a1">or a bot. It only</text>
+<text x="28" y="310" font-size="10.5" fill="#9198a1">starts sessions</text>
+<rect x="180.0" y="280" width="140" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="250" y="299" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">Read the board</text>
+<text x="250" y="315" font-size="11" text-anchor="middle" fill="#9198a1">with a Notion tool</text>
+<rect x="335.0" y="280" width="150" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="410" y="299" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">jtek.py next</text>
+<text x="410" y="315" font-size="11" text-anchor="middle" fill="#9198a1">what does each need?</text>
+<rect x="510.0" y="280" width="160" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="590" y="299" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">Start a session</text>
+<text x="590" y="315" font-size="11" text-anchor="middle" fill="#9198a1">work, or review</text>
+<rect x="805.0" y="280" width="150" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="880" y="299" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">jtek.py sync</text>
+<text x="880" y="315" font-size="11" text-anchor="middle" fill="#9198a1">merged? then Done</text>
+<path d="M250 224V280" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M320 302H335" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M485 302H510" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M545 324C500 340 330 340 275 326" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="395" y="350" font-size="11" text-anchor="middle" fill="#9198a1">session ended: ask again</text>
+<path d="M915 280V192" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="12" y="366" width="976" height="272" rx="10" fill="#151b23"/>
+<text x="28" y="392" font-size="11.5" font-weight="700" letter-spacing="0.4" fill="#e6edf3">INNER LOOP</text>
+<text x="28" y="410" font-size="10.5" fill="#9198a1">one session,</text>
+<text x="28" y="425" font-size="10.5" fill="#9198a1">one ticket,</text>
+<text x="28" y="440" font-size="10.5" fill="#9198a1">one worktree.</text>
+<text x="28" y="455" font-size="10.5" fill="#9198a1">This is jtek</text>
+<rect x="186.0" y="412" width="100" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="236" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">start</text>
+<text x="236" y="447" font-size="11" text-anchor="middle" fill="#9198a1">claim · worktree</text>
+<rect x="300.0" y="412" width="100" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="350" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">understand</text>
+<text x="350" y="447" font-size="11" text-anchor="middle" fill="#9198a1">name the proof</text>
+<rect x="414.0" y="412" width="100" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="464" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">build</text>
+<text x="464" y="447" font-size="11" text-anchor="middle" fill="#9198a1">code + tests</text>
+<rect x="528.0" y="412" width="100" height="44" rx="7" fill="#12261e" stroke="#3fb950" stroke-width="1.4"/>
+<text x="578" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">check</text>
+<text x="578" y="447" font-size="11" text-anchor="middle" fill="#9198a1">project's checks</text>
+<rect x="642.0" y="412" width="100" height="44" rx="7" fill="#12261e" stroke="#3fb950" stroke-width="1.4"/>
+<text x="692" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">verify</text>
+<text x="692" y="447" font-size="11" text-anchor="middle" fill="#9198a1">run the real app</text>
+<rect x="756.0" y="412" width="100" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="806" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">ship</text>
+<text x="806" y="447" font-size="11" text-anchor="middle" fill="#9198a1">open the PR</text>
+<rect x="865.0" y="412" width="110" height="44" rx="7" fill="#0d1117" stroke="#3d444d" stroke-width="1.4"/>
+<text x="920" y="431" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">finish</text>
+<text x="920" y="447" font-size="11" text-anchor="middle" fill="#9198a1">evidence · rules</text>
+<path d="M286 434H300" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M400 434H414" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M514 434H528" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M628 434H642" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M742 434H756" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M856 434H865" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M590 324V366" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="598" y="358" font-size="11" text-anchor="start" fill="#9198a1">/jt-work or /jt-review</text>
+<path d="M578 456C568 486 478 486 468 458" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="523" y="498" font-size="11" text-anchor="middle" fill="#9198a1">red: debug, 3 runs at most</text>
+<rect x="582.0" y="520" width="216" height="44" rx="7" fill="#12261e" stroke="#3fb950" stroke-width="1.4"/>
+<text x="690" y="539" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">Session 2 · jt-review</text>
+<text x="690" y="555" font-size="11" text-anchor="middle" fill="#9198a1">did not write it · tries to break it</text>
+<rect x="835.0" y="520" width="140" height="44" rx="7" fill="#12261e" stroke="#3fb950" stroke-width="1.4"/>
+<text x="905" y="539" font-size="13" font-weight="600" text-anchor="middle" fill="#e6edf3">verdict</text>
+<text x="905" y="555" font-size="11" text-anchor="middle" fill="#9198a1">PASS or FAIL</text>
+<path d="M890 456V490H690V520" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="790" y="484" font-size="11" text-anchor="middle" fill="#9198a1">needs-review</text>
+<path d="M798 542H835" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M950 520V456" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="944" y="494" font-size="11" text-anchor="end" fill="#9198a1">PASS</text>
+<path d="M905 564V598H430V458" fill="none" stroke="#d29922" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#aw)"/>
+<text x="440" y="616" font-size="11" text-anchor="start" fill="#d29922">FAIL: fix what reproduces, then a new verdict</text>
+<path d="M900 412V346H760V192" fill="none" stroke="#e6edf3" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="752" y="262" font-size="11" text-anchor="end" fill="#9198a1">writes Review + PR + evidence</text>
+<path d="M495 366V218" fill="none" stroke="#d29922" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#aw)"/>
+<text x="503" y="386" font-size="11" text-anchor="start" fill="#d29922">stop: a question</text>
+</g></svg>
