@@ -9,6 +9,8 @@ branch, and name it in jtek.json:
 jtek adds the merge request's link as the last argument. The script needs `glab`, GitLab's command-line
 tool, signed in (`glab auth login`). It only reads.
 
+Limits: a GitLab on a port of its own, or served under a path such as /gitlab, is not handled.
+
 Not run against a real GitLab yet. It is tested against a stand-in for `glab` that returns the fields
 GitLab documents for a merge request.
 """
@@ -47,10 +49,10 @@ def main() -> int:
     pipeline = request.get("head_pipeline") or {}
     if not pipeline:
         ci = "none"
-    elif pipeline.get("sha") not in (None, head):
-        ci = "pending"  # the pipeline shown is for an older commit
     else:
         ci = CI.get(str(pipeline.get("status")), "pending")
+        if ci == "pass" and pipeline.get("sha") not in (None, head):
+            ci = "pending"  # green for another commit proves nothing; red still counts
     print(state, head, ci)
     return 0
 

@@ -115,9 +115,11 @@ def load_settings(base: str) -> dict:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
         raise Refuse(f"`max_failed_runs` in {CONFIG} must be a whole number of at least 1")
     pr_state = config.get("pr_state") or ""
-    if not isinstance(pr_state, str):
-        raise Refuse(f'`pr_state` in {CONFIG} must be one command as text, such as "python3 scripts/pr-state.py"')
-    names = config.get("headings", {})
+    try:
+        shlex.split(pr_state)
+    except (ValueError, AttributeError):
+        raise Refuse(f'`pr_state` in {CONFIG} must be one command as text, such as "python3 scripts/pr-state.py"') from None
+    names = {} if config.get("headings") is None else config["headings"]
     form = '{"Goal": "...", "Done when": "...", "Out of scope": "..."}'
     if not isinstance(names, dict) or any(not isinstance(v, str) or not v.strip() for v in names.values()):
         raise Refuse(f"`headings` in {CONFIG} must be an object such as {form}")
@@ -139,13 +141,15 @@ def fenced(lines: list[str]):
     """Yield (line, inside a code fence). A heading quoted in a fence is text, not a heading."""
     fence = ""
     for line in lines:
-        mark = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        # As in CommonMark: a line such as ```npm test``` is inline code, not the start of a block.
+        mark = re.match(r"^ {0,3}(`{3,})[^`]*$|^ {0,3}(~{3,})", line)
         if fence:
             yield line, True
-            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) and not line.strip().strip(fence[0]):
+            run = (mark.group(1) or mark.group(2)) if mark else ""
+            if run[:1] == fence[0] and len(run) >= len(fence) and not line.strip().strip(fence[0]):
                 fence = ""
         elif mark:
-            fence = mark.group(1)
+            fence = mark.group(1) or mark.group(2)
             yield line, True
         else:
             yield line, False
@@ -285,16 +289,15 @@ def claimed(ticket_id: str) -> str:
 
 
 def patch_id(worktree: Path, base: str) -> str:
-    """Identify the change by its content: the diff, and the full content of every file it leaves behind.
+    """Identify the change by its content: the diff, and the content of every file it changes, before and after.
     A rebase keeps the verdict unless the base changed a file this change also touches.
     Whitespace counts: in Python or YAML, an indent is a change of behaviour."""
-    diff = subprocess.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
+    # Hunk positions are left out below, so the same edit at another place of a file would look the same.
+    # --raw adds one line per changed file with the full id of its content before and after, which tells them apart.
+    diff = subprocess.run(["git", "diff", "--raw", "--patch", "--no-abbrev", "--no-ext-diff", "--no-textconv", "--binary",
+                           "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
     kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
-    # Hunk positions are left out above, so the same edit at another place of a file would look the same.
-    # The content each changed file ends with tells the two apart.
-    after = git("diff", "--raw", "--no-abbrev", "--no-renames", "-z", f"{base}...HEAD", cwd=worktree)
-    files = re.sub(r":\d+ \d+ [0-9a-f]+ ([0-9a-f]+) ", r"\1 ", after).encode()
-    return hashlib.sha256(b"\n".join(kept) + b"\0" + files).hexdigest() if diff.stdout.strip() else ""
+    return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
 
 
 def ticket_id_of_text(work: Path) -> str:
@@ -454,8 +457,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     english = {own: name for name, own in load_settings(base)["headings"].items()}
     if english:
         # The copy the session works from always has the three English headings, whatever the page calls them.
-        lines = [f"## {english[' '.join(line[3:].split()).lower()]}"
-                 if line.startswith("## ") and not inside and " ".join(line[3:].split()).lower() in english else line
+        lines = [f"## {english[' '.join(line[2:].split()).lower()]}"
+                 if re.match(r"^##[ \t]", line) and not inside and " ".join(line[2:].split()).lower() in english else line
                  for line, inside in fenced(text.splitlines())]
         text = "\n".join(lines) + "\n"
     ticket = parse_ticket(text)
@@ -831,7 +834,7 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 
 CI_QUERY = (
-    '(if .isDraft then "DRAFT" else .state end) + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
+    '(if .state == "OPEN" and .isDraft then "DRAFT" else .state end) + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
     '| if length == 0 then "none" '
     'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail" '
     'elif all(.[]; . == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass" else "pending" end)'

@@ -1407,6 +1407,80 @@ class ThirdReview(Scratch):
         code, out = self.jtek("sync")
         self.assertIn("T-1\t-\tthe PR on the page is not a link", out)
 
+    def test_a_status_that_cannot_be_read_keeps_the_worktree(self):
+        for ticket_id, command in (("T-1", "sync"), ("T-2", "release")):
+            self.ticket(ticket_id)
+            self.jtek("start", ticket_id)
+            self.commit_change(ticket_id, name=f"{ticket_id}.txt")
+            tree = self.worktree(ticket_id)
+            (tree / "new.txt").write_text("not committed\n")
+            (self.repo / ".git" / "worktrees" / ticket_id / "index").write_bytes(b"garbage")
+            self.board.set(ticket_id, Status="Done")
+            code, out = self.jtek(*([command] if command == "sync" else [command, ticket_id]))
+            self.assertTrue((tree / "new.txt").exists(), out)
+            self.assertIn("worktree kept" if command == "sync" else "refused", out)
+
+    def test_a_worktree_with_a_submodule_is_never_forced_away(self):
+        library = Path(self.tmp.name) / "library"
+        library.mkdir()
+        for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@example.invalid"), ("config", "user.name", "t"),
+                     ("commit", "-q", "--allow-empty", "-m", "first")):
+            self.git(*args, cwd=library)
+        self.git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(library), "lib")
+        self.git("commit", "-q", "-m", "a library")
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        tree = self.worktree("T-1")
+        self.git("-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init", cwd=tree)
+        self.git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "a fix that is pushed nowhere", cwd=tree / "lib")
+        self.git("commit", "-qam", "use the fix", cwd=tree)
+        self.assertEqual(self.jtek("release", "T-1")[0], 1)
+        self.board.set("T-1", Status="Cancelled")
+        self.assertIn("worktree kept", self.jtek("sync")[1])
+        self.assertTrue((tree / "lib").is_dir())
+
+    def test_commits_on_no_branch_are_kept_when_the_ticket_branch_is_gone(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        tree = self.worktree("T-1")
+        self.git("checkout", "-q", "--detach", cwd=tree)
+        self.commit_change("T-1")
+        self.git("branch", "-D", "jtek/T-1")
+        code, out = self.jtek("release", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertTrue(tree.is_dir())
+
+    def test_inline_code_at_the_start_of_a_line_is_not_a_code_block(self):
+        self.ticket("T-1", body="## Goal\n```npm test``` must print ok\n## Done when\n- it prints ok\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+
+    def test_null_headings_and_a_tab_after_the_marks_are_accepted(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, headings=None, pr_state=None)
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.write_config({"test": f"{sys.executable} -c pass"}, headings={"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ"})
+        self.ticket("T-2", body="##\tเป้าหมาย\nG\n## เสร็จเมื่อ\n- one\n")
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 0, out)
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state="python3 'x")
+        self.ticket("T-3")
+        self.assertIn("`pr_state` in jtek.json", self.jtek("start", "T-3")[1])
+
+    def test_next_answers_for_every_ticket_when_one_base_is_gone(self):
+        self.git("branch", "rel")
+        self.ticket("T-1")
+        self.jtek("start", "T-1", env={"JTEK_BASE": "rel"})
+        self.commit_change("T-1")
+        self.jtek("check", "T-1", env={"JTEK_BASE": "rel"})
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), env={"JTEK_BASE": "rel"})
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer", env={"JTEK_BASE": "rel"})[0], 0)
+        self.ticket("T-2")
+        self.git("branch", "-D", "rel")
+        code, out = self.jtek("next")
+        self.assertEqual(code, 0, out)
+        self.assertIn("T-2\twork", out)
+
 
 class NextTests(Scratch):
     def next(self):

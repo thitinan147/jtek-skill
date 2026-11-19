@@ -33,7 +33,7 @@ A behaviour change you can show but that the ticket may have intended is a note.
 
 ## 4. Record the verdict
 
-Remove any file your own runs left in the worktree, because `verdict` refuses while it has uncommitted files. Do not commit anything. If the author left the files, that is a finding.
+Remove any file your own runs left in the worktree, because `verdict` refuses a pass while it has uncommitted files. Do not commit anything. If the author left the files, that is a finding.
 
 Write the findings first, then the notes, as a short Markdown list in a file in your system's temporary folder, outside the worktree. The form, with a filled example, is in [references/notes.md](references/notes.md). With no findings, write `Findings: none`. Then run one of:
 

@@ -39,6 +39,7 @@ class GitLabExample(unittest.TestCase):
             ({"state": "opened", "draft": True, "sha": "abc", "head_pipeline": None}, "DRAFT abc none"),
             ({"state": "opened", "sha": "abc", "head_pipeline": {"status": "running", "sha": "abc"}}, "OPEN abc pending"),
             ({"state": "opened", "sha": "abc", "head_pipeline": {"status": "success", "sha": "old"}}, "OPEN abc pending"),
+            ({"state": "opened", "sha": "abc", "head_pipeline": {"status": "failed", "sha": "merged-result"}}, "OPEN abc fail"),
             ({"state": "opened", "sha": "abc", "head_pipeline": {"status": "manual", "sha": "abc"}}, "OPEN abc pending"),
         ]
         for answer, words in cases:

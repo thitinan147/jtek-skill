@@ -138,7 +138,10 @@ def next_(j, args) -> None:
 def off_branch(j, worktree: Path, branch: str) -> str:
     """Commits of the worktree that its branch does not have, for example made on a detached HEAD.
     Removing the worktree would leave them on no branch."""
-    count = j.git("rev-list", "--count", f"refs/heads/{branch}..HEAD", cwd=worktree, check=False)
+    there = j.git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    # Without the ticket's branch, any branch that holds the commits will do.
+    count = j.git("rev-list", "--count", "HEAD", "--not", *([f"refs/heads/{branch}"] if there else ["--branches"]),
+                  cwd=worktree, check=False)
     return "" if count == "0" else (f"{worktree} has commits that are not on the branch {branch}. Check the branch out "
                                     "there, or give those commits a branch of their own")
 
@@ -152,14 +155,15 @@ def tidy_done(j, ticket_id: str, pr: str = "", head: str | None = None) -> str:
     if not meta.get("worktree") or not Path(meta["worktree"]).is_dir():
         return ""
     worktree, branch = Path(meta["worktree"]), meta["branch"]
-    if j.git("status", "--porcelain", cwd=worktree, check=False):
-        return f"worktree kept, because it has uncommitted files: {worktree}"
     tip = j.git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
-    loose = off_branch(j, worktree, branch) if tip else ""
-    if loose:
-        return f"worktree kept: {loose}"
     try:
-        j.git("worktree", "remove", "--force", str(worktree))  # it is clean; --force is for a worktree with submodules
+        if j.git("status", "--porcelain", cwd=worktree):  # a status that cannot be read is not a clean one
+            return f"worktree kept, because it has uncommitted files: {worktree}"
+        loose = off_branch(j, worktree, branch)
+        if loose:
+            return f"worktree kept: {loose}"
+        # No --force: git itself refuses a worktree with changes, and one with submodules, whose commits may be nowhere else.
+        j.git("worktree", "remove", str(worktree))
     except j.Refuse as err:
         return f"worktree kept: {err}"
     merged = j.git("rev-list", "--count", f"{meta['base']}..refs/heads/{branch}", check=False) == "0"
@@ -194,15 +198,18 @@ def release(j, args) -> None:
     fresh = bool(meta.get("starting")) and meta.get("kept") is False and own == "0"
     if worktree.is_dir():
         if fresh:
-            if j.git("status", "--porcelain", "--untracked-files=no", cwd=worktree, check=False):
+            if j.git("status", "--porcelain", "--untracked-files=no", cwd=worktree):
                 raise j.Refuse(f"{worktree} has edits to tracked files. Restore or commit them, then release again")
+            if off_branch(j, worktree, branch):
+                raise j.Refuse(off_branch(j, worktree, branch) + ", then release again")
             j.git("worktree", "remove", "--force", str(worktree))  # holds only what the setup command made
-        elif j.git("status", "--porcelain", cwd=worktree, check=False):
+        elif j.git("status", "--porcelain", cwd=worktree):  # a status that cannot be read is not a clean one
             raise j.Refuse(f"{worktree} has uncommitted files. Commit or remove them, then release again")
-        elif exists and off_branch(j, worktree, branch):
+        elif off_branch(j, worktree, branch):
             raise j.Refuse(off_branch(j, worktree, branch) + ", then release again")
         else:
-            j.git("worktree", "remove", "--force", str(worktree))  # it is clean; --force is for submodules
+            # No --force: git itself refuses a worktree with changes, and one with submodules.
+            j.git("worktree", "remove", str(worktree))
     j.git("worktree", "prune", check=False)  # a worktree whose folder was deleted by hand is forgotten here
     if fresh and exists:
         j.git("branch", "-D", branch, check=False)

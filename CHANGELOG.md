@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.4.1 - fixes to the fixes
+
+A second look at the fixes of 26.4.0 found that they added defects. Each fix has a test.
+
+- `sync` and `release` no longer force a worktree away. In 26.4.0 they did, which deleted submodule commits that were pushed nowhere, and deleted uncommitted files when `git status` itself failed. A worktree with submodules is now kept, and you remove it by hand.
+- A worktree whose commits are on no branch is kept also when the ticket's branch is gone, and after an interrupted start.
+- A line that starts with inline code, such as three backticks around a command, is not read as the start of a code block. In 26.4.0 it hid every heading after it.
+- `next` answers for every ticket when the base branch of one is gone.
+- A changed file whose name is not UTF-8 no longer stops `verdict`.
+- `"headings": null` is accepted again, and so is a tab after the `##` of an own-language heading.
+- A `pr_state` with an unclosed quote is found by `doctor` and `start`.
+- A closed draft on GitHub is read as closed, not as a draft.
+- The GitLab example counts a failed pipeline as failed also when it ran on a merged-result commit.
+
 ## 26.4.0 - the project sets the numbers and the names
 
 - `max_failed_runs` in `jtek.json` sets how many failed `check` runs end a session. It was fixed at 3, which stopped a model that would have found the cause on the next try.
@@ -12,7 +26,7 @@
   - A draft pull request is refused, as the docs already said.
   - A heading given twice is refused, and a heading inside a code block is text. Before, the later one silently replaced the real `Done when` items.
   - `sync` deletes a branch only when its commits are on the base, or the forge says the pull request merged at the branch's last commit. Before, a pushed branch of a cancelled ticket could be deleted unmerged.
-  - `release` and `sync` keep a worktree whose commits are not on its branch, such as commits on a detached HEAD, and can remove a clean worktree that has submodules.
+  - `release` and `sync` keep a worktree whose commits are not on its branch, such as commits on a detached HEAD.
   - A reviewer can record FAIL when the author left uncommitted files.
   - A bad `max_failed_runs`, `pr_state`, or `headings` is found by `doctor` and `start`, not by the first `check`. `headings` takes only the three names.
   - Only the human setting Todo gives a ticket new check runs. A session that resumes does not.

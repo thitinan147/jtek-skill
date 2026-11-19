@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.4.0-111111?style=flat-square" alt="Version 26.4.0">
+  <img src="https://img.shields.io/badge/version-26.4.1-111111?style=flat-square" alt="Version 26.4.1">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -339,7 +339,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 128 tests, and three outside reviews whose findings are fixed and tested. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
+- **Proven:** the script, by 134 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 
