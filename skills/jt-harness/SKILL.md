@@ -11,13 +11,14 @@ This skill writes files under `.jtek/` and one script. It never edits product co
 
 ## 1. Interview the repository, not the human
 
-Read the code, scripts, and CI config to answer five questions. Ask the human only what the repository cannot tell you, such as a test account.
+Read the code, scripts, and CI config to answer six questions. Ask the human only what the repository cannot tell you, such as a test account.
 
 - **Surface:** what does a user touch? Screens, endpoints, commands.
 - **Run:** how does the app start, and what is the ready signal? Ready means usable, not that a process answers.
 - **Drive:** how can an agent act as a user? Use what exists first: end-to-end specs, scripts, endpoints you can call. Only then add browser automation or a terminal session.
 - **Observe:** where does the result show? Output, a response, a stored value, a log line.
 - **Isolate:** what must differ between two worktrees running at once? Ports, data folders, databases, accounts.
+- **Depend:** what does the app need that lives elsewhere, such as a service in another repository? Where does it come from, which version, and how is it started at another version?
 
 ## 2. Write `.jtek/verify.md`
 
@@ -29,7 +30,7 @@ Short, with these sections, and exact commands in each:
 - **Doctor:** what to check when it does not start, most likely cause first.
 - **Drive:** how to do a user action. For a screen, find elements by role and name, not by layout.
 - **Evidence:** what to capture. A screen: the page state and a screenshot. A command: the command, its output, and the exit code. A write: a second, read-only look at the stored value.
-- **Cleanup:** stop what was started and remove what was created.
+- **Cleanup:** stop what was started and remove what was created, each by the exact id or path the launch printed. A cleanup that matches a pattern can delete another session's work.
 
 ## 3. Write the feature map
 
@@ -47,10 +48,12 @@ Write one script that launches the app, drives the main path of each mapped feat
 ## 5. Prove it
 
 1. Run the whole thing once and see it pass on the working app.
-2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing.
+2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing. Make the break in a worktree or a copy that you remove afterwards, and never commit it. This is the one time this skill touches product code.
 3. Run it from a second worktree at the same time, when you can, to confirm the isolation.
 
 A harness that was never run is a draft. Do not hand it over as done.
+
+While you test it: remove only what you made, by the exact path you created, and stop only a process you started, by its id. Never delete by a pattern, and never in a folder other sessions share: several sessions work on one machine at the same time.
 
 ## 6. Hand over
 
@@ -58,6 +61,6 @@ List what you wrote and what you could not cover. The human reviews `.jtek/` and
 
 ## Keeping it true
 
-Run this skill again when the harness stops matching the app: a renamed screen, a new start command, a feature with no file. Run the `verify` check, fix `.jtek/` and the script only, and end with one word and the reason: `clean` (nothing to change), `changed` (list the files), or `blocked` (the app itself is broken; say where).
+Run this skill again when the harness stops matching the app: a renamed screen, a new start command, a feature with no file. The fault may also be one the check cannot see: the guide lacks something sessions needed. Then read the guide as a newcomer would, find where it leaves them guessing, and run every line you add, as written. Run the `verify` check, fix `.jtek/` and the script only, and do step 5 again when the script changed. End with one word and the reason: `clean` (nothing to change), `changed` (list the files), or `blocked` (the app itself is broken; say where).
 
 If the app cannot be run at all, stop and report exactly what is missing. Do not write a harness around a different path and call the feature covered.

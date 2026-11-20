@@ -36,7 +36,7 @@ A behaviour change you can show but that the ticket may have intended is a note.
 
 ## 4. Record the verdict
 
-Remove any file your own runs left in the worktree, because `verdict` refuses a pass while it has uncommitted files. Files that git ignores do not count. Keep your own input files outside the worktree. Do not commit anything. If the author left the files, that is a finding.
+Remove any file your own runs left in the worktree, because `verdict` refuses a pass while it has uncommitted files. Files that git ignores do not count. Keep your own input files outside the worktree. Remove only what you made, by the exact path you created, and stop only a process you started, by its id. Never delete by a pattern, and never in a folder other sessions share: several sessions work on one machine at the same time. Do not commit anything. If the author left the files, that is a finding.
 
 Write the findings first, then the notes, as a short Markdown list in a file outside the worktree, in a temporary folder. The form, with a filled example, is in [references/notes.md](references/notes.md). With no findings, write `Findings: none`. Then run one of:
 

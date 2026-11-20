@@ -12,6 +12,7 @@ The human reads this file before the diff, and it is the body of the pull reques
 3. not run: <why you could not see it>
 
 Notes:
+- out of scope: <how you compared it with the base, and that it is the same>
 - <a choice the ticket left open, and what you chose>
 - <something the reviewer should look at first>
 ```

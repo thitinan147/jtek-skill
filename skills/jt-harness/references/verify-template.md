@@ -57,7 +57,9 @@ Log in, then the avatar menu, then "Profile". Direct link: `/profile`.
 
 ## Rules
 
-- **Exact commands only.** "Start the server" is not a step. The command is.
+- **Exact commands only.** "Start the server" is not a step. The command is. Confirm a line by pasting it as it is written, not through a wrapper.
+- **A command stands alone.** An agent's shell keeps no variables from one command to the next, and it may wait for a process left in the background. Write a start as one command that sends output to files, takes no input, and prints the process id and the folder it made. Later lines name them as `<pid>` and `<folder>`.
+- **Say where a dependency comes from.** For a service from another repository: the source, the version, and how to start it at another version. Never from a clone that someone else works in.
 - **Ready means usable.** Name the signal you wait for.
 - **Two worktrees must not collide.** Take the port, the data folder, or the database name from the ticket. A check command gets the id as `JTEK_TICKET` and the folder as `JTEK_WORKTREE`.
 - **Find screen elements by role and name,** not by position or a generated class.

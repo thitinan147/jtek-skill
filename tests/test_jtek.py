@@ -1774,6 +1774,25 @@ class ThirdLoopRound(Scratch):
         self.assertEqual(verdict("FAIL", finding)[0], 0)
         self.assertEqual(verdict("PASS+NOTES", "Findings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")[0], 0)
 
+    def test_a_session_that_picks_a_ticket_up_is_told_the_last_verdict(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("Findings:\n- reproduces: crash on empty input\n")
+        self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("last verdict: FAIL by review-x @", out)
+        self.assertIn("(it is for the change as it is now)", out)
+        self.assertIn("review notes: ", out)
+        self.commit_change("T-1", "fix.txt")
+        self.jtek("stop", "T-1", "--waiting", "approval", "--note", "may I?")
+        self.board.set("T-1", Status="Todo")
+        self.assertIn("(the change or the ticket has moved on since)", self.jtek("start", "T-1")[1])
+
 
 class NextTests(Scratch):
     def next(self):

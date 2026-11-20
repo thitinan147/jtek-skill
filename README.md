@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.7.0-111111?style=flat-square" alt="Version 26.7.0">
+  <img src="https://img.shields.io/badge/version-26.8.0-111111?style=flat-square" alt="Version 26.8.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -339,7 +339,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 155 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: three tickets walked on demo repositories, two of them by sessions that had never seen the skills, one through a real pull request, CI, a squash merge, and `sync`.
+- **Proven:** the script, by 156 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: six tickets walked to Done on three demo repositories over four rounds, five of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, and a harness repair. After each round the sessions were asked where they had to guess, and the answers became the next release.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 

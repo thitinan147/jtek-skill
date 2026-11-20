@@ -32,6 +32,7 @@ If an item has no way to be seen working, stop: `jtek.py stop <id> --waiting inp
 
 - **Small and easy to change later:** choose the reading that changes less of what users see today, even when it takes more code. Write the choice down for the evidence.
 - **Costly to undo, or it changes what the ticket is for:** stop with `--waiting input` and ask one question.
+- **The human's answer has an effect it says it does not want:** do what it asks for in so many words, and put the effect under `Notes` in the evidence for the human to weigh.
 - **The base already does what an item asks:** see it for real, and say so in the evidence. Build only what the ticket still asks for. When nothing is left to build, stop with `--waiting input` and say what you saw.
 
 ## Done when

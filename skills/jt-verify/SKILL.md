@@ -29,20 +29,24 @@ For each `Done when` item, do what you named before you built it:
 
 - The code compiles, or the checks pass.
 - A file exists or changed.
-- Output you saved earlier, before the last commit.
+- Output you saved earlier, before the last commit. One exception: when the commits since then changed only tests, the earlier run still stands, and the evidence says which commit it is from.
 - Your own summary of what the code does.
 - A different path than the one the ticket names. A skipped entry point is not verified through another one.
 - An unclear result. Inconclusive is not a pass. Say it is inconclusive.
 
 Use the real user path, not an internal function or a test-only endpoint. Capture the action and the state it produced, not only the last screen. When the change writes data, look at the stored value a second way.
 
-## 4. Say only what you saw
+## 4. Clean up after yourself
+
+Remove only what you made, by the exact path you created, and stop only a process you started, by its id. Never delete by a pattern, and never in a folder other sessions share: several sessions work on one machine at the same time.
+
+## 5. Say only what you saw
 
 - Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it, in a folder outside the worktree. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.
 
-## 5. When it does not work
+## 6. When it does not work
 
 The change is not done. Find the cause, fix it, commit, and run `jtek.py check <id>` again. Then repeat this skill.
 

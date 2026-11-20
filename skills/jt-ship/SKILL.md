@@ -22,6 +22,7 @@ Save the evidence to a file outside the worktree, then run `jtek.py evidence <id
 
 Add `--attach <file>` to `finish` for each screenshot, recording, or output file that shows the change working. A file attached again under the same name replaces the earlier one. Attached files stay on this machine. A reader of the pull request cannot open them, so the evidence itself must hold what that reader needs, and a file worth reading goes on the pull request as a comment.
 
+- **The ticket already has a pull request:** push the branch, make the new evidence its body again (on GitHub: `gh pr edit <url> --body-file <file>`), and pass the same link to `finish`.
 - **The repository has a forge:** push the branch `jtek/<id>` and open a pull request that is ready for review, not a draft. Title: `type(scope): summary`, or the form the repository's merged pull requests use, with the ticket id where they put it. The evidence file is the body. Then run `jtek.py finish <id> --pr <url> --evidence-file <file>`. The script reads the pull request with `gh`, or with the project's `pr_state` command, and checks that it is open at your current commit. Right after a push it waits a moment for the forge to show the new commit. Never pass a link you did not get from the forge.
 - **The repository has no forge:** do not push. Run `jtek.py finish <id> --no-pr --evidence-file <file>`. The human then reads the evidence and reviews the local branch `jtek/<id>`. The script refuses `--no-pr` when the repository has a remote, unless `jtek.json` says `"forge": false`.
 

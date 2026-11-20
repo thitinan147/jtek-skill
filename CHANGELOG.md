@@ -1,5 +1,17 @@
 # Changelog
 
+## 26.8.0 - the fourth round of real walks
+
+Walked on 26.7.0: a ticket picked up after the human's answer and taken to Review by one session through three reviews (FAIL, FAIL, PASS+NOTES), and a harness repaired with `jt-harness`. All six demo tickets are Done.
+
+- A session that repaired a harness deleted temporary folders by a pattern, in a folder other sessions were using. No skill said how to clean up. `jt-verify`, `jt-review`, and `jt-harness` now say it: remove only what you made, by its exact path, and stop only a process you started.
+- `start` prints the last verdict when a ticket is picked up. A session had opened the state folder to learn that the verdict was FAIL.
+- `jt-work`: fixes after a FAIL follow `jt-build`; after the third FAIL on one ticket the session stops and asks; a verdict posted on the pull request is not a review comment; a fix that needs permission stops for approval; push before `stop` when a pull request is open; the second `finish` takes no other argument.
+- `jt-ship`: what to do when the ticket already has a pull request.
+- `jt-harness`: a sixth question about what the app needs from elsewhere; a repair for a fault the check cannot see; where to make the break; and, in the template, that a command must stand alone because an agent's shell keeps nothing between commands.
+- `notion.md`: the status is copied as the page shows it; how to tell the human's comment from a session's; a long comment is sent in parts.
+- `jt-understand`, `jt-verify`, and the evidence form: an answer whose effect it says it does not want, saved output after commits that changed only tests, and a line for the `Out of scope` comparison.
+
 ## 26.7.0 - the third round of real walks
 
 Walked on 26.6.0: a refactor from start to Review by one session that started its own reviewer, a pull request sent back with a new item and a comment, and a second review that gave FAIL where the first had passed, followed by the rework.

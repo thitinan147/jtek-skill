@@ -651,6 +651,11 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(f"asked: {asked}")
         print("answer: on the page, so in the ticket file above")
     print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
+    if resumed and (work / "verdict.json").exists():
+        # A session that picks the ticket up learns here what the reviewer said, not from the state folder.
+        last = read_json(work / "verdict.json")
+        still = "it is for the change as it is now" if current_verdict(ticket_id, meta) else "the change or the ticket has moved on since"
+        print(f"last verdict: {last.get('verdict')} by {last.get('by')} @{str(last.get('sha', ''))[:7]} ({still})")
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
     kind = ticket["fields"].get("kind", "") or "not set; decide from the Goal"
