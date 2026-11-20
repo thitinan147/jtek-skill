@@ -1611,6 +1611,87 @@ class FirstLoopRound(Scratch):
         self.assertFalse((self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence.md").exists(), "the check saves nothing")
 
 
+class SecondLoopRound(Scratch):
+    """Places where sessions on real tickets had to guess what the script had done, or assemble what it could have given."""
+
+    def test_start_says_what_happened_to_the_baseline(self):
+        self.ticket("T-1")
+        self.ticket("T-2")
+        self.ticket("T-3")
+        self.assertIn("baseline: test passed on main at ", self.jtek("start", "T-1")[1])
+        self.assertIn("baseline: passed earlier on main at ", self.jtek("start", "T-2")[1])
+        self.assertIn("baseline: skipped (--no-baseline)", self.jtek("start", "T-3", "--no-baseline")[1])
+
+    def test_a_session_that_picks_a_question_up_is_told_what_was_asked(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.jtek("stop", "T-1", "--waiting", "input", "--note", "which limit counts as fast?")
+        self.board.set("T-1", Status="Todo")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("jtek start: resumed", out)
+        self.assertIn("asked: which limit counts as fast?", out)
+        self.assertNotIn("baseline:", out)
+
+    def test_a_resume_after_a_finish_has_no_question_to_repeat(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertNotIn("asked:", self.jtek("start", "T-1")[1])
+
+    def test_show_names_the_base_and_the_main_checkout(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        out = self.jtek("show", "T-1")[1]
+        self.assertIn("base: main", out)
+        self.assertIn(f"main checkout: {self.repo}", out)
+
+    def test_verdict_leaves_a_comment_ready_to_post(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        sha = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(f"#!/bin/sh\necho OPEN {sha} pass\n")
+        (bin_dir / "gh").chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("Findings: none\n\nNotes:\n- item 1 seen: ran it\n")
+        code, out = self.jtek("verdict", "T-1", "PASS+NOTES", "--by", "review-x", "--notes-file", str(notes))
+        self.assertEqual(code, 0, out)
+        comment = self.repo / ".git" / "jtek" / "work" / "T-1" / "review-comment.md"
+        self.assertIn(f"comment file: {comment}", out)
+        self.assertEqual(comment.read_text(), f"`verdict: PASS+NOTES by review-x @{sha[:7]}`\n\nFindings: none\n\nNotes:\n- item 1 seen: ran it\n")
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
+        self.assertEqual(comment.read_text(), f"`verdict: PASS by review-x @{sha[:7]}`\n", "the notes of the earlier verdict are gone")
+
+    def test_verdict_names_no_comment_file_without_a_pull_request(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.assertNotIn("comment file:", self.jtek("verdict", "T-1", "PASS", "--by", "review-x")[1])
+
+    def test_an_attached_file_with_the_same_name_replaces_the_old_one(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        seen = Path(self.tmp.name) / "seen.txt"
+        seen.write_text("first\n")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--attach", str(seen))
+        seen.write_text("second\n")
+        self.jtek("finish", "T-1", "--no-pr", "--attach", str(seen))
+        folder = self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence"
+        self.assertEqual([p.name for p in folder.iterdir()], ["seen.txt"])
+        self.assertEqual((folder / "seen.txt").read_text(), "second\n")
+
+
 class NextTests(Scratch):
     def next(self):
         code, out = self.jtek("next")

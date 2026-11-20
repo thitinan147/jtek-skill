@@ -19,11 +19,12 @@ This never applies to security, input validation at a trust boundary, or error h
 ## 2. Build
 
 1. Agree the public interface first: the function, endpoint, or command a caller sees. Tests go through it.
-2. Write or change a test for each behaviour you add, before or with the code. When the playbook says the test comes first, it does. A test checks what a caller can observe, not how the inside works. See each new test fail once before it passes. Prefer no new test over a test that cannot fail. The exception is a test that pins behaviour which must not change, such as a line under `Out of scope`: it passes before and after, and you say in the evidence which tests are pins.
+2. Write or change a test for each behaviour you add, before or with the code. When the playbook says the test comes first, it does. A test checks what a caller can observe, not how the inside works. See each new test fail once before it passes. When the code and its test are both new, break the new code once, see the test fail, and restore it before you commit. Prefer no new test over a test that cannot fail. The exception is a test that pins behaviour which must not change, such as a line under `Out of scope`: it passes before and after, and you say in the evidence which tests are pins.
 3. Make the smallest change that meets `Done when`. Behaviour listed under `Out of scope` stays exactly as it is now. When an entry names a topic, such as "non-ASCII letters", both readings hold: do not add support for it, and do not change what happens for it today.
 4. Apply [references/principles.md](references/principles.md) where a condition holds.
 5. An existing test, or a script that a check runs, may have to change because `Done when` now asks for another result. Change only the lines that can no longer hold, keep every other assertion as strict as it was, and say in the evidence which lines and why. The result names these files for the human. Never change one to make a failure go away.
-6. Commit in the worktree. Never commit on the base branch.
+6. Commit in the worktree. Never commit on the base branch. Write the message the way the repository's log does. When the log shows no form, use `type: summary (<ticket id>)`.
+7. A script or a file the ticket asks for is only that. It becomes a check when the ticket says so, and then the stop below applies.
 
 ## Stop instead of building
 

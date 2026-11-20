@@ -26,7 +26,7 @@ When you start from a bug you reproduced, and no check has failed, your reproduc
 
 ## 3. Test the cause
 
-1. Make one small change or add one print that would prove the sentence wrong.
+1. Make one small change or add one print that would prove the sentence wrong. A test written for that cause, failing with the error the sentence names, is such a proof.
 2. If it is wrong, go back to step 2. Do not stack a second guess on top of the first.
 3. After two failed fixes that share an assumption, test the assumption itself. It is probably what is wrong.
 

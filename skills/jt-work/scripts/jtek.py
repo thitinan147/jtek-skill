@@ -525,6 +525,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
     parked = (work / "result.md").exists()
 
+    baseline = asked = ""
     if args.resume or parked:
         meta = load_meta(ticket_id, tree=True)
         if status not in ("Todo", "In Progress"):
@@ -542,6 +543,10 @@ def cmd_start(args: argparse.Namespace) -> None:
                 (work / "result.md").rename(work / "last-result.md")
             except FileNotFoundError:
                 raise Refuse(CLAIMED.format(id=ticket_id)) from None
+            last = (work / "last-result.md").read_text()
+            if "outcome: needs-human" in last:
+                # The session that picks the ticket up must not have to open the state folder to learn what was asked.
+                asked = next((line[6:].strip() for line in last.splitlines() if line.startswith("note: ")), "")
         checks_path = work / "checks.json"
         if checks_path.exists() and status == "Todo":
             # Only the human sets Todo, so only the human gives a ticket new tries.
@@ -594,12 +599,14 @@ def cmd_start(args: argparse.Namespace) -> None:
             # A new worktree has no installed dependencies. Install them before anything runs.
             if not run_command(setup, worktree, logs / "setup.log"):
                 raise give_back(f"the setup command from {CONFIG} failed in the new worktree", logs / "setup.log")
+        baseline = "skipped, because the work goes on from an existing branch" if kept else "skipped (--no-baseline)"
         if not args.no_baseline and not kept:
             # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
             # One green run per base commit and command set is enough, so parallel tickets do not repeat it.
             base_sha = git("rev-parse", base)
             key = hashlib.sha256(json.dumps([base_sha, [(n, declared[n]) for n in selected]]).encode()).hexdigest()
             green = state_dir() / "baseline" / "green" / key
+            baseline = f"passed earlier on {base} at {base_sha[:7]} with the same commands; not run again"
             if not green.exists():
                 _, failed = run_checks(worktree, selected, declared, logs)
                 if failed:
@@ -609,6 +616,7 @@ def cmd_start(args: argparse.Namespace) -> None:
                     )
                 green.parent.mkdir(parents=True, exist_ok=True)
                 green.write_text(base_sha + "\n")
+                baseline = f"{', '.join(selected)} passed on {base} at {base_sha[:7]} before any change"
 
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
@@ -627,6 +635,11 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"base: {meta['base']}")
     print(f"ticket: {work / 'ticket.md'}  (a copy taken now; read this file)")
     print(f"checks: {', '.join(selected)}")
+    if baseline:
+        print(f"baseline: {baseline}")
+    if asked:
+        print(f"asked: {asked}")
+        print("answer: on the page, so in the ticket file above")
     print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
@@ -732,7 +745,12 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
         "patch": patch, "ticket": ticket_id_of_text(work),
     })
-    print(f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}")
+    line = f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}"
+    notes = (work / "review.md").read_text() if args.notes_file else ""
+    (work / "review-comment.md").write_text(f"`{line}`\n\n{notes}".rstrip() + "\n")
+    print(line)
+    if meta.get("pr"):
+        print(f"comment file: {work / 'review-comment.md'}  (the verdict line and the notes, ready to post on {meta['pr']})")
 
 
 def check_evidence(work: Path, text: str) -> None:
@@ -882,6 +900,8 @@ def cmd_show(args: argparse.Namespace) -> None:
     print(f"ticket: {work_dir(args.id) / 'ticket.md'}")
     print(f"worktree: {meta['worktree']}")
     print(f"commit: {git('rev-parse', 'HEAD', cwd=Path(meta['worktree']), check=False) or 'unknown'}")
+    print(f"base: {meta['base']}")
+    print(f"main checkout: {main_root()}")
     print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {meta['base']}...HEAD")
     try:
         declared = load_checks(meta["base"])

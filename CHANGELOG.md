@@ -1,5 +1,20 @@
 # Changelog
 
+## 26.6.0 - the second round of real walks
+
+Three more tickets were walked on 26.5.0 by sessions that had never seen the skills: a consumer ticket that moves a contract pin, a bug, and a ticket whose only item could not be measured, which stopped, was answered, and was picked up by a new session. No session was refused without knowing why. This release is where they had to guess.
+
+- `jt-review` had two rules for a break that no check catches: one called it a finding, the other a note. A reviewer chose the note and said the other reading would have been a FAIL. There is now one rule: a finding when `Done when` names the behaviour, a note otherwise.
+- `jt-review`: when the base handled a case and the change handles it worse, that is a finding, also when the ticket never mentions the case. A reviewer had passed a change that printed `undefined` where the base printed nothing.
+- `start` prints a `baseline:` line (passed now, passed earlier, or skipped), and on a pick-up an `asked:` line with the question the earlier session put to the human. A session had opened the state folder to find out.
+- `show` prints the base branch and the main checkout. `verdict` writes the verdict line and the notes to one file, ready to post on the pull request, and prints its path.
+- `jt-work`: a subagent that starts with none of the conversation counts as a fresh session; a ticket session does not run `jt-harness`; `stop` with nothing changed needs no commit.
+- `jt-understand`: what to do when the base already does what an item asks.
+- `jt-build`: how to see a test of new code fail, the form of a commit message, and that a script the ticket asks for is not a check.
+- `jt-verify`: where to run the base branch, where to keep output files, and that the `attention:` line asks the human to look and does not forbid an edit under `.jtek/`.
+- `notion.md`: read the comments on a pick-up, an empty After, the form of a comment, and which link to pass.
+- `two-repos.md`: read the provider's newest commit from its remote, not from a folder that happens to be on the machine.
+
 ## 26.5.0 - what the first real walks found
 
 Three tickets were walked on demo repositories with the board in Notion. Two were worked and reviewed by sessions that had never seen the skills, and each was asked afterwards what was unclear. This release is what they found.
