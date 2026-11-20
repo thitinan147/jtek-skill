@@ -118,6 +118,7 @@ class StartTests(Scratch):
         def run(tid):
             steps = []
             steps.append(self.jtek("start", tid))
+            self.assertEqual(steps[0][0], 0, steps[0][1])  # say why, before a missing worktree hides it
             self.commit_change(tid, f"{tid}.txt")
             # run later commands from inside the worktree, as a ticket session does
             steps.append(self.jtek("check", tid, cwd=self.worktree(tid)))
@@ -1385,7 +1386,7 @@ class ThirdReview(Scratch):
         self.commit_change("T-1")
         (self.worktree("T-1") / "wip.txt").write_text("the author's\n")
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("1. wip.txt is not committed\n")
+        notes.write_text("- reproduces: wip.txt is not committed\n")
         self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 1)
         code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
         self.assertEqual(code, 0, out)
@@ -1661,12 +1662,12 @@ class SecondLoopRound(Scratch):
         path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
         self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings: none\n\nNotes:\n- item 1 seen: ran it\n")
+        notes.write_text("Findings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")
         code, out = self.jtek("verdict", "T-1", "PASS+NOTES", "--by", "review-x", "--notes-file", str(notes))
         self.assertEqual(code, 0, out)
         comment = self.repo / ".git" / "jtek" / "work" / "T-1" / "review-comment.md"
         self.assertIn(f"comment file: {comment}", out)
-        self.assertEqual(comment.read_text(), f"`verdict: PASS+NOTES by review-x @{sha[:7]}`\n\nFindings: none\n\nNotes:\n- item 1 seen: ran it\n")
+        self.assertEqual(comment.read_text(), f"`verdict: PASS+NOTES by review-x @{sha[:7]}`\n\nFindings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")
         code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
         self.assertEqual(comment.read_text(), f"`verdict: PASS by review-x @{sha[:7]}`\n", "the notes of the earlier verdict are gone")
 
@@ -1690,6 +1691,88 @@ class SecondLoopRound(Scratch):
         folder = self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence"
         self.assertEqual([p.name for p in folder.iterdir()], ["seen.txt"])
         self.assertEqual((folder / "seen.txt").read_text(), "second\n")
+
+
+class ThirdLoopRound(Scratch):
+    """A refusal that named the wrong remedy, met by a session that had just pushed."""
+
+    def pushed_ticket(self):
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        tree = self.worktree("T-1")
+        self.git("push", "-q", "-u", "origin", "jtek/T-1", cwd=tree)
+        return self.git("rev-parse", "HEAD", cwd=tree)
+
+    def slow_forge(self, sha, late_answers):
+        """A `gh` that shows the old head for the first answers, as a forge does right after a push."""
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        count = Path(self.tmp.name) / "asked"
+        (bin_dir / "gh").write_text(
+            f"#!{sys.executable}\nfrom pathlib import Path\n"
+            f"count = Path({str(count)!r})\nn = int(count.read_text()) if count.exists() else 0\ncount.write_text(str(n + 1))\n"
+            f"print('OPEN', {'0' * 40!r} if n < {late_answers} else {sha!r}, 'pass')\n"
+        )
+        (bin_dir / "gh").chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "JTEK_PR_WAIT": "0"}
+
+    def test_finish_waits_for_the_forge_to_show_a_commit_that_is_pushed(self):
+        sha = self.pushed_ticket()
+        env = self.slow_forge(sha, late_answers=2)
+        code, out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env=env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+
+    def test_finish_says_the_forge_may_be_late_when_it_never_catches_up(self):
+        sha = self.pushed_ticket()
+        env = self.slow_forge(sha, late_answers=99)
+        code, out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env=env)
+        self.assertEqual(code, 1, out)
+        self.assertIn("The branch is pushed, so the forge may only be late", out)
+        self.assertNotIn("push the branch", out)
+
+    def test_finish_does_not_wait_for_a_commit_that_was_never_pushed(self):
+        sha = self.pushed_ticket()
+        self.commit_change("T-1", "more.txt")
+        self.jtek("check", "T-1")
+        env = self.slow_forge(sha, late_answers=0)
+        code, out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env=env)
+        self.assertEqual(code, 1, out)
+        self.assertIn("; push the branch", out)
+        self.assertEqual((Path(self.tmp.name) / "asked").read_text(), "1", "one look is enough when the commit is not pushed")
+
+    def test_the_word_of_a_verdict_agrees_with_its_notes(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        notes = Path(self.tmp.name) / "notes.md"
+
+        def verdict(word, text):
+            notes.write_text(text)
+            return self.jtek("verdict", "T-1", word, "--by", "review-x", "--notes-file", str(notes))
+
+        seen = "Findings: none\n\nNotes:\n- item 1 seen: ran it\n"
+        finding = "Findings:\n- reproduces: crash on empty input\n  steps: run it with nothing\n"
+        code, out = verdict("PASS+NOTES", seen)
+        self.assertEqual(code, 1, out)
+        self.assertIn("give PASS and keep --notes-file", out)
+        self.assertEqual(verdict("PASS", seen)[0], 0)
+        code, out = verdict("FAIL", seen)
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL needs at least one finding", out)
+        for word in ("PASS", "PASS+NOTES"):
+            code, out = verdict(word, finding + "\nNotes:\n- to weigh: something\n")
+            self.assertEqual(code, 1, out)
+            self.assertIn("so the verdict is FAIL", out)
+        self.assertEqual(verdict("FAIL", finding)[0], 0)
+        self.assertEqual(verdict("PASS+NOTES", "Findings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")[0], 0)
 
 
 class NextTests(Scratch):

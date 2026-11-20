@@ -32,11 +32,11 @@ Sort every open comment into one of three:
 - **Dismiss:** it is wrong. Reply with the command or code that shows why. "I disagree" is not a reason.
 - **Ask:** it is a product or preference call that no run can settle. Collect these into one question for the human.
 
-Do not agree with a comment to be agreeable. Check that the suggestion is correct and does not break something else before you apply it. Reply on each thread with what you did.
+Do not agree with a comment to be agreeable. Check that the suggestion is correct and does not break something else before you apply it. Reply on each thread with what you did. A comment that has no thread gets a new comment that names it.
 
 ## 4. Back to ready
 
 1. Commit, and run `jtek.py check <id>`.
 2. See the change work again when the fix touched behaviour.
-3. The saved evidence is `evidence.md`, in the same folder as the ticket file that `jtek.py start` printed. Copy it to a temporary file, add what changed, and run `jtek.py finish <id> --pr <url> --evidence-file <file>` again. A changed patch needs a new verdict.
+3. The saved evidence is `evidence.md`, in the same folder as the ticket file that `jtek.py start` printed. Copy it to a temporary file, add what changed, and make it the pull request's body again (on GitHub: `gh pr edit <url> --body-file <file>`). Then run `jtek.py finish <id> --pr <url> --evidence-file <file>` again. A changed patch needs a new verdict.
 4. If there are **Ask** items, stop with `jtek.py stop <id> --waiting input --note "<the one question>"` instead.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 26.7.0 - the third round of real walks
+
+Walked on 26.6.0: a refactor from start to Review by one session that started its own reviewer, a pull request sent back with a new item and a comment, and a second review that gave FAIL where the first had passed, followed by the rework.
+
+- `verdict` refuses a word that disagrees with its notes: `FAIL` needs a `- reproduces:` line, a `- reproduces:` line makes it `FAIL`, and `PASS+NOTES` needs a `- to weigh:` line. Reviewers had to guess where `PASS` ends and `PASS+NOTES` begins.
+- `jt-review`: the rule of 26.6.0 for a break that no check notices now also stands in the list of what counts as a finding and in what `PASS` means. A reviewer found the three places disagreed. The step also covers an outcome that lives in code the change did not touch.
+- `finish` waits a moment for the forge to show a commit that is already pushed. A session that pushed and finished in the same second was told to push the branch.
+- `start` tries three times to create the worktree. One CI run of 26.6.0 failed when two tickets started in the same moment; it passed when run again and was not reproduced, so this guards the likely cause and is not a proven fix.
+- `jt-work`: when a ticket comes back with a changed item and a comment on the pull request, the playbook leads and `jt-babysit` only answers on the pull request.
+- `jt-babysit`: put the new evidence in the pull request's body again, and answer a comment that has no thread with a new comment.
+- `notion.md`: a backslash before punctuation is the tool's escape. The notes form of `jt-review` has a line for each kind of note.
+
 ## 26.6.0 - the second round of real walks
 
 Three more tickets were walked on 26.5.0 by sessions that had never seen the skills: a consumer ticket that moves a contract pin, a bug, and a ticket whose only item could not be measured, which stopped, was answered, and was picked up by a new session. No session was refused without knowing why. This release is where they had to guess.

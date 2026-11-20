@@ -23,14 +23,14 @@ You are the reviewer. You did not write this change. If this session wrote any o
 3. Check that the diff stays inside the ticket and out of `Out of scope`.
 4. Check that no test was deleted, skipped, or loosened, and that no check was weakened.
 5. For each line the change deleted, ask what it was there for. Read its history when it looks like a guard.
-6. Test the author's tests. For each behaviour the change adds, break its line on purpose and run every declared check. Undo each break with `git checkout -- <file>` and confirm the worktree is clean. What a break shows:
+6. Test the author's tests. For each behaviour the change adds, and for each outcome `Done when` names, break the line that makes it true, wherever that line is, and run every declared check. Undo each break with `git checkout -- <file>` and confirm the worktree is clean. What a break shows:
    - **No check fails, and the behaviour is one `Done when` names** (its outcome, or a number or name it gives): a finding. Nothing would notice if it stopped being true.
    - **No check fails, and the ticket does not name the behaviour:** a note.
    - **Some check fails:** the tests are real. A check that still passed does not cover that behaviour: name it in a note.
 
 ## 3. Count only what reproduces
 
-A finding counts when you can show it, and it breaks a `Done when` item, changes something under `Out of scope`, or is a defect the change introduced. Write each one as: the exact command or steps, what you expected, and the output you got. Run it against the real code in the worktree. Leave out anything you did not run.
+A finding counts when you can show it, and it breaks a `Done when` item, changes something under `Out of scope`, is a defect the change introduced, or is a break from step 6 that no check noticed in something `Done when` names. Write each one as: the exact command or steps, what you expected, and the output you got. Run it against the real code in the worktree. Leave out anything you did not run.
 
 A behaviour change you can show but that the ticket may have intended is a note. So is an item that holds for the ticket's own examples and fails only for inputs or environments the ticket never mentions, when the base branch fails the same way. When the base handled that case and the change handles it worse, it is a defect the change introduced: a finding, even though the ticket never mentions the case. To see what the base does, run it in the main checkout when that is on the base branch, and change nothing there. A guess about what might go wrong is a note. Do not report style preferences.
 
@@ -40,9 +40,9 @@ Remove any file your own runs left in the worktree, because `verdict` refuses a 
 
 Write the findings first, then the notes, as a short Markdown list in a file outside the worktree, in a temporary folder. The form, with a filled example, is in [references/notes.md](references/notes.md). With no findings, write `Findings: none`. Then run one of:
 
-- `jtek.py verdict <id> PASS --by <name>`: every `Done when` item is true, and nothing reproduces. The name says who reviewed, for example `review-<your model>`. Any name works when you have none.
-- `jtek.py verdict <id> PASS+NOTES --by <name> --notes-file <file>`: the same, with something the human should weigh before merging. Lines that only say an item was seen do not make it `PASS+NOTES`.
-- `jtek.py verdict <id> FAIL --by <name> --notes-file <file>`: an item is not true, or a finding reproduces.
+- `jtek.py verdict <id> PASS --by <name>`: every `Done when` item is true, and there is no finding. The name says who reviewed, for example `review-<your model>`. Any name works when you have none.
+- `jtek.py verdict <id> PASS+NOTES --by <name> --notes-file <file>`: the same, with at least one `to weigh:` line, for something the human should decide before merging. Lines that only say what you saw, broke, or did not check do not make it `PASS+NOTES`.
+- `jtek.py verdict <id> FAIL --by <name> --notes-file <file>`: an item is not true, or there is a finding.
 
 If you could not run the change, give `FAIL` and say why. Passing checks and a clean-looking diff are not a verdict.
 

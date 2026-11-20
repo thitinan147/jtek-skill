@@ -570,14 +570,24 @@ def cmd_start(args: argparse.Namespace) -> None:
         kept = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
         # From here on a killed run leaves a claim that says so, and `release` can remove what it made.
         write_json(work / "meta.json", {"starting": True, "pid": os.getpid(), "kept": kept, "base": base})
-        try:
-            worktree.parent.mkdir(parents=True, exist_ok=True)
-            git("worktree", "prune")  # forget a worktree whose folder was deleted by hand
-            git("worktree", "add", *([str(worktree), branch] if kept else ["-b", branch, str(worktree), base]))
-        except Refuse:
-            (work / "meta.json").unlink()
-            work.rmdir()
-            raise
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        for attempt in range(3):
+            try:
+                git("worktree", "prune")  # forget a worktree whose folder was deleted by hand
+                # A failed try may have left the branch behind, so look again each time.
+                exists = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
+                git("worktree", "add", *([str(worktree), branch] if exists else ["-b", branch, str(worktree), base]))
+                break
+            except Refuse:
+                # Two tickets that start in the same moment can trip over each other inside git. Try again before giving up.
+                if attempt < 2:
+                    time.sleep(0.3 * (attempt + 1))
+                    continue
+                if not kept:
+                    git("branch", "-D", branch, check=False)
+                (work / "meta.json").unlink()
+                work.rmdir()
+                raise
         meta = {"id": ticket_id, "source": " ".join(args.ref.split()), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
         write_json(work / "meta.json", {**meta, "starting": True, "pid": os.getpid(), "kept": kept})
         logs = state_dir() / "baseline" / ticket_id
@@ -737,8 +747,21 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
     if args.verdict != "PASS" and not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with the findings")
+    notes_text = read_file(args.notes_file, "notes") if args.notes_file else ""
+    finding = re.search(r"^\s*[-*]\s*reproduces:", notes_text, re.M)
+    weigh = re.search(r"^\s*[-*]\s*to weigh:", notes_text, re.M)
+    # The word of the verdict and the notes must say the same thing, because the human reads the word first.
+    if args.verdict == "FAIL" and not finding:
+        raise Refuse("FAIL needs at least one finding in the notes: a line `- reproduces: <what goes wrong>` with its steps. "
+                     "Without one, the verdict is PASS or PASS+NOTES")
+    if args.verdict != "FAIL" and finding:
+        raise Refuse(f"the notes hold a finding (`- reproduces:`), so the verdict is FAIL, not {args.verdict}. "
+                     "If it does not count as a finding, write it as a note")
+    if args.verdict == "PASS+NOTES" and not weigh:
+        raise Refuse("PASS+NOTES is for something the human should decide before merging: a line `- to weigh: <what>`. "
+                     "Notes that only say what you saw are a PASS; give PASS and keep --notes-file")
     if args.notes_file:
-        (work / "review.md").write_text(read_file(args.notes_file, "notes"))
+        (work / "review.md").write_text(notes_text)
     else:
         (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
     write_json(work / "verdict.json", {
@@ -783,6 +806,15 @@ def cmd_evidence(args: argparse.Namespace) -> None:
     seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
     not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
     print(f"evidence: the form is accepted ({seen} seen, {not_run} not run). Nothing was saved; pass the file to `finish`")
+
+
+PR_HEAD_TRIES = 5
+PR_HEAD_WAIT = float(os.environ.get("JTEK_PR_WAIT", "3"))
+
+
+def pushed(worktree: Path, branch: str, sha: str) -> bool:
+    """Whether the remote-tracking branch already holds this commit, so a pull request behind it is only late."""
+    return git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", cwd=worktree, check=False) == sha
 
 
 def cmd_finish(args: argparse.Namespace) -> None:
@@ -852,10 +884,18 @@ def cmd_finish(args: argparse.Namespace) -> None:
         )
     else:
         state, head, ci = pr_info(pr, meta["base"])
+        for _ in range(PR_HEAD_TRIES):
+            # A forge needs a moment after a push before the pull request shows the new commit.
+            if state != "OPEN" or head == sha or not pushed(worktree, meta["branch"], sha):
+                break
+            time.sleep(PR_HEAD_WAIT)
+            state, head, ci = pr_info(pr, meta["base"])
         if state == "DRAFT":
             raise Refuse(f"{pr} is a draft. Mark it ready for review, then finish again")
         if state != "unknown" and (state != "OPEN" or head != sha):
-            raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}; push the branch")
+            late = " The branch is pushed, so the forge may only be late: run `finish` again in a moment" \
+                if state == "OPEN" and pushed(worktree, meta["branch"], sha) else "; push the branch"
+            raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}" + (late if late.startswith(";") else "." + late))
         if ci == "fail":
             raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
         pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."

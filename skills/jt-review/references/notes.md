@@ -11,10 +11,15 @@ Findings:
   expected: <what should happen, and the `Done when` item or rule that says so>
 
 Notes:
+- to weigh: <something the human should decide before merging>
 - item <n> seen: <what you ran, and what you saw>
+- broke: <the line you broke, and which checks failed or still passed>
+- stand-in: <what you used in place of the real thing, and for which case>
 - did not reproduce: <what you suspected, what you tried, what happened>
-- <what the tests do not cover>
+- not checked: <what you did not look at>
 ```
+
+Use the lines that apply, and leave out the rest.
 
 With nothing to report, the first line is `Findings: none`.
 
@@ -38,5 +43,5 @@ Notes:
 - **A finding has steps that fail when anyone runs them.** A suspicion without steps goes under Notes as `did not reproduce`, or is left out.
 - **Tie each finding to a `Done when` item, an `Out of scope` line, or something that worked before.** Taste is not a finding.
 - **Say what you did not check.** The human decides whether that matters.
-- **`FAIL` needs at least one finding.** `PASS+NOTES` has notes and no finding. `PASS` needs no file.
+- **`FAIL` needs at least one finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither, and its notes file is optional.
 - **Do not paste the diff.** Name the file and the line.
