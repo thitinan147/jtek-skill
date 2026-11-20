@@ -11,6 +11,7 @@ Findings:
   expected: <what should happen, and the `Done when` item or rule that says so>
 
 Notes:
+- item <n> seen: <what you ran, and what you saw>
 - did not reproduce: <what you suspected, what you tried, what happened>
 - <what the tests do not cover>
 ```
@@ -26,6 +27,7 @@ Findings:
   expected: 422, by Done when item 2
 
 Notes:
+- item 1 seen: PATCH /me with phone "0812345678" answered 200, and GET /me showed it
 - did not reproduce: a phone with spaces. Tried "081 234 5678", got 422 as it should
 - the new tests cover items 1 and 2. Nothing tests item 3
 - I broke the length check on purpose, and the new test failed, so the test is real

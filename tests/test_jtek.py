@@ -1482,6 +1482,135 @@ class ThirdReview(Scratch):
         self.assertIn("T-2\twork", out)
 
 
+class FirstLoopRound(Scratch):
+    """Defects and gaps found by walking real tickets with sessions that had never seen the skills."""
+
+    def remote(self):
+        """Give the repository an origin, and return a second clone that can push to it as a merge on the forge would."""
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        other = Path(self.tmp.name) / "other"
+        self.git("clone", "-q", str(bare), str(other))
+        self.git("config", "user.email", "t@example.invalid", cwd=other)
+        self.git("config", "user.name", "t", cwd=other)
+        return other
+
+    def merge_on_the_forge(self, other, name="merged.txt"):
+        (other / name).write_text("merged\n")
+        self.git("add", name, cwd=other)
+        self.git("commit", "-q", "-m", "a merged pull request", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+
+    def test_start_begins_from_what_is_merged_on_origin(self):
+        other = self.remote()
+        self.merge_on_the_forge(other)
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("was 1 commits behind origin/main and was moved forward", out)
+        self.assertTrue((self.worktree("T-1") / "merged.txt").exists(), "the ticket started from an old base")
+        self.assertTrue((self.repo / "merged.txt").exists(), "the main checkout holds the base branch, so it moved too")
+
+    def test_start_reads_the_checks_from_the_refreshed_base(self):
+        other = self.remote()
+        (other / "jtek.json").write_text(json.dumps({"checks": {"newer": f"{sys.executable} -c pass"}}))
+        self.git("commit", "-q", "-am", "the merged change renames the check", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("checks: newer", out)
+
+    def test_start_moves_a_base_that_is_not_checked_out(self):
+        other = self.remote()
+        self.merge_on_the_forge(other)
+        self.git("checkout", "-q", "-b", "elsewhere")
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.worktree("T-1") / "merged.txt").exists())
+        self.assertFalse((self.repo / "merged.txt").exists(), "the checkout on another branch is left alone")
+
+    def test_start_says_so_when_both_sides_moved(self):
+        other = self.remote()
+        self.merge_on_the_forge(other)
+        (self.repo / "local.txt").write_text("local\n")
+        self.git("add", "local.txt")
+        self.git("commit", "-q", "-m", "a local commit that was never pushed")
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("have each moved (1 and 1 commits)", out)
+        self.assertFalse((self.worktree("T-1") / "merged.txt").exists())
+
+    def test_start_refuses_and_keeps_no_claim_when_the_base_cannot_move(self):
+        other = self.remote()
+        self.merge_on_the_forge(other)
+        (self.repo / "merged.txt").write_text("the human's own file, in the way\n")
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("could not be moved forward", out)
+        self.assertEqual((self.repo / "merged.txt").read_text(), "the human's own file, in the way\n")
+        (self.repo / "merged.txt").unlink()
+        self.assertEqual(self.jtek("start", "T-1")[0], 0, "nothing was claimed by the refused start")
+
+    def test_start_goes_on_without_the_remote(self):
+        self.remote()
+        self.git("remote", "set-url", "origin", str(Path(self.tmp.name) / "gone.git"))
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("could not fetch `main` from origin", out)
+
+    def test_no_fetch_leaves_the_base_alone(self):
+        other = self.remote()
+        self.merge_on_the_forge(other)
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", "--no-fetch")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.worktree("T-1") / "merged.txt").exists())
+
+    def test_a_pull_request_that_waits_for_review_reaches_the_page(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        sha = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(f"#!/bin/sh\necho OPEN {sha} pending\n")
+        (bin_dir / "gh").chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        code, out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("board: PR=https://forge.example/pr/1", out)
+        self.assertEqual(self.field("T-1", "pr"), "https://forge.example/pr/1")
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+
+    def test_show_names_the_commit_under_review(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        sha = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        self.assertIn(f"commit: {sha}", self.jtek("show", "T-1")[1])
+
+    def test_evidence_can_be_checked_before_the_pull_request_is_opened(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        code, out = self.jtek("evidence", "T-1", "--file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("(1 seen, 0 not run)", out)
+        bad = Path(self.tmp.name) / "bad.md"
+        bad.write_text("It works.\n")
+        code, out = self.jtek("evidence", "T-1", "--file", str(bad))
+        self.assertEqual(code, 1)
+        self.assertIn("must account for every `Done when` item", out)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work" / "T-1" / "evidence.md").exists(), "the check saves nothing")
+
+
 class NextTests(Scratch):
     def next(self):
         code, out = self.jtek("next")

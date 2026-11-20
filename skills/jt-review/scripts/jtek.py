@@ -385,7 +385,8 @@ def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
         return "Status=Review; Waiting=; " + (f"PR={pr}; " if pr else "") + "comment=result+evidence"
     if outcome == "needs-human":
         return f"Waiting={waiting}; comment=result"
-    return "-"
+    # A pull request that waits for its second look is still worth a link on the page.
+    return f"PR={pr}" if pr else "-"
 
 
 def write_result(ticket_id: str, outcome: str, status: str, note: str = "", waiting: str = "") -> str:
@@ -448,12 +449,57 @@ def cmd_other(args: argparse.Namespace) -> None:
 
 # ---- commands --------------------------------------------------------------
 
+def refresh_base(base: str) -> str:
+    """Bring the local base branch up to what the remote has, so a ticket starts from what is merged.
+    Returns a note for the session, or "". Never rewrites history: only a fast-forward, and only when it is safe."""
+    if not git("rev-parse", "--verify", "--quiet", f"refs/heads/{base}", check=False):
+        return ""  # the base is not a local branch (JTEK_BASE names something else)
+    if "origin" not in git("remote", check=False).split():
+        return ""
+    try:
+        fetched = subprocess.run(["git", "fetch", "--quiet", "origin", base], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        fetched = None
+    if fetched is None or fetched.returncode != 0:
+        return f"note: could not fetch `{base}` from origin, so the ticket starts from the local `{base}`, which may be old"
+    remote = f"refs/remotes/origin/{base}"
+    if not git("rev-parse", "--verify", "--quiet", remote, check=False):
+        return ""
+    behind = int(git("rev-list", "--count", f"{base}..{remote}", check=False) or 0)
+    ahead = int(git("rev-list", "--count", f"{remote}..{base}", check=False) or 0)
+    if not behind:
+        return ""
+    if ahead:
+        return (f"note: the local `{base}` and origin/{base} have each moved ({ahead} and {behind} commits), "
+                f"so the ticket starts from the local `{base}`. The human brings them together")
+    # Where is the base checked out? A branch that is checked out moves only by a merge in that worktree.
+    holder, path = None, None
+    for line in git("worktree", "list", "--porcelain").splitlines():
+        if line.startswith("worktree "):
+            path = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{base}":
+            holder = path
+    if holder is None:
+        moved = subprocess.run(["git", "update-ref", f"refs/heads/{base}", remote], capture_output=True, text=True)
+    else:
+        moved = subprocess.run(["git", "merge", "--quiet", "--ff-only", remote], cwd=holder, capture_output=True, text=True)
+    if moved.returncode != 0:
+        raise Refuse(
+            f"`{base}` is {behind} commits behind origin/{base}, and it could not be moved forward"
+            + (f" in {holder}" if holder else "") + f": {' '.join((moved.stderr or moved.stdout).split())}. "
+            f"The human updates `{base}` (`git pull --ff-only`); a ticket must start from what is merged"
+        )
+    return f"note: `{base}` was {behind} commits behind origin/{base} and was moved forward before the ticket started"
+
+
 def cmd_start(args: argparse.Namespace) -> None:
     try:
         text = Path(args.from_file).read_text()
     except (OSError, ValueError) as err:
         raise Refuse(f"cannot read the ticket file as text: {err}") from None
     base = base_branch()
+    # Before anything is read from the base: the checks and the settings come from it too.
+    base_note = "" if args.no_fetch else refresh_base(base)
     english = {own: name for name, own in load_settings(base)["headings"].items()}
     if english:
         # The copy the session works from always has the three English headings, whatever the page calls them.
@@ -570,6 +616,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
+    if base_note:
+        print(base_note)
     if not resumed and kept:
         print(f"note: the branch {branch} already existed, so the work goes on from its commits")
     print("board: Status=In Progress; Waiting=")
@@ -709,6 +757,16 @@ def check_evidence(work: Path, text: str) -> None:
         )
 
 
+def cmd_evidence(args: argparse.Namespace) -> None:
+    """Check an evidence file before it becomes the body of a pull request. Saves nothing."""
+    load_meta(args.id)
+    text = read_file(args.file, "evidence")
+    check_evidence(work_dir(args.id), text)
+    seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
+    not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
+    print(f"evidence: the form is accepted ({seen} seen, {not_run} not run). Nothing was saved; pass the file to `finish`")
+
+
 def cmd_finish(args: argparse.Namespace) -> None:
     meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
@@ -823,6 +881,7 @@ def cmd_show(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     print(f"ticket: {work_dir(args.id) / 'ticket.md'}")
     print(f"worktree: {meta['worktree']}")
+    print(f"commit: {git('rev-parse', 'HEAD', cwd=Path(meta['worktree']), check=False) or 'unknown'}")
     print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {meta['base']}...HEAD")
     try:
         declared = load_checks(meta["base"])
@@ -885,6 +944,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
+    start.add_argument("--no-fetch", action="store_true", help="do not fetch the base branch from origin first")
     start.set_defaults(func=cmd_start)
 
     check = sub.add_parser("check", help="run the declared checks in the worktree")
@@ -905,6 +965,11 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; needed again whenever the code changed")
     finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
+
+    evidence = sub.add_parser("evidence", help="check the form of an evidence file before it becomes a pull request body")
+    evidence.add_argument("id")
+    evidence.add_argument("--file", required=True)
+    evidence.set_defaults(func=cmd_evidence)
 
     stop = sub.add_parser("stop", help="stop and wait for the human")
     stop.add_argument("id")

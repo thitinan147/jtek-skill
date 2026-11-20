@@ -23,7 +23,7 @@ For each `Done when` item, do what you named before you built it:
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order.
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
 4. Check that behaviour under `Out of scope` is the same as on the base branch.
-5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response.
+5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
 
 ## 3. What does not count
 

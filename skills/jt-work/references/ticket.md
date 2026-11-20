@@ -57,6 +57,8 @@ The page in Notion is the source of truth. The layout of the board is in [notion
 
 ## Claims and parallel work
 
+Before anything else, `start` fetches the base branch from `origin` and moves the local one forward when it is only behind, so a ticket starts from what is merged. It never rewrites the branch: when both sides have moved it says so and starts from the local one, and when the branch cannot move it refuses. `--no-fetch` skips this.
+
 After creating the worktree, `start` runs the `setup` command from `jtek.json`, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo on the board, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
 
 `start` creates `<git-common-dir>/jtek/work/<id>/`. Creating a directory is atomic, so when two sessions start the same id, one is refused. Each ticket gets the worktree `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
@@ -86,7 +88,7 @@ attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: <page link>
 note: <one line>
-board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | -
+board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | PR=<url> | -
 ```
 
 - **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md). `-` means nothing.

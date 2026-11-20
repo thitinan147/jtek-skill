@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.5.0 - what the first real walks found
+
+Three tickets were walked on demo repositories with the board in Notion. Two were worked and reviewed by sessions that had never seen the skills, and each was asked afterwards what was unclear. This release is what they found.
+
+- `start` fetches the base branch from `origin` and moves the local one forward when it is only behind. Before, a ticket that started after a pull request was merged on the forge began from the old local branch, without the merged change. `--no-fetch` skips it.
+- `jtek.py evidence <id> --file <file>` checks the form of an evidence file and saves nothing. `jt-ship` runs it before the pull request is opened, so a refused file is never a pull request body.
+- A first `finish` that has a pull request prints `board: PR=<link>`, so the page shows the pull request while it waits for its review.
+- `show` prints the commit under review.
+- `notion.md`: how to find a page by its id (Notion stores only the number), what to do with `<code>` tags a Notion tool returns, that an agent can create the board, and that the id prefix needs two letters or more.
+- `jt-build` says when an existing test or a check's script may change, and how.
+- `jt-review` gives the command that posts the verdict on a pull request, says what `--by` takes, names the files a reviewer must not open, asks for one break per behaviour, and says how to undo a break.
+- `jt-ship` says that attached files stay on the machine, and what `ci: pending` means.
+- `jt-verify` says what to write when the code that reads a changed response is in another repository.
+
 ## 26.4.1 - fixes to the fixes
 
 A second look at the fixes of 26.4.0 found that they added defects. Each fix has a test.
