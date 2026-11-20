@@ -22,14 +22,14 @@ For each `Done when` item, do what you named before you built it:
 1. Compare what you see with the `Done when` item, word for word.
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order.
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
-4. Check that behaviour under `Out of scope` is the same as on the base branch. To run the base, use the main checkout when it is on the base branch, and change nothing there. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards.
+4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards.
 5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
 
 ## 3. What does not count
 
 - The code compiles, or the checks pass.
 - A file exists or changed.
-- Output you saved earlier, before the last commit. One exception: when the commits since then changed only tests, the earlier run still stands, and the evidence says which commit it is from.
+- Output you saved earlier, before the last commit. One exception: when the commits since then changed only tests, the earlier run still stands, and the evidence says which commit it is from. After a rebase that brought changes to files your change touches, run every line again.
 - Your own summary of what the code does.
 - A different path than the one the ticket names. A skipped entry point is not verified through another one.
 - An unclear result. Inconclusive is not a pass. Say it is inconclusive.

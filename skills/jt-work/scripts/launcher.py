@@ -74,7 +74,9 @@ def sync(j, args) -> None:
             elif state == "unknown":
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `gh` installed and signed in?")
             elif state == "OPEN":
-                print(f"{ticket_id}\t-\topen, CI: {ci}")
+                clash = f", conflicts with {j.base_branch()}: the human sends it back, or a session brings it up to date" \
+                    if j.pr_conflicts(row["pr"]) else ""
+                print(f"{ticket_id}\t-\topen, CI: {ci}{clash}")
             else:
                 print(f"{ticket_id}\t-\tPR state: {state}")
 

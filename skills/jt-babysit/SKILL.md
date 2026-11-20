@@ -13,7 +13,7 @@ Work in the ticket's worktree. Do these in order.
 
 1. Rebase your own branch on the base branch that `jtek.py start` printed, and resolve the conflicts by reading both sides.
 2. Push your own branch with `--force-with-lease`. Never force-push a branch other people use, and never retarget the pull request.
-3. If this is the third rebase for the same ticket, stop with `jtek.py stop <id> --waiting input --note "<which files keep conflicting>"`. Something else keeps changing the same files.
+3. The forced pushes in the pull request's history are the earlier rebases. If this is the third rebase for the same ticket, stop with `jtek.py stop <id> --waiting input --note "<which files keep conflicting>"`. Something else keeps changing the same files.
 
 ## 2. Failing CI
 
@@ -37,6 +37,6 @@ Do not agree with a comment to be agreeable. Check that the suggestion is correc
 ## 4. Back to ready
 
 1. Commit, and run `jtek.py check <id>`.
-2. See the change work again when the fix touched behaviour.
+2. See the change work again when the fix touched behaviour, or when a rebase brought changes to files your change touches.
 3. The saved evidence is `evidence.md`, in the same folder as the ticket file that `jtek.py start` printed. Copy it to a temporary file, add what changed, and make it the pull request's body again (on GitHub: `gh pr edit <url> --body-file <file>`). Then run `jtek.py finish <id> --pr <url> --evidence-file <file>` again. A changed patch needs a new verdict.
 4. If there are **Ask** items, stop with `jtek.py stop <id> --waiting input --note "<the one question>"` instead.

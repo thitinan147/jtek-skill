@@ -1794,6 +1794,60 @@ class ThirdLoopRound(Scratch):
         self.assertIn("(the change or the ticket has moved on since)", self.jtek("start", "T-1")[1])
 
 
+class FifthLoopRound(Scratch):
+    """A pull request that conflicts with its base, and a refusal that named the wrong remedy."""
+
+    def forge(self, sha, mergeable):
+        """A `gh` that answers the state query and the mergeable query apart."""
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        (bin_dir / "gh").write_text(
+            f"#!{sys.executable}\nimport sys\n"
+            f"print({mergeable!r} if 'mergeable' in sys.argv else 'OPEN {sha} pass')\n"
+        )
+        (bin_dir / "gh").chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    def reviewed(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
+        return self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+
+    def test_finish_refuses_a_pull_request_that_conflicts_with_the_base(self):
+        sha = self.reviewed()
+        args = ("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence())
+        code, out = self.jtek(*args, env=self.forge(sha, "CONFLICTING"))
+        self.assertEqual(code, 1, out)
+        self.assertIn("conflicts with main", out)
+        self.assertIn("jt-babysit", out)
+        for answer in ("MERGEABLE", "UNKNOWN"):
+            code, out = self.jtek(*args, env=self.forge(sha, answer))
+            self.assertEqual(code, 0, out)
+
+    def test_sync_says_when_an_open_pull_request_conflicts(self):
+        sha = self.reviewed()
+        self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env=self.forge(sha, "MERGEABLE"))
+        self.assertIn("T-1\t-\topen, CI: pass\n", self.jtek("sync", env=self.forge(sha, "MERGEABLE"))[1])
+        self.assertIn("open, CI: pass, conflicts with main", self.jtek("sync", env=self.forge(sha, "CONFLICTING"))[1])
+
+    def test_a_pick_up_names_the_pull_request_and_its_conflict(self):
+        sha = self.reviewed()
+        self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env=self.forge(sha, "MERGEABLE"))
+        self.board.set("T-1", Status="Todo")
+        code, out = self.jtek("start", "T-1", env=self.forge(sha, "CONFLICTING"))
+        self.assertEqual(code, 0, out)
+        self.assertIn("pull request: https://forge.example/pr/1 It conflicts with main. Read its comments", out)
+
+    def test_a_command_in_the_wrong_repository_says_where_it_looked(self):
+        code, out = self.jtek("show", "T-9")
+        self.assertEqual(code, 1)
+        self.assertIn(f"T-9 is not started in this repository ({self.repo})", out)
+        self.assertIn("run the command from there or from the ticket's worktree", out)
+
+
 class NextTests(Scratch):
     def next(self):
         code, out = self.jtek("next")

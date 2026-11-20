@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.9.0 - the fifth round of real walks
+
+Walked on 26.8.0: two tickets started in the same moment on the same file, each taken from Todo to Review by one session; the second pull request then conflicted with the base and a new session rebased it with `jt-babysit`; and `jt-learn` turned a correction that had come up twice into a check that fails on both past mistakes. No session removed or stopped anything it had not made. One refusal named the wrong remedy.
+
+- A command run from another repository said the ticket was not started and to run `start`. It now says which repository it looked in, and to run from the ticket's repository or worktree.
+- A pull request that conflicts with its base: `finish` refuses to call it ready, `sync` says so on its line, and `start` on a pick-up names the pull request, says when it conflicts, and says to read its comments. A ticket had come back with the reason written only on the pull request.
+- `jt-babysit`: where the count of rebases is, and that a rebase which brings changes to the same files means seeing the change work again.
+- `jt-build`: restore a deliberate break with git, and keep no copy of the file.
+- `jt-ship`: which branch a pull request goes into, and where the ticket id goes when earlier titles differ.
+- `jt-verify`: in the bug playbook the reproduction is the base run; after a rebase every evidence line is run again.
+- `notion.md`: the page link without its query part, what a comments tool answers for a page with no comments, and a limit on one piece of a comment.
+- `jt-work`: how to wait for a reviewer that runs in the background.
+- `jt-learn`: where to build the trial of a new check, which commit it must fail on, where the proposed ticket and the rule row go, and what to do when the mistaken work is already merged.
+
 ## 26.8.0 - the fourth round of real walks
 
 Walked on 26.7.0: a ticket picked up after the human's answer and taken to Review by one session through three reviews (FAIL, FAIL, PASS+NOTES), and a harness repaired with `jt-harness`. All six demo tickets are Done.

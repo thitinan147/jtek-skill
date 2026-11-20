@@ -32,17 +32,17 @@ Assume the next contributor is an agent that sees only the files it opened, copi
 
 If a structural fix exists, use only that. Do not add a written rule beside it.
 
-A new lint rule, check, or test must fail on the real past mistake. Run it against that commit or that code and see it fail before you propose it.
+A new lint rule, check, or test must fail on the real past mistake. Run it against that commit or that code and see it fail before you propose it. The commit is the one where the mistake reached the base branch. Build the trial in a copy outside the repository, such as one made with `git archive`, never in the checkout.
 
 ## 4. Hand it over
 
-1. Fix the ticket's own work first, in its worktree.
-2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so.
+1. Fix the ticket's own work first, in its worktree. When that work is already merged, the fix goes into the new ticket below.
+2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so. Write the ticket out in your report, in the ticket format. Put it on the board only when the human asks, and then as Backlog. A repair the mechanism needs before it can pass belongs in the same ticket. Save a working trial as a patch file, and say where it is and that the folder may be temporary.
 3. A change to lint config, CI, or `jtek.json` is the human's to commit on the base branch.
 
 ## 5. Keep the rule table small
 
-When the project has `.jtek/rules.md`, add one row: the rule, what enforces it, and the date. Propose the file when it is missing. Its form is in [references/rules-template.md](references/rules-template.md).
+When the project has `.jtek/rules.md`, add one row: the rule, what enforces it, and the date. Propose the file when it is missing, as text in your report. A row goes into the file in the same change that adds its enforcer, not before. Its form is in [references/rules-template.md](references/rules-template.md).
 
 - A rule with no enforcer is marked `prose`, and is the first to replace.
 - Drop a rule once its mistake cannot happen any more.

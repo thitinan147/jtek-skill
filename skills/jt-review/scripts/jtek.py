@@ -246,7 +246,9 @@ def load_meta(ticket_id: str, tree: bool = False) -> dict:
     if not meta or meta.get("starting"):
         if work_dir(ticket_id).exists():
             raise Refuse(claimed(ticket_id))
-        raise Refuse(f"{ticket_id} is not started; read its page and run `jtek.py start`")
+        raise Refuse(f"{ticket_id} is not started in this repository ({main_root()}). If the ticket belongs to another "
+                     "repository, run the command from there or from the ticket's worktree. Otherwise read its page and "
+                     "run `jtek.py start`")
     if tree and not Path(meta["worktree"]).is_dir():
         raise Refuse(f"the worktree of {ticket_id} is gone: {meta['worktree']}. Run `jtek.py release {ticket_id}`; "
                      f"the commits are on the branch {meta['branch']}")
@@ -651,6 +653,10 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(f"asked: {asked}")
         print("answer: on the page, so in the ticket file above")
     print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
+    if resumed and meta.get("pr"):
+        # The human may have said why the ticket is back on the pull request, and nowhere else.
+        clash = f" It conflicts with {base}." if pr_conflicts(meta["pr"], base) else ""
+        print(f"pull request: {meta['pr']}{clash} Read its comments: the reason the ticket is back may be there")
     if resumed and (work / "verdict.json").exists():
         # A session that picks the ticket up learns here what the reviewer said, not from the state folder.
         last = read_json(work / "verdict.json")
@@ -903,6 +909,9 @@ def cmd_finish(args: argparse.Namespace) -> None:
             raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}" + (late if late.startswith(";") else "." + late))
         if ci == "fail":
             raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
+        if state == "OPEN" and pr_conflicts(pr, meta["base"]):
+            raise Refuse(f"{pr} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
+                         "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
         pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."
     meta.update(pr=pr, ci=ci)
     write_json(work / "meta.json", meta)
@@ -995,6 +1004,19 @@ def pr_info(url: str, base: str = "") -> tuple[str, str, str]:
     if problem and custom:
         raise Refuse(f"the `pr_state` command of {CONFIG} {problem}")
     return ("unknown", "", "unknown") if problem else (parts[0], parts[1], parts[2])
+
+
+def pr_conflicts(url: str, base: str = "") -> bool:
+    """Whether GitHub says the pull request cannot merge into its base as it is. Unknown counts as no:
+    another forge, a `gh` that cannot answer, or a forge that has not worked it out yet."""
+    if load_settings(base or base_branch())["pr_state"]:
+        return False
+    try:
+        proc = subprocess.run(["gh", "pr", "view", url, "--json", "mergeable", "-q", ".mergeable"],
+                              capture_output=True, text=True, timeout=60, cwd=main_root())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "CONFLICTING"
 
 
 def build_parser() -> argparse.ArgumentParser:
