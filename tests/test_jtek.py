@@ -1858,6 +1858,17 @@ class FifthLoopRound(Scratch):
         bare.write_text("1. seen: ran it\n\nNotes:\n- Clean-up: removed a debug print in app.py\n")
         self.assertEqual(self.jtek("evidence", "T-1", "--file", str(bare))[0], 0)
 
+    def test_a_second_finish_needs_no_arguments_without_a_pull_request(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.assertIn("outcome: needs-review", self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())[1])
+        self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
+        code, out = self.jtek("finish", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+
 
 class NextTests(Scratch):
     def next(self):

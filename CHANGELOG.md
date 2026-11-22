@@ -1,5 +1,10 @@
 # Changelog
 
+## 26.11.0 - the seventh round of real walks
+
+- A second `finish` remembers that the first had no pull request, so `finish <id>` alone works after the verdict, as `jt-work` says. A session was refused there and had to add `--no-pr` again.
+- `jt-work` no longer asks for a written step list. Four sessions in a row skipped it, and nothing failed when they did; the steps that matter are held by the script. Skipping a step is still not allowed.
+
 ## 26.10.0 - the sixth round of real walks
 
 Walked on 26.9.0: a consumer ticket that moved its pin, taken from Todo to Review by one session, and a bug in a check's own script, the ticket `jt-learn` had proposed. The second session skipped the Clean-up step and edited a saved output instead of running it again; it said so itself. Three reviewers in a row died when the machine went to sleep, and each time the ticket's state stayed whole: no verdict, a clean worktree, and `next` naming the next step.

@@ -35,7 +35,7 @@ Run Start below first. Then pick the playbook from the ticket's `kind:` line. Wi
 - **bug:** [playbooks/bug.md](playbooks/bug.md). See it fail before you fix it.
 - **refactor:** [playbooks/refactor.md](playbooks/refactor.md). Lock the behaviour before you move code.
 
-The playbook gives the order and the step numbers. Copy its steps into your todo list before the first one, and do them in order. With no todo tool, write the list in the session and update it as you go. A step that does not apply stays in the list as `n/a: <reason>`. Do not drop it. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
+The playbook gives the order and the step numbers. Do the steps in order, and skip none. A step that does not apply is said in the evidence as `n/a: <reason>`. The script holds the ones that matter most: `finish` needs passing checks on the current commit, evidence for every item with a `clean-up:` line, and a verdict. A todo list helps when your agent has one. Load a step's skill when you reach the step, and follow it. Each one is at `../<skill-name>/SKILL.md` from this file. If your agent cannot load a skill by name, read that file and follow it. If the file is not there, stop and say which skill is missing.
 
 ## Start
 

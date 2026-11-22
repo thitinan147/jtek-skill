@@ -843,6 +843,8 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse(f"{args.id} stopped with a question. The human answers on the page and sets Status to Todo; then start again")
     if args.pr and args.no_pr:
         raise Refuse("pass --pr <url> or --no-pr, not both")
+    if not args.pr and not args.no_pr and meta.get("no_pr"):
+        args.no_pr = True  # an earlier finish already said there is no pull request, so `finish <id>` alone works again
     if args.pr and not re.match(r"^https?://[^\s;]+$", args.pr):
         raise Refuse("--pr takes the link of the pull request, as the forge gave it")
     config = load_config(meta["base"])
@@ -919,7 +921,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
             raise Refuse(f"{pr} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
                          "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
         pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."
-    meta.update(pr=pr, ci=ci)
+    meta.update(pr=pr, ci=ci, no_pr=bool(args.no_pr))
     write_json(work / "meta.json", meta)
     verdict = current_verdict(args.id, meta)
     if not meta.get("review") and needs_verdict(meta):
