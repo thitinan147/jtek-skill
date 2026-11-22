@@ -16,6 +16,16 @@ FOREIGN = [
 
 
 class SkillContracts(unittest.TestCase):
+    def test_frontmatter_values_are_plain_yaml_scalars(self):
+        # An unquoted value with ": " in it is a YAML error, and the Agent Skills validator in CI rejects the skill.
+        for name in ALL:
+            front = (SKILLS / name / "SKILL.md").read_text().split("---", 2)[1]
+            for line in front.strip().splitlines():
+                key, _, value = line.partition(": ")
+                if value and value[0] not in "'\"":
+                    self.assertNotIn(": ", value, f"{name}: the `{key}` value has ': ' in it; quote it or reword")
+                    self.assertFalse(value.rstrip().endswith(":"), f"{name}: the `{key}` value ends with ':'")
+
     def test_only_the_inner_loop_skills_ship(self):
         self.assertEqual(sorted(p.name for p in SKILLS.iterdir() if p.is_dir()), ALL)
 
