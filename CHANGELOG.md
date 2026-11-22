@@ -1,5 +1,12 @@
 # Changelog
 
+## 26.21.0 - the fifteenth round of real walks
+
+Round fifteen on 26.20.0, the first after the outside review: a tally feature on Claude Code that went through a FAIL and a fix, and a two-repository client ticket on Cursor through a real pull request. Both reached Review on their own; the reviewers passed `--commit`, and evidence cited runs from before a commit that changed only tests. Two reviewers each saw a wrong result from a stale Python cache after undoing a break.
+
+- `jt-review` and `jt-build`: run without a build cache when you break and restore code, because a cache written in the same second can hide the break.
+- A skill's frontmatter is checked to stay valid YAML.
+
 ## 26.20.0 - an outside review of 26.19.0
 
 Two outside reviewers read 26.19.0: one ran the scripts against scratch repositories and reproduced eleven defects, the other read every skill document as an agent that must follow it. A third reviewer then read the fixes before release, found that two of them did harm, and those were redone. The script defects have tests.

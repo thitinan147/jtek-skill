@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.20.0-111111?style=flat-square" alt="Version 26.20.0">
+  <img src="https://img.shields.io/badge/version-26.21.0-111111?style=flat-square" alt="Version 26.21.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -342,8 +342,8 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 183 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-seven tickets walked to Done on three demo repositories over fourteen rounds, twenty-six of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
-- **Not proven:** a large real codebase, GitLab, and Windows. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-seven tickets. The demo repositories are small, and every session in them was started by one person.
+- **Proven:** the script, by 184 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-nine tickets walked to Done on three demo repositories over fifteen rounds, twenty-eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
+- **Not proven:** a large real codebase, GitLab, and Windows. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-nine tickets. The demo repositories are small, and every session in them was started by one person.
 
 Use it by hand, one ticket at a time, before you let anything start sessions for you.
 
