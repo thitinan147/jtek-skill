@@ -2,16 +2,18 @@
 
 ## 26.20.0 - an outside review of 26.19.0
 
-Two outside reviewers read 26.19.0: one ran the scripts against scratch repositories and reproduced eleven defects, the other read every skill document as an agent that must follow it. Each script defect has a test.
+Two outside reviewers read 26.19.0: one ran the scripts against scratch repositories and reproduced eleven defects, the other read every skill document as an agent that must follow it. A third reviewer then read the fixes before release, found that two of them did harm, and those were redone. The script defects have tests.
 
 - `verdict` takes `--commit`, the commit `show` printed when the review began, and refuses when the author has committed since. A verdict could be recorded for a commit nobody reviewed.
-- A cited run must have ended, and a run in the worktree must be of the change as it is now. A run killed half way, or from before the last code change, could be cited, and a killed run on the clean-up line crashed `finish`. The clean-up rests on a diff only when that run is a `git diff` that exited 0 on the current change. Each run records the change it was made against.
-- The base is read as `refs/heads/<base>`, so a tag of the same name cannot stand in for the base's `jtek.json` or diff.
-- Only `Goal`, `Done when`, and `Out of scope` decide whether the ticket changed, with whitespace evened out. An answer added under Notes no longer voids a verdict.
-- The FAIL count counts commits, not verdicts, is written under a lock so a concurrent `finish` cannot undo it, and starts again when the human sets Todo.
-- `finish` names the right fix for a closed or merged pull request, for commits only the forge has, and for a link it could not read while the branch is not pushed.
-- `release` drops a branch with no commit of its own, so the next `start` takes the new base.
-- Documents: the bug playbook's step 4 reads in order again; `jt-review` runs the check commands directly during its breaks, never `jtek.py check`, and may read the evidence when it checks the runs; `jt-harness` and `jt-review` say in their descriptions when not to load them; the evidence forms show `(run <n>)`; a long-running service is not started through `run`; README, GETTING-STARTED, and the Notion and session guides no longer speak as if only Claude Code exists, and README's unproven list says what is still unproven.
+- A cited run must have ended: a run killed half way could be cited, and on the clean-up line it crashed `finish`. An earlier run may still be cited, because the base run, a reproduction before the fix, and the diff read before clean-up are meant to be earlier.
+- The clean-up rests on a diff only when the cited run is a `git diff` (also `git -C <path> diff`) that exited 0 and printed something.
+- The base is read as `refs/heads/<base>` in `start`, `check`, `show`, and the diff, so a tag of the same name cannot stand in for it.
+- Only `Goal`, `Done when`, and `Out of scope` decide whether the ticket changed, with whitespace evened out. An answer added under Notes no longer voids a verdict. Upgrading: a ticket in Review keeps its verdict only if it is finished on the old version; otherwise it needs new evidence and a new verdict.
+- The FAIL count counts commits, not verdicts (a count from before is kept), is written under a lock so a concurrent `finish` cannot undo it, and starts again when the human answers a question and sets Todo.
+- `finish` names the right fix for a closed or merged pull request, for a history rewritten here (push with `--force-with-lease`), for commits only the forge has, and for a link it could not read while the branch is pushed nowhere. A branch pushed to any remote counts as pushed.
+- `start` brings a kept branch that has no commit of its own up to the base, so a ticket released and started again takes the new base and runs the baseline. `release` itself is unchanged.
+- The script loads on systems without `fcntl`, as before.
+- Documents: the bug playbook's step 4 reads in order again; `jt-review` runs the check commands directly during its breaks, never `jtek.py check`, keeps the commit for `verdict`, and may read the evidence once it has its own view; `jt-harness` and `jt-review` say in their descriptions when not to load them; the evidence forms show `(run <n>)`; a long-running service is not started through `run`; README, GETTING-STARTED, and the Notion and session guides no longer speak as if only Claude Code exists, and README's unproven list says what is still unproven.
 
 ## 26.19.0 - the fourteenth round of real walks
 

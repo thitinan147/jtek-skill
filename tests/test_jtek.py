@@ -2029,16 +2029,24 @@ class OutsideReview(Scratch):
         code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--commit", "")
         self.assertEqual(code, 1)
 
-    def test_a_cited_run_must_be_of_the_change_as_it_is_now(self):
+    def test_an_earlier_run_may_be_cited_such_as_the_reproduction_before_the_fix(self):
         tree = self.ready()
-        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
-        self.commit_change("T-1", "later.txt")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print('the bug')")
+        self.commit_change("T-1", "fix.txt")
         self.jtek("check", "T-1")
         evidence = Path(self.tmp.name) / "e.md"
-        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
-        code, out = self.jtek("evidence", "T-1", "--file", str(evidence))
-        self.assertEqual(code, 1)
-        self.assertIn("made before the change took its present form", out)
+        evidence.write_text("1. seen: before the fix it printed the bug (run 1)\n- clean-up: nothing to remove\n")
+        self.assertEqual(self.jtek("evidence", "T-1", "--file", str(evidence))[0], 0)
+
+    def test_only_what_the_ticket_asks_decides_whether_it_changed(self):
+        tree = self.ready()
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
+        self.jtek("stop", "T-1", "--waiting", "input", "--note", "merge now?")
+        self.board.pages["T-1"]["body"] += "\n## Notes\nAnswer from the human: yes.\n"
+        self.board.set("T-1", Status="Todo")
+        self.jtek("start", "T-1")
+        self.assertIn("outcome: review", self.jtek("finish", "T-1", "--no-pr")[1])
 
     def test_a_run_that_never_finished_cannot_be_cited_and_finish_does_not_crash(self):
         self.ready()
@@ -2073,6 +2081,15 @@ class OutsideReview(Scratch):
         self.board.set("T-1", Status="Todo")
         self.assertNotIn("FAIL verdicts so far", self.jtek("start", "T-1")[1])
 
+    def test_an_unread_link_is_refused_while_the_branch_is_pushed_nowhere(self):
+        self.git("remote", "add", "origin", str(Path(self.tmp.name) / "nowhere.git"))
+        tree = self.ready()
+        empty = Path(self.tmp.name) / "empty-bin"
+        empty.mkdir()
+        path = f"{empty}{os.pathsep}/usr/bin{os.pathsep}/bin"
+        out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})[1]
+        self.assertIn("could not be read, and the branch is not pushed", out)
+
     def test_a_closed_pull_request_is_not_told_to_push(self):
         tree = self.ready()
         sha = self.git("rev-parse", "HEAD", cwd=tree)
@@ -2085,12 +2102,26 @@ class OutsideReview(Scratch):
         self.assertIn("is CLOSED, so it cannot take this change. Open a new pull request", out)
         self.assertNotIn("push the branch", out)
 
-    def test_release_drops_a_branch_with_no_commit_so_the_next_start_takes_the_new_base(self):
+    def test_a_kept_branch_with_no_commit_of_its_own_starts_from_the_new_base(self):
         self.ticket("T-1")
         self.jtek("start", "T-1")
-        out = self.jtek("release", "T-1")[1]
-        self.assertNotIn("is kept", out)
-        self.assertEqual(self.git("branch", "--list", "jtek/T-1"), "")
+        self.jtek("release", "T-1")
+        (self.repo / "later.txt").write_text("merged meanwhile\n")
+        self.git("add", "later.txt")
+        self.git("commit", "-q", "-m", "merged meanwhile")
+        self.board.set("T-1", Status="Todo")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.worktree("T-1") / "later.txt").exists(), "the ticket started on the old base")
+        self.assertIn("baseline: ", out)
+        self.assertNotIn("baseline: skipped", out)
+
+    def test_a_branch_with_its_own_commit_is_still_kept(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("release", "T-1")
+        self.assertNotEqual(self.git("branch", "--list", "jtek/T-1"), "")
 
 
 class NextTests(Scratch):

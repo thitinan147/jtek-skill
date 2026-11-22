@@ -213,11 +213,8 @@ def release(j, args) -> None:
             # No --force: git itself refuses a worktree with changes, and one with submodules.
             j.git("worktree", "remove", str(worktree))
     j.git("worktree", "prune", check=False)  # a worktree whose folder was deleted by hand is forgotten here
-    # A branch with no commit of its own holds no work, and keeping it would start the next attempt on an old base.
-    empty = exists and own == "0" and meta.get("kept") is not True
-    if (fresh or empty) and exists:
+    if fresh and exists:
         j.git("branch", "-D", branch, check=False)
-        fresh = True
     for path in sorted(work.rglob("*"), reverse=True):
         path.rmdir() if path.is_dir() else path.unlink()
     work.rmdir()

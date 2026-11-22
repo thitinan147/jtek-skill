@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import fcntl
 import fnmatch
 import hashlib
 import json
@@ -23,6 +22,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # Windows: no advisory locks, so writes go unlocked as before
+    fcntl = None
 
 STATUSES = ["Backlog", "Todo", "In Progress", "Review", "Done", "Cancelled"]
 VERDICTS = ["PASS", "PASS+NOTES", "FAIL"]
@@ -39,10 +43,13 @@ RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
 def read_run(work: Path, number: int) -> dict:
     """The header of a recorded run, or {} when there is none or it never finished being written."""
     path = work / "runs" / f"{number}.txt"
+    text = path.read_text(errors="replace") if path.exists() else ""
+    header, _, rest = text.partition("\n--- stdout ---\n")
     head = {}
-    for line in (path.read_text(errors="replace").split("\n--- ", 1)[0].splitlines() if path.exists() else []):
+    for line in header.splitlines():
         key, _, value = line.partition(": ")
         head[key] = value
+    head["stdout"] = rest.partition("--- stderr ---\n")[0]
     return head if "exit" in head else {}
 
 
@@ -63,8 +70,11 @@ class Refuse(Exception):
     """A rule is not met. The message says what to do next."""
 
 
-def git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
+def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False):
+    """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`)."""
     proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if code:
+        return proc.returncode
     if check and proc.returncode != 0:
         raise Refuse(f"git {' '.join(args)}: {proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout.strip()
@@ -273,9 +283,15 @@ def write_json(path: Path, data: dict) -> None:
 @contextlib.contextmanager
 def meta_lock(work: Path):
     """One writer of a ticket's meta.json at a time, so a verdict and a finish never undo each other's write."""
-    with open(work / ".lock", "w") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+    if fcntl is None:
         yield
+        return
+    folder = os.open(work, os.O_RDONLY)  # the claim folder itself is the lock: nothing extra to write or clean up
+    try:
+        fcntl.flock(folder, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(folder)
 
 
 def update_meta(work: Path, **changes) -> dict:
@@ -457,9 +473,8 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run"
         cleanup = re.search(r"^\s*(-\s*)?clean-up:.*$", text, re.M | re.I)
         diff_runs = cited_runs(cleanup.group(0)) if cleanup else []
-        now = patch_id(Path(meta["worktree"]), meta["base"]) if Path(meta["worktree"]).is_dir() else ""
-        read_diff = any(run.get("command", "").startswith("git diff") and run.get("exit") == "0"
-                        and run.get("change") == now
+        read_diff = any(re.match(r"^git( -C \S+)? diff \S", run.get("command", "")) and run.get("exit") == "0"
+                        and run.get("stdout", "").strip()
                         for run in (read_run(work, n) for n in diff_runs))
         evidence += ", clean-up rests on a recorded diff)" if read_diff else ", clean-up cites no recorded diff)"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
@@ -530,8 +545,8 @@ def refresh_base(base: str) -> str:
     remote = f"refs/remotes/origin/{base}"
     if not git("rev-parse", "--verify", "--quiet", remote, check=False):
         return ""
-    behind = int(git("rev-list", "--count", f"{base}..{remote}", check=False) or 0)
-    ahead = int(git("rev-list", "--count", f"{remote}..{base}", check=False) or 0)
+    behind = int(git("rev-list", "--count", f"refs/heads/{base}..{remote}", check=False) or 0)
+    ahead = int(git("rev-list", "--count", f"{remote}..refs/heads/{base}", check=False) or 0)
     if not behind:
         return ""
     if ahead:
@@ -616,7 +631,8 @@ def cmd_start(args: argparse.Namespace) -> None:
         if checks_path.exists() and status == "Todo":
             # Only the human sets Todo, so only the human gives a ticket new tries.
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
-        if status == "Todo":
+        if status == "Todo" and asked:
+            # The human answered a question and released the ticket again: the FAIL rounds start over.
             meta = {**meta, "fails": 0, "failed_commits": []}
         resumed = True
     else:
@@ -635,6 +651,12 @@ def cmd_start(args: argparse.Namespace) -> None:
         worktree, branch = ticket_paths(ticket_id)
         # A branch left by `release` holds earlier work on this ticket. Go on from it, and never delete it.
         kept = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
+        if kept and git("rev-list", "--count", f"{base_ref(base)}..refs/heads/{branch}", check=False) == "0" and \
+                git("merge-base", "--is-ancestor", f"refs/heads/{branch}", base_ref(base), code=True) == 0:
+            # A kept branch with no commit of its own holds no work: bring it to the base, so the ticket
+            # starts from what is merged, and treat it as new. Nothing is lost: its commit is in the base.
+            git("update-ref", f"refs/heads/{branch}", git("rev-parse", base_ref(base)))
+            kept = False
         # From here on a killed run leaves a claim that says so, and `release` can remove what it made.
         write_json(work / "meta.json", {"starting": True, "pid": os.getpid(), "kept": kept, "base": base})
         worktree.parent.mkdir(parents=True, exist_ok=True)
@@ -643,7 +665,7 @@ def cmd_start(args: argparse.Namespace) -> None:
                 git("worktree", "prune")  # forget a worktree whose folder was deleted by hand
                 # A failed try may have left the branch behind, so look again each time.
                 exists = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
-                git("worktree", "add", *([str(worktree), branch] if exists else ["-b", branch, str(worktree), base]))
+                git("worktree", "add", *([str(worktree), branch] if exists else ["-b", branch, str(worktree), base_ref(base)]))
                 break
             except Refuse:
                 # Two tickets that start in the same moment can trip over each other inside git. Try again before giving up.
@@ -680,7 +702,7 @@ def cmd_start(args: argparse.Namespace) -> None:
         if not args.no_baseline and not kept:
             # A check that is already red on the base is not this ticket's to fix. Find out before any edit.
             # One green run per base commit and command set is enough, so parallel tickets do not repeat it.
-            base_sha = git("rev-parse", base)
+            base_sha = git("rev-parse", base_ref(base))
             key = hashlib.sha256(json.dumps([base_sha, [(n, declared[n]) for n in selected]]).encode()).hexdigest()
             green = state_dir() / "baseline" / "green" / key
             baseline = f"passed earlier on {base} at {base_sha[:7]} with the same commands; not run again"
@@ -744,16 +766,16 @@ def ticket_env(ticket_id: str, worktree: Path) -> dict:
     return {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
 
 
-def run_logged(argv: list[str], cwd: Path, env: dict, log: Path, stdin=None, err_log: Path | None = None) -> int | str:
+def run_logged(argv: list[str], cwd: Path, env: dict, out_path: Path, stdin=None, err_log: Path | None = None) -> int | str:
     """Run one program with its arguments, no shell of jtek's own, with stdout in `log` and stderr there too,
     or in `err_log` when one is given. Returns the exit code, or the reason it did not run."""
-    log.parent.mkdir(parents=True, exist_ok=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(log, "w") as out, open(err_log or os.devnull, "w") as err:
+        with open(out_path, "w") as out, open(err_log or os.devnull, "w") as err:
             return subprocess.run(argv, cwd=cwd, stdout=out, stderr=err if err_log else subprocess.STDOUT,
                                   stdin=stdin, timeout=DEFAULT_TIMEOUT, env=env).returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as err:
-        with open(log, "a") as out:
+        with open(out_path, "a") as out:
             out.write(f"\njtek: {err}\n")
         return f"did not run: {err}"
 
@@ -834,7 +856,9 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     work = work_dir(args.id)
     sha, dirty = head_state(Path(meta["worktree"]))
     reviewed = (args.commit or "").strip().lower()
-    if len(reviewed) < 7 or not sha.startswith(reviewed):
+    if len(reviewed) < 7 or not re.fullmatch(r"[0-9a-f]+", reviewed):
+        raise Refuse("pass --commit with the commit id `jtek.py show` printed when you began, at least 7 characters")
+    if not sha.startswith(reviewed):
         raise Refuse(f"the worktree is at {sha[:7]}, and --commit says you reviewed {reviewed or 'nothing'}. Pass the "
                      "`commit:` that `jtek.py show` printed when you began. If they differ, the author committed during "
                      "your review: review the new commit")
@@ -870,7 +894,8 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         with meta_lock(work):
             fresh = read_json(work / "meta.json")
             failed = sorted(set(fresh.get("failed_commits", [])) | {sha})
-            meta = {**fresh, "failed_commits": failed, "fails": len(failed)}
+            earlier = 0 if "failed_commits" in fresh else int(fresh.get("fails", 0))  # counted before commits were kept
+            meta = {**fresh, "failed_commits": failed, "fails": earlier + len(failed)}
             write_json(work / "meta.json", meta)
     write_json(work / "verdict.json", {
         "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
@@ -884,7 +909,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         print(f"comment file: {work / 'review-comment.md'}  (the verdict line and the notes, ready to post on {meta['pr']})")
 
 
-def check_evidence(work: Path, text: str, patch: str = "") -> None:
+def check_evidence(work: Path, text: str) -> None:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise Refuse("the evidence file is empty")
@@ -911,14 +936,7 @@ def check_evidence(work: Path, text: str, patch: str = "") -> None:
             "the evidence cites " + ", ".join(f"run {n}" for n in missing_runs) + ", which `jtek.py run` never finished "
             "recording for this ticket. Cite only the run numbers it printed, from runs that ended"
         )
-    worktree = load_meta(work.name).get("worktree", "")
-    old = [n for n in cited if patch and read_run(work, n).get("cwd", "").split(" (at commit")[0] == worktree
-           and read_run(work, n).get("change") != patch]
-    if old:
-        raise Refuse(
-            "the evidence cites " + ", ".join(f"run {n}" for n in old) + ", made before the change took its present "
-            "form. Run it again with `jtek.py run` and cite the new run"
-        )
+
     if not re.search(r"^\s*(-\s*)?clean-up:", text, re.M | re.I):
         # The step that reads the diff once more is the easiest to skip at the end of a long session.
         raise Refuse(
@@ -973,7 +991,6 @@ def cmd_run(args: argparse.Namespace) -> None:
     there = git("rev-parse", "HEAD", cwd=cwd, check=False) if cwd != worktree else ""
     record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
               + f"\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
-              + f"\nchange: {patch_id(worktree, meta['base']) or '-'}"
               + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
     (runs / f"{number}.txt").write_text(record)
     print(record if len(record) <= 4000 else record[:4000] + "\n... (the rest is in the run file)")
@@ -984,8 +1001,7 @@ def cmd_evidence(args: argparse.Namespace) -> None:
     """Check an evidence file before it becomes the body of a pull request. Saves nothing."""
     load_meta(args.id)
     text = read_file(args.file, "evidence")
-    meta = load_meta(args.id, tree=True)
-    check_evidence(work_dir(args.id), text, patch_id(Path(meta["worktree"]), meta["base"]))
+    check_evidence(work_dir(args.id), text)
     seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
     not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
     print(f"evidence: the form is accepted ({seen} seen, {not_run} not run). Nothing was saved; pass the file to `finish`")
@@ -997,7 +1013,8 @@ PR_HEAD_WAIT = float(os.environ.get("JTEK_PR_WAIT", "3"))
 
 def pushed(worktree: Path, branch: str, sha: str) -> bool:
     """Whether the remote-tracking branch already holds this commit, so a pull request behind it is only late."""
-    return git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", cwd=worktree, check=False) == sha
+    refs = git("for-each-ref", "--format=%(refname)", f"--points-at={sha}", "refs/remotes", cwd=worktree, check=False)
+    return any(ref.endswith(f"/{branch}") for ref in refs.splitlines())
 
 
 def cmd_finish(args: argparse.Namespace) -> None:
@@ -1033,7 +1050,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
     saved = work / "evidence.md"
     if args.evidence_file:
         text = read_file(args.evidence_file, "evidence")
-        check_evidence(work, text, patch)
+        check_evidence(work, text)
         saved.write_text(text)
         meta = update_meta(work, evidence_patch=patch, evidence_ticket=about)  # kept even when a later rule refuses
     elif not saved.exists():
@@ -1083,13 +1100,15 @@ def cmd_finish(args: argparse.Namespace) -> None:
             if pushed(worktree, meta["branch"], sha):
                 raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}. The branch is pushed, so the "
                              "forge may only be late: run `finish` again in a moment")
-            if head and subprocess.run(["git", "merge-base", "--is-ancestor", head, sha], cwd=worktree,
-                                       capture_output=True).returncode != 0:
+            ancestry = git("merge-base", "--is-ancestor", head, sha, cwd=worktree, code=True) if head else 0
+            if ancestry == 1:
+                raise Refuse(f"{pr} is at {head[:7]}, which this branch has rewritten (a rebase or an amend). Push it "
+                             "with `--force-with-lease`, as the `jt-babysit` skill says, and finish again")
+            if ancestry != 0:
                 raise Refuse(f"{pr} is at {head[:7]}, which this branch does not have: someone added commits on the forge. "
                              f"Bring them in (`git pull --ff-only` or a rebase), check again, push, and finish again")
             raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
-        if state == "unknown" and "origin" in git("remote", cwd=worktree, check=False).split() \
-                and not pushed(worktree, meta["branch"], sha):
+        if state == "unknown" and git("remote", cwd=worktree, check=False) and not pushed(worktree, meta["branch"], sha):
             raise Refuse(f"the pull request could not be read, and the branch is not pushed at {sha[:7]}: push the "
                          "branch, check that the link is the pull request for it, and finish again")
         if ci == "fail":
