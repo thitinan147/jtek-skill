@@ -527,7 +527,7 @@ class FinishTests(Scratch):
         honest.write_text("1. not run: the app needs a database I do not have\n- clean-up: nothing to remove\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(honest))
         self.assertEqual(code, 0, out)
-        self.assertIn("(0 seen, 1 not run)", out)
+        self.assertIn("(0 seen, 1 not run, 0 of the seen cite a recorded run)", out)
 
     def test_red_ci_refuses_and_pending_ci_is_shown(self):
         self.started("review: human\n")
@@ -1885,6 +1885,60 @@ class FifthLoopRound(Scratch):
         code, out = self.jtek("finish", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("the third or later on T-1 (3)", out)
+
+
+class RecordedRuns(Scratch):
+    """`seen:` lines that point at what was really run, so neither the author nor a reader has to trust a paraphrase."""
+
+    def started(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        return self.worktree("T-1")
+
+    def test_a_run_keeps_the_command_the_exit_code_and_the_output(self):
+        tree = self.started()
+        code, out = self.jtek("run", "T-1", "--", sys.executable, "-c", "import sys; print('hello'); sys.exit(3)")
+        self.assertEqual(code, 0, out)
+        record = (self.repo / ".git" / "jtek" / "work" / "T-1" / "runs" / "1.txt").read_text()
+        self.assertIn("run: 1", record)
+        self.assertIn("-c 'import sys; print('\"'\"'hello'\"'\"'); sys.exit(3)'", record)
+        self.assertIn(f"cwd: {tree}", record)
+        self.assertIn("exit: 3", record)
+        self.assertIn("hello", record)
+        self.assertIn("Cite it in the evidence as (run 1)", out)
+
+    def test_a_shell_line_and_another_folder(self):
+        self.started()
+        self.jtek("run", "T-1", "--sh", "printf 'a b\\n' | wc -w", "--cwd", str(self.repo))
+        record = (self.repo / ".git" / "jtek" / "work" / "T-1" / "runs" / "1.txt").read_text()
+        self.assertIn("command: printf 'a b\\n' | wc -w", record)
+        self.assertIn(f"cwd: {self.repo}", record)
+        self.assertIn("exit: 0", record)
+        self.assertRegex(record, r"output.*\n\s*2\s*$")
+        code, out = self.jtek("run", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("not both and not neither", out)
+
+    def test_evidence_may_cite_only_runs_that_were_recorded(self):
+        self.started()
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 2)\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("evidence", "T-1", "--file", str(evidence))
+        self.assertEqual(code, 1)
+        self.assertIn("cites run 2, which `jtek.py run` never recorded", out)
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
+        self.assertEqual(self.jtek("evidence", "T-1", "--file", str(evidence))[0], 0)
+
+    def test_the_result_counts_the_seen_lines_that_cite_a_run(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("(1 seen, 0 not run, 1 of the seen cite a recorded run)", out)
 
 
 class NextTests(Scratch):

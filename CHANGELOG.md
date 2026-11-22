@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.15.0 - recorded runs
+
+Round ten on 26.14.0 tried what the earlier rounds had not: Linux, a smaller model, and a rework with no pull request. The script's tests pass on Linux, and the demo service runs on Python 3.10 there. Sonnet and Haiku each took a ticket to Done with correct code, but each wrote a `seen:` line that said more than it had run and skipped part of a step. Asked plainly, a session on the strongest model said its own `seen:` lines paraphrased the commands, and that one claim came from a different command. A rule in prose had not stopped any of this.
+
+- `jtek.py run <id> -- <command>` (or `--sh "<pipeline>"`, and `--cwd` for the base) runs a command and keeps exactly what ran, where, at which commit, the exit code, and the output. Evidence ends each `seen:` line with the runs it rests on, `(run 3)`; `finish` refuses a number that was never recorded, and the result counts the `seen:` lines that cite a run. A reviewer reads the run files.
+- README: which model to use, from what the walks showed.
+- `jt-work`: a rework with no pull request. `jt-babysit`: stopping at one commit during a rebase without an editor.
+
 ## 26.14.0 - the ninth round of real walks
 
 Round nine on 26.13.0: a client feature that shows times in the machine's zone (worked once, sent back by a FAIL, fixed with a test) and an API filter, each taken to Done. Both had a real chance to pass locally and fail in CI, which runs in another time zone; neither did, because both tested under two zones. One reviewer wrote a claim about the base as if it had run the base, when it had read it in the diff. The claim was true.

@@ -11,7 +11,7 @@ Work in the ticket's worktree. Do these in order.
 
 ## 1. Conflicts with the base
 
-1. Rebase your own branch on the base branch that `jtek.py start` printed, and resolve the conflicts by reading both sides.
+1. Rebase your own branch on the base branch that `jtek.py start` printed, and resolve the conflicts by reading both sides. To stop at one commit during the rebase without an editor, set `GIT_SEQUENCE_EDITOR` to a `sed` line that marks it `edit`.
 2. Push your own branch with `--force-with-lease`. Never force-push a branch other people use, and never retarget the pull request.
 3. The forced pushes in the pull request's history are the earlier rebases. If this is the third rebase for the same ticket, stop with `jtek.py stop <id> --waiting input --note "<which files keep conflicting>"`. Something else keeps changing the same files.
 

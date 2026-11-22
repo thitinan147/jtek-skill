@@ -7,6 +7,8 @@ description: Runs the changed feature the way a user would and looks at the real
 
 Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
+Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, and what came back, and prints a run number. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
+
 ## 1. Run the real thing
 
 If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. If the repository has `.jtek/verify.md`, follow it to launch and drive the app, and read the file in `.jtek/features/` for the feature you changed. If it has none, do not stop and do not build one: use the list below, and say in the evidence that the repository has no verify guide.
@@ -44,6 +46,7 @@ Remove only what you made, by the exact path you created, and stop only a proces
 
 - Never edit a saved output. When one is wrong or incomplete, run it again, or say in the evidence what it lacks.
 
+- End each `seen:` line with the runs it rests on, as `(run 3)` or `(runs 3 and 4)`. `finish` refuses a number that was never recorded. Write the command as the run file shows it; do not shorten it.
 - Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it, in a folder outside the worktree. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.

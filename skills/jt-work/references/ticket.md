@@ -83,7 +83,7 @@ checks: lint=pass test=pass @1a2b3c4
 verdict: none | PASS by reviewer @1a2b3c4 | waived by the ticket
 pr: <url>
 ci: pass | fail | pending | none | unknown | -
-evidence: <path> (3 seen, 0 not run) (+2 attached in <folder>) | -
+evidence: <path> (3 seen, 0 not run, 3 of the seen cite a recorded run) (+2 attached in <folder>) | -
 attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: <page link>

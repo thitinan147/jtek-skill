@@ -30,6 +30,8 @@ CONFIG = "jtek.json"
 MAX_FAILED_RUNS = 3
 MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
+MAX_RUN_OUTPUT = 20000
+RUN_CITE = re.compile(r"\(runs? ([0-9][0-9, and]*)\)")
 # Files a human should look at first when a ticket touches them.
 SENSITIVE = [
     CONFIG, ".jtek/*", ".github/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
@@ -404,7 +406,8 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         text = (work / "evidence.md").read_text()
         seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
         not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
-        evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run)"
+        backed = len([line for line in re.findall(r"^\s*\d+\.\s*seen:.*$", text, re.M) if RUN_CITE.search(line)])
+        evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run)"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
@@ -673,20 +676,35 @@ def cmd_start(args: argparse.Namespace) -> None:
     print("next: follow the playbook for this kind, step by step. Work only inside the worktree")
 
 
-def run_command(command: str, worktree: Path, log: Path) -> bool:
-    """Run one declared command without a shell. The ticket id is in the environment so that
-    a command can pick its own port or data folder when several worktrees run at once."""
-    env = {**os.environ, "JTEK_TICKET": worktree.name, "JTEK_WORKTREE": str(worktree)}
+def ticket_env(ticket_id: str, worktree: Path) -> dict:
+    """The session's own environment, plus the ticket id and the worktree, so that a command can pick
+    its own port or data folder when several worktrees run at once. Nothing is read from it here."""
+    return {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
+
+
+def run_logged(argv: list[str], cwd: Path, env: dict, log: Path, stdin=None) -> int | str:
+    """Run one program with its arguments, no shell of jtek's own, with stdout and stderr in `log`.
+    Returns the exit code, or the reason it did not run."""
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(log, "w") as handle:
-            proc = subprocess.run(shlex.split(command), cwd=worktree, stdout=handle,
-                                  stderr=subprocess.STDOUT, timeout=DEFAULT_TIMEOUT, env=env)
-        return proc.returncode == 0
+        with open(log, "w") as out:
+            return subprocess.run(argv, cwd=cwd, stdout=out, stderr=subprocess.STDOUT, stdin=stdin,
+                                  timeout=DEFAULT_TIMEOUT, env=env).returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as err:
-        with open(log, "a") as handle:
-            handle.write(f"\njtek: {err}\n")
+        with open(log, "a") as out:
+            out.write(f"\njtek: {err}\n")
+        return f"did not run: {err}"
+
+
+def run_command(command: str, worktree: Path, log: Path) -> bool:
+    """Run one declared command."""
+    try:
+        argv = shlex.split(command)
+    except ValueError as err:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(f"jtek: {err}\n")
         return False
+    return run_logged(argv, worktree, ticket_env(worktree.name, worktree), log) == 0
 
 
 def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path) -> tuple[list[dict], str | None]:
@@ -815,12 +833,65 @@ def check_evidence(work: Path, text: str) -> None:
             "the evidence must account for every `Done when` item. Start one line per item with its number and "
             "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
         )
+    cited = sorted({int(n) for group in RUN_CITE.findall(text) for n in re.findall(r"[0-9]+", group)})
+    missing_runs = [n for n in cited if not (work / "runs" / f"{n}.txt").exists()]
+    if missing_runs:
+        raise Refuse(
+            "the evidence cites " + ", ".join(f"run {n}" for n in missing_runs) + ", which `jtek.py run` never recorded "
+            "for this ticket. Cite only the run numbers it printed"
+        )
     if not re.search(r"^\s*(-\s*)?clean-up:", text, re.M | re.I):
         # The step that reads the diff once more is the easiest to skip at the end of a long session.
         raise Refuse(
             "the evidence has no `clean-up:` line. Read the diff as the `jt-cleanup` skill says, then add one line "
             "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to remove`"
         )
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """Run a command the way a user would, and keep exactly what was run and what came back.
+    The evidence then cites `(run <n>)`, so a reader can see the run behind each `seen:` line."""
+    meta = load_meta(args.id, tree=True)
+    work = work_dir(args.id)
+    worktree = Path(meta["worktree"])
+    command = list(args.command)
+    # argparse hands everything after the id to the command, so options given there are read here.
+    while command[:1] in (["--sh"], ["--cwd"]) and len(command) > 1:
+        setattr(args, command[0][2:], command[1])
+        command = command[2:]
+    if command[:1] == ["--"]:
+        command = command[1:]
+    if bool(args.sh) == bool(command):
+        raise Refuse("give one command after `--`, or one shell line with --sh \"<pipeline>\", not both and not neither")
+    cwd = Path(args.cwd).expanduser().resolve() if args.cwd else worktree
+    if not cwd.is_dir():
+        raise Refuse(f"--cwd is not a folder: {cwd}")
+    sha, dirty = head_state(worktree)
+    runs = work / "runs"
+    runs.mkdir(exist_ok=True)
+    number = len(list(runs.glob("*.txt"))) + 1
+    while True:
+        try:
+            (runs / f"{number}.txt").touch(exist_ok=False)  # exclusive, so two runs at once never share a number
+            break
+        except FileExistsError:
+            number += 1
+    shown = args.sh or shlex.join(command)
+    # A shell line is what the session could type into its own shell; recording it adds no reach.
+    argv = ["/bin/sh", "-c", args.sh] if args.sh else command
+    output_file = runs / f"{number}.out"
+    started = time.monotonic()
+    code = run_logged(argv, cwd, ticket_env(args.id, worktree), output_file, stdin=subprocess.DEVNULL)
+    seconds = time.monotonic() - started
+    output = output_file.read_text(errors="replace")
+    output_file.unlink()
+    if len(output) > MAX_RUN_OUTPUT:
+        output = output[:MAX_RUN_OUTPUT] + f"\n... ({len(output) - MAX_RUN_OUTPUT} more characters not kept)\n"
+    record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
+              + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- output (stdout and stderr) ---\n{output}")
+    (runs / f"{number}.txt").write_text(record)
+    print(record if len(record) <= 4000 else record[:4000] + "\n... (the rest is in the run file)")
+    print(f"recorded: run {number} in {runs / f'{number}.txt'}. Cite it in the evidence as (run {number})")
 
 
 def cmd_evidence(args: argparse.Namespace) -> None:
@@ -1073,6 +1144,13 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; needed again whenever the code changed")
     finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
+
+    run = sub.add_parser("run", help="run a command in the ticket's worktree and record exactly what ran and what came back")
+    run.add_argument("id")
+    run.add_argument("--sh", help="one shell line, for a pipe or a redirect")
+    run.add_argument("--cwd", help="run somewhere else, such as the main checkout for the base")
+    run.add_argument("command", nargs=argparse.REMAINDER)
+    run.set_defaults(func=cmd_run)
 
     evidence = sub.add_parser("evidence", help="check the form of an evidence file before it becomes a pull request body")
     evidence.add_argument("id")

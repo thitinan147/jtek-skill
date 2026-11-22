@@ -23,8 +23,8 @@ Notes:
 ```text
 The profile now stores a phone number. PATCH /me validates it with the existing validator, and the page shows it.
 
-1. seen: PATCH /me with phone "0812345678" on the local server -> 200, then GET /me returns "0812345678"
-2. seen: PATCH /me with phone "12ab" -> 422 {"field":"phone","error":"must be 10 digits"}
+1. seen: PATCH /me with phone "0812345678" on the local server -> 200, then GET /me returns "0812345678" (runs 1 and 2)
+2. seen: PATCH /me with phone "12ab" -> 422 {"field":"phone","error":"must be 10 digits"} (run 3)
 3. not run: no browser on this machine, so the profile page was not opened. The API returns the value
 
 Notes:
@@ -37,7 +37,8 @@ Notes:
 ## Rules
 
 - **One numbered line per `Done when` item, in the ticket's order.** It starts with the number, then `seen:` or `not run:`. The script refuses a file that skips an item.
-- **`seen:` means you ran it and looked.** Give the exact command, request, or steps, then the result after `->`. A passing test counts when you name the test and it covers the item.
+- **`seen:` means you ran it and looked,** and it ends with the recorded runs it rests on, such as `(run 3)`. Make them with `jtek.py run`.
+- **Give the exact command, request, or steps,** then the result after `->`. A passing test counts when you name the test and it covers the item.
 - **`not run:` is honest, not a failure.** Give the reason. The human then knows what to check by hand.
 - **An item you saw only in part is `seen:` for that part,** and the same line says which part you did not see for real and why, for example a value the real service never sends.
 - **Never write `seen:` for something you only read in the code.**
