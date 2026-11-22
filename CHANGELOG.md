@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.12.0 - the FAIL count
+
+Round seven on 26.10.0 and 26.11.0: a tally feature from Todo to Done, and the `jt-learn` ticket reworked after a FAIL and passed on its next review. No session did a wrong thing, and no refusal named a wrong remedy.
+
+- `verdict` counts FAIL verdicts, and `start` on a pick-up prints the count. `jt-work` says to stop after the third FAIL, but a session had no way to know how many there had been.
+- `jt-work`: a finding that is only a missing test is fixed when the new test fails on the reviewer's break.
+- `jt-verify`: when a check copies the worktree while it runs, break a copy made with `git archive`.
+- `notion.md`: the property names in a `board:` line take no prefix.
+
 ## 26.11.0 - the seventh round of real walks
 
 - A second `finish` remembers that the first had no pull request, so `finish <id>` alone works after the verdict, as `jt-work` says. A session was refused there and had to add `--no-pr` again.

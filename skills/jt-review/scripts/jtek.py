@@ -662,6 +662,10 @@ def cmd_start(args: argparse.Namespace) -> None:
         last = read_json(work / "verdict.json")
         still = "it is for the change as it is now" if current_verdict(ticket_id, meta) else "the change or the ticket has moved on since"
         print(f"last verdict: {last.get('verdict')} by {last.get('by')} @{str(last.get('sha', ''))[:7]} ({still})")
+        fails = int(meta.get("fails", 0))
+        if fails:
+            print(f"FAIL verdicts so far: {fails}" + (". That is three: stop with `--waiting input`, because the ticket or the "
+                                                      "reviewer's standard needs the human" if fails >= 3 else ""))
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
     kind = ticket["fields"].get("kind", "") or "not set; decide from the Goal"
@@ -775,6 +779,10 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         (work / "review.md").write_text(notes_text)
     else:
         (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
+    if args.verdict == "FAIL":
+        # `jt-work` stops after the third FAIL on one ticket, so the count has to live somewhere a session can read.
+        meta = {**meta, "fails": int(meta.get("fails", 0)) + 1}
+        write_json(work / "meta.json", meta)
     write_json(work / "verdict.json", {
         "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
         "patch": patch, "ticket": ticket_id_of_text(work),

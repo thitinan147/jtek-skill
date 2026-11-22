@@ -1869,6 +1869,20 @@ class FifthLoopRound(Scratch):
         self.assertEqual(code, 0, out)
         self.assertIn("outcome: review", out)
 
+    def test_a_pick_up_counts_the_fail_verdicts(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("Findings:\n- reproduces: crash\n")
+        for n in range(1, 4):
+            self.commit_change("T-1", f"f{n}.txt")
+            self.jtek("check", "T-1")
+            self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+            self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+            out = self.jtek("start", "T-1")[1]
+            self.assertIn(f"FAIL verdicts so far: {n}", out)
+        self.assertIn("That is three: stop with `--waiting input`", out)
+
 
 class NextTests(Scratch):
     def next(self):
