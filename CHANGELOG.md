@@ -1,5 +1,12 @@
 # Changelog
 
+## 26.14.0 - the ninth round of real walks
+
+Round nine on 26.13.0: a client feature that shows times in the machine's zone (worked once, sent back by a FAIL, fixed with a test) and an API filter, each taken to Done. Both had a real chance to pass locally and fail in CI, which runs in another time zone; neither did, because both tested under two zones. One reviewer wrote a claim about the base as if it had run the base, when it had read it in the diff. The claim was true.
+
+- `jt-review`: a claim about the base comes from a run on the base, or the note says it was read from the diff. The `to weigh:` line is for a behaviour the human may not want that the ticket does not settle.
+- `jt-build`: `git stash` is not a forbidden copy, and adding new lines to a check's script is not changing it.
+
 ## 26.13.0 - the eighth round of real walks
 
 Round eight on 26.12.0: an API feature with a new route and a tally refactor, each taken from Todo to Done by one session that started its own reviewer. The refactor got a FAIL and was fixed with a test. No session did a wrong thing, and no refusal named a wrong remedy. With round seven, that is two such rounds in a row.

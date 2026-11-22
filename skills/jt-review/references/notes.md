@@ -11,7 +11,7 @@ Findings:
   expected: <what should happen, and the `Done when` item or rule that says so>
 
 Notes:
-- to weigh: <something the human should decide before merging>
+- to weigh: <a behaviour the human may not want, which the ticket does not settle>
 - item <n> seen: <what you ran, and what you saw>
 - broke: <the line you broke, and which checks failed or still passed>
 - stand-in: <what you used in place of the real thing, and for which case>

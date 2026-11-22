@@ -47,7 +47,7 @@ Write a temporary file in the ticket format of [ticket.md](ticket.md). Put it in
 - **`after:`** lists only the related tickets whose Status is not Done. Leave the line out when all are Done. Look at each related page's Status. Do not guess. A property the fetch does not list at all is empty: no After means no `after:` line.
 - **The body** goes below the header, starting at its first heading, copied as it is. Write every heading as `## <text>`, whatever its size on the page. Put text that sits above the first heading under `## Notes`, so it cannot be read as a header line.
 - **Every list item is written as `- `,** whether the page shows a bullet, a number, or a checkbox. A nested item keeps its indent.
-- **Formatting becomes Markdown.** A Notion tool may give inline code as `<code>text</code>` and bold as a tag: write code in backticks and drop other tags, keeping their text. A backslash before a punctuation mark, as in `created\_at`, is the tool's escape: leave it out. Change no word.
+- **Formatting becomes Markdown.** A Notion tool may give inline code as `<code>text</code>` and bold as a tag: write code in backticks and drop other tags, keeping their text. Inside a code span, `<text>` is part of the code, not a tag. A backslash before a punctuation mark, as in `created\_at`, is the tool's escape: leave it out. Change no word.
 - **Do not repair the page.** If `Done when` has nested items or other text, copy it as it is. `start` will refuse, and the human fixes the page.
 - **What you cannot copy as text,** such as an image, a table, or a closed toggle: write one line that names it, and open it when the work needs it.
 
