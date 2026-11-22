@@ -53,7 +53,11 @@ def git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
 
 
 def common_dir() -> Path:
-    out = git("rev-parse", "--git-common-dir")
+    try:
+        out = git("rev-parse", "--git-common-dir")
+    except Refuse:
+        raise Refuse(f"{Path.cwd()} is not inside a git repository. Run jtek.py from the ticket's repository "
+                     "or its worktree; `start` printed the worktree's path") from None
     return (Path.cwd() / out).resolve()
 
 
@@ -407,7 +411,12 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
         not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
         backed = len([line for line in re.findall(r"^\s*\d+\.\s*seen:.*$", text, re.M) if RUN_CITE.search(line)])
-        evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run)"
+        evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run"
+        cleanup = re.search(r"^\s*(-\s*)?clean-up:.*$", text, re.M | re.I)
+        diff_runs = [n for group in RUN_CITE.findall(cleanup.group(0)) for n in re.findall(r"[0-9]+", group)] if cleanup else []
+        read_diff = any("git diff" in (work / "runs" / f"{n}.txt").read_text(errors="replace").split("\n", 2)[1]
+                        for n in diff_runs if (work / "runs" / f"{n}.txt").exists())
+        evidence += ", clean-up rests on a recorded diff)" if read_diff else ", clean-up cites no recorded diff)"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"

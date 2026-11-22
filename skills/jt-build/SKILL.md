@@ -28,7 +28,7 @@ This never applies to security, input validation at a trust boundary, or error h
 
 ## Stop instead of building
 
-Stop with `jtek.py stop <id> --waiting approval --note "<what and why>"` before you add a dependency, write a migration, delete data, or change CI or `jtek.json`.
+Stop with `jtek.py stop <id> --waiting approval --note "<what and why>"` before you add a dependency, write a migration, delete data, or change CI or `jtek.json`, unless the ticket itself, written by the human, allows that change in so many words. Then quote that line in the evidence.
 
 Stop with `--waiting input` when the change grows past the ticket. A second ticket is cheaper than a wide diff.
 

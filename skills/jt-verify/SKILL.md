@@ -7,7 +7,7 @@ description: Runs the changed feature the way a user would and looks at the real
 
 Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
-Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, and what came back, and prints a run number. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
+Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
 
 ## 1. Run the real thing
 
@@ -46,7 +46,7 @@ Remove only what you made, by the exact path you created, and stop only a proces
 
 - Never edit a saved output. When one is wrong or incomplete, run it again, or say in the evidence what it lacks.
 
-- End each `seen:` line with the runs it rests on, as `(run 3)` or `(runs 3 and 4)`. `finish` refuses a number that was never recorded. Write the command as the run file shows it; do not shorten it.
+- End each `seen:` line with the runs it rests on, as `(run 3)` or `(runs 3 and 4)`. `finish` refuses a number that was never recorded. The run file holds the exact command, so the line may name it briefly; what the line says came back must be what the run shows. Make the input files with a recorded run too, or show them with one, so the run says what went in.
 - Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it, in a folder outside the worktree. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.

@@ -527,7 +527,7 @@ class FinishTests(Scratch):
         honest.write_text("1. not run: the app needs a database I do not have\n- clean-up: nothing to remove\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(honest))
         self.assertEqual(code, 0, out)
-        self.assertIn("(0 seen, 1 not run, 0 of the seen cite a recorded run)", out)
+        self.assertIn("(0 seen, 1 not run, 0 of the seen cite a recorded run, clean-up cites no recorded diff)", out)
 
     def test_red_ci_refuses_and_pending_ci_is_shown(self):
         self.started("review: human\n")
@@ -1938,7 +1938,25 @@ class RecordedRuns(Scratch):
         evidence = Path(self.tmp.name) / "e.md"
         evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
         out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
-        self.assertIn("(1 seen, 0 not run, 1 of the seen cite a recorded run)", out)
+        self.assertIn("(1 seen, 0 not run, 1 of the seen cite a recorded run, clean-up cites no recorded diff)", out)
+
+    def test_a_command_outside_any_repository_says_where_to_run_it(self):
+        outside = Path(self.tmp.name) / "elsewhere"
+        outside.mkdir()
+        code, out = self.jtek("show", "T-1", cwd=outside)
+        self.assertEqual(code, 1)
+        self.assertIn("is not inside a git repository. Run jtek.py from the ticket's repository or its worktree", out)
+
+    def test_the_result_says_whether_the_clean_up_rests_on_a_recorded_diff(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        self.jtek("run", "T-1", "--", "git", "diff", "main...HEAD")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove (run 2)\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("1 of the seen cite a recorded run, clean-up rests on a recorded diff)", out)
 
 
 class NextTests(Scratch):

@@ -62,7 +62,7 @@ Then run `jtek.py start <page link> --from-file <file>`.
 | `Status=In Progress` | Set the property named before `=` to that value, also when it already holds it. The names are as the table above writes them, with no prefix. The same for `Waiting=input` and `PR=<link>`. A line may hold only `PR=<link>`: a pull request that still waits for its review. |
 | `Waiting=` | An empty value clears the property. |
 | `comment=result` | Add the result block as a comment on the page, as plain lines. A Notion comment does not keep a code fence. |
-| `comment=result+evidence` | Add the result block and the text of the evidence file as one comment. The file is the one on the block's `evidence:` line. Notion takes at most 2000 characters in one piece of text: send a longer comment as one comment made of several plain-text pieces, in order. |
+| `comment=result+evidence` | Add the result block, unchanged, and the text of the evidence file as one comment. The file is the one on the block's `evidence:` line. Do not shorten either; the 2000-character limit is per piece, not per comment. Notion takes at most 2000 characters in one piece of text: send a longer comment as one comment made of several plain-text pieces, in order. |
 | `-` | Nothing. |
 
 - If `start` refuses, do not touch the page.

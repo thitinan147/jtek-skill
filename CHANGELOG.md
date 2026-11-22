@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.16.0 - the eleventh round of real walks
+
+Round eleven on 26.15.0: one ticket on Sonnet and one on the strongest model, both using `jtek.py run`. Every `seen:` line cited a run, and the human could check each line against its run file in a minute. That found one soft spot on Sonnet (a claim about the base that rested on a run of the branch) and none on the other. Sonnet still read only part of its diff at Clean-up.
+
+- The result says whether the `clean-up:` line rests on a recorded `git diff` run. `jt-cleanup` runs the diff through `jtek.py run` and cites it.
+- A command run from outside any repository says to run it from the ticket's repository or worktree, not only git's own message.
+- `jt-build`: a change that needs approval may go ahead when the ticket, written by the human, allows it in so many words, quoted in the evidence. `jt-ship`: an item that can only be seen once the pull request exists. `jt-work`: wait for a reviewer without opening the state folder.
+- `jt-verify`: let `run` record the exit code; a `seen:` line may name a command briefly because the run holds it; record the inputs too. `notion.md`: the result comment is not shortened.
+
 ## 26.15.0 - recorded runs
 
 Round ten on 26.14.0 tried what the earlier rounds had not: Linux, a smaller model, and a rework with no pull request. The script's tests pass on Linux, and the demo service runs on Python 3.10 there. Sonnet and Haiku each took a ticket to Done with correct code, but each wrote a `seen:` line that said more than it had run and skipped part of a step. Asked plainly, a session on the strongest model said its own `seen:` lines paraphrased the commands, and that one claim came from a different command. A rule in prose had not stopped any of this.
