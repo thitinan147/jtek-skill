@@ -31,7 +31,13 @@ MAX_FAILED_RUNS = 3
 MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
 MAX_RUN_OUTPUT = 20000
-RUN_CITE = re.compile(r"\(runs? ([0-9][0-9, and]*)\)")
+RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
+
+
+def cited_runs(text: str) -> list[int]:
+    """Run numbers cited in brackets, such as `(run 3)`, `(runs 3 and 4)`, or `(run 7 stand-in, run 5 real service)`."""
+    return [int(n) for group in re.findall(r"\(([^()]*)\)", text)
+            for found in RUN_CITE.findall(group) for n in re.findall(r"[0-9]+", found)]
 # Files a human should look at first when a ticket touches them.
 SENSITIVE = [
     CONFIG, ".jtek/*", ".github/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
@@ -410,10 +416,10 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         text = (work / "evidence.md").read_text()
         seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
         not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
-        backed = len([line for line in re.findall(r"^\s*\d+\.\s*seen:.*$", text, re.M) if RUN_CITE.search(line)])
+        backed = len([line for line in re.findall(r"^\s*\d+\.\s*seen:.*$", text, re.M) if cited_runs(line)])
         evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run"
         cleanup = re.search(r"^\s*(-\s*)?clean-up:.*$", text, re.M | re.I)
-        diff_runs = [n for group in RUN_CITE.findall(cleanup.group(0)) for n in re.findall(r"[0-9]+", group)] if cleanup else []
+        diff_runs = cited_runs(cleanup.group(0)) if cleanup else []
         read_diff = any("git diff" in (work / "runs" / f"{n}.txt").read_text(errors="replace").split("\n", 2)[1]
                         for n in diff_runs if (work / "runs" / f"{n}.txt").exists())
         evidence += ", clean-up rests on a recorded diff)" if read_diff else ", clean-up cites no recorded diff)"
@@ -440,8 +446,14 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"note: {' '.join(note.split()) or '-'}",
         f"board: {board_line(outcome, waiting, meta.get('pr', ''))}",
     ]
+    if "comment=" in lines[-1]:
+        # The comment the board line asks for, ready to paste as it is, so nobody has to put it together or cut it.
+        lines.insert(-1, f"comment file: {work / 'board-comment.md'}")
     text = "\n".join(lines) + "\n"
     (work / "result.md").write_text(text)
+    if "comment=" in lines[-1]:
+        evidence_text = (work / "evidence.md").read_text() if (work / "evidence.md").exists() else ""
+        (work / "board-comment.md").write_text(text + ("\n" + evidence_text if "comment=result+evidence" in lines[-1] else ""))
     return text
 
 
@@ -691,14 +703,14 @@ def ticket_env(ticket_id: str, worktree: Path) -> dict:
     return {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
 
 
-def run_logged(argv: list[str], cwd: Path, env: dict, log: Path, stdin=None) -> int | str:
-    """Run one program with its arguments, no shell of jtek's own, with stdout and stderr in `log`.
-    Returns the exit code, or the reason it did not run."""
+def run_logged(argv: list[str], cwd: Path, env: dict, log: Path, stdin=None, err_log: Path | None = None) -> int | str:
+    """Run one program with its arguments, no shell of jtek's own, with stdout in `log` and stderr there too,
+    or in `err_log` when one is given. Returns the exit code, or the reason it did not run."""
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(log, "w") as out:
-            return subprocess.run(argv, cwd=cwd, stdout=out, stderr=subprocess.STDOUT, stdin=stdin,
-                                  timeout=DEFAULT_TIMEOUT, env=env).returncode
+        with open(log, "w") as out, open(err_log or os.devnull, "w") as err:
+            return subprocess.run(argv, cwd=cwd, stdout=out, stderr=err if err_log else subprocess.STDOUT,
+                                  stdin=stdin, timeout=DEFAULT_TIMEOUT, env=env).returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as err:
         with open(log, "a") as out:
             out.write(f"\njtek: {err}\n")
@@ -842,7 +854,7 @@ def check_evidence(work: Path, text: str) -> None:
             "the evidence must account for every `Done when` item. Start one line per item with its number and "
             "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
         )
-    cited = sorted({int(n) for group in RUN_CITE.findall(text) for n in re.findall(r"[0-9]+", group)})
+    cited = sorted(set(cited_runs(text)))
     missing_runs = [n for n in cited if not (work / "runs" / f"{n}.txt").exists()]
     if missing_runs:
         raise Refuse(
@@ -888,16 +900,22 @@ def cmd_run(args: argparse.Namespace) -> None:
     shown = args.sh or shlex.join(command)
     # A shell line is what the session could type into its own shell; recording it adds no reach.
     argv = ["/bin/sh", "-c", args.sh] if args.sh else command
-    output_file = runs / f"{number}.out"
+    out_file, err_file = runs / f"{number}.out", runs / f"{number}.err"
     started = time.monotonic()
-    code = run_logged(argv, cwd, ticket_env(args.id, worktree), output_file, stdin=subprocess.DEVNULL)
+    code = run_logged(argv, cwd, ticket_env(args.id, worktree), out_file, stdin=subprocess.DEVNULL, err_log=err_file)
     seconds = time.monotonic() - started
-    output = output_file.read_text(errors="replace")
-    output_file.unlink()
-    if len(output) > MAX_RUN_OUTPUT:
-        output = output[:MAX_RUN_OUTPUT] + f"\n... ({len(output) - MAX_RUN_OUTPUT} more characters not kept)\n"
-    record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
-              + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- output (stdout and stderr) ---\n{output}")
+
+    def kept(path: Path) -> str:
+        text = path.read_text(errors="replace")
+        path.unlink()
+        return text if len(text) <= MAX_RUN_OUTPUT else text[:MAX_RUN_OUTPUT] + f"\n... ({len(text) - MAX_RUN_OUTPUT} more characters not kept)\n"
+
+    stdout, stderr = kept(out_file), kept(err_file)
+    # When it ran somewhere else, say which commit that place was at, so a run of the base names the base.
+    there = git("rev-parse", "HEAD", cwd=cwd, check=False) if cwd != worktree else ""
+    record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
+              + f"\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
+              + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
     (runs / f"{number}.txt").write_text(record)
     print(record if len(record) <= 4000 else record[:4000] + "\n... (the rest is in the run file)")
     print(f"recorded: run {number} in {runs / f'{number}.txt'}. Cite it in the evidence as (run {number})")

@@ -88,6 +88,7 @@ attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
 source: <page link>
 note: <one line>
+comment file: <path> (when the board line asks for a comment)
 board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | PR=<url> | -
 ```
 

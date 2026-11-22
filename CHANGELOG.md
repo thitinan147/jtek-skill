@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.17.0 - the twelfth round of real walks
+
+Round twelve on 26.16.0: a client feature on Sonnet, with CI now on Node 20 and 22, and a tally feature on the strongest model. Both cited a run on every `seen:` line, and the clean-up rested on a recorded diff. CI stayed green: in twenty-two tickets, a pull request never went red on its own.
+
+- A run keeps stdout and stderr apart. A session could not show that an error went to stderr.
+- A run in another folder names that folder's commit, so a run of the base shows the base. `jt-verify` says to run the base with `--cwd`.
+- A citation may name several runs with words between them, such as `(run 7 stand-in, run 5 real service)`. The result counted such a line as citing nothing.
+- `finish` and `stop` write the board comment to a file and name it on a `comment file:` line, ready to paste. Sessions on Sonnet shortened the comment three times when they had to put it together.
+
 ## 26.16.0 - the eleventh round of real walks
 
 Round eleven on 26.15.0: one ticket on Sonnet and one on the strongest model, both using `jtek.py run`. Every `seen:` line cited a run, and the human could check each line against its run file in a minute. That found one soft spot on Sonnet (a claim about the base that rested on a run of the branch) and none on the other. Sonnet still read only part of its diff at Clean-up.

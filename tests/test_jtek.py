@@ -1914,7 +1914,8 @@ class RecordedRuns(Scratch):
         self.assertIn("command: printf 'a b\\n' | wc -w", record)
         self.assertIn(f"cwd: {self.repo}", record)
         self.assertIn("exit: 0", record)
-        self.assertRegex(record, r"output.*\n\s*2\s*$")
+        self.assertRegex(record, r"--- stdout ---\n\s*2\n--- stderr ---\n$")
+        self.assertIn(f"cwd: {self.repo} (at commit ", record)
         code, out = self.jtek("run", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("not both and not neither", out)
@@ -1957,6 +1958,37 @@ class RecordedRuns(Scratch):
         evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove (run 2)\n")
         out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
         self.assertIn("1 of the seen cite a recorded run, clean-up rests on a recorded diff)", out)
+
+    def test_a_citation_may_name_several_runs_with_words_between(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        for _ in range(7):
+            self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: the list, as before (run 7 stand-in, run 5 real service)\n- clean-up: nothing (run 1)\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("1 of the seen cite a recorded run", out)
+        evidence.write_text("1. seen: the list (run 7 stand-in, run 9 real service)\n- clean-up: nothing (run 1)\n")
+        self.assertIn("cites run 9", self.jtek("evidence", "T-1", "--file", str(evidence))[1])
+
+    def test_a_run_keeps_stdout_and_stderr_apart(self):
+        self.started()
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr)")
+        record = (self.repo / ".git" / "jtek" / "work" / "T-1" / "runs" / "1.txt").read_text()
+        self.assertIn("--- stdout ---\nout\n--- stderr ---\nerr\n", record)
+        self.assertEqual(sorted(p.name for p in (self.repo / ".git" / "jtek" / "work" / "T-1" / "runs").iterdir()), ["1.txt"])
+
+    def test_the_board_comment_is_written_out_ready_to_paste(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
+        out = self.jtek("finish", "T-1")[1]
+        comment = self.repo / ".git" / "jtek" / "work" / "T-1" / "board-comment.md"
+        self.assertIn(f"comment file: {comment}\nboard: Status=Review", out)
+        self.assertEqual(comment.read_text(), out + "\n" + Path(self.evidence()).read_text())
 
 
 class NextTests(Scratch):

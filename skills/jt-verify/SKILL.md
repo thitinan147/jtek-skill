@@ -7,7 +7,7 @@ description: Runs the changed feature the way a user would and looks at the real
 
 Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
-Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
+Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0, and remember that a pipe's exit code is its last command's. To run the base, give `--cwd` the main checkout, so the run names the commit it ran at. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
 
 ## 1. Run the real thing
 
