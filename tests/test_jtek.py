@@ -1882,6 +1882,9 @@ class FifthLoopRound(Scratch):
             out = self.jtek("start", "T-1")[1]
             self.assertIn(f"FAIL verdicts so far: {n}", out)
         self.assertIn("That is three: stop with `--waiting input`", out)
+        code, out = self.jtek("finish", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("the third or later on T-1 (3)", out)
 
 
 class NextTests(Scratch):

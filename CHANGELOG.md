@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.13.0 - the eighth round of real walks
+
+Round eight on 26.12.0: an API feature with a new route and a tally refactor, each taken from Todo to Done by one session that started its own reviewer. The refactor got a FAIL and was fixed with a test. No session did a wrong thing, and no refusal named a wrong remedy. With round seven, that is two such rounds in a row.
+
+- The refusal of `finish` after a FAIL says how many FAIL verdicts the ticket has had, and after the third it says to stop. A session that got the FAIL while still running never ran `start`, so it never saw the count that 26.12.0 added there.
+- `jt-cleanup`: the `clean-up:` line covers a change as well as a removal.
+- `jt-verify`: running the base in the main checkout writes no cache there either.
+- `jt-verify`: a script that a check runs is not a test file for the rule on earlier output; a slower check the repository describes outside `jtek.json` is run when it covers the change.
+
 ## 26.12.0 - the FAIL count
 
 Round seven on 26.10.0 and 26.11.0: a tally feature from Todo to Done, and the `jt-learn` ticket reworked after a FAIL and passed on its next review. No session did a wrong thing, and no refusal named a wrong remedy.

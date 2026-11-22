@@ -939,7 +939,12 @@ def cmd_finish(args: argparse.Namespace) -> None:
                            note="start a session that did not write this code and run jt-review for this id." + pr_note), end="")
         return
     if verdict.get("verdict") == "FAIL":
-        raise Refuse(f"verdict is FAIL; read {work / 'review.md'}, fix what reproduces, commit, check, and get a new verdict")
+        fails = int(meta.get("fails", 0))
+        if fails >= 3:
+            raise Refuse(f"verdict is FAIL, the third or later on {args.id} ({fails}); stop with `jtek.py stop {args.id} "
+                         "--waiting input`, because the ticket or the reviewer's standard needs the human")
+        raise Refuse(f"verdict is FAIL ({fails} so far on this ticket); read {work / 'review.md'}, fix what reproduces, "
+                     "commit, check, and get a new verdict")
     print(write_result(args.id, "review", "Review",
                        note="the human reviews and merges; jtek never merges." + pr_note), end="")
 

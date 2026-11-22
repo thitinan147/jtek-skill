@@ -9,7 +9,7 @@ Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
 ## 1. Run the real thing
 
-If the repository has `.jtek/verify.md`, follow it to launch and drive the app, and read the file in `.jtek/features/` for the feature you changed. If it has none, do not stop and do not build one: use the list below, and say in the evidence that the repository has no verify guide.
+If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. If the repository has `.jtek/verify.md`, follow it to launch and drive the app, and read the file in `.jtek/features/` for the feature you changed. If it has none, do not stop and do not build one: use the list below, and say in the evidence that the repository has no verify guide.
 
 For each `Done when` item, do what you named before you built it:
 
@@ -22,14 +22,14 @@ For each `Done when` item, do what you named before you built it:
 1. Compare what you see with the `Done when` item, word for word.
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order.
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
-4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards. When a check copies the worktree while it runs, make your breaks in a copy made with `git archive`, and take one file from the base with `git show <base>:<path>`.
+4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there, not even a cache: run it so that it writes none, such as `python3 -B`. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards. When a check copies the worktree while it runs, make your breaks in a copy made with `git archive`, and take one file from the base with `git show <base>:<path>`.
 5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
 
 ## 3. What does not count
 
 - The code compiles, or the checks pass.
 - A file exists or changed.
-- Output you saved earlier, before the last commit. One exception: when the commits since then changed only tests, the earlier run still stands, and the evidence says which commit it is from. After a rebase that brought changes to files your change touches, run every line again.
+- Output you saved earlier, before the last commit. One exception: when the commits since then changed only test files (a script that a check runs is not one), the earlier run still stands, and the evidence says which commit it is from. After a rebase that brought changes to files your change touches, run every line again.
 - Your own summary of what the code does.
 - A different path than the one the ticket names. A skipped entry point is not verified through another one.
 - An unclear result. Inconclusive is not a pass. Say it is inconclusive.
