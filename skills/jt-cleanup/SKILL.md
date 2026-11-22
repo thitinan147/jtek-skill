@@ -5,7 +5,7 @@ description: Removes leftover debug output, unused code, and comments that repea
 
 # jt-cleanup
 
-Read your own diff once as a stranger would: `jtek.py run <id> -- git diff <base>...HEAD`, where the base is the branch `jtek.py start` printed. Running it through `run` keeps the diff you read, and the `clean-up:` line cites it. Work only on lines the diff added or changed.
+Read your own diff once as a stranger would: `jtek.py run <id> -- git diff <base>...HEAD`, where the base is the branch `jtek.py start` printed. Running it through `run` keeps the diff you read, and the `clean-up:` line cites it. When the run says characters were not kept, read the rest with `git diff` too. Work only on lines the diff added or changed.
 
 ## Remove
 

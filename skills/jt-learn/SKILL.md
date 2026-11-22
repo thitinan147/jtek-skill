@@ -42,7 +42,7 @@ A new lint rule, check, or test must fail on the real past mistake. Run it again
 
 ## 5. Keep the rule table small
 
-When the project has `.jtek/rules.md`, add one row: the rule, what enforces it, and the date. Propose the file when it is missing, as text in your report. A row goes into the file in the same change that adds its enforcer, not before. Its form is in [references/rules-template.md](references/rules-template.md).
+The row for `.jtek/rules.md` (the rule, what enforces it, and the date) goes into the new ticket's `Done when`, so it lands with its enforcer. Do not add it in this change. Propose the file as text in your report when it is missing. Its form is in [references/rules-template.md](references/rules-template.md).
 
 - A rule with no enforcer is marked `prose`, and is the first to replace.
 - Drop a rule once its mistake cannot happen any more.

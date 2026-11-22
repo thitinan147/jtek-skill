@@ -39,6 +39,8 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 - A session needs the Notion tool, and permission to run git, the project's checks, and `gh`.
 - Which tickets may share one session is in [several-tickets.md](several-tickets.md).
 
-## With Claude Code
+## Starting a separate session
+
+Any agent that can start a separate session that does not share this one's conversation will do. In Cursor: `cursor-agent -p "<the line>"`, run from the repository. In Antigravity: `agy -p "<the line>"`. In Claude Code:
 
 `claude --bg -n "jtek <id> work" "<the line from the table>"`, run from the repository, starts a separate background session and returns at once. `claude agents --json` lists the sessions and their state, `claude attach <id>` opens one, and `claude logs <id>` prints its recent output. A session whose state is `blocked` waits for a person.

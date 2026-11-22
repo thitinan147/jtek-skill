@@ -12,7 +12,7 @@ The human reads this file before the diff, and it is the body of the pull reques
 3. not run: <why you could not see it>
 
 Notes:
-- clean-up: <what the clean-up step removed, or nothing to remove>
+- clean-up: <what the clean-up step removed, or nothing to remove> (run <n>, the recorded diff)
 - out of scope: <how you compared it with the base, and that it is the same>
 - <a choice the ticket left open, and what you chose>
 - <something the reviewer should look at first>
@@ -38,7 +38,7 @@ Notes:
 
 - **One numbered line per `Done when` item, in the ticket's order.** It starts with the number, then `seen:` or `not run:`. The script refuses a file that skips an item.
 - **`seen:` means you ran it and looked,** and it ends with the recorded runs it rests on, such as `(run 3)`. Make them with `jtek.py run`.
-- **Give the exact command, request, or steps,** then the result after `->`. A passing test counts when you name the test and it covers the item.
+- **Give the exact command, request, or steps,** then the result after `->`. A passing test counts when you run it through `jtek.py run`, cite the run, and the test covers the item.
 - **`not run:` is honest, not a failure.** Give the reason. The human then knows what to check by hand.
 - **An item you saw only in part is `seen:` for that part,** and the same line says which part you did not see for real and why, for example a value the real service never sends.
 - **Never write `seen:` for something you only read in the code.**

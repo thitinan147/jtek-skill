@@ -1,6 +1,6 @@
 ---
 name: jt-harness
-description: Builds a repository's way to run and observe the real app (a verify guide, a feature map, and a `verify` check) so that agents can prove a change works. Use when a repository has no `.jtek/verify.md`, when the user asks to set up or repair verification for a project, or when a change could not be verified because the real thing could not be run.
+description: Builds a repository's way to run and observe the real app (a verify guide, a feature map, and a `verify` check) so that agents can prove a change works. Use when the user asks to set up or repair verification for a repository, or when a human asks for it after a change could not be verified. Not during a ticket: a ticket session goes on without it.
 ---
 
 # jt-harness
@@ -48,8 +48,8 @@ Write one script that launches the app, drives the main path of each mapped feat
 ## 5. Prove it
 
 1. Run the whole thing once and see it pass on the working app.
-2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing. Make the break in a worktree or a copy that you remove afterwards, and never commit it. This is the one time this skill touches product code.
-3. Run it from a second worktree at the same time, when you can, to confirm the isolation.
+2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing. Make the break in a copy of the working tree, with your new `.jtek/` and script in it, that you remove afterwards, and never commit it. This is the one time this skill touches product code.
+3. Run it from a second copy at the same time, when you can, to confirm the isolation.
 
 A harness that was never run is a draft. Do not hand it over as done.
 

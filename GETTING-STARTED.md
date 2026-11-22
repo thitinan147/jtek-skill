@@ -2,7 +2,7 @@
 
 From nothing connected to your first ticket merged. Do the steps in order. Each one ends with what you should see.
 
-> **Not walked end to end yet.** The script steps are tested. The steps that go through Notion and a real pull request have not been run by anyone. If a step does not behave as written, that is a bug in this guide: please open an issue.
+> **Walked on demo repositories.** These steps, Notion and real pull requests included, were walked on three demo repositories with Claude Code, Cursor, and Antigravity. A large real codebase has not been tried. If a step does not behave as written, that is a bug in this guide: please open an issue.
 
 Most steps are things you say to your agent. Text in a `text` block is a prompt. Text in a `bash` block is a command you run yourself.
 
@@ -10,7 +10,7 @@ Most steps are things you say to your agent. Text in a `text` block is a prompt.
 
 | You connect | Why | Needed |
 |---|---|---|
-| A coding agent that loads skills (Claude Code, Cursor, Codex, ...) | It does the work | Yes |
+| A coding agent that loads skills (Claude Code, Cursor, Antigravity, Codex, ...) | It does the work | Yes |
 | `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
 | Notion, as a tool in the agent | The board lives there | Yes |
 | GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in `jtek.json` instead |
@@ -34,7 +34,7 @@ Or in Claude Code, as two separate prompts:
 /plugin install jtek@jtek-skill
 ```
 
-**You should see:** eleven skills whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed.
+**You should see:** eleven skills whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way.
 
 ## 2. Connect GitHub
 
@@ -50,7 +50,7 @@ A repository with no remote at all needs none of this: its tickets end without a
 ## 3. Connect Notion and create the board
 
 1. In Notion, create one database. Give it the eleven properties in [notion.md](skills/jt-work/references/notion.md#the-database). The names and types must match exactly.
-2. Connect the Notion tool in your agent, and give it access to that database. In Claude Code: `/mcp`, then Notion.
+2. Connect the Notion tool in your agent, and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
 3. Copy the database's link. You need it in step 4.
 4. Ask the agent to check your work:
 

@@ -11,16 +11,16 @@ Work in the ticket's worktree. Do these in order.
 
 ## 1. Conflicts with the base
 
-1. Rebase your own branch on the base branch that `jtek.py start` printed, and resolve the conflicts by reading both sides. To stop at one commit during the rebase without an editor, set `GIT_SEQUENCE_EDITOR` to a `sed` line that marks it `edit`.
+1. Rebase your own branch on the base branch that `jtek.py start` printed, and resolve the conflicts by reading both sides. To stop at one commit during the rebase without an editor, set `GIT_SEQUENCE_EDITOR` to a command that changes that commit's `pick` to `edit`, such as a short `python3 -c` one; `sed -i` differs between macOS and Linux.
 2. Push your own branch with `--force-with-lease`. Never force-push a branch other people use, and never retarget the pull request.
-3. The forced pushes in the pull request's history are the earlier rebases. If this is the third rebase for the same ticket, stop with `jtek.py stop <id> --waiting input --note "<which files keep conflicting>"`. Something else keeps changing the same files.
+3. Count the earlier rebases from the pull request's timeline (on GitHub, its force-push events) or from your earlier evidence. If this is the third rebase for the same ticket, stop with `jtek.py stop <id> --waiting input --note "<which files keep conflicting>"`. Something else keeps changing the same files.
 
 ## 2. Failing CI
 
 1. Read the failing job's log from the first error.
 2. Run the same command in the worktree and see it fail there. If it only fails in CI, say what differs.
 3. Find the cause before you change code. Do not skip the job, loosen the test, or retry until it passes.
-4. A failure that is also on the base branch is not this ticket's. Stop and say so.
+4. A failure that is also on the base branch is not this ticket's. Stop: `jtek.py stop <id> --waiting input --note "<check> fails on the base too"`.
 
 ## 3. Review comments
 

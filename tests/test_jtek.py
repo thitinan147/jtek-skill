@@ -48,6 +48,11 @@ class Scratch(unittest.TestCase):
             args[1:2] = [f"https://www.notion.so/{args[1]}", "--from-file", self.board.file(args[1])]
         elif args[0] in ("next", "sync"):
             args += ["--board-file", self.board.rows_file()]
+        elif args[0] == "verdict" and "--commit" not in args:
+            # A reviewer names the commit it read; here that is whatever the worktree is at now.
+            tree = self.repo.parent / f"{self.repo.name}.jtek" / args[1]
+            if tree.is_dir():
+                args += ["--commit", self.git("rev-parse", "HEAD", cwd=tree)]
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("JTEK_")}, **(env or {})}
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo,
                               capture_output=True, text=True, env=env)
@@ -393,7 +398,7 @@ class FinishTests(Scratch):
         self.fake_gh("OPEN 0000000000000000000000000000000000000000 pass")
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
-        self.assertIn("push the branch", out)
+        self.assertIn("is at 0000000, which this branch does not have", out)
         self.fake_gh("OPEN " + self.git("rev-parse", "HEAD", cwd=self.worktree("T-1")) + " none")
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
@@ -1927,7 +1932,7 @@ class RecordedRuns(Scratch):
         evidence.write_text("1. seen: printed 1 (run 2)\n- clean-up: nothing to remove\n")
         code, out = self.jtek("evidence", "T-1", "--file", str(evidence))
         self.assertEqual(code, 1)
-        self.assertIn("cites run 2, which `jtek.py run` never recorded", out)
+        self.assertIn("cites run 2, which `jtek.py run` never finished recording", out)
         evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
         self.assertEqual(self.jtek("evidence", "T-1", "--file", str(evidence))[0], 0)
 
@@ -1989,6 +1994,103 @@ class RecordedRuns(Scratch):
         comment = self.repo / ".git" / "jtek" / "work" / "T-1" / "board-comment.md"
         self.assertIn(f"comment file: {comment}\nboard: Status=Review", out)
         self.assertEqual(comment.read_text(), out + "\n" + Path(self.evidence()).read_text())
+
+
+class OutsideReview(Scratch):
+    """Defects an outside review of 26.19.0 reproduced."""
+
+    def ready(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        return self.worktree("T-1")
+
+    def test_a_tag_named_like_the_base_does_not_stand_in_for_it(self):
+        self.write_config({"test": f"{sys.executable} -c \"import sys; sys.exit(1)\""})
+        self.ticket("T-1")
+        self.jtek("start", "T-1", "--no-baseline")
+        tree = self.worktree("T-1")
+        (tree / "jtek.json").write_text(json.dumps({"checks": {"test": f"{sys.executable} -c pass"}}))
+        self.git("commit", "-q", "-am", "loosen the check", cwd=tree)
+        self.git("tag", "main", cwd=tree)
+        self.commit_change("T-1")
+        code, out = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, "the check came from the tag, not from the base branch")
+        self.assertIn("jtek.json", self.jtek("show", "T-1")[1] + self.git("diff", "refs/heads/main...HEAD", "--stat", cwd=tree))
+
+    def test_a_verdict_is_for_the_commit_the_reviewer_read(self):
+        tree = self.ready()
+        read = self.git("rev-parse", "HEAD", cwd=tree)
+        self.commit_change("T-1", "later.txt")
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--commit", read)
+        self.assertEqual(code, 1)
+        self.assertIn("the author committed during your review", out)
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--commit", "")
+        self.assertEqual(code, 1)
+
+    def test_a_cited_run_must_be_of_the_change_as_it_is_now(self):
+        tree = self.ready()
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        self.commit_change("T-1", "later.txt")
+        self.jtek("check", "T-1")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("evidence", "T-1", "--file", str(evidence))
+        self.assertEqual(code, 1)
+        self.assertIn("made before the change took its present form", out)
+
+    def test_a_run_that_never_finished_cannot_be_cited_and_finish_does_not_crash(self):
+        self.ready()
+        runs = self.repo / ".git" / "jtek" / "work" / "T-1" / "runs"
+        runs.mkdir(exist_ok=True)
+        (runs / "1.txt").write_text("")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: it ran\n- clean-up: nothing to remove (run 1)\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))
+        self.assertEqual(code, 1)
+        self.assertIn("never finished recording", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_the_clean_up_rests_only_on_a_diff_that_ran_and_is_current(self):
+        self.ready()
+        self.jtek("run", "T-1", "--sh", "echo git diff")
+        self.jtek("run", "T-1", "--", "git", "diff", "no-such-ref")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: it ran\n- clean-up: nothing to remove (runs 1 and 2)\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("clean-up cites no recorded diff", out)
+
+    def test_the_human_setting_todo_resets_the_fail_count_and_one_commit_counts_once(self):
+        tree = self.ready()
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("Findings:\n- reproduces: crash\n")
+        self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+        self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+        meta = json.loads((self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json").read_text())
+        self.assertEqual(meta["fails"], 1, "two FAILs on one commit are one round")
+        self.jtek("stop", "T-1", "--waiting", "input", "--note", "which way?")
+        self.board.set("T-1", Status="Todo")
+        self.assertNotIn("FAIL verdicts so far", self.jtek("start", "T-1")[1])
+
+    def test_a_closed_pull_request_is_not_told_to_push(self):
+        tree = self.ready()
+        sha = self.git("rev-parse", "HEAD", cwd=tree)
+        bin_dir = Path(self.tmp.name) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(f"#!/bin/sh\necho CLOSED {sha} pass\n")
+        (bin_dir / "gh").chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        out = self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})[1]
+        self.assertIn("is CLOSED, so it cannot take this change. Open a new pull request", out)
+        self.assertNotIn("push the branch", out)
+
+    def test_release_drops_a_branch_with_no_commit_so_the_next_start_takes_the_new_base(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        out = self.jtek("release", "T-1")[1]
+        self.assertNotIn("is kept", out)
+        self.assertEqual(self.git("branch", "--list", "jtek/T-1"), "")
 
 
 class NextTests(Scratch):

@@ -1,5 +1,18 @@
 # Changelog
 
+## 26.20.0 - an outside review of 26.19.0
+
+Two outside reviewers read 26.19.0: one ran the scripts against scratch repositories and reproduced eleven defects, the other read every skill document as an agent that must follow it. Each script defect has a test.
+
+- `verdict` takes `--commit`, the commit `show` printed when the review began, and refuses when the author has committed since. A verdict could be recorded for a commit nobody reviewed.
+- A cited run must have ended, and a run in the worktree must be of the change as it is now. A run killed half way, or from before the last code change, could be cited, and a killed run on the clean-up line crashed `finish`. The clean-up rests on a diff only when that run is a `git diff` that exited 0 on the current change. Each run records the change it was made against.
+- The base is read as `refs/heads/<base>`, so a tag of the same name cannot stand in for the base's `jtek.json` or diff.
+- Only `Goal`, `Done when`, and `Out of scope` decide whether the ticket changed, with whitespace evened out. An answer added under Notes no longer voids a verdict.
+- The FAIL count counts commits, not verdicts, is written under a lock so a concurrent `finish` cannot undo it, and starts again when the human sets Todo.
+- `finish` names the right fix for a closed or merged pull request, for commits only the forge has, and for a link it could not read while the branch is not pushed.
+- `release` drops a branch with no commit of its own, so the next `start` takes the new base.
+- Documents: the bug playbook's step 4 reads in order again; `jt-review` runs the check commands directly during its breaks, never `jtek.py check`, and may read the evidence when it checks the runs; `jt-harness` and `jt-review` say in their descriptions when not to load them; the evidence forms show `(run <n>)`; a long-running service is not started through `run`; README, GETTING-STARTED, and the Notion and session guides no longer speak as if only Claude Code exists, and README's unproven list says what is still unproven.
+
 ## 26.19.0 - the fourteenth round of real walks
 
 Round fourteen on 26.18.0: Cursor and Antigravity worked a ticket each at the same time, Cursor's through a real pull request with CI on two Node versions. Both reached Review on their own and cited a recorded run on every `seen:` line. Cursor's service, started in the background as the demo's guide said, died when its shell call ended.

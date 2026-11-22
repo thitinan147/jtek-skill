@@ -14,4 +14,4 @@ Each one has a condition. Apply it only when the condition holds.
 - **When you report a number** (time, size, count): say how it was measured before you trust it.
 - **When the same manual edit repeats across many files:** write the script or codemod, and run that.
 - **When you are unsure something works:** run it and look. Do not reason your way to "it should work".
-- **When you would add a dependency, a migration, a deletion of data, or a change to CI:** stop with `--waiting approval`.
+- **When you would add a dependency, a migration, a deletion of data, or a change to CI or `jtek.json`:** stop with `--waiting approval`, unless the ticket allows that change in so many words.

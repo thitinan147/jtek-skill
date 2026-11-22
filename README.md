@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.19.0-111111?style=flat-square" alt="Version 26.19.0">
+  <img src="https://img.shields.io/badge/version-26.20.0-111111?style=flat-square" alt="Version 26.20.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -41,11 +41,12 @@ checks: lint=pass types=pass test=pass verify=pass @1a2b3c4
 verdict: PASS by reviewer @1a2b3c4
 pr: https://github.com/you/app/pull/41
 ci: pass
-evidence: .git/jtek/work/T-12/evidence.md (3 seen, 0 not run)
+evidence: .git/jtek/work/T-12/evidence.md (3 seen, 0 not run, 3 of the seen cite a recorded run, clean-up rests on a recorded diff)
 attention: -
 branch: jtek/T-12
 source: https://www.notion.so/...
 note: the human reviews and merges; jtek never merges.
+comment file: .git/jtek/work/T-12/board-comment.md
 board: Status=Review; Waiting=; PR=https://github.com/you/app/pull/41; comment=result+evidence
 ```
 
@@ -113,7 +114,7 @@ Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool
 
 Three things, once. For every step with what you should see, from connecting Notion to the first merged ticket, follow **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
-**1. The board.** Create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. In Claude Code: `/mcp`, then Notion.
+**1. The board.** Create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
 
 Keep the database's link: it goes into `jtek.json` in the next step.
 
@@ -206,17 +207,17 @@ Every `Done when` item names an input and a result, so someone can see it work. 
 ```text
 The profile now stores a phone number. PATCH /me validates it with the existing validator, and the page shows it.
 
-1. seen: PATCH /me with phone "0812345678" on the local server -> 200, then GET /me returns "0812345678"
-2. seen: PATCH /me with phone "12ab" -> 422 {"field":"phone","error":"must be 10 digits"}
+1. seen: PATCH /me with phone "0812345678" on the local server -> 200, then GET /me returns "0812345678" (runs 1 and 2)
+2. seen: PATCH /me with phone "12ab" -> 422 {"field":"phone","error":"must be 10 digits"} (run 3)
 3. not run: no browser on this machine, so the profile page was not opened. The API returns the value
 
 Notes:
-- clean-up: removed a console.log left in the handler
+- clean-up: removed a console.log left in the handler (run 4)
 - reused the validator in lib/validate.ts
 - the number is stored as text, because a leading 0 is lost in a number
 ```
 
-`seen:` means it was run and looked at. `not run:` is an honest answer, and it tells you what to check by hand. Here that is item 3.
+`seen:` means it was run and looked at, and `(run 3)` names the run `jtek.py run` recorded, which a reader can open. `not run:` is an honest answer, and it tells you what to check by hand. Here that is item 3.
 
 **The review notes**, which the second session writes. A finding has steps that fail when anyone runs them:
 
@@ -293,7 +294,7 @@ Log in, then the avatar menu, then "Profile". Direct link: `/profile`.
 | Do not mock the database in integration tests | prose | 2026-06-01 | To replace: a lint rule on `jest.mock('db')` |
 ```
 
-These two `.jtek/` forms are starting points. No real repository has used them yet.
+These two `.jtek/` forms are starting points, used so far on demo repositories only.
 
 </details>
 
@@ -325,7 +326,6 @@ The full forms, with the rules each one stands for:
 | Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
 
 
-Each skill also works on its own, for example `/jt-verify` on any change.
 
 ## Statuses
 
@@ -334,7 +334,7 @@ Each skill also works on its own, for example `/jt-verify` on any change.
 | Backlog | Written down, not released | You |
 | Todo | Released for an agent | You only |
 | In Progress | A session has claimed it | The session, after `jtek.py start` |
-| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no remote) | The session, after `jtek.py finish` |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no forge) | The session, after `jtek.py finish` |
 | Done | Pull request merged | Read from the forge by `jtek.py sync` |
 | Cancelled | Dropped | You |
 
@@ -344,9 +344,8 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 172 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-seven tickets walked to Done on three demo repositories over fourteen rounds, twenty-six of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
-- **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
-- **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
+- **Proven:** the script, by 180 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.20.0, read the scripts and every skill document. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-seven tickets walked to Done on three demo repositories over fourteen rounds, twenty-six of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
+- **Not proven:** a large real codebase, GitLab, and Windows. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-seven tickets. The demo repositories are small, and every session in them was started by one person.
 
 Use it by hand, one ticket at a time, before you let anything start sessions for you.
 

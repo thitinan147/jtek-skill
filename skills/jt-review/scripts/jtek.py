@@ -11,6 +11,8 @@ Standard library only. Python 3.10+.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -32,6 +34,16 @@ MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
 MAX_RUN_OUTPUT = 20000
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
+
+
+def read_run(work: Path, number: int) -> dict:
+    """The header of a recorded run, or {} when there is none or it never finished being written."""
+    path = work / "runs" / f"{number}.txt"
+    head = {}
+    for line in (path.read_text(errors="replace").split("\n--- ", 1)[0].splitlines() if path.exists() else []):
+        key, _, value = line.partition(": ")
+        head[key] = value
+    return head if "exit" in head else {}
 
 
 def cited_runs(text: str) -> list[int]:
@@ -92,9 +104,15 @@ def base_branch() -> str:
     raise Refuse("cannot find the base branch; set JTEK_BASE")
 
 
+def base_ref(base: str) -> str:
+    """The base as a full ref when it is a local branch, so a tag with the same name cannot stand in for it."""
+    full = f"refs/heads/{base}"
+    return full if git("rev-parse", "--verify", "--quiet", full, check=False) else base
+
+
 def load_config(base: str) -> dict:
     """The config comes from the base branch, never from the ticket or the worktree."""
-    proc = subprocess.run(["git", "show", f"{base}:{CONFIG}"], capture_output=True, text=True)
+    proc = subprocess.run(["git", "show", f"{base_ref(base)}:{CONFIG}"], capture_output=True, text=True)
     if proc.returncode != 0:
         raise Refuse(f"{CONFIG} is not committed on {base}; run `jtek.py init`, fill it in, and have the human merge it")
     try:
@@ -252,6 +270,22 @@ def write_json(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
+@contextlib.contextmanager
+def meta_lock(work: Path):
+    """One writer of a ticket's meta.json at a time, so a verdict and a finish never undo each other's write."""
+    with open(work / ".lock", "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def update_meta(work: Path, **changes) -> dict:
+    """Write some keys of meta.json, reading the rest fresh under the lock."""
+    with meta_lock(work):
+        meta = {**read_json(work / "meta.json"), **changes}
+        write_json(work / "meta.json", meta)
+    return meta
+
+
 def load_meta(ticket_id: str, tree: bool = False) -> dict:
     """With `tree`, the worktree must still be there."""
     meta = read_json(work_dir(ticket_id) / "meta.json")
@@ -309,7 +343,7 @@ def patch_id(worktree: Path, base: str) -> str:
     # Hunk positions are left out below, so the same edit at another place of a file would look the same.
     # --raw adds one line per changed file with the full id of its content before and after, which tells them apart.
     diff = subprocess.run(["git", "diff", "--raw", "--patch", "--no-abbrev", "--no-ext-diff", "--no-textconv", "--binary",
-                           "--no-renames", f"{base}...HEAD"], cwd=worktree, capture_output=True)
+                           "--no-renames", f"{base_ref(base)}...HEAD"], cwd=worktree, capture_output=True)
     kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
     return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
 
@@ -317,7 +351,10 @@ def patch_id(worktree: Path, base: str) -> str:
 def ticket_id_of_text(work: Path) -> str:
     """Identify what the ticket asks for, so that a ticket the human changed needs new evidence and a new verdict."""
     sections = parse_ticket((work / "ticket.md").read_text())["sections"]
-    return hashlib.sha256(json.dumps(sections, sort_keys=True).encode()).hexdigest()
+    # Only what the ticket asks for counts: an answer added under Notes, or a blank line, is not a new ticket.
+    asked = {name: [" ".join(line.split()) for line in sections.get(name, []) if line.strip()]
+             for name in ("goal", "done when", "out of scope")}
+    return hashlib.sha256(json.dumps(asked, sort_keys=True).encode()).hexdigest()
 
 
 def current_verdict(ticket_id: str, meta: dict) -> dict:
@@ -350,7 +387,7 @@ def attention(meta: dict) -> str:
     worktree = Path(meta["worktree"])
     if not worktree.is_dir():
         return "-"
-    span = f"{meta['base']}...HEAD"
+    span = f"{base_ref(meta['base'])}...HEAD"
     # A rename is shown as a deletion and an addition, so a renamed test that lost lines is still seen.
     changed = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", span, cwd=worktree, check=False).splitlines()
     deleted = git("-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "--diff-filter=D", span, cwd=worktree, check=False).splitlines()
@@ -420,8 +457,10 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run"
         cleanup = re.search(r"^\s*(-\s*)?clean-up:.*$", text, re.M | re.I)
         diff_runs = cited_runs(cleanup.group(0)) if cleanup else []
-        read_diff = any("git diff" in (work / "runs" / f"{n}.txt").read_text(errors="replace").split("\n", 2)[1]
-                        for n in diff_runs if (work / "runs" / f"{n}.txt").exists())
+        now = patch_id(Path(meta["worktree"]), meta["base"]) if Path(meta["worktree"]).is_dir() else ""
+        read_diff = any(run.get("command", "").startswith("git diff") and run.get("exit") == "0"
+                        and run.get("change") == now
+                        for run in (read_run(work, n) for n in diff_runs))
         evidence += ", clean-up rests on a recorded diff)" if read_diff else ", clean-up cites no recorded diff)"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
@@ -577,6 +616,8 @@ def cmd_start(args: argparse.Namespace) -> None:
         if checks_path.exists() and status == "Todo":
             # Only the human sets Todo, so only the human gives a ticket new tries.
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
+        if status == "Todo":
+            meta = {**meta, "fails": 0, "failed_commits": []}
         resumed = True
     else:
         resumed = False
@@ -792,6 +833,11 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
     sha, dirty = head_state(Path(meta["worktree"]))
+    reviewed = (args.commit or "").strip().lower()
+    if len(reviewed) < 7 or not sha.startswith(reviewed):
+        raise Refuse(f"the worktree is at {sha[:7]}, and --commit says you reviewed {reviewed or 'nothing'}. Pass the "
+                     "`commit:` that `jtek.py show` printed when you began. If they differ, the author committed during "
+                     "your review: review the new commit")
     if dirty and args.verdict != "FAIL":
         # FAIL opens nothing, so it is allowed here: a reviewer must not have to delete the author's files to say so.
         raise Refuse("a pass is for a commit, and these files are not committed. If your review made them, remove "
@@ -819,9 +865,13 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     else:
         (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
     if args.verdict == "FAIL":
-        # `jt-work` stops after the third FAIL on one ticket, so the count has to live somewhere a session can read.
-        meta = {**meta, "fails": int(meta.get("fails", 0)) + 1}
-        write_json(work / "meta.json", meta)
+        # `jt-work` stops after the third FAIL on one ticket, so the count has to live where a session can read it.
+        # A second FAIL on the same commit is a corrected note, not a new round.
+        with meta_lock(work):
+            fresh = read_json(work / "meta.json")
+            failed = sorted(set(fresh.get("failed_commits", [])) | {sha})
+            meta = {**fresh, "failed_commits": failed, "fails": len(failed)}
+            write_json(work / "meta.json", meta)
     write_json(work / "verdict.json", {
         "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
         "patch": patch, "ticket": ticket_id_of_text(work),
@@ -834,7 +884,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         print(f"comment file: {work / 'review-comment.md'}  (the verdict line and the notes, ready to post on {meta['pr']})")
 
 
-def check_evidence(work: Path, text: str) -> None:
+def check_evidence(work: Path, text: str, patch: str = "") -> None:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise Refuse("the evidence file is empty")
@@ -855,11 +905,19 @@ def check_evidence(work: Path, text: str) -> None:
             "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
         )
     cited = sorted(set(cited_runs(text)))
-    missing_runs = [n for n in cited if not (work / "runs" / f"{n}.txt").exists()]
+    missing_runs = [n for n in cited if not read_run(work, n)]
     if missing_runs:
         raise Refuse(
-            "the evidence cites " + ", ".join(f"run {n}" for n in missing_runs) + ", which `jtek.py run` never recorded "
-            "for this ticket. Cite only the run numbers it printed"
+            "the evidence cites " + ", ".join(f"run {n}" for n in missing_runs) + ", which `jtek.py run` never finished "
+            "recording for this ticket. Cite only the run numbers it printed, from runs that ended"
+        )
+    worktree = load_meta(work.name).get("worktree", "")
+    old = [n for n in cited if patch and read_run(work, n).get("cwd", "").split(" (at commit")[0] == worktree
+           and read_run(work, n).get("change") != patch]
+    if old:
+        raise Refuse(
+            "the evidence cites " + ", ".join(f"run {n}" for n in old) + ", made before the change took its present "
+            "form. Run it again with `jtek.py run` and cite the new run"
         )
     if not re.search(r"^\s*(-\s*)?clean-up:", text, re.M | re.I):
         # The step that reads the diff once more is the easiest to skip at the end of a long session.
@@ -915,6 +973,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     there = git("rev-parse", "HEAD", cwd=cwd, check=False) if cwd != worktree else ""
     record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
               + f"\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
+              + f"\nchange: {patch_id(worktree, meta['base']) or '-'}"
               + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
     (runs / f"{number}.txt").write_text(record)
     print(record if len(record) <= 4000 else record[:4000] + "\n... (the rest is in the run file)")
@@ -925,7 +984,8 @@ def cmd_evidence(args: argparse.Namespace) -> None:
     """Check an evidence file before it becomes the body of a pull request. Saves nothing."""
     load_meta(args.id)
     text = read_file(args.file, "evidence")
-    check_evidence(work_dir(args.id), text)
+    meta = load_meta(args.id, tree=True)
+    check_evidence(work_dir(args.id), text, patch_id(Path(meta["worktree"]), meta["base"]))
     seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
     not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
     print(f"evidence: the form is accepted ({seen} seen, {not_run} not run). Nothing was saved; pass the file to `finish`")
@@ -973,10 +1033,9 @@ def cmd_finish(args: argparse.Namespace) -> None:
     saved = work / "evidence.md"
     if args.evidence_file:
         text = read_file(args.evidence_file, "evidence")
-        check_evidence(work, text)
+        check_evidence(work, text, patch)
         saved.write_text(text)
-        meta.update(evidence_patch=patch, evidence_ticket=about)
-        write_json(work / "meta.json", meta)  # kept even when a later rule refuses this finish
+        meta = update_meta(work, evidence_patch=patch, evidence_ticket=about)  # kept even when a later rule refuses
     elif not saved.exists():
         raise Refuse(
             "no evidence yet; the human reviews the evidence before the diff. Write what you ran and saw for each "
@@ -1017,18 +1076,29 @@ def cmd_finish(args: argparse.Namespace) -> None:
             state, head, ci = pr_info(pr, meta["base"])
         if state == "DRAFT":
             raise Refuse(f"{pr} is a draft. Mark it ready for review, then finish again")
-        if state != "unknown" and (state != "OPEN" or head != sha):
-            late = " The branch is pushed, so the forge may only be late: run `finish` again in a moment" \
-                if state == "OPEN" and pushed(worktree, meta["branch"], sha) else "; push the branch"
-            raise Refuse(f"{pr} is {state} at {head[:7]}, not open at the current commit {sha[:7]}" + (late if late.startswith(";") else "." + late))
+        if state in ("CLOSED", "MERGED"):
+            raise Refuse(f"{pr} is {state}, so it cannot take this change. Open a new pull request for the branch, or "
+                         "reopen this one, and pass its link")
+        if state == "OPEN" and head != sha:
+            if pushed(worktree, meta["branch"], sha):
+                raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}. The branch is pushed, so the "
+                             "forge may only be late: run `finish` again in a moment")
+            if head and subprocess.run(["git", "merge-base", "--is-ancestor", head, sha], cwd=worktree,
+                                       capture_output=True).returncode != 0:
+                raise Refuse(f"{pr} is at {head[:7]}, which this branch does not have: someone added commits on the forge. "
+                             f"Bring them in (`git pull --ff-only` or a rebase), check again, push, and finish again")
+            raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
+        if state == "unknown" and "origin" in git("remote", cwd=worktree, check=False).split() \
+                and not pushed(worktree, meta["branch"], sha):
+            raise Refuse(f"the pull request could not be read, and the branch is not pushed at {sha[:7]}: push the "
+                         "branch, check that the link is the pull request for it, and finish again")
         if ci == "fail":
             raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
         if state == "OPEN" and pr_conflicts(pr, meta["base"]):
             raise Refuse(f"{pr} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
                          "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
         pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."
-    meta.update(pr=pr, ci=ci, no_pr=bool(args.no_pr))
-    write_json(work / "meta.json", meta)
+    meta = update_meta(work, pr=pr, ci=ci, no_pr=bool(args.no_pr))
     verdict = current_verdict(args.id, meta)
     if not meta.get("review") and needs_verdict(meta):
         pr_note += " `review: human` is ignored because the change touches the files on the attention line."
@@ -1075,7 +1145,7 @@ def cmd_show(args: argparse.Namespace) -> None:
     print(f"commit: {git('rev-parse', 'HEAD', cwd=Path(meta['worktree']), check=False) or 'unknown'}")
     print(f"base: {meta['base']}")
     print(f"main checkout: {main_root()}")
-    print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {meta['base']}...HEAD")
+    print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {base_ref(meta['base'])}...HEAD")
     try:
         declared = load_checks(meta["base"])
     except Refuse:
@@ -1161,6 +1231,7 @@ def build_parser() -> argparse.ArgumentParser:
     verdict.add_argument("id")
     verdict.add_argument("verdict", choices=VERDICTS)
     verdict.add_argument("--by", required=True)
+    verdict.add_argument("--commit", help="the `commit:` that `show` printed when the review began (required)")
     verdict.add_argument("--notes-file")
     verdict.set_defaults(func=cmd_verdict)
 

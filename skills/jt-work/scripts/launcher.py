@@ -168,7 +168,7 @@ def tidy_done(j, ticket_id: str, pr: str = "", head: str | None = None) -> str:
         j.git("worktree", "remove", str(worktree))
     except j.Refuse as err:
         return f"worktree kept: {err}"
-    merged = j.git("rev-list", "--count", f"{meta['base']}..refs/heads/{branch}", check=False) == "0"
+    merged = j.git("rev-list", "--count", f"{j.base_ref(meta['base'])}..refs/heads/{branch}", check=False) == "0"
     if not merged and head is None and j.re.match(r"^https?://[^\s;]+$", pr):
         try:
             state, head, _ = j.pr_info(pr, meta["base"])
@@ -196,7 +196,7 @@ def release(j, args) -> None:
     worktree, branch = (Path(meta["worktree"]), meta["branch"]) if meta.get("worktree") else j.ticket_paths(args.id)
     base = meta.get("base") or j.base_branch()
     exists = bool(j.git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
-    own = j.git("rev-list", "--count", f"{base}..{branch}", check=False) if exists else "0"
+    own = j.git("rev-list", "--count", f"{j.base_ref(base)}..refs/heads/{branch}", check=False) if exists else "0"
     fresh = bool(meta.get("starting")) and meta.get("kept") is False and own == "0"
     if worktree.is_dir():
         if fresh:
@@ -213,8 +213,11 @@ def release(j, args) -> None:
             # No --force: git itself refuses a worktree with changes, and one with submodules.
             j.git("worktree", "remove", str(worktree))
     j.git("worktree", "prune", check=False)  # a worktree whose folder was deleted by hand is forgotten here
-    if fresh and exists:
+    # A branch with no commit of its own holds no work, and keeping it would start the next attempt on an old base.
+    empty = exists and own == "0" and meta.get("kept") is not True
+    if (fresh or empty) and exists:
         j.git("branch", "-D", branch, check=False)
+        fresh = True
     for path in sorted(work.rglob("*"), reverse=True):
         path.rmdir() if path.is_dir() else path.unlink()
     work.rmdir()

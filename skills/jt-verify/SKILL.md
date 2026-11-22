@@ -7,7 +7,7 @@ description: Runs the changed feature the way a user would and looks at the real
 
 Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
-Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0, and remember that a pipe's exit code is its last command's. To run the base, give `--cwd` the main checkout, so the run names the commit it ran at. A screen you drive by hand cannot be recorded this way: attach a screenshot instead.
+Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0, and remember that a pipe's exit code is its last command's. To run the base, give `--cwd` the main checkout, so the run names the commit it ran at. A screen you drive by hand cannot be recorded this way: attach a screenshot instead. A service that keeps running is not started through `run`, which waits for it to end: start it as `.jtek/verify.md` says, or in a session of its own, and record the calls you make to it.
 
 ## 1. Run the real thing
 
@@ -24,7 +24,7 @@ For each `Done when` item, do what you named before you built it:
 1. Compare what you see with the `Done when` item, word for word.
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order.
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
-4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there, not even a cache: run it so that it writes none, such as `python3 -B`. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards. When a check copies the worktree while it runs, make your breaks in a copy made with `git archive`, and take one file from the base with `git show <base>:<path>`.
+4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there, not even a cache: run it so that it writes none, such as `python3 -B`. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards.
 5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
 
 ## 3. What does not count
@@ -57,4 +57,4 @@ The change is not done. Find the cause, fix it, commit, and run `jtek.py check <
 
 If the project has no way to run the real thing, say so in the evidence and say that the repository needs a verification harness.
 
-If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `.jtek/features/` in the same change. The result will name the file on its `attention:` line. That line asks the human to look. It does not forbid the edit.
+If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `.jtek/features/` in the same change. The result will name the file on its `attention:` line. That line asks the human to look, and it makes a ticket with `review: human` need a reviewer after all. It does not forbid the edit.

@@ -54,7 +54,8 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(run(JTEK, "check", "B-1", cwd=tree)[0], 0)
         evidence = self.dest / "evidence.md"
         evidence.write_text("1. seen: mixed file counts 4\n2. seen: empty file counts 0\n3. seen: single spaces count 3\n- clean-up: nothing to remove\n")
-        self.assertEqual(run(JTEK, "verdict", "B-1", "PASS", "--by", "reviewer", cwd=tree)[0], 0)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tree, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(run(JTEK, "verdict", "B-1", "PASS", "--by", "reviewer", "--commit", head, cwd=tree)[0], 0)
         code, out = run(JTEK, "finish", "B-1", "--no-pr", "--evidence-file", evidence, cwd=tree)
         self.assertIn("outcome: review", out)
         self.assertIn("board: Status=Review", out)

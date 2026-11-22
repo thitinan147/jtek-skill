@@ -4,7 +4,7 @@ One Notion database is the board, and each page is a ticket. You read and write 
 
 ## Set up once, by the human
 
-1. Connect the Notion tool in the agent. In Claude Code: `/mcp`, then Notion.
+1. Connect the Notion tool in the agent, in its MCP settings. In Claude Code: `/mcp`, then Notion.
 2. Create the database below, by hand or by asking an agent that has the Notion tool to create it from this table. Then look at it once: the Status options must sit in the right groups, and Ticket ID must have a prefix.
 3. Give the tool access to that database.
 4. Put the database's link in `jtek.json` as `"board"`, in every repository the board serves, and commit it on the base branch.
