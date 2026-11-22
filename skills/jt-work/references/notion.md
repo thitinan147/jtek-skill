@@ -41,7 +41,7 @@ The page link you pass to `start` is the one the fetch of the page returned, wit
 
 A comments tool may answer with a status about suggested edits and no list of discussions. That means the page has no comments.
 
-Write a temporary file outside the repository in the ticket format of [ticket.md](ticket.md):
+Write a temporary file in the ticket format of [ticket.md](ticket.md). Put it in your session's temporary folder, or in any folder outside the repository and its worktrees:
 
 - **Header lines come from properties only:** `# <Name>`, then `id:` from Ticket ID and `status:` from Status, as the page shows it now, whatever it is. `start` decides what that status allows. Add `repo:`, `kind:`, `area:`, `checks:`, `waiting:`, and `pr:` when the property is set, and `review: human` when Review is `human`.
 - **`after:`** lists only the related tickets whose Status is not Done. Leave the line out when all are Done. Look at each related page's Status. Do not guess. A property the fetch does not list at all is empty: no After means no `after:` line.
@@ -62,7 +62,7 @@ Then run `jtek.py start <page link> --from-file <file>`.
 | `Status=In Progress` | Set the property to that value, also when it already holds it. The same for `Waiting=input` and `PR=<link>`. A line may hold only `PR=<link>`: a pull request that still waits for its review. |
 | `Waiting=` | An empty value clears the property. |
 | `comment=result` | Add the result block as a comment on the page, as plain lines. A Notion comment does not keep a code fence. |
-| `comment=result+evidence` | Add the result block and the text of the evidence file as one comment. The file is the one on the block's `evidence:` line. When the tool limits the length of a comment or of one piece of its text, send it in pieces, in order. |
+| `comment=result+evidence` | Add the result block and the text of the evidence file as one comment. The file is the one on the block's `evidence:` line. Notion takes at most 2000 characters in one piece of text: send a longer comment as one comment made of several plain-text pieces, in order. |
 | `-` | Nothing. |
 
 - If `start` refuses, do not touch the page.

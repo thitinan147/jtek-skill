@@ -1,5 +1,17 @@
 # Changelog
 
+## 26.10.0 - the sixth round of real walks
+
+Walked on 26.9.0: a consumer ticket that moved its pin, taken from Todo to Review by one session, and a bug in a check's own script, the ticket `jt-learn` had proposed. The second session skipped the Clean-up step and edited a saved output instead of running it again; it said so itself. Three reviewers in a row died when the machine went to sleep, and each time the ticket's state stayed whole: no verdict, a clean worktree, and `next` naming the next step.
+
+- `finish` and `evidence` refuse evidence without a `clean-up:` line. The step that reads the diff once more is the easiest to skip at the end of a long session, so the script now asks for its result.
+- `jt-build`: when the code and its test are both new, commit them before breaking the code to see the test fail. The advice of 26.9.0, to restore with git, brought back the old file when the new one was not committed.
+- `jt-verify`: never edit a saved output; run it again or say what it lacks.
+- The bug playbook: when the fault is in a check's own script, that check failing on the old code is the failing test, and a reproduction that needs a broken file is restored with git, with no copy kept.
+- `jt-work`: a session that must end before its reviewer reports ends with `needs-review` and says a reviewer is running. `starting-sessions.md`: run `next` before starting another reviewer.
+- `jt-review`: only checks declared in `jtek.json` count as noticing a break, and breaks are made one at a time, after the previous runs end.
+- The evidence form: an item seen only in part, and the `clean-up:` line. `notion.md`: the 2000-character limit on one piece of a comment, and where to keep temporary files.
+
 ## 26.9.0 - the fifth round of real walks
 
 Walked on 26.8.0: two tickets started in the same moment on the same file, each taken from Todo to Review by one session; the second pull request then conflicted with the base and a new session rebased it with `jt-babysit`; and `jt-learn` turned a correction that had come up twice into a check that fails on both past mistakes. No session removed or stopped anything it had not made. One refusal named the wrong remedy.

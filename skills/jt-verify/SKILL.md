@@ -42,6 +42,8 @@ Remove only what you made, by the exact path you created, and stop only a proces
 
 ## 5. Say only what you saw
 
+- Never edit a saved output. When one is wrong or incomplete, run it again, or say in the evidence what it lacks.
+
 - Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it, in a folder outside the worktree. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.

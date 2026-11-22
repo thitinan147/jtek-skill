@@ -26,4 +26,4 @@ Read your own diff once as a stranger would: `git diff <base>...HEAD`, where the
 
 ## Then
 
-If you removed anything, commit and run `jtek.py check <id>` again. If you removed nothing, go to the next step.
+If you removed anything, commit and run `jtek.py check <id>` again. Then add one line under Notes in the evidence: `- clean-up: <what you removed>`, or `- clean-up: nothing to remove`. `finish` refuses evidence without it.

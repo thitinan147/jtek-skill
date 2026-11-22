@@ -59,7 +59,7 @@ The playbook gives the order and the step numbers. Copy its steps into your todo
 Every change needs a verdict from a session that did not write it, so the first `finish` prints `outcome: needs-review`. Passing checks and your own evidence are not a verdict. The only exception is a ticket where the human wrote `review: human`, and the script ignores that line when the change touches a file on the `attention:` line.
 
 - **You can start a fresh session** that cannot see this chat (a subagent counts when it starts with none of this conversation): start one, tell it only to follow the `jt-review` skill for this id and where the repository is, wait for its report (end your turn if it runs in the background), then run `jtek.py finish <id>` again with no other argument.
-- **You cannot:** end with the `needs-review` result. Whoever started this session starts the reviewer.
+- **You cannot, or your session must end before the reviewer reports:** end with the `needs-review` result, and say whether a reviewer is still running. Whoever started this session finishes from there.
 - **The verdict is FAIL:** read the review notes. A verdict posted on the pull request is not a review comment for `jt-babysit`: this path handles it. Reproduce each finding before you change anything. Fix what reproduces as `jt-build` says, with a test that fails for each finding, say which did not and why, then go back to the Check step, see the change work again, pass new evidence to `finish`, and ask for a new verdict. When a fix needs the human's permission, fix the others, commit, and stop with `--waiting approval`. After the third FAIL on one ticket, stop with `--waiting input`: the ticket or the reviewer's standard needs the human.
 
 ## Stop and wait

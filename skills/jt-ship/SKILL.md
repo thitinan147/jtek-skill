@@ -12,13 +12,13 @@ Ship only after `jtek.py check <id>` passed on the current commit and you have s
 Write it for a person who has not seen the session, in at most 40 lines, not counting blank ones. The script refuses a longer one. The human reviews the evidence first and the diff second:
    The form, with a filled example, is in [references/evidence.md](references/evidence.md).
    - What changed and why, in two or three sentences.
-   - One line per `Done when` item, in the ticket's order, starting with its number and a status word: `1. seen: <command or steps> -> <what you saw>`, or `2. not run: <reason>`. The script refuses evidence that skips an item. `not run` is an honest answer. `seen` for something you did not see is not.
+   - One line per `Done when` item, in the ticket's order, starting with its number and a status word: `1. seen: <command or steps> -> <what you saw>`, or `2. not run: <reason>`. The script refuses evidence that skips an item, or that has no `clean-up:` line from the Clean-up step. `not run` is an honest answer. `seen` for something you did not see is not.
    - Choices you made where the ticket was open.
    - What you could not run, and anything the reviewer should look at first. If you changed a file that a check runs, CI config, a lockfile, or deleted a test, say so and say why.
 
 ## 2. Open the pull request, or not
 
-Save the evidence to a file outside the worktree, then run `jtek.py evidence <id> --file <file>`. It checks the form and saves nothing, so a refused file never becomes a pull request body.
+Save the evidence to a file in your session's temporary folder, or anywhere outside the repository and its worktrees, then run `jtek.py evidence <id> --file <file>`. It checks the form and saves nothing, so a refused file never becomes a pull request body.
 
 Add `--attach <file>` to `finish` for each screenshot, recording, or output file that shows the change working. A file attached again under the same name replaces the earlier one. Attached files stay on this machine. A reader of the pull request cannot open them, so the evidence itself must hold what that reader needs, and a file worth reading goes on the pull request as a comment.
 

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.9.0-111111?style=flat-square" alt="Version 26.9.0">
+  <img src="https://img.shields.io/badge/version-26.10.0-111111?style=flat-square" alt="Version 26.10.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
@@ -197,7 +197,7 @@ A user can add a phone number on the profile page, so that sales can call back.
 
 Every `Done when` item names an input and a result, so someone can see it work. `Out of scope` names behaviour that must not change.
 
-**The evidence**, which the agent writes and you read before the diff. One numbered line per `Done when` item, and the script refuses a file that skips one:
+**The evidence**, which the agent writes and you read before the diff. One numbered line per `Done when` item and a `clean-up:` line, and the script refuses a file that lacks either:
 
 ```text
 The profile now stores a phone number. PATCH /me validates it with the existing validator, and the page shows it.
@@ -207,6 +207,7 @@ The profile now stores a phone number. PATCH /me validates it with the existing 
 3. not run: no browser on this machine, so the profile page was not opened. The API returns the value
 
 Notes:
+- clean-up: removed a console.log left in the handler
 - reused the validator in lib/validate.ts
 - the number is stored as text, because a leading 0 is lost in a number
 ```
@@ -339,7 +340,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 160 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: eight tickets walked to Done on three demo repositories over five rounds, seven of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
+- **Proven:** the script, by 161 tests, and three outside reviews whose findings are fixed and tested. The fixes of the third were reviewed again, and that review's findings are fixed too. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: nine tickets walked to Done on three demo repositories over six rounds, eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
 - **Not proven:** anything with a real Notion workspace, a real repository, or a real pull request. Reading the page and writing the `board:` line are steps no agent has done yet.
 - **Never run:** `jt-harness`, `jt-babysit`, `jt-learn`, and the refactor playbook.
 

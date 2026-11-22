@@ -82,7 +82,7 @@ class Scratch(unittest.TestCase):
 
     def evidence(self):
         path = Path(self.tmp.name) / "evidence.md"
-        path.write_text("1. seen: ran the thing, it works\n")
+        path.write_text("1. seen: ran the thing, it works\n\nNotes:\n- clean-up: nothing to remove\n")
         return str(path)
 
     def field(self, ticket_id, key):
@@ -524,7 +524,7 @@ class FinishTests(Scratch):
         self.assertEqual(code, 1)
         self.assertIn("1. the thing works", out)
         honest = Path(self.tmp.name) / "honest.md"
-        honest.write_text("1. not run: the app needs a database I do not have\n")
+        honest.write_text("1. not run: the app needs a database I do not have\n- clean-up: nothing to remove\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(honest))
         self.assertEqual(code, 0, out)
         self.assertIn("(0 seen, 1 not run)", out)
@@ -1117,7 +1117,7 @@ class SecondReview(FindingsBase):
         self.commit_change("T-1")
         self.jtek("check", "T-1")
         evidence = Path(self.tmp.name) / "many.md"
-        evidence.write_text("".join(f"{n}. seen: ok\n" for n in range(1, 46)))
+        evidence.write_text("".join(f"{n}. seen: ok\n" for n in range(1, 46)) + "- clean-up: nothing to remove\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))
         self.assertEqual(code, 0, out)
 
@@ -1846,6 +1846,17 @@ class FifthLoopRound(Scratch):
         self.assertEqual(code, 1)
         self.assertIn(f"T-9 is not started in this repository ({self.repo})", out)
         self.assertIn("run the command from there or from the ticket's worktree", out)
+
+    def test_evidence_says_what_the_clean_up_removed(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        bare = Path(self.tmp.name) / "bare.md"
+        bare.write_text("1. seen: ran it\n")
+        code, out = self.jtek("evidence", "T-1", "--file", str(bare))
+        self.assertEqual(code, 1, out)
+        self.assertIn("no `clean-up:` line", out)
+        bare.write_text("1. seen: ran it\n\nNotes:\n- Clean-up: removed a debug print in app.py\n")
+        self.assertEqual(self.jtek("evidence", "T-1", "--file", str(bare))[0], 0)
 
 
 class NextTests(Scratch):

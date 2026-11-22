@@ -807,6 +807,12 @@ def check_evidence(work: Path, text: str) -> None:
             "the evidence must account for every `Done when` item. Start one line per item with its number and "
             "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
         )
+    if not re.search(r"^\s*(-\s*)?clean-up:", text, re.M | re.I):
+        # The step that reads the diff once more is the easiest to skip at the end of a long session.
+        raise Refuse(
+            "the evidence has no `clean-up:` line. Read the diff as the `jt-cleanup` skill says, then add one line "
+            "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to remove`"
+        )
 
 
 def cmd_evidence(args: argparse.Namespace) -> None:

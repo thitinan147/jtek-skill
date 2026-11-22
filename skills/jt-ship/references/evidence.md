@@ -12,6 +12,7 @@ The human reads this file before the diff, and it is the body of the pull reques
 3. not run: <why you could not see it>
 
 Notes:
+- clean-up: <what the clean-up step removed, or nothing to remove>
 - out of scope: <how you compared it with the base, and that it is the same>
 - <a choice the ticket left open, and what you chose>
 - <something the reviewer should look at first>
@@ -27,6 +28,7 @@ The profile now stores a phone number. PATCH /me validates it with the existing 
 3. not run: no browser on this machine, so the profile page was not opened. The API returns the value
 
 Notes:
+- clean-up: removed a console.log left in the handler
 - reused the validator in lib/validate.ts
 - the number is stored as text, because a leading 0 is lost in a number
 - attached: profile-api.txt (the full output of items 1 and 2)
@@ -37,7 +39,9 @@ Notes:
 - **One numbered line per `Done when` item, in the ticket's order.** It starts with the number, then `seen:` or `not run:`. The script refuses a file that skips an item.
 - **`seen:` means you ran it and looked.** Give the exact command, request, or steps, then the result after `->`. A passing test counts when you name the test and it covers the item.
 - **`not run:` is honest, not a failure.** Give the reason. The human then knows what to check by hand.
+- **An item you saw only in part is `seen:` for that part,** and the same line says which part you did not see for real and why, for example a value the real service never sends.
 - **Never write `seen:` for something you only read in the code.**
 - **At most 40 lines that are not blank.** Put long output in a file and pass it with `--attach`.
 - **Notes are short.** A choice you made, a workaround you did not copy, a file the reviewer should open first.
+- **A `clean-up:` line is required.** It says the diff was read once more before shipping, as `jt-cleanup` says.
 - **Write it again when the code changes.** The script refuses evidence that was saved for an older change.

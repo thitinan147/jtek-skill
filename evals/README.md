@@ -29,7 +29,7 @@ It reads the repository, not the agent's account of it:
 - For a bug: the first commit holds only the failing test.
 - The base branch has no new commits.
 - No sensitive file was touched.
-- The evidence is saved and at most 40 lines. The script has already refused evidence that skips a `Done when` item.
+- The evidence is saved and at most 40 lines. The script has already refused evidence that skips a `Done when` item or has no `clean-up:` line.
 
 ## What the grader cannot check
 

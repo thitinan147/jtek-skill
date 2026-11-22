@@ -23,7 +23,7 @@ You are the reviewer. You did not write this change. If this session wrote any o
 3. Check that the diff stays inside the ticket and out of `Out of scope`.
 4. Check that no test was deleted, skipped, or loosened, and that no check was weakened.
 5. For each line the change deleted, ask what it was there for. Read its history when it looks like a guard.
-6. Test the author's tests. For each behaviour the change adds, and for each outcome `Done when` names, break the line that makes it true, wherever that line is, and run every declared check. Undo each break with `git checkout -- <file>` and confirm the worktree is clean. What a break shows:
+6. Test the author's tests. For each behaviour the change adds, and for each outcome `Done when` names, break the line that makes it true, wherever that line is, and run every check declared in `jtek.json`. Make one break at a time, after the previous runs have ended, because a check may read the worktree while it runs. A script outside `jtek.json` may show you a gap, but it does not count as a check that noticed. Undo each break with `git checkout -- <file>` and confirm the worktree is clean. What a break shows:
    - **No check fails, and the behaviour is one `Done when` names** (its outcome, or a number or name it gives): a finding. Nothing would notice if it stopped being true.
    - **No check fails, and the ticket does not name the behaviour:** a note.
    - **Some check fails:** the tests are real. A check that still passed does not cover that behaviour: name it in a note.
