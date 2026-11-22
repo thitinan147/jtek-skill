@@ -1,5 +1,11 @@
 # Changelog
 
+## 26.19.0 - the fourteenth round of real walks
+
+Round fourteen on 26.18.0: Cursor and Antigravity worked a ticket each at the same time, Cursor's through a real pull request with CI on two Node versions. Both reached Review on their own and cited a recorded run on every `seen:` line. Cursor's service, started in the background as the demo's guide said, died when its shell call ended.
+
+- The `jt-harness` template says to start a service in a session of its own, because a background process can die with the agent's shell call.
+
 ## 26.18.0 - other agents
 
 Round thirteen on 26.17.0: one ticket on Sonnet with a reviewer on the strongest model, and one ticket each on Cursor's command-line agent and on Antigravity's, both handed the ticket as a file because neither had a Notion tool. All three reached Review on their own, cited a recorded run on every `seen:` line, rested the clean-up on a recorded diff, and started their own reviewer. Cursor and Antigravity each listed the board lines they could not write.
