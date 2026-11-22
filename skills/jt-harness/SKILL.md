@@ -1,6 +1,6 @@
 ---
 name: jt-harness
-description: Builds a repository's way to run and observe the real app (a verify guide, a feature map, and a `verify` check) so that agents can prove a change works. Use when the user asks to set up or repair verification for a repository, or when a human asks for it after a change could not be verified. Not during a ticket: a ticket session goes on without it.
+description: Builds a repository's way to run and observe the real app (a verify guide, a feature map, and a `verify` check) so that agents can prove a change works. Use when the user asks to set up or repair verification for a repository, or when a human asks for it after a change could not be verified. A ticket session does not load it; it goes on without one.
 ---
 
 # jt-harness
