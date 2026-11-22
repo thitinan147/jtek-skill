@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.18.0 - other agents
+
+Round thirteen on 26.17.0: one ticket on Sonnet with a reviewer on the strongest model, and one ticket each on Cursor's command-line agent and on Antigravity's, both handed the ticket as a file because neither had a Notion tool. All three reached Review on their own, cited a recorded run on every `seen:` line, rested the clean-up on a recorded diff, and started their own reviewer. Cursor and Antigravity each listed the board lines they could not write.
+
+- The bug playbook says where a test goes for an item that already holds on the base: with the failing test, as a pin, seen failing by breaking the fix once.
+- `jt-verify`: inputs and drafts stay in the session's temporary folder, not beside the worktrees.
+- README: which agents the walks used.
+
 ## 26.17.0 - the twelfth round of real walks
 
 Round twelve on 26.16.0: a client feature on Sonnet, with CI now on Node 20 and 22, and a tally feature on the strongest model. Both cited a run on every `seen:` line, and the clean-up rested on a recorded diff. CI stayed green: in twenty-two tickets, a pull request never went red on its own.

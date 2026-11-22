@@ -46,7 +46,7 @@ Remove only what you made, by the exact path you created, and stop only a proces
 
 - Never edit a saved output. When one is wrong or incomplete, run it again, or say in the evidence what it lacks.
 
-- End each `seen:` line with the runs it rests on, as `(run 3)` or `(runs 3 and 4)`. `finish` refuses a number that was never recorded. The run file holds the exact command, so the line may name it briefly; what the line says came back must be what the run shows. Make the input files with a recorded run too, or show them with one, so the run says what went in.
+- End each `seen:` line with the runs it rests on, as `(run 3)` or `(runs 3 and 4)`. `finish` refuses a number that was never recorded. The run file holds the exact command, so the line may name it briefly; what the line says came back must be what the run shows. Make the input files with a recorded run too, or show them with one, so the run says what went in. Keep inputs and drafts in your session's temporary folder, not in the repository or beside its worktrees.
 - Write down the command or steps and the result for each item. Keep the screenshot, recording, or output file that shows it, in a folder outside the worktree. This is the evidence. It goes into the pull request, or into the evidence file when there is no pull request.
 - Never write "should work" or "probably fixed". Either you saw it, or you did not.
 - If you could not run it, say that in the evidence, and say why.
