@@ -1,5 +1,15 @@
 # Changelog
 
+## 26.24.0 - the second walk on FLO
+
+TEK-4, a tally feature, was worked on 26.23.0 and passed with notes. The human sent it back with a comment on the item and moved it to To do, to walk the rework path on FLO. The session's notes became these fixes to `flo.md`:
+
+- The exact spelling of FLO's columns, and that the type is `type.name`.
+- What an empty answer of `get_agent_instructions` looks like.
+- A missing Review column is said at once and again in the last message, since a subagent's first message reaches no one.
+- An item with no sprint still shows in its column.
+- After a dropped connection, a read may be sent again; a write is sent again only after reading the item.
+
 ## 26.23.0 - the first walk on FLO
 
 TEK-3, a tally feature, was worked on 26.22.0 from a FLO item by a fresh Claude session and passed its review. The board had no Review column, so the item stayed In progress, as `flo.md` said it would. The session's notes became these fixes to `flo.md`:
