@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`jtek.py doctor`: say what is set up in a repository and what is missing, in the order to fix it.
 
-Read-only. It runs no check and cannot see Notion. Run it as `jtek.py doctor`.
+Read-only. It runs no check and cannot see the board. Run it as `jtek.py doctor`.
 """
 from __future__ import annotations
 
@@ -51,8 +51,8 @@ def run(j, args=None) -> None:
         rows.append(("missing", f"{j.CONFIG} on the base branch", str(err) + hint))
     if config is not None:
         board = str(config.get("board") or "")
-        rows.append(("ok" if board else "missing", "`board`: the Notion database link",
-                     f"set `board` in {j.CONFIG} to the link of the board database, and commit it on {base}"))
+        rows.append(("ok" if board else "missing", "`board`: the Notion database or FLO product link",
+                     f"set `board` in {j.CONFIG} to the link of the board, and commit it on {base}"))
         checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
         empty = [name for name, command in checks.items() if not isinstance(command, str) or not command.strip()]
         if not checks:
@@ -93,8 +93,8 @@ def run(j, args=None) -> None:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
     if shutil.which("gh") and not own_forge:
         print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
-    print("not checked: Notion. This script cannot see it. Ask your agent to read the board with its Notion tool\n"
-          "         and compare the properties with references/notion.md of the jt-work skill.")
+    print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
+          "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
     if any(state == "missing" for state, _, _ in rows):
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
     print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")

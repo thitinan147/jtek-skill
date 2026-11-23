@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.22.0 - FLO as the board
+
+The board may now be a FLO product instead of a Notion database. `references/flo.md` says where each part of a ticket lives in FLO (column, type, tags, `blocked by`, comments), what to write for each `board:` line, and what the human sets up once: a Review column on the board. It was worked out by trying each write against a real FLO product first.
+
+- `jt-work` reads `notion.md` or `flo.md`, by the board's link.
+- Status names are read whatever their spacing, so FLO's `To do` is `Todo`.
+- `doctor`, `setup.md`, `ticket.md`, and the session guide name both boards.
+
 ## 26.21.0 - the fifteenth round of real walks
 
 Round fifteen on 26.20.0, the first after the outside review: a tally feature on Claude Code that went through a FAIL and a fix, and a two-repository client ticket on Cursor through a real pull request. Both reached Review on their own; the reviewers passed `--commit`, and evidence cited runs from before a commit that changed only tests. Two reviewers each saw a wrong result from a stale Python cache after undoing a break.

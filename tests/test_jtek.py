@@ -903,9 +903,11 @@ class ReviewFindings(FindingsBase):
         return proc.returncode, proc.stdout + proc.stderr
 
     def test_board_rows_are_normalised_or_refused_before_any_line_is_printed(self):
-        code, out = self.run_next([{"id": 12, "status": "todo"}, {"id": "T-2", "status": "In progress", "after": 5}])
+        code, out = self.run_next([{"id": 12, "status": "todo"}, {"id": "T-2", "status": "In progress", "after": 5},
+                                   {"id": "TEK-3", "status": "To do"}])
         self.assertEqual(code, 0, out)
         self.assertIn("12\twork\tnew", out)
+        self.assertIn("TEK-3\twork\tnew", out, "FLO spells the column `To do`")
         self.assertIn("T-2\telsewhere", out)
         code, out = self.run_next([{"id": "T-1", "status": "Todo"}, {"id": "T-2", "status": "Not started"}])
         self.assertEqual(code, 1)
@@ -2188,8 +2190,8 @@ class DoctorTests(Scratch):
     def test_doctor_names_what_is_missing_in_order(self):
         code, out = self.jtek("doctor")
         self.assertEqual(code, 1, out)
-        self.assertIn("missing  `board`: the Notion database link", out)
-        self.assertIn("not checked: Notion", out)
+        self.assertIn("missing  `board`: the Notion database or FLO product link", out)
+        self.assertIn("not checked: the board", out)
         self.write_config({"test": f"{sys.executable} -c pass", "lint": ""}, board="https://www.notion.so/x")
         code, out = self.jtek("doctor")
         self.assertEqual(code, 1)

@@ -16,7 +16,7 @@ def init(j, args) -> None:
         raise j.Refuse(f"{path} already exists")
     j.write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
-    print("`board` is the link of the Notion database that holds the tickets. The agent reads it to find a ticket.")
+    print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
@@ -24,7 +24,7 @@ def init(j, args) -> None:
 
 
 def load_board(j, path: str) -> list[dict]:
-    """Rows that the launcher read from the board with its Notion tool. Every row is checked before any is used."""
+    """Rows that the launcher read from the board with its own tool. Every row is checked before any is used."""
     try:
         rows = json.loads(Path(path).read_text())
     except (OSError, ValueError) as err:

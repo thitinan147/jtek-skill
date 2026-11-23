@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """jtek inner loop: one ticket, one session, one worktree.
 
-The board is a Notion database, which the agent reads and writes with its own
-Notion tool. This script never talks to Notion: it takes the ticket as a file
+The board is a Notion database or a FLO product, which the agent reads and writes
+with its own tool. This script never talks to the board: it takes the ticket as a file
 and prints what to write back. Claims, logs, and results live under the
 repository's common git directory, so every worktree sees the same claims and
 no tracked file is shared between sessions.
@@ -219,9 +219,14 @@ def parse_ticket(text: str) -> dict:
     return {"title": title, "fields": fields, "sections": sections, "repeated": repeated}
 
 
+def squash(text: str) -> str:
+    return "".join(text.split()).lower()
+
+
 def canon_status(value: str) -> str:
     """Notion's own spelling is `In progress`. Accept any case, and refuse a status this board does not have."""
-    found = next((s for s in STATUSES if s.lower() == " ".join(value.split()).lower()), None)
+    # FLO's column is `To do`, so spaces are ignored too.
+    found = next((s for s in STATUSES if squash(s) == squash(value)), None)
     if value and not found:
         raise Refuse(f"`{value}` is not a status of the board; it has: {', '.join(STATUSES)}")
     return found or ""
@@ -447,7 +452,7 @@ def attention(meta: dict) -> str:
 
 
 def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
-    """What the session must now write on the ticket's page with its Notion tool. `-` means nothing."""
+    """What the session must now write on the ticket's page with the board's tool. `-` means nothing."""
     if outcome == "review":
         return "Status=Review; Waiting=; " + (f"PR={pr}; " if pr else "") + "comment=result+evidence"
     if outcome == "needs-human":
@@ -1235,7 +1240,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_other)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
-    start.add_argument("ref", help="the link of the ticket's Notion page; it becomes the `source:` of the result")
+    start.add_argument("ref", help="the link of the ticket's page on the board; it becomes the `source:` of the result")
     start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")

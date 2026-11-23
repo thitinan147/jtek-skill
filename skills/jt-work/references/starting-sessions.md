@@ -4,7 +4,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
 ## Ask what each ticket needs
 
-1. Read the board (the database named as `board` in `jtek.json`) with your Notion tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`:
+1. Read the board (the database named as `board` in `jtek.json`) with the board's tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`:
 
    ```json
    [{"id": "T-12", "title": "...", "status": "Todo", "repo": "api", "waiting": "", "pr": "", "after": ["T-10"]}]
@@ -17,7 +17,7 @@ A session works the tickets it is given. Something else decides which ticket run
 |---|---|
 | `work` | Start a fresh session in this repository: "Follow the `jt-work` skill for ticket `<id>`." |
 | `review` | Start a fresh session in this repository: "Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
-| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) says. Do not start a session. |
+| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) or [flo.md](flo.md) says. Do not start a session. |
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
@@ -36,7 +36,7 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 - One session per ticket at a time. Before you start one, check that none is running for that id.
 - Give each session only the line in the table. Do not pass on what another session said.
 - Limit how many run at once. Three is a reasonable start.
-- A session needs the Notion tool, and permission to run git, the project's checks, and `gh`.
+- A session needs the board's tool (Notion or FLO), and permission to run git, the project's checks, and `gh`.
 - Which tickets may share one session is in [several-tickets.md](several-tickets.md).
 
 ## Starting a separate session

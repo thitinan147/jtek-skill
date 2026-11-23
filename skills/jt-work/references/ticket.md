@@ -2,7 +2,7 @@
 
 ## Ticket format
 
-A ticket is a page on the Notion board. The session reads the page with its Notion tool and saves it in this format, as [notion.md](notion.md) says. The header lines come from the page's properties, and the sections from its body. `jtek.py start` keeps a copy, and that copy is the file to work from.
+A ticket is a page on the board: a Notion page, or a FLO item. The session reads it with the board's tool and saves it in this format, as [notion.md](notion.md) or [flo.md](flo.md) says. The header lines come from the page's properties, and the sections from its body. `jtek.py start` keeps a copy, and that copy is the file to work from.
 
 ```markdown
 # Short title
@@ -37,7 +37,7 @@ A blank form to copy, a filled example, and what makes a ticket workable: [ticke
 
 ## Where tickets live
 
-The page in Notion is the source of truth. The layout of the board is in [notion.md](notion.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
+The page on the board is the source of truth. The layout of the board is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
 
 ## Statuses
 
@@ -67,7 +67,7 @@ After creating the worktree, `start` runs the `setup` command from `jtek.json`, 
 
 A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human tells a new session to take the ticket over, and that session adds `--resume` to `start`. A session never adds it on its own.
 
-Notion has no atomic claim. The directory above is the lock for sessions on one machine. The session writes In Progress on the page only after `start` allows it.
+The board has no atomic claim. The directory above is the lock for sessions on one machine. The session writes In Progress on the page only after `start` allows it.
 
 ## Result
 
@@ -92,7 +92,7 @@ comment file: <path> (when the board line asks for a comment)
 board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | PR=<url> | -
 ```
 
-- **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md). `-` means nothing.
+- **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md), and where each lives in FLO in [flo.md](flo.md). `-` means nothing.
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh`, or with the project's `pr_state` command. `finish` refuses while it is `fail`.
 - **`verdict`:** only a verdict for the change and the ticket as they are now is shown. `none` means one is still needed. A verdict stops counting when the code changes, even by whitespace or by moving the same edit to another place, and when the human changes the ticket's `Goal`, `Done when`, or `Out of scope`.
 - **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones (more only for a ticket with over 30 items), with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
