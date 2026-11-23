@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.23.0 - the first walk on FLO
+
+TEK-3, a tally feature, was worked on 26.22.0 from a FLO item by a fresh Claude session and passed its review. The board had no Review column, so the item stayed In progress, as `flo.md` said it would. The session's notes became these fixes to `flo.md`:
+
+- Agent instructions are read with `get_agent_instructions`: `get_item` may leave them out.
+- The session looks at the board when it reads the item, and says at once when the Review column is missing.
+- Header lines go in the order of `ticket.md`; `Waiting=` writes nothing when neither tag is there; the comment keeps every line of the block, local paths included.
+- A session never sets a sprint, or starts or closes one.
+
 ## 26.22.0 - FLO as the board
 
 The board may now be a FLO product instead of a Notion database. `references/flo.md` says where each part of a ticket lives in FLO (column, type, tags, `blocked by`, comments), what to write for each `board:` line, and what the human sets up once: a Review column on the board. It was worked out by trying each write against a real FLO product first.
