@@ -42,7 +42,7 @@ Push the branch and open the pull request as for a ticket. Never merge.
 
 ## Principles
 
-The step skills mark the lines that carry a principle with its id, such as `(P8)`. The ids and their rules are in `jt-work`'s `references/principles.md`. Name the id behind each decision: in the evidence, on the `choice:` line, as `(P17)`; in your report, in its own column. Cite only an id you read in a step this session.
+The step skills mark the lines that carry a principle with its id, such as `(P8)`. The ids and their rules are in `jt-work`'s `references/principles.md`. Name the id behind each decision: in the evidence, on the `choice:` line, as `(P17)`; in your report, in its own column. Cite only an id you read in a step this session. When no principle decided it, write `-`, never a file or a skill name.
 
 ## Helpers
 

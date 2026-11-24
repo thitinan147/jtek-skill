@@ -9,8 +9,10 @@ the ticket is handed over as a file. Standard library only.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +21,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS = ROOT / "evals" / "scenarios"
-SKILL = ROOT / "skills" / "jt-work" / "SKILL.md"
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -40,18 +41,23 @@ def build(name: str, dest: Path) -> None:
     repo = dest / "app"
     shutil.copytree(folder / "repo", repo)
     git("init", "-q", "-b", "main", cwd=repo)
-    git("config", "user.email", "eval@example.invalid", cwd=repo)
-    git("config", "user.name", "eval", cwd=repo)
+    # Nothing the agent sees may say it is being measured: a run that knows it is watched is not an ordinary run.
+    git("config", "user.email", "sam.okafor@example.com", cwd=repo)
+    git("config", "user.name", "Sam Okafor", cwd=repo)
     git("add", "-A", cwd=repo)
     git("commit", "-q", "-m", "init", cwd=repo)
     ticket = dest / "ticket.md"
     shutil.copy(folder / "ticket.md", ticket)
+    # The skills are copied next to the repository, so the agent never reads the folder that holds the hidden tests.
+    skills = dest / "tools" / "skills"
+    shutil.copytree(ROOT / "skills", skills, ignore=shutil.ignore_patterns("__pycache__"))
+    page = hashlib.sha256(f"{name}{dest}".encode()).hexdigest()[:32]
     print(f"repository: {repo}")
     print("prompt for a fresh agent session:")
-    print(f"  Follow the skill at {SKILL} for ticket id {scenario['ticket']} in the repository {repo}.")
-    print(f"  There is no Notion here. The page is already saved as {ticket}: pass it to start with --from-file,")
-    print("  use https://www.notion.so/eval as the page link, and skip every write to the board.")
-    print("  This repository has no forge. End with the result block.")
+    print(f"  Follow the skill at {skills / 'jt-work' / 'SKILL.md'} for ticket {scenario['ticket']} in the repository {repo}.")
+    print(f"  The ticket page is saved as {ticket}: pass it to start with --from-file, and https://www.notion.so/{page}")
+    print("  as the page link. No board tool is set up here, so skip the writes to the board.")
+    print("  This repository has no remote. End with the result block.")
     print(f"then: python3 evals/run.py grade {name} {dest}")
 
 
@@ -93,11 +99,47 @@ def grade(name: str, dest: Path) -> int:
     lines = [l for l in evidence.read_text().splitlines() if l.strip()] if evidence.exists() else []
     row(0 < len(lines) <= 40, f"evidence is saved and at most 40 lines (got {len(lines)})")
 
+    trail = transcript(dest)
+    if trail is None:
+        print("note: no session transcript found for this folder, so what the agent opened is not graded")
+    else:
+        opened, commands = trail
+        row("jt-work" in opened, "the agent read the jt-work skill (from its transcript, not its account)")
+        print(f"skills read: {', '.join(opened) or 'none'}")
+        print(f"jtek.py commands, in order: {' '.join(commands) or 'none'}")
+
     for ok, text in rows:
         print(("PASS  " if ok else "FAIL  ") + text)
     score = sum(ok for ok, _ in rows)
     print(f"score: {score}/{len(rows)}")
     return 0 if score == len(rows) else 1
+
+
+def transcript(dest: Path, home: Path | None = None) -> tuple[list[str], list[str]] | None:
+    """What the agent did, read from the session files of its agent rather than from its own report.
+    Claude Code keeps them under ~/.claude/projects/<path with every other character turned into '-'>."""
+    slug = re.sub(r"[^A-Za-z0-9]", "-", str(dest))
+    folders = [p for p in ((home or Path.home()) / ".claude" / "projects").glob(f"{slug}*") if p.is_dir()]
+    files = [f for folder in folders for f in sorted(folder.glob("*.jsonl"))]
+    if not files:
+        return None
+    opened: list[str] = []
+    commands: list[str] = []
+    for path in files:
+        for line in path.read_text(errors="replace").splitlines():
+            try:
+                content = json.loads(line).get("message", {}).get("content", [])
+            except (ValueError, AttributeError):
+                continue
+            for part in content if isinstance(content, list) else []:
+                if not isinstance(part, dict) or part.get("type") != "tool_use":
+                    continue
+                args = part.get("input") or {}
+                found = re.search(r"/skills/(jt[a-z-]*)/SKILL\.md", str(args.get("file_path", "")))
+                if found and found.group(1) not in opened:
+                    opened.append(found.group(1))
+                commands += re.findall(r"jtek\.py\s+([a-z]+)", str(args.get("command", "")))
+    return opened, commands
 
 
 def main(argv: list[str]) -> int:

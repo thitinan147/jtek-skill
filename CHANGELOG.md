@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.31.0 - blind evals, and the first walks of `/jt`
+
+`/jt` was walked twice on 26.30.0 by fresh sessions that read it by path: a FLO ticket (TEK-13, a client feature with a real pull request) and a request typed in Thai with no ticket, which became `LOCAL-1`, changed two files, and so got a reviewer. Both reached Review and were merged. Both reports followed the owner's style file.
+
+- Evals are blind. The skills are copied beside the scratch repository, so the agent never reads the folder that holds the hidden tests. The git author, the page link, and the prompt say nothing about a test. The grade reads the agent's session files and lists which skills it opened and which `jtek.py` commands it ran, in order, instead of asking the agent.
+- `release` on a local ticket no longer tells you to set Status on a page that does not exist.
+- `/jt`: a decision no principle settled gets `-` in the principle column, not a file name.
+
 ## 26.30.0 - `/jt`, your mode
 
 The owner asked for their own mode, after a close reading of another skill set built around one person's working style. `/jt` is that mode for jtek: typed only, for any coding task.

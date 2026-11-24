@@ -7,16 +7,18 @@ Run these whenever you change the text of a skill or a playbook. A change that r
 1. **Build** a scratch repository for a scenario:
 
    ```bash
-   python3 evals/run.py build bug-wordcount /tmp/eval-1
+   python3 evals/run.py build bug-wordcount ~/work/wordcount
    ```
 
-   It prints the prompt to give the agent. An eval uses no Notion: the page is handed over as a ticket file, so reading the page and writing the `board:` line are not covered.
+   It prints the prompt to give the agent. An eval uses no board: the page is handed over as a ticket file, so reading the page and writing the `board:` line are not covered.
+
+   The run is blind. Pick a folder name a person would use, not `eval-1`. The skills are copied into the folder beside the repository, so the agent never reads the folder that holds the hidden tests, and the prompt, the git author, and the page link say nothing about a test. An agent that knows it is measured does not work as it would on a real ticket.
 2. **Run** a fresh agent session with that prompt, and nothing else. Use the agent you want to test (Claude Code, Cursor, ...). It must not see this repository's history or an earlier run.
 3. When the result says `needs-review`, start a second fresh session and tell it only to follow `skills/jt-review/SKILL.md` for the same ticket. Then let the first agent, or a third session, run `/jt-work <id>` again.
 4. **Grade** what is left:
 
    ```bash
-   python3 evals/run.py grade bug-wordcount /tmp/eval-1
+   python3 evals/run.py grade bug-wordcount ~/work/wordcount
    ```
 
 ## What the grader checks
@@ -31,11 +33,13 @@ It reads the repository, not the agent's account of it:
 - No sensitive file was touched.
 - The evidence is saved and at most 40 lines. The script has already refused evidence that skips a `Done when` item or has no `clean-up:` line.
 
+It also reads the agent's own session files when it can find them (Claude Code keeps them under `~/.claude/projects/`), and prints which skills the agent opened and which `jtek.py` commands it ran, in order. That is what it did, not what it says it did.
+
 ## What the grader cannot check
 
-Read these yourself, and ask the agent to list where the skill text made it guess:
+Read these yourself. Do not ask the agent where it had to guess: an agent asked about its work tells you what sounds right, and asking tells it that it is watched. Read its session file instead.
 
-- Did it open each step skill the playbook names?
+- Did it open each step skill the playbook names? The grade lists what it opened.
 - Is the evidence true, and does it cover every `Done when` item?
 - Did the reviewer find what the hidden tests find?
 

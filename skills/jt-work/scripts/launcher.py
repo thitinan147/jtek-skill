@@ -221,7 +221,7 @@ def release(j, args) -> None:
     kept = exists and not fresh
     print(f"released {args.id}; " + (f"branch {branch} is kept, and the next start goes on from it" if kept
                                      else "the interrupted start is cleaned up")
-          + ". The board is not changed: set Status on the page yourself")
+          + (". A local ticket has no board" if j.LOCAL_RE.match(args.id) else ". The board is not changed: set Status on the page yourself"))
 
 
 def doctor(j, args) -> None:

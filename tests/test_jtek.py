@@ -1921,7 +1921,9 @@ class LocalTickets(Scratch):
 
     def test_a_released_local_id_is_never_given_again(self):
         self.local()
-        self.assertEqual(self.jtek("release", "LOCAL-1")[0], 0)
+        code, out = self.jtek("release", "LOCAL-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("A local ticket has no board", out)
         code, out = self.local()
         self.assertIn("id: LOCAL-2", out)
 

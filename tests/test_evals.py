@@ -1,4 +1,7 @@
 """The eval builder and grader work on a scripted, known-good run."""
+import importlib.util
+import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +20,13 @@ def run(*args, cwd=None):
 
 def git(*args, cwd):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location("runner", RUN)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class EvalTests(unittest.TestCase):
@@ -76,6 +86,31 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL  the first commit holds only the failing test", out)
         self.assertIn("PASS  hidden acceptance tests pass", out)
+
+
+    def test_nothing_the_agent_sees_says_it_is_measured(self):
+        code, out = run(RUN, "build", "bug-wordcount", self.dest)
+        self.assertEqual(code, 0, out)
+        prompt = out.split("prompt for a fresh agent session:")[1].split("then:")[0]
+        for word in ("eval", "judge", "hidden", "score", "grade"):
+            self.assertNotIn(word, prompt.lower())
+        self.assertIn(str(self.dest / "tools" / "skills" / "jt-work" / "SKILL.md"), prompt)
+        seen = [p for p in self.dest.rglob("*") if "hidden" in p.name or p.name == "scenario.json"]
+        self.assertEqual(seen, [], "the hidden tests stay out of the folder the agent works in")
+        log = subprocess.run(["git", "log", "--format=%an %ae"], cwd=self.dest / "app", capture_output=True, text=True).stdout
+        self.assertNotIn("eval", log)
+
+    def test_the_grade_reads_what_the_agent_opened_from_its_transcript(self):
+        runner = load_runner()
+        home = Path(self.tmp.name) / "home"
+        folder = home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.dest / "app"))
+        folder.mkdir(parents=True)
+        calls = [{"type": "tool_use", "name": "Read", "input": {"file_path": str(self.dest / "tools/skills/jt-work/SKILL.md")}},
+                 {"type": "tool_use", "name": "Bash", "input": {"command": "python3 x/jtek.py start a; python3 x/jtek.py check B-1"}},
+                 {"type": "tool_use", "name": "Read", "input": {"file_path": str(self.dest / "tools/skills/jt-build/SKILL.md")}}]
+        (folder / "s.jsonl").write_text("\n".join(json.dumps({"message": {"content": [c]}}) for c in calls) + "\nnot json\n")
+        self.assertEqual(runner.transcript(self.dest, home), (["jt-work", "jt-build"], ["start", "check"]))
+        self.assertIsNone(runner.transcript(self.dest / "elsewhere", home))
 
 
 if __name__ == "__main__":
