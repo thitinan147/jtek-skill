@@ -13,7 +13,7 @@ A repository no longer needs Notion or FLO. Leave `board` empty in `jtek.json`, 
 - A local ticket that stopped with a question now says the answer is in the chat, in `start` and in `finish`, not on a page it does not have.
 - `jt-work` says that `/jt` does work that has no ticket, and still never starts such work itself. `/jt` says how to set up a repository that has no `jtek.json` yet: the checks still come from the base branch, and the human still merges that file.
 
-Not run before release: the owner asked for no testing of this change, so the tests and a walk on a real repository are still to do.
+Ten new tests cover the file route, and it was walked on a scratch repository with no board, from `init` to `finish`. A walk by a fresh session through the skills is still to do.
 
 ## 26.37.0 - four holes a review found, closed in the script
 

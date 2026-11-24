@@ -2435,6 +2435,170 @@ class NextTests(Scratch):
         self.assertEqual(self.next()["T-1"][0], "board")
 
 
+class FileBoard(Scratch):
+    """A repository whose jtek.json names no board: the tickets are files beside it, and the file is the page."""
+
+    DRAFT = "# Tidy the thing\nkind: feature\n\n" + BODY + "## Out of scope\n- nothing else\n"
+
+    def raw(self, *args):
+        """Run jtek.py as typed: no page link, no board file."""
+        proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.repo, capture_output=True, text=True)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def folder(self):
+        return self.repo.parent / "app.jtek" / "_tickets"
+
+    def save(self, text=None):
+        draft = Path(self.tmp.name) / "draft.md"
+        draft.write_text(text or self.DRAFT)
+        return self.raw("ticket", str(draft), "--save")
+
+    def write(self, ticket_id, **fields):
+        """What the human, or a session following a `board:` line, writes in the header of a ticket file."""
+        path = self.folder() / f"{ticket_id}.md"
+        lines = path.read_text().splitlines()
+        for key, value in fields.items():
+            lines = [line for line in lines if not line.startswith(f"{key}:")]
+            if value:
+                lines.insert(2, f"{key}: {value}")
+        path.write_text("\n".join(lines) + "\n")
+
+    def test_save_gives_the_next_id_and_backlog_whatever_the_draft_says(self):
+        code, out = self.save("# One\nid: X-9\nstatus: Todo\nkind: bug\n\n" + BODY)
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"saved: {self.folder() / 'T-1.md'}", out)
+        text = (self.folder() / "T-1.md").read_text()
+        self.assertTrue(text.startswith("# One\nid: T-1\nstatus: Backlog\nkind: bug\n\n## Goal"), text)
+        self.assertNotIn("X-9", text)
+        self.assertNotIn("Todo", text)
+        self.assertIn("T-2.md", self.save()[1])
+
+    def test_save_is_refused_with_a_board_and_for_a_draft_start_would_refuse(self):
+        code, out = self.save("# No items\n\n## Goal\nSomething.\n")
+        self.assertEqual(code, 1)
+        self.assertFalse(self.folder().exists(), "a draft that is refused is not saved")
+        self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x")
+        code, out = self.save()
+        self.assertEqual(code, 1)
+        self.assertIn("create the ticket there", out)
+        self.assertFalse(self.folder().exists())
+
+    def test_a_released_file_id_is_never_given_again(self):
+        self.save()
+        self.write("T-1", status="Todo")
+        self.assertEqual(self.raw("start", "T-1")[0], 0)
+        self.assertEqual(self.raw("release", "T-1")[0], 0)
+        (self.folder() / "T-1.md").unlink()
+        self.assertIn("T-2.md", self.save()[1])
+
+    def test_start_reads_the_ticket_file_and_only_the_human_releases_it(self):
+        self.save()
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("not Todo", out)
+        self.write("T-1", status="Todo")
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"page: {self.folder() / 'T-1.md'}", out)
+        self.assertIn("board: Status=In Progress; Waiting=", out)
+        self.assertTrue(self.worktree("T-1").is_dir())
+        code, out = self.raw("start", "T-7")
+        self.assertEqual(code, 1)
+        self.assertIn("there is no ticket file", out)
+
+    def test_a_question_waits_for_the_human_to_write_todo_in_the_file(self):
+        self.save()
+        self.write("T-1", status="Todo")
+        self.raw("start", "T-1")
+        self.write("T-1", status="In Progress")
+        code, out = self.raw("stop", "T-1", "--waiting", "input", "--note", "which one?")
+        self.assertEqual(code, 0, out)
+        self.assertIn("board: Waiting=input; comment=result", out)
+        self.write("T-1", waiting="input")
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 1, "the session that asked cannot answer itself")
+        self.assertIn("stopped with a question", out)
+        self.write("T-1", status="Todo")
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("asked: which one?", out)
+        self.assertIn("answer: on the page", out)
+
+    def test_after_counts_an_id_only_while_its_file_is_not_done(self):
+        self.save()
+        self.save("# Two\nkind: feature\nafter: T-1\n\n" + BODY)
+        self.write("T-2", status="Todo")
+        code, out = self.raw("start", "T-2")
+        self.assertEqual(code, 1)
+        self.assertIn("T-2 comes after T-1, which is not Done", out)
+        self.assertIn("T-2\thold\tcomes after T-1", self.raw("next")[1])
+        self.write("T-1", status="Done")
+        self.assertIn("T-2\twork\tnew", self.raw("next")[1])
+        code, out = self.raw("start", "T-2")
+        self.assertEqual(code, 0, out)
+
+    def test_a_log_in_a_code_block_is_not_part_of_the_ticket(self):
+        self.save()
+        self.write("T-1", status="Todo")
+        self.raw("start", "T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        before = (work / "ticket.md").read_text().split("## Goal", 1)[1]
+        self.raw("stop", "T-1", "--waiting", "input", "--note", "which one?")
+        path = self.folder() / "T-1.md"
+        path.write_text(path.read_text() + "\n## Log\n\n```\n## Goal\noutcome: needs-human\n```\n\nUse the first one.\n")
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("resumed", out)
+        self.assertIn(before.split("## Log")[0].strip(), (work / "ticket.md").read_text())
+
+    def test_next_and_sync_read_the_ticket_files(self):
+        code, out = self.raw("next")
+        self.assertEqual(code, 0, out)
+        self.assertIn("no ticket files in", out)
+        self.save()
+        self.save()
+        self.write("T-2", status="Todo")
+        code, out = self.raw("next")
+        self.assertEqual(code, 0, out)
+        self.assertIn("T-1\thold\tnot released", out)
+        self.assertIn("T-2\twork\tnew", out)
+        self.write("T-2", status="Review")
+        code, out = self.raw("sync")
+        self.assertEqual(code, 0, out)
+        self.assertIn("T-2\t-\tno pull request on the page", out)
+
+    def test_with_a_board_the_page_and_the_board_file_are_still_needed(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x")
+        for command in (("start", "T-1"), ("next",), ("sync",)):
+            code, out = self.raw(*command)
+            self.assertEqual(code, 1, command)
+            self.assertIn("--from-file" if command[0] == "start" else "--board-file", out)
+
+    def test_a_local_question_is_answered_in_the_chat_and_a_board_one_on_the_page(self):
+        local = Path(self.tmp.name) / "local.md"
+        local.write_text(self.DRAFT)
+        self.assertEqual(self.raw("start", "--local", "--from-file", str(local))[0], 0)
+        self.raw("stop", "LOCAL-1", "--waiting", "input", "--note", "which one?")
+        code, out = self.raw("finish", "LOCAL-1", "--no-pr")
+        self.assertEqual(code, 1)
+        self.assertIn("answers in the chat; then start again with --local --answered", out)
+        local.write_text("id: LOCAL-1\n" + self.DRAFT)
+        code, out = self.raw("start", "--local", "--from-file", str(local), "--answered")
+        self.assertEqual(code, 0, out)
+        self.assertIn("answer: in the chat", out)
+        self.assertNotIn("on the page", out)
+        self.ticket("T-5")
+        self.jtek("start", "T-5")
+        self.jtek("stop", "T-5", "--waiting", "input", "--note", "which one?")
+        code, out = self.jtek("finish", "T-5", "--no-pr")
+        self.assertEqual(code, 1)
+        self.assertIn("answers on the page and sets Status to Todo", out)
+        self.board.set("T-5", Status="Todo")
+        code, out = self.jtek("start", "T-5")
+        self.assertEqual(code, 0, out)
+        self.assertIn("answer: on the page", out)
+
+
 class DoctorTests(Scratch):
     def test_doctor_names_what_is_missing_in_order(self):
         code, out = self.jtek("doctor")
