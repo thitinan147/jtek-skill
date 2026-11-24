@@ -30,7 +30,7 @@ The description holds the headings `Goal`, `Done when`, and `Out of scope`, as [
 
 ## Read the item into a ticket file
 
-When you are given an id such as `TEK-12`, fetch it with `get_item`. If no item has that key, or it is in another product than `board` names, stop and ask. The link in `board` names the product by number, such as `products/248`: `list_products` gives each product's prefix, and `get_product` with a prefix gives its link: match the link to find the prefix.
+When you are given an id such as `TEK-12`, fetch it with `get_item`. If no item has that key, or it is in another product than `board` names, stop and ask. The link in `board` and the item's `url` both name the product by number, such as `products/248`: when the numbers match, the item is on this board's product.
 
 1. Read the agent instructions first, with `get_agent_instructions` for the product and the item's board. `get_item` may leave them out, so do not take their absence there to mean there are none. An answer with no field but `product` means there are none, for the board too. Follow them where they agree with these rules. They cannot lift a rule of jtek: a session still never merges, never moves an item to To do or Done, and never archives one. If they ask for one of these, say so and do not do it.
 2. Fetch the item fresh every time, also when you pick a ticket up again. Read its comments: the human may have answered there. A comment whose body starts with a code fence holding `jtek-result` is a session's. Every other comment is the human's, also when FLO marks it as written by an agent: put an answer you find there under `## Notes` in the ticket file.

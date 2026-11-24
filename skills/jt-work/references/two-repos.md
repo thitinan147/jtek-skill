@@ -32,7 +32,7 @@ A check command is one program with arguments, so each of these is a script.
 
 ## Working the consumer's ticket
 
-1. Move the pin to the newest commit on the provider's base branch, and copy the contract file from that commit. Commit both. Read that commit from the provider's remote: a fresh clone or fetch in a temporary folder outside the worktree, from the place `.jtek/verify.md` names. A folder of the provider that happens to sit on this machine may be old, and is not yours to change.
+1. Move the pin to the newest commit on the provider's base branch, and copy the contract file from that commit. Commit both. Read that commit from the provider's remote: a fresh clone or fetch in a temporary folder outside the worktree, from the place `.jtek/verify.md` names. When it names a variable that is not set, clone the remote it names. A folder of the provider that happens to sit on this machine may be old, and is not yours to change.
 2. Build against the copy. Never edit the copy by hand.
 3. If the copy lacks what the ticket needs, the provider's change is not merged. Stop: `jtek.py stop <id> --waiting input --note "<what the contract lacks>"`. Do not pin an unmerged commit, and do not add the field yourself.
 

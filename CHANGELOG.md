@@ -1,5 +1,12 @@
 # Changelog
 
+## 26.27.0 - the consumer half of a two-repository pair on FLO
+
+TEK-8, the client half of TEK-7, started once TEK-7 was Done, moved the pin to the provider's new commit, and passed review and CI on a real pull request.
+
+- `flo.md`: an item is on the board's product when its link and the board link name the same product number. No product lookup is needed.
+- `two-repos.md`: when `.jtek/verify.md` names a variable for the provider that is not set, clone the remote it names.
+
 ## 26.26.0 - a question, a refusal, and a two-repository pair on FLO
 
 Round three on FLO, on 26.25.0. TEK-6 had two `Done when` items that could not both hold: the session stopped before any code with one question and the `Open questions` tag; the human answered in a comment and set To do; a new session read the answer, cleared the tag, and passed review. TEK-8 was blocked by TEK-7 in FLO, and `start` refused it until TEK-7 was Done. TEK-7, an API change, passed review and CI on a real pull request.
