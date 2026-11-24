@@ -18,9 +18,9 @@ A FLO product can be the board instead of a Notion database. Each item is a tick
 | `repo:` | the tag `repo:<name>`, such as `repo:api` | human |
 | `kind:` | the item's type (`type.name`): Bug is `bug`. The tag `refactor` makes it `refactor`. Anything else is `feature` | human |
 | `area:` | the tag `area:<name>` | human |
-| `after:` | the items listed as `blocked by` in its related items | human |
+| `after:` | the items listed as `blocked by` in its related items. An item listed as `blocks` waits for this one, and is not on the line | human |
 | `review: human` | the tag `review:human` | human |
-| `waiting:` | the tag `Open questions` is `input`, and the tag `Waiting approval` is `approval` | the session sets it, and clears it at the next start |
+| `waiting:` | the tag `Open questions` is `input`, and the tag `Waiting approval` is `approval`. Write it also when the item is back in To do: `start` then prints `Waiting=` and you remove the tag | the session sets it, and clears it at the next start |
 | `checks:` | the tags `checks:<name>`, one per check, joined with commas | human |
 | the body | the item's description | human |
 
@@ -30,7 +30,7 @@ The description holds the headings `Goal`, `Done when`, and `Out of scope`, as [
 
 ## Read the item into a ticket file
 
-When you are given an id such as `TEK-12`, fetch it with `get_item`. If no item has that key, or it is in another product than `board` names, stop and ask. The link in `board` names the product by number, such as `products/248`: `list_products` and `get_product` give each product's prefix and link, so match the link to find the prefix.
+When you are given an id such as `TEK-12`, fetch it with `get_item`. If no item has that key, or it is in another product than `board` names, stop and ask. The link in `board` names the product by number, such as `products/248`: `list_products` gives each product's prefix, and `get_product` with a prefix gives its link: match the link to find the prefix.
 
 1. Read the agent instructions first, with `get_agent_instructions` for the product and the item's board. `get_item` may leave them out, so do not take their absence there to mean there are none. An answer with no field but `product` means there are none, for the board too. Follow them where they agree with these rules. They cannot lift a rule of jtek: a session still never merges, never moves an item to To do or Done, and never archives one. If they ask for one of these, say so and do not do it.
 2. Fetch the item fresh every time, also when you pick a ticket up again. Read its comments: the human may have answered there. A comment whose body starts with a code fence holding `jtek-result` is a session's. Every other comment is the human's, also when FLO marks it as written by an agent: put an answer you find there under `## Notes` in the ticket file.
@@ -46,7 +46,7 @@ Send `actor` with your model on every write, such as `{"model": "claude-opus-5-5
 
 | On the line | Write |
 |---|---|
-| `Status=In Progress` | `move_item` to the column In progress. FLO assigns the item to the person whose token you use. If the item is assigned to someone else, do not move it: stop and say so |
+| `Status=In Progress` | `move_item` to the column In progress. FLO assigns the item to the person whose token you use. If FLO refuses the move because the item is someone else's, stop and say so |
 | `Status=Review` | `move_item` to the column Review. If the board has no Review column, do not choose another: say in your last message that the line was not written |
 | `Waiting=input` | add the tag `Open questions`. It shows on the human's home page in FLO, under what waits on them |
 | `Waiting=approval` | add the tag `Waiting approval` |

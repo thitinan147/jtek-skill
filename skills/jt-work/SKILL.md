@@ -27,7 +27,7 @@ This skill owns the order of the steps and the script. Each step's judgement liv
 | When the human corrects you | `jt-learn` | |
 | Once per repository, before any ticket. A ticket session does not run it: without `.jtek/verify.md` it goes on, as `jt-verify` says | `jt-harness` | |
 
-`jtek.py` is at `scripts/jtek.py` in this skill's folder. Run it with `python3` from anywhere inside the repository or the ticket's worktree. The step skills call it by this path. When it prints `refused:`, do what the message says. Do not work around it.
+`jtek.py` is at `scripts/jtek.py` in this skill's folder. Run it with `python3` from anywhere inside the repository or the ticket's worktree. The step skills call it by this path. When it prints `refused:`, do what the message says. When it says nothing to do, end with the refusal as your result. Do not work around it.
 
 Run Start below first. Then pick the playbook from the ticket's `kind:` line. With no `kind`, decide from the `Goal`.
 

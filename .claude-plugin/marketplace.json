@@ -8,7 +8,7 @@
     {
       "name": "jtek",
       "description": "The inner loop for coding agents. One ticket runs in its own session and git worktree, passes the checks the project declares, and stops at a pull request. A human reviews and merges.",
-      "version": "26.25.0",
+      "version": "26.26.0",
       "source": "./",
       "author": {
         "name": "Thitinan"

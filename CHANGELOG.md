@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.26.0 - a question, a refusal, and a two-repository pair on FLO
+
+Round three on FLO, on 26.25.0. TEK-6 had two `Done when` items that could not both hold: the session stopped before any code with one question and the `Open questions` tag; the human answered in a comment and set To do; a new session read the answer, cleared the tag, and passed review. TEK-8 was blocked by TEK-7 in FLO, and `start` refused it until TEK-7 was Done. TEK-7, an API change, passed review and CI on a real pull request.
+
+- `jt-understand`: two `Done when` items that cannot both hold are a reason to stop and ask, never to pick one.
+- `jt-work`: a refusal that says nothing to do ends the session with the refusal as its result.
+- `flo.md`: `get_product` gives a product's link, `list_products` does not; a `blocks` item is not on the `after:` line; a waiting tag is written into the ticket file also when the item is back in To do; an item that is someone else's is the one FLO refuses to move.
+
 ## 26.25.0 - rework and a pull request on FLO
 
 TEK-5, a client feature, went through a real pull request with green CI, a late verdict, and a second `finish`. TEK-4 was sent back by the human with a comment and To do, and a new session picked it up, fixed it, and passed review. Both are Done. Their notes:
