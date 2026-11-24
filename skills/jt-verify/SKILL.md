@@ -25,7 +25,7 @@ For each `Done when` item, do what you named before you built it:
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order. (P6, P12)
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
 4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there, not even a cache: run it so that it writes none, such as `python3 -B`. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards.
-5. For a change to a database schema or to a response other code reads: apply the migration, undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
+5. For a change to a database schema or to a response other code reads: apply the migration to a database of this worktree, never a shared one (P16), undo it, and apply it again. Then run the base branch's code against the new schema or response. When the code that reads it is in another repository, do not go and change it: write in the evidence that it was not run, and which repository it is.
 
 ## 3. What does not count
 

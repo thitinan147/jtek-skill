@@ -24,11 +24,14 @@ This never applies to security, input validation at a trust boundary, or error h
 4. Apply the principles in [../jt-work/references/principles.md](../jt-work/references/principles.md) where a condition holds, and cite the id of each one that decided something.
 5. An existing test, or a script that a check runs, may have to change because `Done when` now asks for another result. Adding new lines to one is fine. Change only the existing lines that can no longer hold, keep every other assertion as strict as it was, and say in the evidence which lines and why. The result names these files for the human. Never change one to make a failure go away.
 6. Commit in the worktree. Never commit on the base branch. Write the message the way the repository's log does. When the log shows no form, use `type: summary (<ticket id>)`.
-7. A script or a file the ticket asks for is only that. It becomes a check when the ticket says so, and then the stop below applies.
+7. A script or a file the ticket asks for is only that. It becomes a check when the ticket says so, and then the first limit below applies.
 
 ## Stop instead of building
 
-Stop with `jtek.py stop <id> --waiting approval --note "<what and why>"` before you add a dependency, write a migration, delete data, or change CI or `jtek.json`, unless the ticket itself, written by the human, allows that change in so many words (P16). Then quote that line in the evidence. A dependency the ticket allows still needs `setup` in `jtek.json` on the base to install it, since the checks read it from there: when it does not, stop with `--waiting approval` and ask the human to add it on the base first.
+A new dependency, a migration file, or a change to CI or `jtek.json` is part of the change: make it when the ticket needs it, and say it and why in the evidence. The `attention:` line shows it to the human, and the change then needs a verdict. Two limits:
+
+- The checks install from `setup` in `jtek.json` on the base, and read their commands from there. A dependency that `setup` does not install, or a new check, does not take effect in this ticket: stop with `jtek.py stop <id> --waiting approval --note "<what to add on the base, and why>"`.
+- Anything that acts outside the pull request, such as running a migration against a shared database or a deploy, waits for the human (P16).
 
 Stop with `--waiting input` when the change grows past the ticket. A second ticket is cheaper than a wide diff.
 

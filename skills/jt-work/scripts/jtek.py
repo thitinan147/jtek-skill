@@ -66,6 +66,9 @@ SENSITIVE = [
     # Files that commonly define what a check command runs.
     "Makefile", "makefile", "GNUmakefile", "justfile", "Justfile", "package.json", "pyproject.toml", "setup.cfg",
     "tox.ini", "noxfile.py", "pytest.ini", "conftest.py",
+    # A new dependency or migration goes ahead inside the pull request, so the human must see it there.
+    "requirements*.txt", "Pipfile", "Pipfile.lock", "go.mod", "Cargo.toml", "Gemfile", "bun.lock", "bun.lockb",
+    "*migrations/*", "*migrate/*",
 ]
 
 class Refuse(Exception):
@@ -415,6 +418,38 @@ def done_when_items(work: Path) -> list[str]:
             if (m := re.match(r"^-\s*(\S.*)$", line))]
 
 
+def is_test_path(path: str) -> bool:
+    return "test" in path.lower() or "spec" in path.lower()
+
+
+def stale_seen(work: Path, worktree: Path, text: str) -> list[str]:
+    """`seen:` lines whose every run predates the code as it is now, or ran over uncommitted files.
+    Only reported: a run before a change to tests or documents still stands."""
+    found = []
+    changed_since: dict[str, bool] = {}
+
+    def code_changed(sha: str) -> bool:
+        if sha not in changed_since:
+            names = git("diff", "--name-only", sha, "HEAD", cwd=worktree, check=False).splitlines()
+            changed_since[sha] = any(
+                not is_test_path(name) and not name.lower().endswith((".md", ".rst"))
+                and not (name.lower().endswith(".txt") and "requirements" not in name.lower())
+                for name in names)
+        return changed_since[sha]
+
+    for item, line in re.findall(r"^\s*([0-9]+)\.\s*(seen:.*)$", text, re.M):
+        runs = [run for run in (read_run(work, n) for n in cited_runs(line)) if run]
+        # A run somewhere else, such as the base, is not a run of this change.
+        here = [run for run in runs if WORKTREE_COMMIT not in run.get("commit", "") and run.get("commit")]
+        if not here:
+            continue
+        if all("(with uncommitted files)" in run["commit"] for run in here):
+            found.append(f"item {item} rests on a run with uncommitted files")
+        elif all(code_changed(run["commit"].split()[0]) for run in here):
+            found.append(f"item {item} rests on a run before the last code change")
+    return found
+
+
 def attention(meta: dict) -> str:
     """Name what the human should look at before the diff: files that decide whether checks pass."""
     worktree = Path(meta["worktree"])
@@ -450,7 +485,7 @@ def attention(meta: dict) -> str:
             removed[parts[2]] = int(parts[1])
     notes = []
     for path in changed:
-        is_test = "test" in path.lower() or "spec" in path.lower()
+        is_test = is_test_path(path)
         if path in run_by:
             notes.append(f"{path} (run by `{run_by[path]}`)")
         elif any(fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(path.rsplit("/", 1)[-1], pattern) for pattern in watch):
@@ -493,7 +528,10 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         read_diff = any(re.match(r"^git( -C \S+)? diff \S", run.get("command", "")) and run.get("exit") == "0"
                         and run.get("stdout", "").strip()
                         for run in (read_run(work, n) for n in diff_runs))
-        evidence += ", clean-up rests on a recorded diff)" if read_diff else ", clean-up cites no recorded diff)"
+        evidence += ", clean-up rests on a recorded diff" if read_diff else ", clean-up cites no recorded diff"
+        if Path(meta["worktree"]).is_dir():
+            evidence += "".join(f", {stale}" for stale in stale_seen(work, Path(meta["worktree"]), text))
+        evidence += ")"
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
@@ -821,7 +859,7 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(f"review notes: {work / 'review.md'}")
     kind = ticket["fields"].get("kind", "") or "not set; decide from the Goal"
     print(f"kind: {kind}")
-    print("next: follow the playbook for this kind, step by step. Work only inside the worktree")
+    print("next: follow the playbook for this kind; its order is the default. Work only inside the worktree")
 
 
 def ticket_env(ticket_id: str, worktree: Path) -> dict:
@@ -934,9 +972,9 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     patch = patch_id(Path(meta["worktree"]), meta["base"])
     if not patch:
         raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
-    if args.verdict != "PASS" and not args.notes_file:
-        raise Refuse(f"{args.verdict} needs --notes-file with the findings")
-    notes_text = read_file(args.notes_file, "notes") if args.notes_file else ""
+    if not args.notes_file:
+        raise Refuse(f"{args.verdict} needs --notes-file with your notes, in the form of the review notes")
+    notes_text = read_file(args.notes_file, "notes")
     finding = re.search(r"^\s*[-*]\s*reproduces:", notes_text, re.M)
     weigh = re.search(r"^\s*[-*]\s*to weigh:", notes_text, re.M)
     # The word of the verdict and the notes must say the same thing, because the human reads the word first.
@@ -946,13 +984,18 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     if args.verdict != "FAIL" and finding:
         raise Refuse(f"the notes hold a finding (`- reproduces:`), so the verdict is FAIL, not {args.verdict}. "
                      "If it does not count as a finding, write it as a note")
+    if args.verdict != "FAIL":
+        # The two steps a quick review skips: testing the tests, and naming why the change is safe.
+        lacking = [form for form, key in (("- broke: <the line you broke, and which checks failed or still passed>", "broke"),
+                                          ("- safe because: <the one fact the change is safe because of> (run <n>)", "safe because"))
+                   if not re.search(rf"^\s*[-*]\s*{key}:", notes_text, re.M)]
+        if lacking:
+            raise Refuse("the notes of a pass say what you broke to test the tests, and why the change is safe, "
+                         "as the `jt-review` skill says. Add:\n" + "\n".join(lacking))
     if args.verdict == "PASS+NOTES" and not weigh:
         raise Refuse("PASS+NOTES is for something the human should decide before merging: a line `- to weigh: <what>`. "
                      "Notes that only say what you saw are a PASS; give PASS and keep --notes-file")
-    if args.notes_file:
-        (work / "review.md").write_text(notes_text)
-    else:
-        (work / "review.md").unlink(missing_ok=True)  # notes of an earlier FAIL are not this verdict's
+    (work / "review.md").write_text(notes_text)
     if args.verdict == "FAIL":
         # `jt-work` stops after the third FAIL on one ticket, so the count has to live where a session can read it.
         # A second FAIL on the same commit is a corrected note, not a new round.
@@ -967,8 +1010,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         "patch": patch, "ticket": ticket_id_of_text(work),
     })
     line = f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}"
-    notes = (work / "review.md").read_text() if args.notes_file else ""
-    (work / "review-comment.md").write_text(f"`{line}`\n\n{notes}".rstrip() + "\n")
+    (work / "review-comment.md").write_text(f"`{line}`\n\n{notes_text}".rstrip() + "\n")
     print(line)
     if meta.get("pr"):
         print(f"comment file: {work / 'review-comment.md'}  (the verdict line and the notes, ready to post on {meta['pr']})")

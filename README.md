@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.35.0-111111?style=flat-square" alt="Version 26.35.0">
-  <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
+  <img src="https://img.shields.io/badge/version-26.36.0-111111?style=flat-square" alt="Version 26.36.0">
+  <img src="https://img.shields.io/badge/skills-14-111111?style=flat-square" alt="14 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
@@ -62,7 +62,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the page.
 7. **You merge.** There is no merge command.
 
-If the agent is stuck or has a question, it stops and puts the question on the page. You answer and set the ticket back to Todo.
+Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck or has a question that the code cannot answer. Then it puts the question on the page. You answer and set the ticket back to Todo.
 
 `jtek.py` never talks to the board. The agent reads and writes it with its own Notion or FLO tool, and the script says what to write.
 
@@ -85,7 +85,7 @@ jtek is the inner loop, plus the one command the outer loop needs. Black boxes a
 
 ## The prompt
 
-The whole set is eleven skills and one Python script. Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Two small files beside it, `launcher.py` and `doctor.py`, hold the commands that are not part of working a ticket.
+The whole set is fourteen skills and one Python script: eleven steps, and three modes you type (`/jt`, `/jt-ticket`, `/jt-me`). Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Two small files beside it, `launcher.py` and `doctor.py`, hold the commands that are not part of working a ticket.
 
 It uses no other skill set.
 
@@ -158,7 +158,7 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 
 **Which model.** Use the strongest model you have for `jt-work`, and above all for `jt-review`. On the same tickets, Sonnet and Haiku got the code right, but each wrote a `seen:` line that said more than it had run and skipped part of a step; the strongest model did that once in nine rounds. The script holds what a machine can check, and a run recorded with `jtek.py run` shows what a `seen:` line rests on. Whether the line matches the run is still for the reviewer to read, so a smaller worker needs a reviewer on the strongest model.
 
-**What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building. Run the [evals](evals/README.md) when you change models, and cut the text that no longer raises the score.
+**What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building; the playbook's order is a default, and an agent may combine or reorder steps as long as what the script and the reviewer check still holds. Run the [evals](evals/README.md) when you change models, including the lean build without the step skills, and cut the text that no longer raises the score.
 
 **Where it does not fit yet.**
 
@@ -231,7 +231,8 @@ Findings:
 Notes:
 - did not reproduce: a phone with spaces. Tried "081 234 5678", got 422 as it should
 - the new tests cover items 1 and 2. Nothing tests item 3
-- I broke the length check on purpose, and the new test failed, so the test is real
+- broke: the length check in lib/validate.ts; the test check failed, so the test is real
+- safe because: the validator already guards the signup form, and its tests pass unchanged (run 4)
 ```
 
 <details>
@@ -315,6 +316,7 @@ The full forms, with the rules each one stands for:
 | Step | Skill | What it does |
 |---|---|---|
 | Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones on the board as Backlog |
+| Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
 | Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
@@ -407,6 +409,10 @@ Version 26 is a rewrite, not an upgrade.
 - **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets on the board.
 - **New in the repository:** `jtek.json` and `.jtek/`. You can delete `jt-queue/` when nothing in it is needed.
 - **The old set** is at commit `4c9d0f1` in the git history.
+
+## Acknowledgements
+
+The `/jt` mode, the rules every started agent reads first in `worker.md`, and the PASS, PASS+NOTES, and FAIL verdicts follow the shape of pstack by Lauren Tan ([cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack), MIT). jtek differs where it matters: a script holds the results, and only the human merges.
 
 ## License
 

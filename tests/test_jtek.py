@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tests"))
 from board import Board  # noqa: E402
 
+PASS_NOTES = ("Findings: none\n\nNotes:\n- broke: the new branch; test passed=fail\n"
+              "- safe because: the change only adds a branch (run 1)\n")
+
 SCRIPT = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
 
 BODY = "## Goal\nAdd the thing.\n## Done when\n- the thing works\n"
@@ -48,11 +51,19 @@ class Scratch(unittest.TestCase):
             args[1:2] = [f"https://www.notion.so/{args[1]}", "--from-file", self.board.file(args[1])]
         elif args[0] in ("next", "sync"):
             args += ["--board-file", self.board.rows_file()]
-        elif args[0] == "verdict" and "--commit" not in args:
-            # A reviewer names the commit it read; here that is whatever the worktree is at now.
-            tree = self.repo.parent / f"{self.repo.name}.jtek" / args[1]
-            if tree.is_dir():
-                args += ["--commit", self.git("rev-parse", "HEAD", cwd=tree)]
+        elif args[0] == "verdict":
+            if "--commit" not in args:
+                # A reviewer names the commit it read; here that is whatever the worktree is at now.
+                tree = self.repo.parent / f"{self.repo.name}.jtek" / args[1]
+                if tree.is_dir():
+                    args += ["--commit", self.git("rev-parse", "HEAD", cwd=tree)]
+            if "--bare" in args:
+                args.remove("--bare")
+            elif args[2] != "FAIL" and "--notes-file" not in args:
+                # A pass carries the notes of a real review; tests that are not about the notes get these.
+                notes = Path(self.tmp.name) / "pass-notes.md"
+                notes.write_text(PASS_NOTES)
+                args += ["--notes-file", str(notes)]
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("JTEK_")}, **(env or {})}
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo,
                               capture_output=True, text=True, env=env)
@@ -487,6 +498,15 @@ class FinishTests(Scratch):
         self.assertIn("jtek.json", out.split("attention:")[1].splitlines()[0])
         self.assertIn(".github/ci.yml", out.split("attention:")[1].splitlines()[0])
 
+    def test_attention_names_a_new_dependency_and_a_migration(self):
+        def change(tree):
+            (tree / "requirements.txt").write_text("requests\n")
+            (tree / "db" / "migrations").mkdir(parents=True)
+            (tree / "db" / "migrations" / "001.sql").write_text("create table t (id int);\n")
+        line = self.result_after(change).split("attention:")[1].splitlines()[0]
+        self.assertIn("requirements.txt", line)
+        self.assertIn("db/migrations/001.sql", line)
+
     def test_attention_names_a_script_that_a_check_runs(self):
         (self.repo / "verify_it.py").write_text("raise SystemExit(0)\n")
         self.git("add", "verify_it.py")
@@ -867,7 +887,7 @@ class ReviewFindings(FindingsBase):
         self.assertIn("outcome: review", out)
         self.assertIn("verdict: waived by the ticket", out)
 
-    def test_a_pass_removes_the_notes_of_an_earlier_fail(self):
+    def test_a_pass_replaces_the_notes_of_an_earlier_fail(self):
         self.to_needs_review()
         notes = Path(self.tmp.name) / "notes.md"
         notes.write_text("- reproduces: crash\n")
@@ -875,7 +895,7 @@ class ReviewFindings(FindingsBase):
         review = self.repo / ".git" / "jtek" / "work" / "T-1" / "review.md"
         self.assertTrue(review.exists())
         self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
-        self.assertFalse(review.exists())
+        self.assertEqual(review.read_text(), PASS_NOTES, "the pass keeps its own notes, not the FAIL's")
 
     def test_plausible_bad_input_is_refused_and_never_a_traceback(self):
         self.to_needs_review()
@@ -1669,14 +1689,14 @@ class SecondLoopRound(Scratch):
         path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
         self.jtek("finish", "T-1", "--pr", "https://forge.example/pr/1", "--evidence-file", self.evidence(), env={"PATH": path})
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")
+        notes.write_text(PASS_NOTES + "- to weigh: an empty value prints a tab\n")
         code, out = self.jtek("verdict", "T-1", "PASS+NOTES", "--by", "review-x", "--notes-file", str(notes))
         self.assertEqual(code, 0, out)
         comment = self.repo / ".git" / "jtek" / "work" / "T-1" / "review-comment.md"
         self.assertIn(f"comment file: {comment}", out)
-        self.assertEqual(comment.read_text(), f"`verdict: PASS+NOTES by review-x @{sha[:7]}`\n\nFindings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")
+        self.assertEqual(comment.read_text(), f"`verdict: PASS+NOTES by review-x @{sha[:7]}`\n\n{PASS_NOTES}- to weigh: an empty value prints a tab\n")
         code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x")
-        self.assertEqual(comment.read_text(), f"`verdict: PASS by review-x @{sha[:7]}`\n", "the notes of the earlier verdict are gone")
+        self.assertEqual(comment.read_text(), f"`verdict: PASS by review-x @{sha[:7]}`\n\n{PASS_NOTES}", "the notes of the earlier verdict are gone")
 
     def test_verdict_names_no_comment_file_without_a_pull_request(self):
         self.ticket("T-1")
@@ -1765,7 +1785,7 @@ class ThirdLoopRound(Scratch):
             notes.write_text(text)
             return self.jtek("verdict", "T-1", word, "--by", "review-x", "--notes-file", str(notes))
 
-        seen = "Findings: none\n\nNotes:\n- item 1 seen: ran it\n"
+        seen = PASS_NOTES + "- item 1 seen: ran it\n"
         finding = "Findings:\n- reproduces: crash on empty input\n  steps: run it with nothing\n"
         code, out = verdict("PASS+NOTES", seen)
         self.assertEqual(code, 1, out)
@@ -1779,7 +1799,25 @@ class ThirdLoopRound(Scratch):
             self.assertEqual(code, 1, out)
             self.assertIn("so the verdict is FAIL", out)
         self.assertEqual(verdict("FAIL", finding)[0], 0)
-        self.assertEqual(verdict("PASS+NOTES", "Findings: none\n\nNotes:\n- to weigh: an empty value prints a tab\n")[0], 0)
+        self.assertEqual(verdict("PASS+NOTES", PASS_NOTES + "- to weigh: an empty value prints a tab\n")[0], 0)
+
+    def test_a_pass_says_what_was_broken_and_why_the_change_is_safe(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--bare")
+        self.assertEqual(code, 1, out)
+        self.assertIn("needs --notes-file", out)
+        notes = Path(self.tmp.name) / "notes.md"
+        for text, lacking in (("Findings: none\n- safe because: a fact (run 1)\n", "- broke:"),
+                              ("Findings: none\n- broke: the branch; test failed\n", "- safe because:")):
+            notes.write_text(text)
+            code, out = self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--notes-file", str(notes))
+            self.assertEqual(code, 1, out)
+            self.assertIn(lacking, out)
+        notes.write_text(PASS_NOTES)
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--notes-file", str(notes))[0], 0)
 
     def test_a_session_that_picks_a_ticket_up_is_told_the_last_verdict(self):
         self.ticket("T-1")
@@ -2088,6 +2126,44 @@ class RecordedRuns(Scratch):
         evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove (run 2)\n")
         out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
         self.assertIn("1 of the seen cite a recorded run, clean-up rests on a recorded diff)", out)
+
+    def test_the_result_names_a_seen_line_whose_run_is_older_than_the_code(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        self.commit_change("T-1", "test_feature.py")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(2)")
+        self.commit_change("T-1", "app.py")
+        self.jtek("check", "T-1")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n2. seen: printed 2 (run 2)\n- clean-up: nothing to remove\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("item 1 rests on a run before the last code change", out)
+        self.assertIn("item 2 rests on a run before the last code change", out)
+
+    def test_a_run_before_a_change_to_tests_only_still_stands(self):
+        self.started()
+        self.commit_change("T-1")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        self.commit_change("T-1", "test_feature.py")
+        self.commit_change("T-1", "NOTES.md")
+        self.jtek("check", "T-1")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertNotIn("rests on a run", out)
+
+    def test_the_result_names_a_seen_line_whose_run_had_uncommitted_files(self):
+        tree = self.started()
+        (tree / "app.py").write_text("x\n")
+        self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")
+        self.git("add", "app.py", cwd=tree)
+        self.git("commit", "-q", "-m", "work", cwd=tree)
+        self.jtek("check", "T-1")
+        evidence = Path(self.tmp.name) / "e.md"
+        evidence.write_text("1. seen: printed 1 (run 1)\n- clean-up: nothing to remove\n")
+        out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(evidence))[1]
+        self.assertIn("item 1 rests on a run with uncommitted files", out)
 
     def test_a_citation_may_name_several_runs_with_words_between(self):
         self.started()

@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.36.0 - the agent decides inside the pull request; the script checks more of the result
+
+Agents and models keep getting better. The text that tells an agent how to work holds a strong one back; the script that checks the result costs it almost nothing, and it is what lets the human trust the agent with more. So this release loosens the first and adds to the second.
+
+- P16 now stops only before something that acts outside the pull request: a deploy, deleting or changing real or shared data, a migration run against a shared database, a message to someone outside the run. A new dependency, a migration file, or a change to CI or `jtek.json` goes ahead, is said in the evidence, and is named on the `attention:` line, which also cancels a `review: human` waiver. `worker.md`, `jt-build`, `/jt`, and `jt-verify` follow.
+- `attention:` also names dependency manifests (`requirements*.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `Pipfile`, `bun.lock`) and migration folders.
+- `jt-work`: the playbook's order is a default. An agent may combine or reorder steps; what must hold is what the script and the reviewer check.
+- `/jt`: subagents may write code too. No session that wrote any part of the change reviews it.
+- `jt-understand`: a plan file is allowed, outside the repository and its worktrees.
+- `verdict`: a pass needs notes with at least one `broke:` line and a `safe because:` line, the two steps a quick review skips.
+- The result's `evidence:` field names a `seen:` line whose every run predates the last code change, or ran with uncommitted files. It reports and does not refuse, because a run before a change to tests or documents still stands.
+- Evals: `build --lean` gives the agent a short router and the reviewer, without step skills or playbooks, to measure whether the step text still helps a model. A new scenario, `refactor-config`, has two loops that look like copies and are not.
+- README: fourteen skills, `jt-me` in the table, and credit to pstack, whose mode shape `/jt` follows.
+
 ## 26.35.0 - tickets small enough to review
 
 `/jt-ticket` was walked on a two-repository ask (tags on notes). Its questions were numbered with a recommendation each, it found in advance the contract check, `verify`, and stand-in changes the work would need, it carried a changed answer into every item, and it refused to create tickets on an approval that came from another agent instead of the owner. `/jt` then worked the API ticket it wrote without stopping once, through a FAIL verdict and a fix to PASS+NOTES and green CI. The ticket had nine `Done when` items and took over an hour.

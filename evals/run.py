@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Build a scratch repository for a scenario, and grade what an agent left in it.
 
-    python3 evals/run.py build <scenario> <empty-dir>
+    python3 evals/run.py build [--lean] <scenario> <empty-dir>
     python3 evals/run.py grade <scenario> <dir>
+
+--lean hands the agent a short router and the reviewer's skill, with no step skills and no playbooks,
+to measure whether the step text still helps a given model.
 
 The agent run in between is yours to start, with any agent. An eval uses no Notion:
 the ticket is handed over as a file. Standard library only.
@@ -34,7 +37,18 @@ def load(name: str) -> tuple[Path, dict]:
     return folder, json.loads((folder / "scenario.json").read_text())
 
 
-def build(name: str, dest: Path) -> None:
+def copy_skills(skills: Path, lean: bool) -> None:
+    ignore = shutil.ignore_patterns("__pycache__")
+    if not lean:
+        shutil.copytree(ROOT / "skills", skills, ignore=ignore)
+        return
+    # The router keeps its script, references, and worker rules; the step skills and playbooks stay behind.
+    shutil.copytree(ROOT / "skills" / "jt-work", skills / "jt-work", ignore=shutil.ignore_patterns("__pycache__", "playbooks"))
+    shutil.copy(ROOT / "evals" / "lean" / "jt-work.md", skills / "jt-work" / "SKILL.md")
+    shutil.copytree(ROOT / "skills" / "jt-review", skills / "jt-review", ignore=ignore)
+
+
+def build(name: str, dest: Path, lean: bool = False) -> None:
     folder, scenario = load(name)
     if dest.exists() and any(dest.iterdir()):
         sys.exit(f"{dest} is not empty")
@@ -50,7 +64,8 @@ def build(name: str, dest: Path) -> None:
     shutil.copy(folder / "ticket.md", ticket)
     # The skills are copied next to the repository, so the agent never reads the folder that holds the hidden tests.
     skills = dest / "tools" / "skills"
-    shutil.copytree(ROOT / "skills", skills, ignore=shutil.ignore_patterns("__pycache__"))
+    copy_skills(skills, lean)
+    (dest / "variant.txt").write_text("lean\n" if lean else "full\n")
     page = hashlib.sha256(f"{name}{dest}".encode()).hexdigest()[:32]
     print(f"repository: {repo}")
     print("prompt for a fresh agent session:")
@@ -64,6 +79,8 @@ def build(name: str, dest: Path) -> None:
 def grade(name: str, dest: Path) -> int:
     folder, scenario = load(name)
     ticket = scenario["ticket"]
+    variant = dest / "variant.txt"
+    print(f"variant: {variant.read_text().strip() if variant.exists() else 'full'}")
     repo = dest / "app"
     work = repo / ".git" / "jtek" / "work" / ticket
     worktree = dest / "app.jtek" / ticket
@@ -98,6 +115,8 @@ def grade(name: str, dest: Path) -> int:
     evidence = work / "evidence.md"
     lines = [l for l in evidence.read_text().splitlines() if l.strip()] if evidence.exists() else []
     row(0 < len(lines) <= 40, f"evidence is saved and at most 40 lines (got {len(lines)})")
+    if "rests on a run" in fields.get("evidence", ""):
+        print(f"note: {fields['evidence']}")
 
     trail = transcript(dest)
     if trail is None:
@@ -143,13 +162,16 @@ def transcript(dest: Path, home: Path | None = None) -> tuple[list[str], list[st
 
 
 def main(argv: list[str]) -> int:
+    lean = argv[:2] == ["build", "--lean"]
+    if lean:
+        argv = [argv[0], *argv[2:]]
     if len(argv) != 3 or argv[0] not in ("build", "grade"):
         print(__doc__)
         return 2
     dest = Path(argv[2]).expanduser().resolve()
     if argv[0] == "build":
         dest.mkdir(parents=True, exist_ok=True)
-        build(argv[1], dest)
+        build(argv[1], dest, lean)
         return 0
     return grade(argv[1], dest)
 

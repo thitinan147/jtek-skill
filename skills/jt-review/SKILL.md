@@ -41,7 +41,7 @@ Remove any file your own runs left in the worktree, because `verdict` refuses a 
 
 Write the findings first, then the notes, as a short Markdown list in a file outside the worktree, in a temporary folder. The form, with a filled example, is in [references/notes.md](references/notes.md). With no findings, write `Findings: none`. Then run one of:
 
-- `jtek.py verdict <id> PASS --by <name> --commit <commit> --notes-file <file>`: every `Done when` item is true, and there is no finding. The name says who reviewed, for example `review-<your model>`. Any name works when you have none.
+- `jtek.py verdict <id> PASS --by <name> --commit <commit> --notes-file <file>`: every `Done when` item is true, and there is no finding. The notes of a pass hold at least one `broke:` line from step 6 and the `safe because:` line from step 7; `verdict` refuses a pass without them. The name says who reviewed, for example `review-<your model>`. Any name works when you have none.
 - `jtek.py verdict <id> PASS+NOTES --by <name> --commit <commit> --notes-file <file>`: the same, with at least one `to weigh:` line, for something the human should decide before merging. Lines that only say what you saw, broke, or did not check do not make it `PASS+NOTES`.
 - `jtek.py verdict <id> FAIL --by <name> --commit <commit> --notes-file <file>`: an item is not true, or there is a finding.
 

@@ -49,8 +49,20 @@ Read these yourself. Do not ask the agent where it had to guess: an agent asked 
 |---|---|---|
 | `bug-wordcount` | bug | Reproduce first, failing test before the fix, edge cases the ticket implies |
 | `feature-slug` | feature | Keeping existing behaviour: a rewrite that drops non-ASCII padding passes the visible checks and fails a hidden test |
+| `refactor-config` | refactor | Two loops that look like copies differ in two places (an inline comment, an empty value); a merge that flattens them passes the visible checks and fails hidden tests |
 
 Add a scenario when a real ticket goes wrong in a way these do not catch: copy the smallest repository that shows it, write the ticket, and put the mistake in `hidden_test.py`.
+
+## Lean against full
+
+The step skills teach a method. A stronger model may not need it, and then the text only costs context. To find out, build the same scenario both ways:
+
+```bash
+python3 evals/run.py build --lean feature-slug ~/work/slug-lean
+python3 evals/run.py build feature-slug ~/work/slug-full
+```
+
+`--lean` gives the agent a short router (`evals/lean/jt-work.md`), the script, the principles, and the reviewer's skill, with no step skills and no playbooks. The script's checks and the review are the same in both. Run each variant three times per scenario with the model you want to judge. When lean scores the same as full, the step text is not helping that model: cut what it does not need, and keep the full set for the models that still gain from it. Run it again when a new model comes out.
 
 ## Reading the scores
 

@@ -36,7 +36,8 @@ Notes:
 - item 1 seen: PATCH /me with phone "0812345678" answered 200, and GET /me showed it
 - did not reproduce: a phone with spaces. Tried "081 234 5678", got 422 as it should
 - the new tests cover items 1 and 2. Nothing tests item 3
-- I broke the length check on purpose, and the new test failed, so the test is real
+- broke: the length check in lib/validate.ts; the test check failed, so the test is real
+- safe because: the validator already guards the signup form, and its tests pass unchanged (run 4)
 ```
 
 ## Rules
@@ -44,5 +45,5 @@ Notes:
 - **A finding has steps that fail when anyone runs them.** A suspicion without steps goes under Notes as `did not reproduce`, or is left out.
 - **Tie each finding to a `Done when` item, an `Out of scope` line, or something that worked before.** Taste is not a finding.
 - **Say what you did not check.** The human decides whether that matters.
-- **`FAIL` needs at least one finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither, and its notes file is optional.
+- **`FAIL` needs at least one finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither. Both passes need at least one `broke:` line and a `safe because:` line, and the script refuses a pass without them.
 - **Do not paste the diff.** Name the file and the line.

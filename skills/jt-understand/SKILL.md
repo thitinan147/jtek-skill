@@ -5,7 +5,7 @@ description: Reads a ticket and the code it touches before any edit, and names h
 
 # jt-understand
 
-Do this before the first edit. The output is a short list, not a document. Write it as text in the session, where the human can see it. Do not write a plan file.
+Do this before the first edit. The output is a short list, not a document. Write it as text in the session, where the human can see it. A plan, if you want one, stays outside the repository and its worktrees.
 
 ## 1. Read
 

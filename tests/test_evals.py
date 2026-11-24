@@ -65,7 +65,10 @@ class EvalTests(unittest.TestCase):
         evidence = self.dest / "evidence.md"
         evidence.write_text("1. seen: mixed file counts 4\n2. seen: empty file counts 0\n3. seen: single spaces count 3\n- clean-up: nothing to remove\n")
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tree, capture_output=True, text=True).stdout.strip()
-        self.assertEqual(run(JTEK, "verdict", "B-1", "PASS", "--by", "reviewer", "--commit", head, cwd=tree)[0], 0)
+        notes = Path(self.tmp.name) / "notes.md"
+        notes.write_text("Findings: none\n- broke: the tab split; the test check failed\n- safe because: only the split changed (run 1)\n")
+        self.assertEqual(run(JTEK, "verdict", "B-1", "PASS", "--by", "reviewer", "--commit", head,
+                             "--notes-file", notes, cwd=tree)[0], 0)
         code, out = run(JTEK, "finish", "B-1", "--no-pr", "--evidence-file", evidence, cwd=tree)
         self.assertIn("outcome: review", out)
         self.assertIn("board: Status=Review", out)
@@ -99,6 +102,19 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(seen, [], "the hidden tests stay out of the folder the agent works in")
         log = subprocess.run(["git", "log", "--format=%an %ae"], cwd=self.dest / "app", capture_output=True, text=True).stdout
         self.assertNotIn("eval", log)
+
+    def test_a_lean_build_gives_the_short_router_and_the_reviewer_only(self):
+        code, out = run(RUN, "build", "--lean", "feature-slug", self.dest)
+        self.assertEqual(code, 0, out)
+        skills = self.dest / "tools" / "skills"
+        self.assertEqual(sorted(p.name for p in skills.iterdir()), ["jt-review", "jt-work"])
+        self.assertEqual((skills / "jt-work" / "SKILL.md").read_text(), (ROOT / "evals" / "lean" / "jt-work.md").read_text())
+        self.assertFalse((skills / "jt-work" / "playbooks").exists())
+        self.assertTrue((skills / "jt-work" / "scripts" / "jtek.py").exists())
+        self.assertEqual((self.dest / "variant.txt").read_text(), "lean\n")
+        self.assertIn("variant: lean", run(RUN, "grade", "feature-slug", self.dest)[1])
+        for target in re.findall(r"\]\(([^)#]+)\)", (skills / "jt-work" / "SKILL.md").read_text()):
+            self.assertTrue((skills / "jt-work" / target).exists(), target)
 
     def test_the_grade_reads_what_the_agent_opened_from_its_transcript(self):
         runner = load_runner()

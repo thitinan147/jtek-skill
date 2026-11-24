@@ -29,7 +29,7 @@ Work the user asked for in the chat, with no ticket, goes through the same pipel
 1. Write a ticket file in your session's temporary folder, in the format of `jt-work`'s `references/ticket.md`: a title, `kind:`, `## Goal`, `## Done when` with one observable outcome per item, and `## Out of scope`. Leave out `id:` and `status:`.
 2. Show the user the `Done when` items before you start, in one short list. You wrote them, so they are the bar the work is held to, and the user should see it. Go on unless the user changes them.
 3. Run `jtek.py start --local --from-file <file>` from the repository. The script gives the ticket an id such as `LOCAL-3`, and the result says the session wrote the ticket.
-4. Follow the `jt-work` playbook for the `kind`, step by step, as for any ticket. There is no board: skip every board write.
+4. Follow the `jt-work` playbook for the `kind`, as for any ticket. There is no board: skip every board write.
 5. `finish` decides whether a second look is needed. A local change of one file, with nothing on the `attention:` line, needs none. Any other change needs a verdict from a session that did not write it, as `jt-work` says.
 
 Push the branch and open the pull request as for a ticket. Never merge.
@@ -37,7 +37,7 @@ Push the branch and open the pull request as for a ticket. Never merge.
 ## Choices
 
 - **Easy to undo, and the ticket or the user does not decide it:** choose the one that changes least of what users see today, and write it in the evidence as a `choice:` line.
-- **Costly to undo, or it changes what the work is for:** stop and ask one question, as the step skills say. A dependency, a migration, deleting data, a change to CI or `jtek.json`, work that grows past the ticket, and two `Done when` items that cannot both hold are all this case.
+- **It acts outside the pull request, or it changes what the work is for:** stop and ask one question, as the step skills say. A deploy, deleting or changing real data, work that grows past the ticket, and two `Done when` items that cannot both hold are all this case (P16). A new dependency, a migration file, or a change to CI inside the pull request is not: do it, and say it in the evidence.
 - **A question a run can settle:** run it before you ask.
 
 ## Principles
@@ -46,7 +46,7 @@ The step skills mark the lines that carry a principle with its id, such as `(P8)
 
 ## Helpers
 
-Write the code yourself. Use a subagent to read many files, or for work that runs in parallel, and keep its summary, not its output.
+Use subagents for any part of the work your agent does well with them, writing code included: reading many files, parallel changes, trying two shapes. Keep their summaries, not their output, and check what they built with a run of your own. No session that wrote any part of the change reviews it.
 
 Every agent you start, a reviewer included, gets as the first line of its prompt:
 
