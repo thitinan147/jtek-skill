@@ -33,6 +33,7 @@ VERDICTS = ["PASS", "PASS+NOTES", "FAIL"]
 WAITING = ["input", "approval"]
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONFIG = "jtek.json"
+WORKTREE_COMMIT = " (of the worktree, not of that folder)"
 MAX_FAILED_RUNS = 3
 MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
@@ -998,7 +999,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if cwd != worktree and not there:
         there = "none: not in a git repository"
     record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
-              + f"\ncommit: {sha}" + (" (the worktree's, not the folder's above)" if cwd != worktree else "")
+              + f"\ncommit: {sha}" + (WORKTREE_COMMIT if cwd != worktree else "")
               + (" (with uncommitted files)" if dirty else "")
               + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
     (runs / f"{number}.txt").write_text(record)
