@@ -56,7 +56,7 @@ Every agent you start, a reviewer included, gets as the first line of its prompt
 
 Then give it the goal and the task. A subagent's report is its claim, not the human's approval.
 
-For the second look, prefer a model from another vendor than yours when your agent can start one. When it cannot, a fresh session of your model is the reviewer. The verdict's `--by` names the model either way.
+For the second look, run `jtek.py reviewer --vendor <the vendor of your model>` and start the reviewer with the command it prints. It reads the owner's ordered list, `~/.config/jtek/agents.json`, which `/jt-agents` keeps, and takes an entry of your own vendor only when no other is installed. Another agent may not have these skills installed, so give it the absolute path of `jt-review`'s `SKILL.md` to follow. With no list, a fresh session of your model is the reviewer. The verdict's `--by` names the model that reviewed either way.
 
 ## The report
 

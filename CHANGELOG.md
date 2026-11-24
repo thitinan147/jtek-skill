@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.39.0 - the owner's list of reviewers, and a survey of the agents on the machine
+
+Until now the skills said "prefer a reviewer from another vendor" in `/jt` only, and left the agent to guess which programs the machine has. Now the script looks, and the owner keeps the order.
+
+- `jtek.py doctor --agents` prints each coding agent it finds on PATH (`claude`, `codex`, `cursor-agent`, `agy`, `gemini`), how a session is started with it, and the models of a program that can list them, which today is `cursor-agent`. It says what it did not check: whether a program is signed in, an agent it does not know, and a shell alias. It needs no repository.
+- `~/.config/jtek/agents.json` is the owner's ordered list of reviewers: a `command`, a `vendor`, and a `model` per entry. It holds only models the owner trusts to review. The script follows the order and does not rank models.
+- `jtek.py reviewer --vendor <the author's vendor>` prints the command of the first installed entry of another vendor. Without one it prints the first installed entry of the author's own vendor, and with no list or nothing installed it says to start a fresh session of the author's own model. It never says that no review is needed, and it never runs the command it prints. A damaged list is refused with its path.
+- `/jt-agents`, a new mode typed by hand, runs the survey, asks the owner which models they trust and in what order, and writes the list only after a yes.
+- `/jt`, `jt-work`, and `starting-sessions.md` now point at `jtek.py reviewer`, so the ticket route has the same preference as work without a ticket.
+- README: "Which reviewer" says the preference for another vendor is a reason and not a measurement; no eval compares the two yet.
+- The contract test asks only a mode that may start helpers to name `worker.md`. `/jt-agents` starts none.
+
+Thirteen new tests cover both commands with a scratch home and a scratch PATH. The evals were not run for the changed skill text.
+
 ## 26.38.0 - every skill works in a repository with no board
 
 A repository no longer needs Notion or FLO. Leave `board` empty in `jtek.json`, and the tickets are files. `/jt <what to do>` already worked without a ticket; now nothing around it asks for a board.

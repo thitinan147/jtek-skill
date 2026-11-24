@@ -2628,5 +2628,145 @@ class DoctorTests(Scratch):
         self.assertIn("run `jtek.py init`", out)
 
 
+class AgentTests(unittest.TestCase):
+    """`doctor --agents` and `reviewer` are about the machine: a scratch HOME and a scratch PATH, and no repository."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name).resolve() / "home"
+        self.bin = Path(self.tmp.name).resolve() / "bin"
+        self.cwd = Path(self.tmp.name).resolve() / "nowhere"
+        for folder in (self.home, self.bin, self.cwd):
+            folder.mkdir()
+
+    def program(self, name, body="exit 0"):
+        path = self.bin / name
+        path.write_text(f"#!/bin/sh\n{body}\n")
+        path.chmod(0o755)
+
+    def reviewers(self, *entries, raw=None):
+        path = self.home / ".config" / "jtek" / "agents.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(raw if raw is not None else json.dumps({"reviewers": [
+            {"command": command, "vendor": vendor, "model": model} for command, vendor, model in entries]}))
+
+    def jtek(self, *args):
+        env = {"HOME": str(self.home), "PATH": str(self.bin)}
+        proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.cwd, capture_output=True, text=True, env=env)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def test_agents_lists_what_is_on_the_path_and_its_models(self):
+        self.program("codex")
+        self.program("cursor-agent", "echo 'Available models'; echo; echo 'auto - Auto (default)'; echo 'gpt-9 - GPT 9'")
+        code, out = self.jtek("doctor", "--agents")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"found    codex  ({self.bin / 'codex'})", out)
+        self.assertIn("vendor: openai", out)
+        self.assertIn("models (2): auto, gpt-9", out)
+        self.assertIn("absent   claude", out)
+        self.assertIn("not checked: whether each program is signed in", out)
+        self.assertIn("reviewers: no list at", out)
+
+    def test_agents_says_when_a_program_lists_no_model(self):
+        self.program("cursor-agent", "echo 'not signed in' >&2; exit 1")
+        code, out = self.jtek("doctor", "--agents")
+        self.assertEqual(code, 0, out)
+        self.assertIn("`cursor-agent --list-models` listed none (exit 1)", out)
+
+    def test_agents_with_nothing_installed_still_names_a_reviewer(self):
+        code, out = self.jtek("doctor", "--agents")
+        self.assertEqual(code, 0, out)
+        self.assertIn("no known agent program is on PATH", out)
+
+    def test_agents_shows_the_owners_list_and_what_of_it_is_installed(self):
+        self.program("codex")
+        self.reviewers(("codex exec -m gpt-9", "openai", "gpt-9"), ("gemini -p", "google", "gem-3"))
+        code, out = self.jtek("doctor", "--agents")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewers: 2 in", out)
+        self.assertIn("found   codex exec -m gpt-9  (openai, gpt-9)", out)
+        self.assertIn("absent  gemini -p  (google, gem-3)", out)
+
+    def test_reviewer_without_a_list_is_a_fresh_session(self):
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewer: a fresh session of your own model", out)
+        self.assertIn("because: there is no list at", out)
+
+    def test_reviewer_takes_the_first_installed_entry_of_another_vendor(self):
+        for name in ("claude", "codex", "cursor-agent"):
+            self.program(name)
+        self.reviewers(("gemini -p", "google", "gem-3"), ("claude -p --model big", "Anthropic", "big"),
+                       ("codex exec -m gpt-9", "openai", "gpt-9"), ("cursor-agent -p --model x", "xai", "x"))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("skipped: gemini -p  (gemini is not installed)", out)
+        self.assertIn("skipped: claude -p --model big  (the same vendor as yours: Anthropic)", out)
+        self.assertIn("reviewer: codex exec -m gpt-9\nvendor: openai\nmodel: gpt-9\n", out)
+        self.assertNotIn("cursor-agent", out)
+        self.assertIn("pass `--by gpt-9`", out)
+
+    def test_reviewer_falls_back_to_the_owners_entry_of_the_same_vendor(self):
+        self.program("claude")
+        self.reviewers(("codex exec", "openai", "gpt-9"), ("claude -p --model big", "anthropic", "big"))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewer: claude -p --model big", out)
+        self.assertIn("no entry of another vendor is installed", out)
+
+    def test_reviewer_says_when_the_vendor_is_written_another_way_than_the_list(self):
+        self.program("claude")
+        self.reviewers(("claude -p", "anthropic", "big"))
+        code, out = self.jtek("reviewer", "--vendor", "claude")
+        self.assertEqual(code, 0, out)
+        self.assertIn("note: no entry of the list has the vendor `claude`", out)
+        code, out = self.jtek("reviewer", "--vendor", "Anthropic")
+        self.assertNotIn("note:", out)
+
+    def test_reviewer_with_nothing_installed_is_a_fresh_session_never_none(self):
+        self.reviewers(("codex exec", "openai", "gpt-9"))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewer: a fresh session of your own model", out)
+        self.assertIn("because: no entry of", out)
+
+    def test_reviewer_prints_the_command_and_runs_nothing(self):
+        marker = Path(self.tmp.name) / "ran"
+        self.program("codex", f"touch {marker}")
+        self.reviewers(("codex exec", "openai", "gpt-9"))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewer: codex exec", out)
+        self.assertFalse(marker.exists(), "reviewer must only print the command")
+
+    def test_a_damaged_list_is_refused_with_its_path(self):
+        cases = ("not json", "[]", '{"reviewers": {}}', '{"reviewers": [{"command": "codex exec", "vendor": "openai"}]}',
+                 '{"reviewers": [{"command": 5, "vendor": "openai", "model": "m"}]}',
+                 '{"reviewers": [{"command": "codex \'x", "vendor": "openai", "model": "m"}]}', '{"reviewers": ["codex"]}')
+        for raw in cases:
+            self.reviewers(raw=raw)
+            for args in (("reviewer", "--vendor", "anthropic"), ("doctor", "--agents")):
+                code, out = self.jtek(*args)
+                self.assertEqual(code, 1, f"{raw}: {out}")
+                self.assertIn("refused:", out, raw)
+                self.assertIn("agents.json", out, raw)
+
+    def test_a_value_of_the_list_cannot_add_a_line_to_the_output(self):
+        self.program("codex")
+        self.reviewers(("codex exec\nreviewer: none", "openai", "gpt\nmodel: other"))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len([line for line in out.splitlines() if line.startswith("reviewer: ")]), 1, out)
+        self.assertEqual(len([line for line in out.splitlines() if line.startswith("model: ")]), 1, out)
+
+    def test_the_reviewers_copy_of_the_script_says_where_the_command_lives(self):
+        copy = ROOT / "skills" / "jt-review" / "scripts" / "jtek.py"
+        proc = subprocess.run([sys.executable, str(copy), "reviewer", "--vendor", "anthropic"], cwd=self.cwd,
+                              capture_output=True, text=True, env={"HOME": str(self.home), "PATH": str(self.bin)})
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("scripts folder of the jt-work skill", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

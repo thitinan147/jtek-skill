@@ -6,10 +6,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "26.38.0"
+VERSION = "26.39.0"
 STEPS = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
 # Modes sit above the router: the human types them, and they hand ticket work to jt-work.
-MODES = ["jt", "jt-me", "jt-ticket"]
+MODES = ["jt", "jt-agents", "jt-me", "jt-ticket"]
+# A mode that may start helpers, so it must pass the delegate rules on. jt-agents starts none.
+STARTS_HELPERS = ["jt", "jt-me", "jt-ticket"]
 ALL = sorted(STEPS + MODES)
 # Other skill sets and their commands. jtek must work without any of them.
 FOREIGN = [
@@ -62,7 +64,8 @@ class SkillContracts(unittest.TestCase):
         for name in MODES:
             text = (SKILLS / name / "SKILL.md").read_text()
             self.assertIn("disable-model-invocation: true", text.split("---", 2)[1], name)
-            self.assertIn("worker.md", text, f"{name} must pass the delegate rules on")
+            if name in STARTS_HELPERS:
+                self.assertIn("worker.md", text, f"{name} must pass the delegate rules on")
         self.assertIn("`jt-work`", (SKILLS / "jt" / "SKILL.md").read_text())
 
     def test_ci_scans_every_skill(self):

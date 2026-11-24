@@ -34,7 +34,7 @@ Or in Claude Code, as two separate prompts:
 /plugin install jtek@jtek-skill
 ```
 
-**You should see:** fourteen skills, `jt` and thirteen whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way.
+**You should see:** fifteen skills, `jt` and fourteen whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way.
 
 ## 2. Connect GitHub
 

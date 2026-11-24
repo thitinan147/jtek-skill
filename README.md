@@ -85,7 +85,7 @@ jtek is the inner loop, plus the one command the outer loop needs. Black boxes a
 
 ## The prompt
 
-The whole set is fourteen skills and one Python script: eleven steps, and three modes you type (`/jt`, `/jt-ticket`, `/jt-me`). Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Two small files beside it, `launcher.py` and `doctor.py`, hold the commands that are not part of working a ticket.
+The whole set is fifteen skills and one Python script: eleven steps, and four modes you type (`/jt`, `/jt-ticket`, `/jt-me`, `/jt-agents`). Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Three small files beside it, `launcher.py`, `doctor.py`, and `agents.py`, hold the commands that are not part of working a ticket.
 
 It uses no other skill set.
 
@@ -157,6 +157,8 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 **Which agent.** The same tickets were worked end to end on Claude Code, on Cursor's command-line agent (its own pick of model, with a Grok reviewer), and on Antigravity's (Gemini). All three read the skill files, recorded their runs with `jtek.py run`, started their own reviewer, and listed the board lines they could not write when they had no Notion tool.
 
 **Which model.** Use the strongest model you have for `jt-work`, and above all for `jt-review`. On the same tickets, Sonnet and Haiku got the code right, but each wrote a `seen:` line that said more than it had run and skipped part of a step; the strongest model did that once in nine rounds. The script holds what a machine can check, and a run recorded with `jtek.py run` shows what a `seen:` line rests on. Whether the line matches the run is still for the reviewer to read, so a smaller worker needs a reviewer on the strongest model.
+
+**Which reviewer.** A reviewer from another vendor than the author's is preferred, because two models of one family tend to miss the same thing. That is a reason, not a measurement: no eval here compares the two yet. `jtek.py doctor --agents` shows the agent programs on your machine and the models of those that can list them. `/jt-agents` turns that into `~/.config/jtek/agents.json`, your ordered list of reviewers, which you approve. `jtek.py reviewer --vendor <the author's vendor>` then prints the command of the first installed entry of another vendor, or of the same vendor when there is no other. Put only models you trust to review on the list: the script follows your order and does not rank models. Without a list, the reviewer is a fresh session of the author's own model, as before.
 
 **What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building; the playbook's order is a default, and an agent may combine or reorder steps as long as what the script and the reviewer check still holds. Run the [evals](evals/README.md) when you change models, including the lean build without the step skills, and cut the text that no longer raises the score.
 
@@ -317,6 +319,7 @@ The full forms, with the rules each one stands for:
 | Step | Skill | What it does |
 |---|---|---|
 | Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
+| Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents and models on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.config/jtek/agents.json`, which you accept or not |
 | Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
 | Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |

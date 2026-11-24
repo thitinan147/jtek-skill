@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The jtek.py commands for the human and for whoever starts sessions: `init`, `next`, `sync`, and `release`.
+"""The jtek.py commands for the human and for whoever starts sessions: `init`, `next`, `sync`, `release`, and `reviewer`.
 
 Run them as `jtek.py <command>`. They live here to keep jtek.py small. `j` is the jtek module.
 """
@@ -250,8 +250,17 @@ def release(j, args) -> None:
 
 
 def doctor(j, args) -> None:
+    if getattr(args, "agents", False):
+        import agents
+        agents.report(j, args)  # about the machine, so it needs no repository
+        return
     import doctor as module
     module.run(j, args)
 
 
-COMMANDS = {"init": init, "next": next_, "sync": sync, "release": release, "doctor": doctor}
+def reviewer(j, args) -> None:
+    import agents
+    agents.reviewer(j, args)
+
+
+COMMANDS = {"init": init, "next": next_, "sync": sync, "release": release, "doctor": doctor, "reviewer": reviewer}
