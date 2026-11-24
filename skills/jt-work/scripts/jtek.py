@@ -33,6 +33,7 @@ VERDICTS = ["PASS", "PASS+NOTES", "FAIL"]
 WAITING = ["input", "approval"]
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONFIG = "jtek.json"
+LOCAL_RE = re.compile(r"^LOCAL-([0-9]+)$")
 WORKTREE_COMMIT = " (of the worktree, not of that folder)"
 MAX_FAILED_RUNS = 3
 MAX_EVIDENCE_LINES = 40
@@ -392,7 +393,17 @@ def current_verdict(ticket_id: str, meta: dict) -> dict:
 
 def needs_verdict(meta: dict) -> bool:
     """The human may waive the review for a small ticket, but not for one that touches files that decide whether checks pass."""
-    return bool(meta.get("review")) or attention(meta) != "-"
+    if attention(meta) != "-":
+        return True
+    return not local_one_file(meta) and bool(meta.get("review"))
+
+
+def local_one_file(meta: dict) -> bool:
+    """Work without a ticket that changed one file, none of which decides a check, needs no second session."""
+    if not meta.get("local") or not Path(meta["worktree"]).is_dir():
+        return False
+    changed = git("diff", "--name-only", f"{base_ref(meta['base'])}...HEAD", cwd=Path(meta["worktree"]), check=False)
+    return len(changed.splitlines()) == 1
 
 
 DIRTY_HINT = "commit them, or add build output to .gitignore"
@@ -486,7 +497,8 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     attached = sorted(p.name for p in (work / "evidence").glob("*")) if (work / "evidence").is_dir() else []
     if attached:
         evidence += f" (+{len(attached)} attached in {work / 'evidence'})"
-    verdict_line = "none" if needs_verdict(meta) else "waived by the ticket"
+    verdict_line = "none" if needs_verdict(meta) else "skipped: work without a ticket that changed one file" \
+        if local_one_file(meta) else "waived by the ticket"
     if verdict:
         verdict_line = f"{verdict['verdict']} by {verdict['by']} @{verdict['sha'][:7]}"
     lines = [
@@ -504,7 +516,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
         f"note: {' '.join(note.split()) or '-'}",
-        f"board: {board_line(outcome, waiting, meta.get('pr', ''))}",
+        f"board: {'-' if meta.get('local') else board_line(outcome, waiting, meta.get('pr', ''))}",
     ]
     if "comment=" in lines[-1]:
         # The comment the board line asks for, ready to paste as it is, so nobody has to put it together or cut it.
@@ -578,11 +590,37 @@ def refresh_base(base: str) -> str:
     return f"note: `{base}` was {behind} commits behind origin/{base} and was moved forward before the ticket started"
 
 
+def next_local_id() -> str:
+    """The next free local id. A released ticket keeps its branch, so its number is never given out again."""
+    taken = [p.name for p in (state_dir() / "work").glob("LOCAL-*")]
+    taken += [b.rsplit("/", 1)[-1] for b in git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", check=False).split()]
+    return f"LOCAL-{max([int(m.group(1)) for m in map(LOCAL_RE.match, taken) if m], default=0) + 1}"
+
+
+def local_ticket(text: str) -> str:
+    """A ticket the session wrote for work without one. Its header grants nothing: no waived review, no subset of
+    checks, no order after another ticket. Only the id it was given before, for picking it up again, is kept."""
+    ticket = parse_ticket(text)
+    given = ticket["fields"].get("id", "")
+    if given and not LOCAL_RE.match(given):
+        raise Refuse(f"a local ticket has no id of its own, or the `LOCAL-<n>` id `start --local` gave it; not `{given}`")
+    if given and not work_dir(given).exists():
+        raise Refuse(f"{given} was never started here; leave `id:` out, and `start --local` gives the ticket a new one")
+    header = [f"id: {given or next_local_id()}", "status: Todo", f"kind: {ticket['fields'].get('kind', '')}"]
+    first = re.search(r"^## ", text, re.M)
+    body = text[first.start():] if first else ""
+    return f"# {ticket['title'] or 'Local work'}\n" + "\n".join(header) + "\n\n" + body
+
+
 def cmd_start(args: argparse.Namespace) -> None:
     try:
         text = Path(args.from_file).read_text()
     except (OSError, ValueError) as err:
         raise Refuse(f"cannot read the ticket file as text: {err}") from None
+    if args.local:
+        text = local_ticket(text)
+    elif not args.ref:
+        raise Refuse("name the ticket's page link, or pass --local for work that has no ticket")
     base = base_branch()
     # Before anything is read from the base: the checks and the settings come from it too.
     base_note = "" if args.no_fetch else refresh_base(base)
@@ -596,8 +634,11 @@ def cmd_start(args: argparse.Namespace) -> None:
     ticket = parse_ticket(text)
     fields = ticket["fields"]
     ticket_id = check_id(fields.get("id", ""))
+    if LOCAL_RE.match(ticket_id) and not args.local:
+        raise Refuse(f"`{ticket_id}` is a local id; only `start --local` uses one")
     declared = load_checks(base)
-    selected = validate_ticket(ticket, declared)
+    # A local ticket runs every declared check: the session that wrote it cannot pick a subset.
+    selected = list(declared) if args.local else validate_ticket(ticket, declared)
     wanted_repo = fields.get("repo", "")
     this_repo = str(load_config(base).get("name") or main_root().name)
     if wanted_repo and wanted_repo != this_repo:
@@ -634,10 +675,10 @@ def cmd_start(args: argparse.Namespace) -> None:
                 # The session that picks the ticket up must not have to open the state folder to learn what was asked.
                 asked = next((line[6:].strip() for line in last.splitlines() if line.startswith("note: ")), "")
         checks_path = work / "checks.json"
-        if checks_path.exists() and status == "Todo":
+        if checks_path.exists() and status == "Todo" and not args.local:
             # Only the human sets Todo, so only the human gives a ticket new tries.
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
-        if status == "Todo" and asked:
+        if status == "Todo" and asked and not args.local:
             # The human answered a question and released the ticket again: the FAIL rounds start over.
             meta = {**meta, "fails": 0, "failed_commits": []}
         resumed = True
@@ -683,7 +724,8 @@ def cmd_start(args: argparse.Namespace) -> None:
                 (work / "meta.json").unlink()
                 work.rmdir()
                 raise
-        meta = {"id": ticket_id, "source": " ".join(args.ref.split()), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
+        source = "local, written by the session" if args.local else " ".join(args.ref.split())
+        meta = {"id": ticket_id, "source": source, "local": bool(args.local), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
         write_json(work / "meta.json", {**meta, "starting": True, "pid": os.getpid(), "kept": kept})
         logs = state_dir() / "baseline" / ticket_id
 
@@ -725,7 +767,7 @@ def cmd_start(args: argparse.Namespace) -> None:
 
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
-    meta["review"] = ticket["fields"].get("review", "").lower() != "human"
+    meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
@@ -733,7 +775,7 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(base_note)
     if not resumed and kept:
         print(f"note: the branch {branch} already existed, so the work goes on from its commits")
-    print("board: Status=In Progress; Waiting=")
+    print("board: -" if args.local else "board: Status=In Progress; Waiting=")
     print(f"id: {ticket_id}")
     print(f"worktree: {meta['worktree']}")
     print(f"branch: {meta['branch']}")
@@ -1245,7 +1287,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_other)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
-    start.add_argument("ref", help="the link of the ticket's page on the board; it becomes the `source:` of the result")
+    start.add_argument("ref", nargs="?", default="", help="the link of the ticket's page on the board; it becomes the `source:` of the result")
+    start.add_argument("--local", action="store_true", help="work with no ticket: the file has no id, and the script gives it a LOCAL-<n> one")
     start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")

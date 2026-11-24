@@ -15,8 +15,8 @@ A session works the tickets it is given. Something else decides which ticket run
 
 | Action | What to do |
 |---|---|
-| `work` | Start a fresh session in this repository: "Follow the `jt-work` skill for ticket `<id>`." |
-| `review` | Start a fresh session in this repository: "Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
+| `work` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-work` skill for ticket `<id>`." |
+| `review` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
 | `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) or [flo.md](flo.md) says. Do not start a session. |
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |

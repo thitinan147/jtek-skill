@@ -11,12 +11,12 @@ Do this before the first edit. The output is a short list, not a document. Write
 
 1. Read the ticket file whose path `jtek.py start` printed. Note `Goal`, each `Done when` item, `Out of scope`, and `kind` when it is set.
 2. Read the code the ticket touches, the tests beside it, and one caller of each function you expect to change.
-3. If a question can be answered by reading the code or its history, read. Do not ask the human.
+3. If a question can be answered by reading the code or its history, read. Do not ask the human. (P19)
 
 ## 2. Find the pattern
 
 1. Find how this codebase already solves the same kind of problem, and plan to follow it.
-2. If the nearest example is a workaround, do not copy it. Note it for the evidence.
+2. If the nearest example is a workaround, do not copy it. Note it for the evidence. (P3)
 3. Look for a function, a helper, or an installed package that already does what you need. Plan to use it.
 4. If the codebase has no precedent for this kind of change, sketch two different shapes in a few lines each, and choose one. Say in the evidence which you chose and why.
 
@@ -30,7 +30,7 @@ If an item has no way to be seen working, stop: `jtek.py stop <id> --waiting inp
 
 ## 4. Settle what the ticket leaves open
 
-- **Small and easy to change later:** choose the reading that changes less of what users see today, even when it takes more code. Write the choice down for the evidence.
+- **Small and easy to change later:** choose the reading that changes less of what users see today, even when it takes more code. (P17) Write the choice down for the evidence.
 - **Costly to undo, or it changes what the ticket is for:** stop with `--waiting input` and ask one question. Two `Done when` items that cannot both hold are this case: do not pick one.
 - **The human's answer has an effect it says it does not want:** do what it asks for in so many words, and put the effect under `Notes` in the evidence for the human to weigh.
 - **The base already does what an item asks:** see it for real, and say so in the evidence. Build only what the ticket still asks for. When nothing is left to build, stop with `--waiting input` and say what you saw.

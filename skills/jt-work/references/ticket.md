@@ -35,6 +35,10 @@ What should be true when this is done, and why.
 
 A blank form to copy, a filled example, and what makes a ticket workable: [ticket-template.md](ticket-template.md).
 
+## A local ticket
+
+Work without a ticket is started with `jtek.py start --local --from-file <file>`. The file has a title, `kind:`, and the three sections, and no `id:` or `status:`. The script gives it the next free `LOCAL-<n>`, never one a released ticket had, and writes `source: local, written by the session` in the result. The session wrote the header, so it grants nothing: every declared check runs, `review:`, `checks:`, and `after:` are ignored, and picking it up again with its `LOCAL-<n>` id does not reset the failed runs or the FAIL count. Only the human gives new tries, with `jtek.py release`. A board ticket cannot use a `LOCAL-` id. There is no board line. When the change is one file and nothing is on the `attention:` line, `finish` needs no verdict, and the result says `verdict: skipped`.
+
 ## Where tickets live
 
 The page on the board is the source of truth. The layout of the board is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.

@@ -1894,6 +1894,87 @@ class FifthLoopRound(Scratch):
         self.assertIn("the third or later on T-1 (3)", out)
 
 
+class LocalTickets(Scratch):
+    """Work without a ticket: the session writes the ticket, so its header grants nothing."""
+
+    LOCAL = "# Tidy the thing\nkind: feature\nreview: human\nchecks: test\nafter: T-9\n\n" + BODY + "## Out of scope\n- nothing else\n"
+
+    def local(self, text=None, *extra):
+        path = Path(self.tmp.name) / "local.md"
+        path.write_text(text or self.LOCAL)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path), *extra],
+                              cwd=self.repo, capture_output=True, text=True)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def meta(self, ticket_id):
+        return json.loads((self.repo / ".git" / "jtek" / "work" / ticket_id / "meta.json").read_text())
+
+    def test_a_local_ticket_gets_an_id_and_no_board_and_its_header_grants_nothing(self):
+        self.write_config({"test": f"{sys.executable} -c pass", "lint": f"{sys.executable} -c pass"})
+        code, out = self.local()
+        self.assertEqual(code, 0, out)
+        self.assertIn("id: LOCAL-1", out)
+        self.assertIn("board: -", out)
+        self.assertIn("checks: test, lint", out, "the session cannot pick a subset of the checks")
+        self.assertTrue(self.meta("LOCAL-1")["review"], "`review: human` written by the session waives nothing")
+        self.assertEqual(self.meta("LOCAL-1")["source"], "local, written by the session")
+
+    def test_a_released_local_id_is_never_given_again(self):
+        self.local()
+        self.assertEqual(self.jtek("release", "LOCAL-1")[0], 0)
+        code, out = self.local()
+        self.assertIn("id: LOCAL-2", out)
+
+    def test_a_board_ticket_cannot_take_a_local_id_and_a_local_ticket_cannot_take_another(self):
+        page = Path(self.tmp.name) / "page.md"
+        page.write_text("# A page\nid: LOCAL-7\nstatus: Todo\n\n" + BODY)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://example.invalid/p/7", "--from-file", str(page)],
+                              cwd=self.repo, capture_output=True, text=True)
+        code, out = proc.returncode, proc.stdout + proc.stderr
+        self.assertEqual(code, 1)
+        self.assertIn("only `start --local` uses one", out)
+        code, out = self.local("id: T-3\n" + self.LOCAL)
+        self.assertEqual(code, 1)
+        self.assertIn("not `T-3`", out)
+        code, out = self.local("id: LOCAL-5\n" + self.LOCAL)
+        self.assertEqual(code, 1)
+        self.assertIn("was never started here", out)
+
+    def test_picking_a_local_ticket_up_again_does_not_reset_the_failed_runs(self):
+        self.write_config({"test": f"{sys.executable} -c 'import sys; sys.exit(1)'"})
+        self.local(None, "--no-baseline")
+        self.jtek("check", "LOCAL-1")
+        self.assertEqual(self.jtek("stop", "LOCAL-1", "--waiting", "input", "--note", "which one?")[0], 0)
+        code, out = self.local("id: LOCAL-1\n" + self.LOCAL, "--no-baseline")
+        self.assertEqual(code, 0, out)
+        self.assertIn("resumed", out)
+        checks = json.loads((self.repo / ".git" / "jtek" / "work" / "LOCAL-1" / "checks.json").read_text())
+        self.assertEqual(checks["failed_runs"], 1, "only the human gives new tries")
+
+    def test_one_file_skips_the_second_look_and_two_files_do_not(self):
+        self.local()
+        self.commit_change("LOCAL-1")
+        self.jtek("check", "LOCAL-1")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertIn("verdict: skipped: work without a ticket that changed one file", out)
+        self.assertIn("board: -", out)
+        self.commit_change("LOCAL-1", "second.txt")
+        self.jtek("check", "LOCAL-1")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out)
+
+    def test_one_file_on_the_attention_line_still_needs_a_verdict(self):
+        self.local()
+        tree = self.worktree("LOCAL-1")
+        (tree / "jtek.json").write_text("{}\n")
+        self.git("commit", "-q", "-am", "config", cwd=tree)
+        self.jtek("check", "LOCAL-1")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertIn("outcome: needs-review", out)
+
+
 class RecordedRuns(Scratch):
     """`seen:` lines that point at what was really run, so neither the author nor a reader has to trust a paraphrase."""
 

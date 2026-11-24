@@ -28,7 +28,7 @@ Assume the next contributor is an agent that sees only the files it opened, copi
 2. **A lint rule:** when the mistake has a pattern a tool can match. Its error message names what to use instead.
 3. **Fix the old examples:** when the code taught it. List the files that still have the wrong pattern, and delete the old way so nothing is left to copy.
 4. **A new check or test:** when the mistake only shows at run time. Add it to the project, and to `jtek.json` if it is a new command.
-5. **A written rule:** only when none of the above can work, because nothing fails when an agent skips it. Put it in the project's agent instructions, with the condition for when it applies.
+5. **A written rule (P2):** only when none of the above can work, because nothing fails when an agent skips it. Put it in the project's agent instructions, with the condition for when it applies.
 
 If a structural fix exists, use only that. Do not add a written rule beside it.
 

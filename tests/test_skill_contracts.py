@@ -6,8 +6,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "26.29.0"
-ALL = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
+VERSION = "26.30.0"
+STEPS = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
+# Modes sit above the router: the human types them, and they hand ticket work to jt-work.
+MODES = ["jt"]
+ALL = sorted(STEPS + MODES)
 # Other skill sets and their commands. jtek must work without any of them.
 FOREIGN = [
     "superpowers", "pstack", "ponytail", "gstack", "poteto", "compound engineering",
@@ -32,10 +35,10 @@ class SkillContracts(unittest.TestCase):
     def test_every_step_in_the_router_names_a_shipped_skill(self):
         text = (SKILLS / "jt-work" / "SKILL.md").read_text()
         named = set(re.findall(r"`(jt-[a-z]+)`", text))
-        self.assertEqual(sorted(named), ALL, "jt-work must route to every skill, and only to skills that ship")
+        self.assertEqual(sorted(named), STEPS, "jt-work must route to every step skill, and only to skills that ship")
 
     def test_only_the_router_knows_the_order(self):
-        for name in ALL:
+        for name in STEPS:
             if name == "jt-work":
                 continue
             body = (SKILLS / name / "SKILL.md").read_text().split("---", 2)[2]
@@ -54,6 +57,13 @@ class SkillContracts(unittest.TestCase):
             for needed in ("jt-understand", "jt-build", "jtek.py check", "jt-verify", "jt-cleanup"):
                 self.assertIn(needed, text, f"{book.name} skips {needed}")
         self.assertIn("n/a: <reason>", (SKILLS / "jt-work" / "SKILL.md").read_text())
+
+    def test_a_mode_loads_only_when_typed_and_routes_tickets_to_the_router(self):
+        for name in MODES:
+            text = (SKILLS / name / "SKILL.md").read_text()
+            self.assertIn("disable-model-invocation: true", text.split("---", 2)[1], name)
+            self.assertIn("`jt-work`", text, name)
+            self.assertIn("worker.md", text, f"{name} must pass the delegate rules on")
 
     def test_ci_scans_every_skill(self):
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

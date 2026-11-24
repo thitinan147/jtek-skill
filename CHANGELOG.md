@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.30.0 - `/jt`, your mode
+
+The owner asked for their own mode, after a close reading of another skill set built around one person's working style. `/jt` is that mode for jtek: typed only, for any coding task.
+
+- `jt`: restates the goal and the smallest change, says "no" when it disagrees, sends ticket work to `jt-work`, and works anything else as a local ticket. It reports in the owner's style, read from `~/.config/jtek/me.md` outside the repository, and names the principle behind each decision.
+- `jtek.py start --local`: work without a ticket gets an id such as `LOCAL-3`, a worktree, the baseline, and the same evidence. The header the session wrote grants nothing: every check runs, `review: human` and `checks:` are ignored, and resuming does not reset the failed runs. A local change of one file with nothing on the `attention:` line skips the second look, and the result says so. A board ticket cannot take a `LOCAL-` id.
+- `jt-work/worker.md`: the rules every agent a session starts reads first, a reviewer included.
+- `jt-work/references/principles.md`: the principles, now with ids P1 to P19 and a test each, replacing `jt-build`'s list. Steps mark the lines that carry one, and a `choice:` line in the evidence ends with its id.
+
 ## 26.29.0 - approval on FLO, and the README names FLO
 
 Round five on FLO, on 26.28.0. TEK-11 asked for a library from PyPI: the session stopped for approval before any code, because the ticket allowed the dependency but nothing on the base could install it. The human declined and rewrote the ticket; a new session built it without the library. TEK-12, an API route, went through review and CI on a real pull request. Both are Done. No wrong action in rounds four and five.

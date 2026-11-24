@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.29.0-111111?style=flat-square" alt="Version 26.29.0">
+  <img src="https://img.shields.io/badge/version-26.30.0-111111?style=flat-square" alt="Version 26.30.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
@@ -170,6 +170,7 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 
 | You want to | Do this |
 |---|---|
+| Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo |
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
@@ -313,6 +314,7 @@ The full forms, with the rules each one stands for:
 
 | Step | Skill | What it does |
 |---|---|---|
+| Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
 | Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
@@ -324,6 +326,23 @@ The full forms, with the rules each one stands for:
 | The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
 | After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
 | Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
+
+## Your mode: `/jt`
+
+`/jt` is a mode, not a step: it loads only when you type it. It sends ticket work to `jt-work`, and works anything else as a local ticket:
+
+- The agent writes the ticket file and shows you the `Done when` items before it starts, because it wrote the bar itself.
+- `jtek.py start --local --from-file <file>` gives it an id such as `LOCAL-3` and a worktree. The header the session wrote grants nothing: every declared check runs, `review: human` is ignored, and only you give it new tries.
+- A local change of one file, with nothing on the `attention:` line, skips the second look, and the result says so. Anything bigger needs a verdict, as a ticket does.
+- It pushes and opens a pull request. It never merges.
+
+Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
+
+Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists. For example:
+
+```markdown
+- Report in Thai. Short, with tables. The result first, then what I must decide.
+```
 
 ## Statuses
 
