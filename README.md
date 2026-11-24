@@ -5,17 +5,17 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.38.0-111111?style=flat-square" alt="Version 26.38.0">
-  <img src="https://img.shields.io/badge/skills-14-111111?style=flat-square" alt="14 skills">
+  <img src="https://img.shields.io/badge/version-26.39.0-111111?style=flat-square" alt="Version 26.39.0">
+  <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
-  <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
+  <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/flow-dark.svg">
-    <img src="assets/flow.svg" width="880" alt="jtek flow: you set a ticket to Todo in Notion, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge.">
+    <img src="assets/flow.svg" width="880" alt="jtek flow: you set a ticket to Todo on the board, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge.">
   </picture>
 </p>
 
@@ -26,6 +26,17 @@ You know the pull request. Forty files. "All tests pass." The feature does not s
 An agent will tell you the work is done. jtek does not take its word. A ticket reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and every `Done when` item has a line that says what was run and seen, or why it was not run.
 
 Then it stops. You read the evidence. You merge.
+
+## Without it, with it
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/proof-dark.svg">
+    <img src="assets/proof.svg" width="880" alt="The same change, reported twice. Without jtek the agent writes: Added the phone field. All tests pass. Ready to merge. You take its word, or you redo the work. With jtek the result says: checks lint, types, test and verify passed at commit 1a2b3c4; verdict PASS by a reviewer at the same commit; item 1 seen, PATCH /me with a phone number returned 200, runs 1 and 2; item 2 seen, a bad phone returned 422, run 3; item 3 not run, no browser here, so the page was not opened.">
+  </picture>
+</p>
+
+You ask for a phone number on the profile page. Without jtek you get three sentences and a diff. With jtek you get the checks that passed and on which commit, a verdict from a session that did not write the change, and one line per `Done when` item that says what was run and seen. Item 3 was not run, and the line says so: that is the one you open yourself.
 
 ## What you get back
 
@@ -41,7 +52,7 @@ checks: lint=pass types=pass test=pass verify=pass @1a2b3c4
 verdict: PASS by reviewer @1a2b3c4
 pr: https://github.com/you/app/pull/41
 ci: pass
-evidence: .git/jtek/work/T-12/evidence.md (3 seen, 0 not run, 3 of the seen cite a recorded run, clean-up rests on a recorded diff)
+evidence: .git/jtek/work/T-12/evidence.md (2 seen, 1 not run, 2 of the seen cite a recorded run, clean-up rests on a recorded diff)
 attention: -
 branch: jtek/T-12
 source: https://www.notion.so/...
@@ -54,7 +65,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 
 ## How it works
 
-1. **You write a ticket** as a page on the board (a Notion database, or a FLO product), with `Goal` and `Done when`, and set it to Todo.
+1. **You write a ticket** as a page on the board (a Notion database, a FLO product, or a file when there is no board), with `Goal` and `Done when`, and set it to Todo.
 2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
@@ -71,7 +82,7 @@ Inside the pull request the agent decides for itself: a new dependency, a migrat
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/factory-dark.svg">
-    <img src="assets/factory.svg" width="880" alt="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board in Notion: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: read the board, ask jtek.py next what each ticket needs, start a session, and ask again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict.">
+    <img src="assets/factory.svg" width="880" alt="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board, in Notion, in FLO, or as ticket files: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: read the board, ask jtek.py next what each ticket needs, start a session, and ask again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict.">
   </picture>
 </p>
 
@@ -108,15 +119,20 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
 
 ## Set up
 
-Three things, once. For every step with what you should see, from connecting Notion to the first merged ticket, follow **[GETTING-STARTED.md](GETTING-STARTED.md)**.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/setup-dark.svg">
+    <img src="assets/setup.svg" width="880" alt="Set up once, in three steps and one check. One: the board, which is a Notion database, a FLO product, or none, with tickets as files. Two: the checks; jtek.py init writes jtek.json, you give each check one command and commit it on the base branch. Three: the harness; the jt-harness skill writes how to run the real app and proposes the verify check. Then jtek.py doctor says what is still missing, and prints ready.">
+  </picture>
+</p>
 
-**1. The board.** For FLO, follow [flo.md](skills/jt-work/references/flo.md): connect the FLO MCP server and add a Review column to the board. For Notion, create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
+Three things, once. Every step, with what you should see after it, is in **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
-Keep the database's link: it goes into `jtek.json` in the next step.
+**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, and the tickets are files beside the repository ([files.md](skills/jt-work/references/files.md)).
 
 **2. The checks.** In each repository, ask the agent:
 
@@ -124,49 +140,17 @@ Keep the database's link: it goes into `jtek.json` in the next step.
 Run jtek.py init in this repository.
 ```
 
-The script is inside the installed `jt-work` skill, and the agent knows where that is. This writes `jtek.json`. Set `board` to the database's link and `name` to the name tickets use for this repository, fill in one command per check, delete the ones the project does not have, and commit the file on the base branch:
+It writes `jtek.json`. Give each check one command, set `board` and `name`, and commit the file on the base branch:
 
 ```json
 {"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
 ```
 
-A command is one program with arguments. Put a pipeline in a script. Ask the agent to run `jtek.py doctor`: it says what is still missing.
+A command is one program with arguments, so a pipeline goes into a script. `jtek.py doctor` says what is still missing.
 
-**3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/` (how to run and drive the real app, and a feature map) and proposes the `verify` check. Without it, a passing check only means the code compiles.
+**3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/`, which says how to run the real app, and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
-`jtek.json` and `.jtek/` are all jtek adds to a repository. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
-
-## Fit it to your project
-
-The rules are fixed. The numbers and names around them are yours, in `jtek.json`:
-
-| Key | What it changes | Default |
-|---|---|---|
-| `checks`, `setup` | The commands that decide "passing", in any language or build system | none: you declare them |
-| `max_failed_runs` | How many failed check runs end a session. Raise it for a model that often finds the cause on a later try | 3 |
-| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge. [An example for GitLab](examples/pr-state-gitlab.py) | `gh`, for GitHub |
-| `headings` | The names of the three ticket headings, in your team's language | `Goal`, `Done when`, `Out of scope` |
-| `watch` | More files that the `attention:` line should name | a list of common names |
-| `forge` | `false` when the remote is not a forge, so tickets end without a pull request | `true` |
-| `name` | What tickets call this repository | the folder name |
-
-Details: [setup.md](skills/jt-work/references/setup.md).
-
-**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
-
-**Which agent.** The same tickets were worked end to end on Claude Code, on Cursor's command-line agent (its own pick of model, with a Grok reviewer), and on Antigravity's (Gemini). All three read the skill files, recorded their runs with `jtek.py run`, started their own reviewer, and listed the board lines they could not write when they had no Notion tool.
-
-**Which model.** Use the strongest model you have for `jt-work`, and above all for `jt-review`. On the same tickets, Sonnet and Haiku got the code right, but each wrote a `seen:` line that said more than it had run and skipped part of a step; the strongest model did that once in nine rounds. The script holds what a machine can check, and a run recorded with `jtek.py run` shows what a `seen:` line rests on. Whether the line matches the run is still for the reviewer to read, so a smaller worker needs a reviewer on the strongest model.
-
-**Which reviewer.** A reviewer from another vendor than the author's is preferred, because two models of one family tend to miss the same thing. That is a reason, not a measurement: no eval here compares the two yet. `jtek.py doctor --agents` shows the agent programs on your machine and the models of those that can list them. `/jt-agents` turns that into `~/.config/jtek/agents.json`, your ordered list of reviewers, which you approve. `jtek.py reviewer --vendor <the author's vendor>` then prints the command of the first installed entry of another vendor, or of the same vendor when there is no other. Put only models you trust to review on the list: the script follows your order and does not rank models. Without a list, the reviewer is a fresh session of the author's own model, as before.
-
-**What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building; the playbook's order is a default, and an agent may combine or reorder steps as long as what the script and the reviewer check still holds. Run the [evals](evals/README.md) when you change models, including the lean build without the step skills, and cut the text that no longer raises the score.
-
-**Where it does not fit yet.**
-
-- A project whose real behaviour cannot be run from a command line, such as some mobile apps, games, and hardware. The checks still work. The `verify` step has little to run.
-- Windows. Nothing has been tested there.
-- A project without git, or one where a second worktree cannot be set up by a command.
+`jtek.json` and `.jtek/` are all jtek adds to a repository. Everything else lives under the git directory and is never committed. Details: [setup.md](skills/jt-work/references/setup.md).
 
 ## Commands
 
@@ -184,11 +168,85 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 
 Something has to choose the next ticket and start the session. That is you, a Claude Code session, or a bot. All three ask the same question, `jtek.py next`, and do what it answers: `work`, `review`, or nothing.
 
+## Skills
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/skills-dark.svg">
+    <img src="assets/skills.svg" width="880" alt="What you type, and what runs. Four modes load only when you type them: /jt for any task with a ticket or without, /jt-ticket to turn what you want into tickets, /jt-me for your report style, and /jt-agents for your list of reviewers. One ticket, with /jt-work, runs eight steps in order: start, understand, build, check, verify, clean up, ship, and review; start and check belong to jt-work itself, and the other six are skills of their own; check and verify run something real, and review is a second session. Four more skills answer an event: jt-debug when a check fails, jt-babysit when the pull request needs work, jt-learn after you correct the agent, and jt-harness once per repository.">
+  </picture>
+</p>
+
+Black boxes are what you type. Green boxes run something real. `start` and `check` are `jt-work` and its script; every other box is a skill of its own, fifteen with `jt-work`. The table has each by name:
+
+| Step | Skill | What it does |
+|---|---|---|
+| Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
+| Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.config/jtek/agents.json`, which you accept or not |
+| Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
+| Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
+| Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
+| Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
+| Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
+| A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs, or the number the project set |
+| See it work | `jt-verify` | Runs the real thing and reports only what was seen |
+| Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
+| Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
+| Second look | `jt-review` | A session that did not write the change tries to break it, and records the verdict |
+| The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
+| After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
+| Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
+
+## Your mode: `/jt`
+
+`/jt` is a mode, not a step: it loads only when you type it. Type `/jt` and then what you want done; no ticket and no board is needed. It sends ticket work to `jt-work`, and works anything else as a local ticket:
+
+- The agent writes the ticket file and shows you the `Done when` items before it starts, because it wrote the bar itself.
+- `jtek.py start --local --from-file <file>` gives it an id such as `LOCAL-3` and a worktree. The header the session wrote grants nothing: every declared check runs, `review: human` is ignored, and only you give it new tries.
+- A local change of one file, with nothing on the `attention:` line, skips the second look, and the result says so. Anything bigger needs a verdict, as a ticket does.
+- It pushes and opens a pull request. It never merges.
+
+Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
+
+Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists, and `/jt-me` proposes changes to it from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
+
+```markdown
+- Report in Thai. Short, with tables. The result first, then what I must decide.
+```
+
+## Who gives the second look
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/reviewer-dark.svg">
+    <img src="assets/reviewer.svg" width="880" alt="Who gives the second look. jtek.py doctor --agents finds the coding agents on this machine, and the models of a program that can list them. You pick the models you trust to review, in your order, and /jt-agents writes them to agents.json after your yes. jtek.py reviewer prints one command and starts nothing. It picks in this order: the first installed entry of another vendor than the author's; else the first installed entry of the author's own vendor; else a fresh session of the author's own model. It never answers that no review is needed.">
+  </picture>
+</p>
+
+A reviewer from another vendor than the author's is preferred, because two models of one family tend to miss the same thing. That is a reason, not a measurement: no eval here compares the two yet.
+
+| You want to | Do this |
+|---|---|
+| See which agents this machine has | Ask the agent to run `jtek.py doctor --agents`. It needs no repository. It lists the models of a program that can list them, which today is `cursor-agent`; for the others you name the model yourself |
+| Make or update your list | Type `/jt-agents`. It runs the survey, asks which models you trust and in what order, and writes the file after your yes |
+| Know who would review now | `jtek.py reviewer --vendor <the author's vendor>`, for example `--vendor anthropic` |
+
+The list is `~/.config/jtek/agents.json`, outside every repository:
+
+```json
+{"reviewers": [
+  {"command": "codex exec -m <model>", "vendor": "openai", "model": "<model>"},
+  {"command": "cursor-agent -p --model <model>", "vendor": "xai", "model": "<model>"}
+]}
+```
+
+Put only models you trust to review on it: the script follows your order and does not rank models. `vendor` is who made the model, so an agent that serves several vendors has one entry per model. Without a list, the reviewer is a fresh session of the author's own model, as before. The script cannot prove which model answered: `--by` on the verdict is a label, as [SECURITY.md](SECURITY.md) says.
+
 ## Templates
 
 Three files carry a ticket from your head to your review. Each has a form, and each form is short.
 
-**The ticket**, which you write. Set it as the default template of the Notion database, and every new page starts like this:
+**The ticket**, which you write. A Notion page, a FLO item, and a ticket file take the same three headings. On Notion, set this as the database's default template, and every new page starts with it:
 
 ```markdown
 ## Goal
@@ -223,7 +281,10 @@ Notes:
 
 `seen:` means it was run and looked at, and `(run 3)` names the run `jtek.py run` recorded, which a reader can open. `not run:` is an honest answer, and it tells you what to check by hand. Here that is item 3.
 
-**The review notes**, which the second session writes. A finding has steps that fail when anyone runs them:
+<details>
+<summary><strong>The review notes</strong>, which the second session writes</summary>
+
+A finding has steps that fail when anyone runs them:
 
 ```markdown
 Findings:
@@ -237,6 +298,8 @@ Notes:
 - broke: the length check in lib/validate.ts; the test check failed, so the test is real
 - safe because: the validator already guards the signup form, and its tests pass unchanged (run 4)
 ```
+
+</details>
 
 <details>
 <summary><strong>The repository's own files:</strong> <code>jtek.json</code>, <code>.jtek/verify.md</code>, a feature file, and <code>.jtek/rules.md</code></summary>
@@ -314,42 +377,40 @@ The full forms, with the rules each one stands for:
 | `.jtek/verify.md` and a feature file | [verify-template.md](skills/jt-harness/references/verify-template.md) | `jt-harness` |
 | `.jtek/rules.md` | [rules-template.md](skills/jt-learn/references/rules-template.md) | `jt-learn` |
 
-## Skills
+## Fit it to your project
 
-| Step | Skill | What it does |
+The rules are fixed. The numbers and names around them are yours, in `jtek.json`:
+
+| Key | What it changes | Default |
 |---|---|---|
-| Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
-| Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents and models on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.config/jtek/agents.json`, which you accept or not |
-| Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
-| Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
-| Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
-| Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
-| Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
-| A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs, or the number the project set |
-| See it work | `jt-verify` | Runs the real thing and reports only what was seen |
-| Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
-| Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
-| Second look | `jt-review` | A session that did not write the change tries to break it, and records the verdict |
-| The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
-| After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
-| Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
+| `checks`, `setup` | The commands that decide "passing", in any language or build system | none: you declare them |
+| `max_failed_runs` | How many failed check runs end a session. Raise it for a model that often finds the cause on a later try | 3 |
+| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge. [An example for GitLab](examples/pr-state-gitlab.py) | `gh`, for GitHub |
+| `headings` | The names of the three ticket headings, in your team's language | `Goal`, `Done when`, `Out of scope` |
+| `watch` | More files that the `attention:` line should name | a list of common names |
+| `forge` | `false` when the remote is not a forge, so tickets end without a pull request | `true` |
+| `name` | What tickets call this repository | the folder name |
 
-## Your mode: `/jt`
+Details: [setup.md](skills/jt-work/references/setup.md).
 
-`/jt` is a mode, not a step: it loads only when you type it. Type `/jt` and then what you want done; no ticket and no board is needed. It sends ticket work to `jt-work`, and works anything else as a local ticket:
+**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
 
-- The agent writes the ticket file and shows you the `Done when` items before it starts, because it wrote the bar itself.
-- `jtek.py start --local --from-file <file>` gives it an id such as `LOCAL-3` and a worktree. The header the session wrote grants nothing: every declared check runs, `review: human` is ignored, and only you give it new tries.
-- A local change of one file, with nothing on the `attention:` line, skips the second look, and the result says so. Anything bigger needs a verdict, as a ticket does.
-- It pushes and opens a pull request. It never merges.
+<details>
+<summary><strong>Which agent, which model, and where it does not fit yet</strong></summary>
 
-Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
+**Which agent.** The same tickets were worked end to end on Claude Code, on Cursor's command-line agent (its own pick of model, with a Grok reviewer), and on Antigravity's (Gemini). All three read the skill files, recorded their runs with `jtek.py run`, started their own reviewer, and listed the board lines they could not write when they had no Notion tool.
 
-Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists, and `/jt-me` proposes changes to it from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
+**Which model.** Use the strongest model you have for `jt-work`, and above all for `jt-review`. On the same tickets, Sonnet and Haiku got the code right, but each wrote a `seen:` line that said more than it had run and skipped part of a step; the strongest model did that once in nine rounds. The script holds what a machine can check, and a run recorded with `jtek.py run` shows what a `seen:` line rests on. Whether the line matches the run is still for the reviewer to read, so a smaller worker needs a reviewer on the strongest model.
 
-```markdown
-- Report in Thai. Short, with tables. The result first, then what I must decide.
-```
+**What still assumes today's agents.** Tickets small enough for one pull request, one ticket at a time in a session, and stopping to ask when a ticket is unclear. The step skills also teach a method for debugging and building; the playbook's order is a default, and an agent may combine or reorder steps as long as what the script and the reviewer check still holds. Run the [evals](evals/README.md) when you change models, including the lean build without the step skills, and cut the text that no longer raises the score.
+
+**Where it does not fit yet.**
+
+- A project whose real behaviour cannot be run from a command line, such as some mobile apps, games, and hardware. The checks still work. The `verify` step has little to run.
+- Windows. Nothing has been tested there.
+- A project without git, or one where a second worktree cannot be set up by a command.
+
+</details>
 
 ## Statuses
 
@@ -366,10 +427,21 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 ## Not proven yet
 
-No numbers here. There are none to show yet.
+No benchmark numbers here. There are none to show yet. What exists is a count of what was tested and walked:
 
-- **Proven:** the script, by 216 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-nine tickets walked to Done on three demo repositories over fifteen rounds, twenty-eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. With the board in FLO: ten tickets walked to Done over five rounds on the same three repositories, all with Claude Code and fresh sessions: a feature, a bug, a refactor, a rework sent back with a comment, a stop for a question and one for approval each picked up by a new session, a ticket refused while its blocker was open, and a two-repository pair with real pull requests and CI. The Review column was missing on that board throughout, so the move to Review was never written; every session said so instead of picking another column. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
-- **Not proven:** a large real codebase, GitLab, and Windows. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-nine tickets. The demo repositories are small, and every session in them was started by one person.
+| What | How far |
+|---|---|
+| **Tested** | The script, by 229 tests, and four outside reviews whose findings are fixed and tested |
+| **Walked** | 29 tickets to Done with the board in Notion and 10 with the board in FLO, on three small demo repositories. 28 of the 29 were worked by sessions that had never seen the skills, and the FLO ones by fresh sessions |
+| **Not proven** | A large real codebase, GitLab, Windows, a pull request whose own CI goes red, and the reviewer list of 26.39.0 with a real reviewer |
+
+<details>
+<summary><strong>The full record:</strong> what each round covered</summary>
+
+- **Proven:** the script, by 229 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-nine tickets walked to Done on three demo repositories over fifteen rounds, twenty-eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. With the board in FLO: ten tickets walked to Done over five rounds on the same three repositories, all with Claude Code and fresh sessions: a feature, a bug, a refactor, a rework sent back with a comment, a stop for a question and one for approval each picked up by a new session, a ticket refused while its blocker was open, and a two-repository pair with real pull requests and CI. The Review column was missing on that board throughout, so the move to Review was never written; every session said so instead of picking another column. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
+- **Not proven:** a large real codebase, GitLab, and Windows. The reviewer list of 26.39.0: its two commands have tests, but no reviewer has been started from a command the script printed, and no fresh session has walked `/jt-agents`. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-nine tickets. The demo repositories are small, and every session in them was started by one person.
+
+</details>
 
 Use it by hand, one ticket at a time, before you let anything start sessions for you.
 
@@ -387,8 +459,8 @@ Not by editing `jtek.json`: the script reads it from the base branch. What a che
 **Can it give the verdict on its own change?**
 The script cannot tell who ran a command. The skills forbid it, and nothing in code stops an agent that ignores them. See [SECURITY.md](SECURITY.md).
 
-**Why does the script not talk to Notion?**
-Your agent already has a Notion tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.
+**Why does the script not talk to the board?**
+Your agent already has a Notion or FLO tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.
 
 **Do I need the second session for a one-line fix?**
 Set Review to `human` on that ticket. The waiver is ignored when the change touches a file on the `attention:` line.
@@ -407,12 +479,15 @@ It is the part inside one session. What picks the next ticket is up to you.
 
 ## Coming from v25
 
-Version 26 is a rewrite, not an upgrade.
+<details>
+<summary>Version 26 is a rewrite, not an upgrade: what is gone, and what is new</summary>
 
 - **Gone:** `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, the three `jt-spec-*` skills, `gate.py`, and `/jt-work --loop`. Choosing the next ticket and writing specs are no longer part of this set.
 - **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets on the board.
 - **New in the repository:** `jtek.json` and `.jtek/`. You can delete `jt-queue/` when nothing in it is needed.
 - **The old set** is at commit `4c9d0f1` in the git history.
+
+</details>
 
 ## Acknowledgements
 

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 352" width="880" height="352" role="img" aria-label="Who gives the second look. jtek.py doctor --agents finds the coding agents on this machine, and the models of a program that can list them. You pick the models you trust to review, in your order, and /jt-agents writes them to agents.json after your yes. jtek.py reviewer prints one command and starts nothing. It picks in this order: first, the first installed entry of another vendor than the author's; else the first installed entry of the author's own vendor; else a fresh session of the author's own model. It never answers that no review is needed.">
+<rect width="880" height="352" fill="#0d1117"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<text x="22" y="36" font-size="15" font-weight="600" fill="#e6edf3">Who gives the second look</text>
+<rect x="22.0" y="60" width="189.5" height="86" rx="8" fill="#12261e" stroke="#3fb950" stroke-width="1.5"/>
+<text x="116.75" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">doctor --agents</text>
+<text x="116.75" y="111.0" font-size="11.5" text-anchor="middle" fill="#9198a1">finds the agents here, and</text>
+<text x="116.75" y="127.0" font-size="11.5" text-anchor="middle" fill="#9198a1">the models some can list</text>
+<rect x="237.5" y="60" width="189.5" height="86" rx="8" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.5"/>
+<text x="332.25" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#0d1117">You, with /jt-agents</text>
+<text x="332.25" y="111.0" font-size="11.5" text-anchor="middle" fill="#0d1117">pick the models you</text>
+<text x="332.25" y="127.0" font-size="11.5" text-anchor="middle" fill="#0d1117">trust, in your order</text>
+<rect x="453.0" y="60" width="189.5" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="547.75" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">agents.json</text>
+<text x="547.75" y="111.0" font-size="11.5" text-anchor="middle" fill="#9198a1">your list of reviewers,</text>
+<text x="547.75" y="127.0" font-size="11.5" text-anchor="middle" fill="#9198a1">written after your yes</text>
+<rect x="668.5" y="60" width="189.5" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="763.25" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">jtek.py reviewer</text>
+<text x="763.25" y="111.0" font-size="11.5" text-anchor="middle" fill="#9198a1">prints one command,</text>
+<text x="763.25" y="127.0" font-size="11.5" text-anchor="middle" fill="#9198a1">starts nothing</text>
+<path d="M215.5 103.0H229.5" stroke="#e6edf3" stroke-width="1.5"/>
+<path d="M228.5 98.0L235.5 103.0L228.5 108.0z" fill="#e6edf3"/>
+<path d="M431.0 103.0H445.0" stroke="#e6edf3" stroke-width="1.5"/>
+<path d="M444.0 98.0L451.0 103.0L444.0 108.0z" fill="#e6edf3"/>
+<path d="M646.5 103.0H660.5" stroke="#e6edf3" stroke-width="1.5"/>
+<path d="M659.5 98.0L666.5 103.0L659.5 108.0z" fill="#e6edf3"/>
+<text x="22" y="188" font-size="11.5" font-weight="600" fill="#e6edf3">JTEK.PY REVIEWER PICKS, IN THIS ORDER</text>
+<rect x="22.0" y="204" width="244.0" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="144.0" y="234.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">1  Another vendor</text>
+<text x="144.0" y="255.0" font-size="11.5" text-anchor="middle" fill="#9198a1">the first installed entry that is</text>
+<text x="144.0" y="271.0" font-size="11.5" text-anchor="middle" fill="#9198a1">not from the author's vendor</text>
+<rect x="318.0" y="204" width="244.0" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="440.0" y="234.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">2  The author's vendor</text>
+<text x="440.0" y="255.0" font-size="11.5" text-anchor="middle" fill="#9198a1">the first installed entry,</text>
+<text x="440.0" y="271.0" font-size="11.5" text-anchor="middle" fill="#9198a1">when there is no other</text>
+<rect x="614.0" y="204" width="244.0" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="736.0" y="234.0" font-size="14" font-weight="600" text-anchor="middle" fill="#e6edf3">3  A fresh session</text>
+<text x="736.0" y="255.0" font-size="11.5" text-anchor="middle" fill="#9198a1">of the author's own model: no</text>
+<text x="736.0" y="271.0" font-size="11.5" text-anchor="middle" fill="#9198a1">list, or nothing on it installed</text>
+<path d="M270.0 247.0H310.0" stroke="#e6edf3" stroke-width="1.5"/>
+<path d="M309.0 242.0L316.0 247.0L309.0 252.0z" fill="#e6edf3"/>
+<path d="M566.0 247.0H606.0" stroke="#e6edf3" stroke-width="1.5"/>
+<path d="M605.0 242.0L612.0 247.0L605.0 252.0z" fill="#e6edf3"/>
+<text x="292.0" y="238" font-size="11" text-anchor="middle" fill="#9198a1">else</text>
+<text x="588.0" y="238" font-size="11" text-anchor="middle" fill="#9198a1">else</text>
+<text x="22" y="322" font-size="12" fill="#9198a1">It never answers "no review". The verdict's --by names the model that reviewed.</text>
+<text x="22" y="340" font-size="12" fill="#9198a1">The script follows your order. It does not rank models.</text>
+</g>
+</svg>

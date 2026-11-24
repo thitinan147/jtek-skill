@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 276" width="880" height="276" role="img" aria-label="The same change, reported twice. Without jtek the agent writes: Added the phone field. All tests pass. Ready to merge. You take its word, or you redo the work. With jtek the result says: checks lint, types, test and verify passed at commit 1a2b3c4; verdict PASS by a reviewer at the same commit; item 1 seen, PATCH /me with a phone number returned 200, runs 1 and 2; item 2 seen, a bad phone returned 422, run 3; item 3 not run, no browser here, so the page was not opened. Each seen line names a recorded run you can open, and the not run line says what to check by hand.">
+<rect width="880" height="276" fill="#0d1117"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<text x="22" y="36" font-size="15" font-weight="600" fill="#e6edf3">The same change, reported twice</text>
+<rect x="22" y="56" width="262" height="200" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
+<text x="40" y="82" font-size="11.5" font-weight="600" fill="#e6edf3">WITHOUT JTEK</text>
+<text x="40" y="110" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">Added the phone field.</text>
+<text x="40" y="130" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">All tests pass.</text>
+<text x="40" y="150" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">Ready to merge.</text>
+<text x="40" y="222" font-size="12" fill="#9198a1">You take its word,</text>
+<text x="40" y="239" font-size="12" fill="#9198a1">or you redo the work.</text>
+<rect x="304" y="56" width="554" height="200" rx="8" fill="#12261e" stroke="#3fb950" stroke-width="1.5"/>
+<text x="322" y="82" font-size="11.5" font-weight="600" fill="#e6edf3">WITH JTEK</text>
+<text x="322" y="110" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">checks:  lint=pass types=pass test=pass verify=pass @1a2b3c4</text>
+<text x="322" y="128" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">verdict: PASS by reviewer @1a2b3c4</text>
+<text x="322" y="154" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">1. seen: PATCH /me with phone "0812345678" -&gt; 200 (runs 1 and 2)</text>
+<text x="322" y="172" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">2. seen: PATCH /me with phone "12ab" -&gt; 422, names the field (run 3)</text>
+<text x="322" y="190" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#e6edf3" xml:space="preserve">3. not run: no browser here, so the page was not opened</text>
+<text x="322" y="222" font-size="12" fill="#9198a1">Every seen line names a recorded run you can open.</text>
+<text x="322" y="239" font-size="12" fill="#9198a1">The not run line tells you what to check by hand.</text>
+</g>
+</svg>

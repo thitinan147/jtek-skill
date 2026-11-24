@@ -9,7 +9,7 @@ Until now the skills said "prefer a reviewer from another vendor" in `/jt` only,
 - `jtek.py reviewer --vendor <the author's vendor>` prints the command of the first installed entry of another vendor. Without one it prints the first installed entry of the author's own vendor, and with no list or nothing installed it says to start a fresh session of the author's own model. It never says that no review is needed, and it never runs the command it prints. A damaged list is refused with its path.
 - `/jt-agents`, a new mode typed by hand, runs the survey, asks the owner which models they trust and in what order, and writes the list only after a yes.
 - `/jt`, `jt-work`, and `starting-sessions.md` now point at `jtek.py reviewer`, so the ticket route has the same preference as work without a ticket.
-- README: "Which reviewer" says the preference for another vendor is a reason and not a measurement; no eval compares the two yet.
+- README: "Who gives the second look" says the preference for another vendor is a reason and not a measurement; no eval compares the two yet.
 - The contract test asks only a mode that may start helpers to name `worker.md`. `/jt-agents` starts none.
 
 Thirteen new tests cover both commands with a scratch home and a scratch PATH. The evals were not run for the changed skill text.

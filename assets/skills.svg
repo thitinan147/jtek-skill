@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 446" width="880" height="446" role="img" aria-label="What you type, and what runs. Four modes load only when you type them: /jt for any task with a ticket or without, /jt-ticket to turn what you want into tickets, /jt-me for your report style, and /jt-agents for your list of reviewers. One ticket, with /jt-work, runs eight steps in order: start, understand, build, check, verify, clean up, ship, and review; start and check belong to jt-work itself, and the other six are skills of their own; check and verify run something real, and review is a second session. Four skills answer an event: jt-debug when a check fails, jt-babysit when the pull request needs work, jt-learn after you correct the agent, and jt-harness once per repository.">
+<rect width="880" height="446" fill="#ffffff"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<text x="22" y="36" font-size="15" font-weight="600" fill="#111111">What you type, and what runs</text>
+<rect x="10" y="52" width="860" height="112" rx="10" fill="#f6f8fa"/>
+<text x="22" y="74" font-size="11.5" font-weight="600" fill="#111111">FOUR MODES</text>
+<text x="104" y="74" font-size="11.5" fill="#57606a">loaded only when you type them</text>
+<rect x="22.0" y="86" width="197.0" height="66" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="120.5" y="106.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">/jt</text>
+<text x="120.5" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">any task, with a ticket</text>
+<text x="120.5" y="143.0" font-size="11.5" text-anchor="middle" fill="#ffffff">or without one</text>
+<rect x="235.0" y="86" width="197.0" height="66" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="333.5" y="106.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">/jt-ticket</text>
+<text x="333.5" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">turns what you want</text>
+<text x="333.5" y="143.0" font-size="11.5" text-anchor="middle" fill="#ffffff">into tickets</text>
+<rect x="448.0" y="86" width="197.0" height="66" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="546.5" y="106.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">/jt-me</text>
+<text x="546.5" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">keeps your</text>
+<text x="546.5" y="143.0" font-size="11.5" text-anchor="middle" fill="#ffffff">report style</text>
+<rect x="661.0" y="86" width="197.0" height="66" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="759.5" y="106.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">/jt-agents</text>
+<text x="759.5" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">keeps your list</text>
+<text x="759.5" y="143.0" font-size="11.5" text-anchor="middle" fill="#ffffff">of reviewers</text>
+<rect x="10" y="176" width="860" height="124" rx="10" fill="#f6f8fa"/>
+<path d="M68 153V207" stroke="#111111" stroke-width="1.5"/>
+<path d="M63 206L68 213L73 206z" fill="#111111"/>
+<text x="80" y="198" font-size="11.5" fill="#57606a">ticket work goes to jt-work</text>
+<text x="330" y="198" font-size="11.5" font-weight="600" fill="#111111">ONE TICKET</text>
+<text x="410" y="198" font-size="11.5" fill="#57606a">/jt-work T-12 keeps this order; start and check are its own</text>
+<rect x="22.0" y="214" width="92.2" height="70" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="68.1" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">start</text>
+<text x="68.1" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">claim it,</text>
+<text x="68.1" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">new worktree</text>
+<rect x="128.2" y="214" width="92.2" height="70" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="174.29999999999998" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">understand</text>
+<text x="174.29999999999998" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">name the</text>
+<text x="174.29999999999998" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">proof</text>
+<rect x="234.5" y="214" width="92.2" height="70" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="280.6" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">build</text>
+<text x="280.6" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">small change</text>
+<text x="280.6" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">with tests</text>
+<rect x="340.8" y="214" width="92.2" height="70" rx="8" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+<text x="386.90000000000003" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">check</text>
+<text x="386.90000000000003" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">your checks</text>
+<text x="386.90000000000003" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">must pass</text>
+<rect x="447.0" y="214" width="92.2" height="70" rx="8" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+<text x="493.1" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">verify</text>
+<text x="493.1" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">run the real</text>
+<text x="493.1" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">app and look</text>
+<rect x="553.2" y="214" width="92.2" height="70" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="599.3000000000001" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">clean up</text>
+<text x="599.3000000000001" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">remove</text>
+<text x="599.3000000000001" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">leftovers</text>
+<rect x="659.5" y="214" width="92.2" height="70" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="705.6" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">ship</text>
+<text x="705.6" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">pull request</text>
+<text x="705.6" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">+ evidence</text>
+<rect x="765.8" y="214" width="92.2" height="70" rx="8" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+<text x="811.9" y="235.5" font-size="13" font-weight="600" text-anchor="middle" fill="#111111">review</text>
+<text x="811.9" y="256.5" font-size="11.5" text-anchor="middle" fill="#57606a">2nd session</text>
+<text x="811.9" y="272.5" font-size="11.5" text-anchor="middle" fill="#57606a">tests it</text>
+<path d="M118.2 249.0H120.2" stroke="#111111" stroke-width="1.5"/>
+<path d="M119.2 244.0L126.2 249.0L119.2 254.0z" fill="#111111"/>
+<path d="M224.4 249.0H226.4" stroke="#111111" stroke-width="1.5"/>
+<path d="M225.4 244.0L232.4 249.0L225.4 254.0z" fill="#111111"/>
+<path d="M330.8 249.0H332.8" stroke="#111111" stroke-width="1.5"/>
+<path d="M331.8 244.0L338.8 249.0L331.8 254.0z" fill="#111111"/>
+<path d="M437.1 249.0H439.1" stroke="#111111" stroke-width="1.5"/>
+<path d="M438.1 244.0L445.1 249.0L438.1 254.0z" fill="#111111"/>
+<path d="M543.2 249.0H545.2" stroke="#111111" stroke-width="1.5"/>
+<path d="M544.2 244.0L551.2 249.0L544.2 254.0z" fill="#111111"/>
+<path d="M649.5 249.0H651.5" stroke="#111111" stroke-width="1.5"/>
+<path d="M650.5 244.0L657.5 249.0L650.5 254.0z" fill="#111111"/>
+<path d="M755.8 249.0H757.8" stroke="#111111" stroke-width="1.5"/>
+<path d="M756.8 244.0L763.8 249.0L756.8 254.0z" fill="#111111"/>
+<rect x="10" y="312" width="860" height="124" rx="10" fill="#f6f8fa"/>
+<text x="22" y="334" font-size="11.5" font-weight="600" fill="#111111">FOUR MORE, WHEN SOMETHING HAPPENS</text>
+<rect x="22.0" y="346" width="197.0" height="74" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="120.5" y="370.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">jt-debug</text>
+<text x="120.5" y="391.0" font-size="11.5" text-anchor="middle" fill="#57606a">a check fails: find the</text>
+<text x="120.5" y="407.0" font-size="11.5" text-anchor="middle" fill="#57606a">cause before any edit</text>
+<rect x="235.0" y="346" width="197.0" height="74" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="333.5" y="370.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">jt-babysit</text>
+<text x="333.5" y="391.0" font-size="11.5" text-anchor="middle" fill="#57606a">the pull request has</text>
+<text x="333.5" y="407.0" font-size="11.5" text-anchor="middle" fill="#57606a">conflicts, red CI, comments</text>
+<rect x="448.0" y="346" width="197.0" height="74" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="546.5" y="370.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">jt-learn</text>
+<text x="546.5" y="391.0" font-size="11.5" text-anchor="middle" fill="#57606a">you corrected the agent:</text>
+<text x="546.5" y="407.0" font-size="11.5" text-anchor="middle" fill="#57606a">turn it into a check</text>
+<rect x="661.0" y="346" width="197.0" height="74" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="759.5" y="370.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">jt-harness</text>
+<text x="759.5" y="391.0" font-size="11.5" text-anchor="middle" fill="#57606a">once per repository: build</text>
+<text x="759.5" y="407.0" font-size="11.5" text-anchor="middle" fill="#57606a">the way to run the real app</text>
+</g>
+</svg>

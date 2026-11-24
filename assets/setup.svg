@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 214" width="880" height="214" role="img" aria-label="Set up once, in three steps and one check. One: the board, which is a Notion database, a FLO product, or none, with tickets as files; it leaves the board's link, or none. Two: the checks; jtek.py init writes jtek.json, you give each check one command and commit it on the base branch. Three: the harness; the jt-harness skill writes how to run the real app and proposes the verify check. Then jtek.py doctor says what is still missing, and prints ready.">
+<rect width="880" height="214" fill="#ffffff"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<text x="22" y="36" font-size="15" font-weight="600" fill="#111111">Set up once</text>
+<rect x="22.0" y="60" width="189.5" height="86" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="116.75" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">1  The board</text>
+<text x="116.75" y="111.0" font-size="11.5" text-anchor="middle" fill="#ffffff">Notion, FLO, or none:</text>
+<text x="116.75" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">tickets as files</text>
+<rect x="237.5" y="60" width="189.5" height="86" rx="8" fill="#111111" stroke="#111111" stroke-width="1.5"/>
+<text x="332.25" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">2  The checks</text>
+<text x="332.25" y="111.0" font-size="11.5" text-anchor="middle" fill="#ffffff">jtek.py init, then one</text>
+<text x="332.25" y="127.0" font-size="11.5" text-anchor="middle" fill="#ffffff">command per check</text>
+<rect x="453.0" y="60" width="189.5" height="86" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+<text x="547.75" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">3  The harness</text>
+<text x="547.75" y="111.0" font-size="11.5" text-anchor="middle" fill="#57606a">jt-harness writes how</text>
+<text x="547.75" y="127.0" font-size="11.5" text-anchor="middle" fill="#57606a">to run the real app</text>
+<rect x="668.5" y="60" width="189.5" height="86" rx="8" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+<text x="763.25" y="90.0" font-size="14" font-weight="600" text-anchor="middle" fill="#111111">jtek.py doctor</text>
+<text x="763.25" y="111.0" font-size="11.5" text-anchor="middle" fill="#57606a">says what is still</text>
+<text x="763.25" y="127.0" font-size="11.5" text-anchor="middle" fill="#57606a">missing, in order</text>
+<path d="M215.5 103.0H229.5" stroke="#111111" stroke-width="1.5"/>
+<path d="M228.5 98.0L235.5 103.0L228.5 108.0z" fill="#111111"/>
+<path d="M431.0 103.0H445.0" stroke="#111111" stroke-width="1.5"/>
+<path d="M444.0 98.0L451.0 103.0L444.0 108.0z" fill="#111111"/>
+<path d="M646.5 103.0H660.5" stroke="#111111" stroke-width="1.5"/>
+<path d="M659.5 98.0L666.5 103.0L659.5 108.0z" fill="#111111"/>
+<text x="116.8" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111111">LEAVES</text>
+<text x="116.8" y="190" font-size="12" text-anchor="middle" fill="#57606a">the board's link, or none</text>
+<text x="332.2" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111111">LEAVES</text>
+<text x="332.2" y="190" font-size="12" text-anchor="middle" fill="#57606a">jtek.json on the base branch</text>
+<text x="547.8" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111111">LEAVES</text>
+<text x="547.8" y="190" font-size="12" text-anchor="middle" fill="#57606a">.jtek/ and a verify check</text>
+<text x="763.2" y="172" font-size="10.5" font-weight="600" text-anchor="middle" fill="#111111">PRINTS</text>
+<text x="763.2" y="190" font-size="12" text-anchor="middle" fill="#57606a">ready</text>
+</g>
+</svg>
