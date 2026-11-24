@@ -14,6 +14,7 @@ Read your own diff once as a stranger would: `jtek.py run <id> -- git diff <base
 - Comments that say what the next line does.
 - A "do not remove" or "must stay in sync" comment. Turn the claim into a type, a test, or a lint rule, then delete the comment. If you cannot, keep it and say so in the evidence.
 - A helper used once that hides nothing. Inline it.
+- A lint or type suppression the diff added (`eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `# noqa`, `# type: ignore`): fix what it hides. When the rule is wrong for that line, keep it, and name the rule and the reason on the `clean-up:` line.
 - A wrapper, option, or setting added "for later". Nothing in `Done when` asks for it.
 - Files the change created and does not need: scratch scripts, logs, screenshots.
 

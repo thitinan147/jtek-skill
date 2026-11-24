@@ -68,7 +68,7 @@ Every change needs a verdict from a session that did not write it, so the first 
 
 First commit what you have. Unfinished work goes in as `wip: <what is unfinished>`, so the next session can see it. `stop` refuses while files are uncommitted. With nothing changed, there is nothing to commit: run `stop`. When the ticket has a pull request, push the commits first, so that it shows what the result names.
 
-Then run `jtek.py stop <id> --waiting input --note "<one question>"` when you need an answer, or `--waiting approval` when a step needs the human's permission. Then end the session. Do not guess, and do not wait in the session.
+Then run `jtek.py stop <id> --waiting input --note "<one question, the options, and your pick>"` when you need an answer, or `--waiting approval` when a step needs the human's permission. Then end the session. Do not guess, and do not wait in the session.
 
 `stop` and `finish` end the result block with a `board:` line. Write on the page what it says, as [references/notion.md](references/notion.md) or [references/flo.md](references/flo.md) explains. If the write fails, say so in your last message.
 

@@ -35,6 +35,8 @@ For each `Done when` item, do what you named before you built it:
 - Your own summary of what the code does.
 - A different path than the one the ticket names. A skipped entry point is not verified through another one.
 - An unclear result. Inconclusive is not a pass. Say it is inconclusive.
+- A result that came too easily: no output, no time taken, every case right on the first try. First check that the run reached the code you changed (P15).
+- A number (a time, a size, a count) from one run. Give it from several recorded runs, with how many and how far apart they were, and rule out that it counted cached, skipped, or failed work (P13).
 
 Use the real user path, not an internal function or a test-only endpoint. Capture the action and the state it produced, not only the last screen. When the change writes data, look at the stored value a second way.
 
@@ -53,7 +55,7 @@ Remove only what you made, by the exact path you created, and stop only a proces
 
 ## 6. When it does not work
 
-The change is not done. Find the cause, fix it, commit, and run `jtek.py check <id>` again. Then repeat this skill.
+First rule out the way you looked: a stale build or cache, the wrong worktree, port, or commit, an earlier run (P15). Then the change is not done. Find the cause, fix it, commit, and run `jtek.py check <id>` again. Then repeat this skill.
 
 If the project has no way to run the real thing, say so in the evidence and say that the repository needs a verification harness.
 

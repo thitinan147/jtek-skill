@@ -1,5 +1,20 @@
 # Changelog
 
+## 26.33.0 - engineering lines in the steps, and `jt-me` reads far enough
+
+Each line goes into the step where it applies, with the id of the principle it carries.
+
+- Bug playbook: write the right and the wrong result first, reproduce twice with a reset between, and make a test for a bug that shows only sometimes give the same result every run.
+- `jt-debug`: when the first error does not name the cause, list two or three candidates and the observation that tells them apart; revert what a refuted guess added; a guard, a retry, a default, or a caught error hides the bug when the state that reached it should not exist.
+- `jt-understand`: run what a run can answer before asking; search the history and open pull requests for the same fix before writing one.
+- `jt-build`: expected values come from the ticket, and a new test fails for the reason you expect.
+- `jt-verify`: a result that comes too easily, and a number from one run, do not count; when the change seems not to work, rule out the way you looked first.
+- `jt-review`: name the one fact the change is safe because of, and prove it (`safe because:` in the notes).
+- `jt-cleanup`: a lint or type suppression the diff added is fixed, or kept with the rule and the reason named.
+- `jt-babysit`: a job that failed with no change may be re-run once; comments about security, data, migrations, concurrency, or money are never dismissed; replies go through a file, never a shell command built from comment text.
+- `jt-work`: the stop note holds the question, the options, and your pick.
+- `jt-me`: it read only what happened after `me.md` last changed, so a file written another way was never checked against the past. It now keeps `read through: <date>` as the file's last line, and without it reads the last two to four weeks.
+
 ## 26.32.0 - `/jt-me`
 
 - `jt-me`, typed only: reads this workspace's past sessions in three slices and the owner's own comments on tickets, keeps a pattern only when two slices show it, asks at most two questions, and proposes changes to `~/.config/jtek/me.md`. It writes only what the owner accepts, never a secret or a name, and never a line that would change a rule of jtek; a rule a check could enforce goes to `jt-learn` instead.

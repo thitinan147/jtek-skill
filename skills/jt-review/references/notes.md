@@ -17,6 +17,7 @@ Notes:
 - stand-in: <what you used in place of the real thing, and for which case>
 - did not reproduce: <what you suspected, what you tried, what happened>
 - not checked: <what you did not look at>
+- safe because: <the one fact the change is safe because of> (run <n> | read: <file>:<line> | unproven)
 ```
 
 Use the lines that apply, and leave out the rest.

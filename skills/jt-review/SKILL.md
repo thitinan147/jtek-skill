@@ -27,6 +27,7 @@ You are the reviewer. You did not write this change. If this session wrote any o
    - **No check fails, and the behaviour is one `Done when` names** (its outcome, or a number or name it gives): a finding. Nothing would notice if it stopped being true.
    - **No check fails, and the ticket does not name the behaviour:** a note.
    - **Some check fails:** the tests are real. A check that still passed does not cover that behaviour: name it in a note.
+7. Name the one fact the change is safe because of, and prove it with a recorded run. Look where a search stops: a library's own code at its pinned version, stored data, wire formats, flags, and other readers of the same data. A failure you find is judged under the rules below. Write the fact in the notes as `- safe because: <fact> (run <n>)`, or `(read: <file>:<line>)`, or `(unproven)` (P18).
 
 ## 3. Count only what reproduces
 

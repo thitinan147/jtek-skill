@@ -11,7 +11,8 @@ Do this before the first edit. The output is a short list, not a document. Write
 
 1. Read the ticket file whose path `jtek.py start` printed. Note `Goal`, each `Done when` item, `Out of scope`, and `kind` when it is set.
 2. Read the code the ticket touches, the tests beside it, and one caller of each function you expect to change.
-3. If a question can be answered by reading the code or its history, read. Do not ask the human. (P19)
+3. If a question can be answered by reading the code or its history, or by running it, read or run. Do not ask the human. (P19)
+4. Search the history and the open pull requests for the same fix: `git log --all --grep <the symptom or the ticket id>`, and `gh pr list --search` on a forge. An open fix or a commit that already claims it: do not write a competing one; stop with `--waiting input` and name it. A fix that was reverted: read why before you plan.
 
 ## 2. Find the pattern
 
