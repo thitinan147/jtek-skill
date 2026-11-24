@@ -612,6 +612,22 @@ def local_ticket(text: str) -> str:
     return f"# {ticket['title'] or 'Local work'}\n" + "\n".join(header) + "\n\n" + body
 
 
+def cmd_ticket(args: argparse.Namespace) -> None:
+    """Check a drafted ticket the way start will, without claiming anything."""
+    try:
+        ticket = parse_ticket(Path(args.file).read_text())
+    except (OSError, ValueError) as err:
+        raise Refuse(f"cannot read the ticket file as text: {err}") from None
+    base = base_branch()
+    validate_ticket(ticket, load_checks(base))
+    repo = ticket["fields"].get("repo", "")
+    here = str(load_config(base).get("name") or main_root().name)
+    if repo and repo != here:
+        raise Refuse(f"the ticket is for `{repo}`; check it in that repository, this one is `{here}`")
+    items = sum(1 for line in ticket["sections"].get("done when", []) if re.match(r"^-\s*\S", line))
+    print(f"ticket: ok, {items} item(s) under Done when, as start will read it")
+
+
 def cmd_start(args: argparse.Namespace) -> None:
     try:
         text = Path(args.from_file).read_text()
@@ -1285,6 +1301,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_other)
     sub.add_parser("doctor", help="say what is set up in this repository and what is missing").set_defaults(func=cmd_other)
+
+    ticket = sub.add_parser("ticket", help="check a drafted ticket file the way start will, without claiming it")
+    ticket.add_argument("file")
+    ticket.set_defaults(func=cmd_ticket)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
     start.add_argument("ref", nargs="?", default="", help="the link of the ticket's page on the board; it becomes the `source:` of the result")

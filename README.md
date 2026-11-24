@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.33.0-111111?style=flat-square" alt="Version 26.33.0">
+  <img src="https://img.shields.io/badge/version-26.34.0-111111?style=flat-square" alt="Version 26.34.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
@@ -171,7 +171,7 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 | You want to | Do this |
 |---|---|
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
-| Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo |
+| Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
@@ -314,6 +314,7 @@ The full forms, with the rules each one stands for:
 
 | Step | Skill | What it does |
 |---|---|---|
+| Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones on the board as Backlog |
 | Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |

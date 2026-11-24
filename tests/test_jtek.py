@@ -1894,6 +1894,30 @@ class FifthLoopRound(Scratch):
         self.assertIn("the third or later on T-1 (3)", out)
 
 
+class TicketCheck(Scratch):
+    """A drafted ticket is checked the way `start` reads it, and nothing is claimed."""
+
+    def check(self, text):
+        path = Path(self.tmp.name) / "draft.md"
+        path.write_text(text)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(path)], cwd=self.repo, capture_output=True, text=True)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def test_a_good_draft_passes_and_nothing_is_claimed(self):
+        code, out = self.check("# Add the thing\nkind: feature\n\n" + BODY + "- the other thing works\n")
+        self.assertEqual(code, 0, out)
+        self.assertIn("ticket: ok, 2 item(s) under Done when", out)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work").exists())
+
+    def test_a_bad_draft_gets_the_refusal_start_would_give(self):
+        code, out = self.check("# x\n\n## Goal\ng\n## Done when\n- a\n  - nested\n")
+        self.assertEqual(code, 1)
+        self.assertIn("only top-level list items", out)
+        code, out = self.check("# x\nrepo: elsewhere\n\n" + BODY)
+        self.assertEqual(code, 1)
+        self.assertIn("is for `elsewhere`", out)
+
+
 class LocalTickets(Scratch):
     """Work without a ticket: the session writes the ticket, so its header grants nothing."""
 

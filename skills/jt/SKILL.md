@@ -19,7 +19,7 @@ When you think the request is wrong, or a part of it does not earn its place, sa
 
 - **A ticket id, or a Notion or FLO link:** follow the `jt-work` skill for it, from its Start step. Everything below about the report still applies.
 - **Several ids:** the same, with the rules `jt-work` gives for several tickets.
-- **No ticket:** work it as a local ticket, below.
+- **No ticket:** work it as a local ticket, below. When it is too large for one pull request, or the owner has not decided what it should do, say so and suggest `/jt-ticket` instead.
 - **A question about code, with nothing to change:** answer it. Read and run what you need, change no file, and say what you saw and where.
 
 ## A local ticket

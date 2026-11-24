@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.34.0 - `/jt-ticket`
+
+The owner asked for jtek's own skill to write tickets, so that a session gets a ticket it can work without guessing, and large work arrives in pieces.
+
+- `jt-ticket`, typed only: restates the ask, reads the code for the facts, asks the owner only for decisions (four at a time at most, numbered, with a recommendation), drafts tickets whose `Done when` items can be seen working, splits large or cross-repository work into ordered tickets linked with `after:`, checks each draft, and creates the ones the owner approves on the board as Backlog. Todo stays the owner's.
+- `jtek.py ticket <file>`: checks a drafted ticket the way `start` will read it, without claiming anything.
+- `/jt` suggests `/jt-ticket` when work without a ticket is too large for one pull request or not yet decided.
+
 ## 26.33.0 - engineering lines in the steps, and `jt-me` reads far enough
 
 Each line goes into the step where it applies, with the id of the principle it carries.

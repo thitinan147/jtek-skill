@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        skill: [jt, jt-babysit, jt-build, jt-cleanup, jt-debug, jt-harness, jt-learn, jt-me, jt-review, jt-ship, jt-understand, jt-verify, jt-work]
+        skill: [jt, jt-babysit, jt-build, jt-cleanup, jt-debug, jt-harness, jt-learn, jt-me, jt-review, jt-ship, jt-ticket, jt-understand, jt-verify, jt-work]
     permissions:
       contents: read
       security-events: write
