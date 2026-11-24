@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.37.0 - four holes a review found, closed in the script
+
+A review of 26.35.0 and 26.36.0 reproduced four ways past a rule. Each has a test that failed first.
+
+- `attention:` names the dependency manifests of more ecosystems: Maven, Gradle, sbt, Composer, .NET, Elixir, Dart, Swift, CocoaPods, Deno, and PDM. Since 26.36.0 a new dependency goes ahead inside the pull request, and before this a ticket with `review: human` that added one to `pom.xml` reached Review with no verdict and `attention: -`.
+- Header lines are read only right under the title. The first blank line after one, or the first line of other text, ends them. Before, a line such as `review: human` or `checks: lint` anywhere above the first heading counted, so text of a FLO description could waive the review. `flo.md` now says where that text goes.
+- `finish` refuses a new commit after three FAIL verdicts, as `check` refuses after three failed runs. Before, the refusal held only while the last verdict was for the current commit, so a new commit went to a fourth review. The human setting Todo after a question starts the count again, as before.
+- A local ticket that stopped with a question is picked up with `start --local --answered`, after the human answered in the chat. Before, the script wrote `status: Todo` for it, so the session that asked could go on at once.
+
 ## 26.36.0 - the agent decides inside the pull request; the script checks more of the result
 
 Agents and models keep getting better. The text that tells an agent how to work holds a strong one back; the script that checks the result costs it almost nothing, and it is what lets the human trust the agent with more. So this release loosens the first and adds to the second.

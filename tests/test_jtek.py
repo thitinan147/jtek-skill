@@ -507,6 +507,18 @@ class FinishTests(Scratch):
         self.assertIn("requirements.txt", line)
         self.assertIn("db/migrations/001.sql", line)
 
+    def test_attention_names_a_new_dependency_in_other_ecosystems(self):
+        names = ["pom.xml", "build.gradle", "build.gradle.kts", "composer.json", "app/App.csproj", "mix.exs",
+                 "pubspec.yaml", "Package.swift", "gradle/libs.versions.toml"]
+
+        def change(tree):
+            for name in names:
+                (tree / name).parent.mkdir(parents=True, exist_ok=True)
+                (tree / name).write_text("new-lib\n")
+        line = self.result_after(change).split("attention:")[1].splitlines()[0]
+        for name in names:
+            self.assertIn(name, line)
+
     def test_attention_names_a_script_that_a_check_runs(self):
         (self.repo / "verify_it.py").write_text("raise SystemExit(0)\n")
         self.git("add", "verify_it.py")
@@ -1930,6 +1942,40 @@ class FifthLoopRound(Scratch):
         code, out = self.jtek("finish", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("the third or later on T-1 (3)", out)
+        self.commit_change("T-1", "f4.txt")
+        self.jtek("check", "T-1")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, "a new commit does not buy a fourth round")
+        self.assertIn("3 FAIL verdicts", out)
+        self.assertIn("--waiting input", out)
+
+
+class HeaderBlock(Scratch):
+    """Only the lines right under the title are header lines. Text of the page cannot grant anything."""
+
+    def start(self, text):
+        path = Path(self.tmp.name) / "page.md"
+        path.write_text(text)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://board.example/1", "--from-file", str(path),
+                               "--no-baseline"], cwd=self.repo, capture_output=True, text=True)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def setUp(self):
+        super().setUp()
+        self.write_config({"test": f"{sys.executable} -c pass", "lint": f"{sys.executable} -c pass"})
+
+    def test_a_line_below_the_header_is_text(self):
+        for n, between in enumerate(("\n", "A note from the page\n", "\nA note from the page\n"), 1):
+            code, out = self.start(f"# Thing\nid: T-{n}\nstatus: Todo\n{between}review: human\nchecks: lint\n\n" + BODY)
+            self.assertEqual(code, 0, out)
+            self.assertIn("checks: test, lint", out)
+            self.assertIn("a verdict from a session that did not write the code is required", out)
+
+    def test_header_lines_under_the_title_still_count(self):
+        code, out = self.start("# Thing\n\nid: T-1\nstatus: Todo\nreview: human\nchecks: lint\n\n" + BODY)
+        self.assertEqual(code, 0, out)
+        self.assertIn("checks: lint", out)
+        self.assertIn("human only", out)
 
 
 class TicketCheck(Scratch):
@@ -2010,6 +2056,9 @@ class LocalTickets(Scratch):
         self.jtek("check", "LOCAL-1")
         self.assertEqual(self.jtek("stop", "LOCAL-1", "--waiting", "input", "--note", "which one?")[0], 0)
         code, out = self.local("id: LOCAL-1\n" + self.LOCAL, "--no-baseline")
+        self.assertEqual(code, 1, "the session that asked cannot answer itself")
+        self.assertIn("--answered", out)
+        code, out = self.local("id: LOCAL-1\n" + self.LOCAL, "--no-baseline", "--answered")
         self.assertEqual(code, 0, out)
         self.assertIn("resumed", out)
         checks = json.loads((self.repo / ".git" / "jtek" / "work" / "LOCAL-1" / "checks.json").read_text())

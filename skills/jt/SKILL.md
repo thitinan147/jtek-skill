@@ -31,6 +31,7 @@ Work the user asked for in the chat, with no ticket, goes through the same pipel
 3. Run `jtek.py start --local --from-file <file>` from the repository. The script gives the ticket an id such as `LOCAL-3`, and the result says the session wrote the ticket.
 4. Follow the `jt-work` playbook for the `kind`, as for any ticket. There is no board: skip every board write.
 5. `finish` decides whether a second look is needed. A local change of one file, with nothing on the `attention:` line, needs none. Any other change needs a verdict from a session that did not write it, as `jt-work` says.
+6. After a `stop`, pick the ticket up with its `id: LOCAL-<n>` in the file. When it stopped with a question, add `--answered` to `start`, and only after the user answered it in the chat.
 
 Push the branch and open the pull request as for a ticket. Never merge.
 

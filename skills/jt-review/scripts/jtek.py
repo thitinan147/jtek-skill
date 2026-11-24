@@ -69,6 +69,10 @@ SENSITIVE = [
     # A new dependency or migration goes ahead inside the pull request, so the human must see it there.
     "requirements*.txt", "Pipfile", "Pipfile.lock", "go.mod", "Cargo.toml", "Gemfile", "bun.lock", "bun.lockb",
     "*migrations/*", "*migrate/*",
+    "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.lockfile",
+    "libs.versions.toml", "build.sbt", "composer.json", "composer.lock", "*.csproj", "*.fsproj", "packages.lock.json",
+    "Directory.Packages.props", "mix.exs", "mix.lock", "pubspec.yaml", "pubspec.lock", "Package.swift",
+    "Package.resolved", "Podfile", "Podfile.lock", "deno.json", "deno.lock", "npm-shrinkwrap.json", "pdm.lock",
 ]
 
 class Refuse(Exception):
@@ -205,6 +209,9 @@ def parse_ticket(text: str) -> dict:
     sections: dict[str, list[str]] = {}
     repeated: list[str] = []
     title, current = "", None
+    # Header lines sit right under the title. The first blank line after one, or the first line of other text,
+    # ends them, so a line such as `review: human` in the page's own text grants nothing.
+    header = True
     for line, inside in fenced(text.splitlines()):
         if line.startswith("## ") and not inside:
             current = line[3:].strip().lower()
@@ -219,8 +226,10 @@ def parse_ticket(text: str) -> dict:
             title = line[2:].strip()
         else:
             match = re.match(r"^([A-Za-z][A-Za-z -]*):\s*(.*)$", line)
-            if match:
+            if match and header:
                 fields[match.group(1).strip().lower()] = match.group(2).strip()
+            elif line.strip() or fields:
+                header = False
     return {"title": title, "fields": fields, "sections": sections, "repeated": repeated}
 
 
@@ -715,6 +724,10 @@ def cmd_start(args: argparse.Namespace) -> None:
             asked = parked and "outcome: needs-human" in (work / "result.md").read_text()
         except FileNotFoundError:  # another session picked it up between the two lines
             raise Refuse(CLAIMED.format(id=ticket_id)) from None
+        if args.local and asked and not args.answered:
+            # A local ticket has no board, so its `status: Todo` is the script's own and says nothing about the human.
+            raise Refuse(f"{ticket_id} stopped with a question. When the human has answered it in the chat, start again "
+                         "with --answered. A session never adds it on its own")
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
             raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
@@ -1231,6 +1244,11 @@ def cmd_finish(args: argparse.Namespace) -> None:
     verdict = current_verdict(args.id, meta)
     if not meta.get("review") and needs_verdict(meta):
         pr_note += " `review: human` is ignored because the change touches the files on the attention line."
+    if needs_verdict(meta) and not verdict and int(meta.get("fails", 0)) >= 3:
+        # Checks stop after three failed runs; reviews stop after three too. A new commit does not buy a fourth round.
+        raise Refuse(f"{args.id} has had {meta['fails']} FAIL verdicts, so a new commit does not go to another review. "
+                     f"Stop with `jtek.py stop {args.id} --waiting input`, because the ticket or the reviewer's standard "
+                     "needs the human")
     if needs_verdict(meta) and not verdict:
         print(write_result(args.id, "needs-review", "In Progress",
                            note="start a session that did not write this code and run jt-review for this id." + pr_note), end="")
@@ -1353,6 +1371,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--local", action="store_true", help="work with no ticket: the file has no id, and the script gives it a LOCAL-<n> one")
     start.add_argument("--from-file", required=True, help="the page, read just now and saved in the ticket format")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
+    start.add_argument("--answered", action="store_true", help="only with --local: the human answered the question the ticket stopped with")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
     start.add_argument("--no-fetch", action="store_true", help="do not fetch the base branch from origin first")
     start.set_defaults(func=cmd_start)
