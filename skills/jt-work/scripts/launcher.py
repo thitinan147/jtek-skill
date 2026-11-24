@@ -17,18 +17,43 @@ def init(j, args) -> None:
     j.write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
     print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
+    print("Leave it empty to keep the tickets as files beside the repository; no board is needed then.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
     print("Delete a check the project does not have. The human commits this file on the base branch.")
 
 
-def load_board(j, path: str) -> list[dict]:
-    """Rows that the launcher read from the board with its own tool. Every row is checked before any is used."""
-    try:
-        rows = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as err:
-        raise j.Refuse(f"cannot read the board file {path}: {err}") from None
+def file_rows(j) -> list[dict]:
+    """The rows of a repository with no board: one for each ticket file, read from its header."""
+    rows = []
+    for path in sorted(j.tickets_dir().glob("*.md")):
+        try:
+            ticket = j.parse_ticket(path.read_text())
+        except (OSError, ValueError) as err:
+            raise j.Refuse(f"cannot read the ticket file {path}: {err}") from None
+        fields = ticket["fields"]
+        rows.append({"id": fields.get("id") or path.stem, "title": ticket["title"], "status": fields.get("status", ""),
+                     "repo": fields.get("repo", ""), "waiting": fields.get("waiting", ""), "pr": fields.get("pr", ""),
+                     "after": j.open_after(fields.get("after", ""))})
+    if not rows:
+        print(f"no ticket files in {j.tickets_dir()}")
+    return rows
+
+
+def load_board(j, path: str | None) -> list[dict]:
+    """Rows that the launcher read from the board with its own tool, or the ticket files when there is no board.
+    Every row is checked before any is used."""
+    if not path:
+        if j.has_board(j.base_branch()):
+            raise j.Refuse("pass --board-file: the open tickets, read from the board and saved as JSON; "
+                           "see references/starting-sessions.md")
+        rows = file_rows(j)
+    else:
+        try:
+            rows = json.loads(Path(path).read_text())
+        except (OSError, ValueError) as err:
+            raise j.Refuse(f"cannot read the board file {path}: {err}") from None
     if not isinstance(rows, list) or not all(isinstance(row, dict) and row.get("id") for row in rows):
         raise j.Refuse("the board file must be a JSON list of objects, each with `id` and `status`; "
                        "see references/starting-sessions.md")

@@ -11,13 +11,15 @@ A session works the tickets it is given. Something else decides which ticket run
    ```
 
    `after` lists only the related tickets that are not Done. Read the board again each time. Do not reuse an old file.
+
+   A repository with no board needs no such file: its tickets are files, as [files.md](files.md) says, and `next` and `sync` read them when you leave `--board-file` out.
 2. Run `jtek.py next --board-file <file>` in the repository. It prints one line for each of this repository's tickets: the id, an action, and the reason, separated by tabs.
 
 | Action | What to do |
 |---|---|
 | `work` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-work` skill for ticket `<id>`." |
 | `review` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
-| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md) or [flo.md](flo.md) says. Do not start a session. |
+| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md), [flo.md](flo.md), or [files.md](files.md) says. Do not start a session. |
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
@@ -36,7 +38,7 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 - One session per ticket at a time. Before you start one, check that none is running for that id.
 - Give each session only the line in the table. Do not pass on what another session said.
 - Limit how many run at once. Three is a reasonable start.
-- A session needs the board's tool (Notion or FLO), and permission to run git, the project's checks, and `gh`.
+- A session needs the board's tool (Notion or FLO; none when the tickets are files), and permission to run git, the project's checks, and `gh`.
 - Which tickets may share one session is in [several-tickets.md](several-tickets.md).
 
 ## Starting a separate session

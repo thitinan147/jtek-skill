@@ -41,7 +41,7 @@ Work without a ticket is started with `jtek.py start --local --from-file <file>`
 
 ## Where tickets live
 
-The page on the board is the source of truth. The layout of the board is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
+The page on the board is the source of truth. The layout of the board is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. A repository with no board keeps each ticket as a file, and that file is the page: [files.md](files.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
 
 ## Statuses
 

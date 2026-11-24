@@ -694,9 +694,10 @@ class PageTests(Scratch):
         self.assertEqual(self.field("T-1", "status"), "In Progress")
 
     def test_start_needs_the_page_as_a_file(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x")
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=self.repo, capture_output=True, text=True)
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("--from-file", proc.stderr)
+        self.assertIn("--from-file", proc.stdout)
 
     def test_done_when_takes_only_top_level_items(self):
         self.ticket("T-1", body="## Goal\nx\n## Done when\n- it works\nand it is fast\n")
@@ -2437,9 +2438,11 @@ class NextTests(Scratch):
 class DoctorTests(Scratch):
     def test_doctor_names_what_is_missing_in_order(self):
         code, out = self.jtek("doctor")
-        self.assertEqual(code, 1, out)
-        self.assertIn("missing  `board`: the Notion database or FLO product link", out)
-        self.assertIn("not checked: the board", out)
+        self.assertEqual(code, 0, out)
+        self.assertIn("ok       no board: the tickets are files in", out)
+        self.assertNotIn("not checked: the board", out)
+        self.assertNotIn("write a ticket on the board", out)
+        self.assertIn("ready: this repository needs no board", out)
         self.write_config({"test": f"{sys.executable} -c pass", "lint": ""}, board="https://www.notion.so/x")
         code, out = self.jtek("doctor")
         self.assertEqual(code, 1)

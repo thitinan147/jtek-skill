@@ -31,7 +31,7 @@ Pass `--evidence-file` again whenever the code changed since the last `finish`. 
 
 ## 3. Read the result
 
-- **`outcome: review`:** stop. The human reviews and merges. Write on the ticket's page exactly what the `board:` line of the result says.
+- **`outcome: review`:** stop. The human reviews and merges. Write on the ticket's page exactly what the `board:` line of the result says. The page is the ticket file when the repository has no board, and `board: -` means write nothing.
 - **`outcome: needs-review`:** the usual first result. A session that did not write the change records a verdict, and then `finish` runs again. When the `board:` line holds the pull request's link, write it on the page.
 - **`ci: pending`:** nothing to do. The next `finish` reads the forge again.
 - **`refused: verdict is FAIL`:** the change does not ship. Read the review notes the script names.

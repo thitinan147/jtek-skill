@@ -50,9 +50,9 @@ def run(j, args=None) -> None:
         hint = "; if this repository has no commit yet, make the first commit" if "base branch" in str(err) else ""
         rows.append(("missing", f"{j.CONFIG} on the base branch", str(err) + hint))
     if config is not None:
-        board = str(config.get("board") or "")
-        rows.append(("ok" if board else "missing", "`board`: the Notion database or FLO product link",
-                     f"set `board` in {j.CONFIG} to the link of the board, and commit it on {base}"))
+        board = str(config.get("board") or "").strip()
+        rows.append(("ok", "`board`: the Notion database or FLO product link" if board
+                     else f"no board: the tickets are files in {j.tickets_dir()}", ""))
         checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
         empty = [name for name, command in checks.items() if not isinstance(command, str) or not command.strip()]
         if not checks:
@@ -93,8 +93,15 @@ def run(j, args=None) -> None:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
     if shutil.which("gh") and not own_forge:
         print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
-    print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
-          "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
+    has_board = bool(config and str(config.get("board") or "").strip())
+    if has_board:
+        print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
+              "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
     if any(state == "missing" for state, _, _ in rows):
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
-    print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")
+    if has_board:
+        print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")
+    else:
+        print("ready: this repository needs no board. Save a ticket with `jtek.py ticket <file> --save`, write\n"
+              "       `status: Todo` in its file, and give its id to the jt-work skill; or start work that has\n"
+              "       no ticket with `jtek.py start --local --from-file <file>`")

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.37.0-111111?style=flat-square" alt="Version 26.37.0">
+  <img src="https://img.shields.io/badge/version-26.38.0-111111?style=flat-square" alt="Version 26.38.0">
   <img src="https://img.shields.io/badge/skills-14-111111?style=flat-square" alt="14 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
@@ -172,6 +172,7 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 |---|---|
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
+| Work with no board at all | Leave `board` empty in `jtek.json`. `/jt <what to do>` works as before, and tickets are files beside the repository: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
@@ -315,7 +316,7 @@ The full forms, with the rules each one stands for:
 
 | Step | Skill | What it does |
 |---|---|---|
-| Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones on the board as Backlog |
+| Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
 | Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
 | Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
@@ -332,7 +333,7 @@ The full forms, with the rules each one stands for:
 
 ## Your mode: `/jt`
 
-`/jt` is a mode, not a step: it loads only when you type it. It sends ticket work to `jt-work`, and works anything else as a local ticket:
+`/jt` is a mode, not a step: it loads only when you type it. Type `/jt` and then what you want done; no ticket and no board is needed. It sends ticket work to `jt-work`, and works anything else as a local ticket:
 
 - The agent writes the ticket file and shows you the `Done when` items before it starts, because it wrote the bar itself.
 - `jtek.py start --local --from-file <file>` gives it an id such as `LOCAL-3` and a worktree. The header the session wrote grants nothing: every declared check runs, `review: human` is ignored, and only you give it new tries.

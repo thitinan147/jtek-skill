@@ -1,6 +1,6 @@
 ---
 name: jt-ticket
-description: Turns what the owner wants into tickets a session can work, one per pull request, with Done when items that can be seen working and the facts taken from the code. Splits large work into ordered tickets, and creates each approved one on the board as Backlog. Use when the user types /jt-ticket, and only then.
+description: Turns what the owner wants into tickets a session can work, one per pull request, with Done when items that can be seen working and the facts taken from the code. Splits large work into ordered tickets, and creates each approved one as Backlog, on the board or as a ticket file when the repository has no board. Use when the user types /jt-ticket, and only then.
 disable-model-invocation: true
 argument-hint: "<what you want built or fixed>"
 ---
@@ -13,7 +13,7 @@ The rules a good ticket follows are in `jt-work`'s `references/ticket-template.m
 
 ## 1. Restate
 
-Say in two or three lines what the owner wants and why, in their words. Name the repository it belongs to, from `jtek.json` (`name`), and the board, from its `board` link. When it spans two repositories, say which part goes where.
+Say in two or three lines what the owner wants and why, in their words. Name the repository it belongs to, from `jtek.json` (`name`), and the board, from its `board` link. An empty `board` means the tickets are files. When it spans two repositories, say which part goes where.
 
 ## 2. Find the facts yourself
 
@@ -54,6 +54,8 @@ Create each approved ticket on the board with the board's tool, as `jt-work`'s `
 - **Status Backlog.** In FLO, the item stays off the board; in Notion, Status is `Backlog`. Never Todo.
 - The title, the kind, the repo and area, and the three sections as the body.
 - Each `after:` as the board's own link: After in Notion, `blocked by` in FLO.
+
+**The repository has no board** (`board` is empty in `jtek.json`): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog, and prints where the file is. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it.
 
 Every agent you start for this work, to read code in parallel for example, gets as the first line of its prompt `Read <absolute path of jt-work>/worker.md before anything else.`
 

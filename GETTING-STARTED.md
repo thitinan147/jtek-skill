@@ -12,7 +12,7 @@ Most steps are things you say to your agent. Text in a `text` block is a prompt.
 |---|---|---|
 | A coding agent that loads skills (Claude Code, Cursor, Antigravity, Codex, ...) | It does the work | Yes |
 | `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
-| Notion, as a tool in the agent | The board lives there | Yes |
+| Notion, as a tool in the agent | The board lives there | No. FLO works too, and with no board at all the tickets are files: leave `board` empty in `jtek.json`, skip step 3, and read [files.md](skills/jt-work/references/files.md) |
 | GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in `jtek.json` instead |
 | Your project's own commands for lint, types, and tests | They are the checks | At least one |
 | A way to run your real app from the command line | So the agent can see a change work | Strongly advised |

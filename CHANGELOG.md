@@ -1,5 +1,20 @@
 # Changelog
 
+## 26.38.0 - every skill works in a repository with no board
+
+A repository no longer needs Notion or FLO. Leave `board` empty in `jtek.json`, and the tickets are files. `/jt <what to do>` already worked without a ticket; now nothing around it asks for a board.
+
+- **Tickets as files.** With no board, each ticket is `<repository>.jtek/_tickets/<id>.md`, beside the repository and outside git, and that file is the page: the session writes there what a `board:` line says. The new `references/files.md` says where each part lives, as `notion.md` and `flo.md` do for their boards. A file keeps no history of who changed it, so a team that needs that record uses a board.
+- `jtek.py ticket <file> --save` keeps a checked draft as a ticket file. The script gives the next free `T-<n>` and writes Backlog, whatever the draft says. `/jt-ticket` uses it when the repository has no board.
+- `jtek.py start <id>` needs no `--from-file` when there is no board: it reads the ticket file itself and prints it as `page:`. With a board, `--from-file` is required as before.
+- An `after:` line of a ticket file counts an id only while that id's file is not Done. A board hands over only the open ones; a file keeps the line as written, so the script looks each one up.
+- `jtek.py next` and `jtek.py sync` need no `--board-file` when there is no board: they read the ticket files.
+- `doctor` no longer calls an empty `board` missing. It prints the folder of the ticket files and how to start there.
+- A local ticket that stopped with a question now says the answer is in the chat, in `start` and in `finish`, not on a page it does not have.
+- `jt-work` says that `/jt` does work that has no ticket, and still never starts such work itself. `/jt` says how to set up a repository that has no `jtek.json` yet: the checks still come from the base branch, and the human still merges that file.
+
+Not run before release: the owner asked for no testing of this change, so the tests and a walk on a real repository are still to do.
+
 ## 26.37.0 - four holes a review found, closed in the script
 
 A review of 26.35.0 and 26.36.0 reproduced four ways past a rule. Each has a test that failed first.
