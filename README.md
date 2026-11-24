@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.28.0-111111?style=flat-square" alt="Version 26.28.0">
+  <img src="https://img.shields.io/badge/version-26.29.0-111111?style=flat-square" alt="Version 26.29.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
-  <img src="https://img.shields.io/badge/board-Notion-111111?style=flat-square" alt="The board is a Notion database">
+  <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
@@ -54,17 +54,17 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 
 ## How it works
 
-1. **You write a ticket** as a page on a Notion board, with `Goal` and `Done when`, and set it to Todo.
-2. **A session takes it.** The agent reads the page with its Notion tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
+1. **You write a ticket** as a page on the board (a Notion database, or a FLO product), with `Goal` and `Done when`, and set it to Todo.
+2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
 5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
-6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the Notion page.
+6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the page.
 7. **You merge.** There is no merge command.
 
 If the agent is stuck or has a question, it stops and puts the question on the page. You answer and set the ticket back to Todo.
 
-`jtek.py` never talks to Notion. The agent reads and writes the board with its own Notion tool, and the script says what to write.
+`jtek.py` never talks to the board. The agent reads and writes it with its own Notion or FLO tool, and the script says what to write.
 
 ## The whole factory
 
@@ -108,13 +108,13 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
 
 ## Set up
 
 Three things, once. For every step with what you should see, from connecting Notion to the first merged ticket, follow **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
-**1. The board.** Create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
+**1. The board.** For FLO, follow [flo.md](skills/jt-work/references/flo.md): connect the FLO MCP server and add a Review column to the board. For Notion, create one Notion database with the properties in [notion.md](skills/jt-work/references/notion.md): eleven of them, and the names and types must match. Then connect the Notion tool in your agent and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
 
 Keep the database's link: it goes into `jtek.json` in the next step.
 
@@ -171,7 +171,7 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 | You want to | Do this |
 |---|---|
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo |
-| Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page link>` |
+| Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
 | Answer a question, or ask for a fix | Write on the page, set Status to Todo, then `/jt-work T-12` |
@@ -342,7 +342,7 @@ Waiting, with `input` or `approval`, is a property of an In Progress ticket. It 
 
 No numbers here. There are none to show yet.
 
-- **Proven:** the script, by 184 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-nine tickets walked to Done on three demo repositories over fifteen rounds, twenty-eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
+- **Proven:** the script, by 184 tests, and four outside reviews whose findings are fixed and tested; the fourth, of 26.19.0, read the scripts and every skill document, and its fixes were reviewed again before release. The main path, by three fresh-agent runs on toy repositories, before the board moved to Notion. With the board in Notion: twenty-nine tickets walked to Done on three demo repositories over fifteen rounds, twenty-eight of them by sessions that had never seen the skills. Between them they covered a feature, a bug, a refactor, a two-repository change with a contract pin, real pull requests with CI, squash merges and `sync`, a stop for a question and one for approval with a new session picking up, a pull request sent back by the human, a FAIL verdict with rework, two tickets worked at the same time on the same file with the second rebased after the first merged, a harness repair, and a repeated correction turned into a check by `jt-learn`. With the board in FLO: ten tickets walked to Done over five rounds on the same three repositories, all with Claude Code and fresh sessions: a feature, a bug, a refactor, a rework sent back with a comment, a stop for a question and one for approval each picked up by a new session, a ticket refused while its blocker was open, and a two-repository pair with real pull requests and CI. The Review column was missing on that board throughout, so the move to Review was never written; every session said so instead of picking another column. A pull request with red CI never came up, so that path of `jt-babysit` is not walked. After each round the sessions were asked where they had to guess, and the answers became the next release.
 - **Not proven:** a large real codebase, GitLab, and Windows. The path of `jt-babysit` for a pull request whose own CI goes red never came up in twenty-nine tickets. The demo repositories are small, and every session in them was started by one person.
 
 Use it by hand, one ticket at a time, before you let anything start sessions for you.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.29.0 - approval on FLO, and the README names FLO
+
+Round five on FLO, on 26.28.0. TEK-11 asked for a library from PyPI: the session stopped for approval before any code, because the ticket allowed the dependency but nothing on the base could install it. The human declined and rewrote the ticket; a new session built it without the library. TEK-12, an API route, went through review and CI on a real pull request. Both are Done. No wrong action in rounds four and five.
+
+- `jt-build`: a dependency the ticket allows still needs `setup` on the base to install it; until then, stop for approval.
+- `jt-verify`: a commit that changes only documents no program reads does not void earlier runs.
+- `ticket.md`: `ci: none` right after a push usually means the forge has not started the run.
+- README: the board may be Notion or FLO, and what was walked on FLO.
+
 ## 26.28.0 - a bug and a refactor on FLO
 
 Round four on FLO, on 26.27.0: a Bug item (tally counted a Windows line end as one character) went through the bug playbook, tests first; a Feature item tagged `refactor` went through the refactor playbook with a real pull request. Both passed review and are Done. No wrong action; the notes were about the documents.

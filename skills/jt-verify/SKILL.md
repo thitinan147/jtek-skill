@@ -31,7 +31,7 @@ For each `Done when` item, do what you named before you built it:
 
 - The code compiles, or the checks pass.
 - A file exists or changed.
-- Output you saved earlier, before the last commit. One exception: when the commits since then changed only test files (a script that a check runs is not one), the earlier run still stands, and the evidence says which commit it is from. After a rebase that brought changes to files your change touches, run every line again.
+- Output you saved earlier, before the last commit. One exception: when the commits since then changed only test files or documents that no program reads (a script that a check runs is not one), the earlier run still stands, and the evidence says which commit it is from. After a rebase that brought changes to files your change touches, run every line again.
 - Your own summary of what the code does.
 - A different path than the one the ticket names. A skipped entry point is not verified through another one.
 - An unclear result. Inconclusive is not a pass. Say it is inconclusive.
