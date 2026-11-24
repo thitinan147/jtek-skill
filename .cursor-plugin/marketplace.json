@@ -1,0 +1,17 @@
+{
+  "name": "jtek-skill",
+  "owner": {
+    "name": "Thitinan"
+  },
+  "metadata": {
+    "description": "Marketplace for the jtek inner-loop skills",
+    "version": "26.39.0"
+  },
+  "plugins": [
+    {
+      "name": "jtek",
+      "source": ".",
+      "description": "The inner loop for coding agents. One ticket runs in its own session and git worktree, passes the checks the project declares, and stops at a pull request. A human reviews and merges."
+    }
+  ]
+}
