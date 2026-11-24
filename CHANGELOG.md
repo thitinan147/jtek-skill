@@ -1,5 +1,13 @@
 # Changelog
 
+## 26.25.0 - rework and a pull request on FLO
+
+TEK-5, a client feature, went through a real pull request with green CI, a late verdict, and a second `finish`. TEK-4 was sent back by the human with a comment and To do, and a new session picked it up, fixed it, and passed review. Both are Done. Their notes:
+
+- A check gets no input. One run of `check` hung until the session gave it none.
+- A run whose `--cwd` is outside any git repository says so, instead of showing only the worktree's commit.
+- `flo.md`: the product's prefix is found from the link with `list_products`; header lines may come in any order; a comment that holds only the pull request's link is a fenced result block, so the next session reads it as a session's; the result block is the lines up to the first blank line, in a plain fence; FLO turns a bare link into a Markdown link and may add blank lines; the human's answer or fix is in the comments after the last result, and goes under `## Notes`.
+
 ## 26.24.0 - the second walk on FLO
 
 TEK-4, a tally feature, was worked on 26.23.0 and passed with notes. The human sent it back with a comment on the item and moved it to To do, to walk the rework path on FLO. The session's notes became these fixes to `flo.md`:

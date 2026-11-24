@@ -1927,6 +1927,21 @@ class RecordedRuns(Scratch):
         self.assertEqual(code, 1)
         self.assertIn("not both and not neither", out)
 
+    def test_a_run_outside_any_repository_says_so(self):
+        self.started()
+        outside = Path(self.tmp.name).resolve() / "inputs"
+        outside.mkdir()
+        self.jtek("run", "T-1", "--cwd", str(outside), "--", sys.executable, "-c", "print(1)")
+        record = (self.repo / ".git" / "jtek" / "work" / "T-1" / "runs" / "1.txt").read_text()
+        self.assertIn(f"cwd: {outside} (at commit none: not in a git repository)", record)
+
+    def test_a_check_gets_no_input(self):
+        self.write_config({"test": f"{sys.executable} -c \"import sys; sys.exit(1 if sys.stdin.read() else 0)\""})
+        self.started()
+        proc = subprocess.run([sys.executable, str(SCRIPT), "check", "T-1"], cwd=self.repo, input="typed\n",
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
     def test_evidence_may_cite_only_runs_that_were_recorded(self):
         self.started()
         self.jtek("run", "T-1", "--", sys.executable, "-c", "print(1)")

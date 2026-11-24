@@ -793,7 +793,8 @@ def run_command(command: str, worktree: Path, log: Path) -> bool:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(f"jtek: {err}\n")
         return False
-    return run_logged(argv, worktree, ticket_env(worktree.name, worktree), log) == 0
+    # A check gets no input, so one that reads it cannot wait on the session's terminal.
+    return run_logged(argv, worktree, ticket_env(worktree.name, worktree), log, stdin=subprocess.DEVNULL) == 0
 
 
 def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path) -> tuple[list[dict], str | None]:
@@ -994,6 +995,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     stdout, stderr = kept(out_file), kept(err_file)
     # When it ran somewhere else, say which commit that place was at, so a run of the base names the base.
     there = git("rev-parse", "HEAD", cwd=cwd, check=False) if cwd != worktree else ""
+    if cwd != worktree and not there:
+        there = "none: not in a git repository"
     record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
               + f"\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
               + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
