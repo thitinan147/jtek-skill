@@ -1457,7 +1457,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
     doctor.add_argument("--agents", action="store_true", help="instead: the coding agents on this machine, their models, and the owner's list of reviewers")
     doctor.set_defaults(func=cmd_other)
-    reviewer = sub.add_parser("reviewer", help="print the command that starts the reviewer, from the owner's list in ~/.config/jtek/agents.json")
+    reviewer = sub.add_parser("reviewer", help="print the command that starts the reviewer, from the owner's list of reviewers")
     reviewer.add_argument("--vendor", required=True, help="the vendor of the model you run on; an entry of that vendor is used only when no other is installed")
     reviewer.set_defaults(func=cmd_other)
 
