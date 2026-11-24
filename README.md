@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.31.0-111111?style=flat-square" alt="Version 26.31.0">
+  <img src="https://img.shields.io/badge/version-26.32.0-111111?style=flat-square" alt="Version 26.32.0">
   <img src="https://img.shields.io/badge/skills-11-111111?style=flat-square" alt="11 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO-111111?style=flat-square" alt="The board is a Notion database or a FLO product">
@@ -338,7 +338,7 @@ The full forms, with the rules each one stands for:
 
 Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
 
-Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists. For example:
+Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists, and `/jt-me` proposes changes to it from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
 
 ```markdown
 - Report in Thai. Short, with tables. The result first, then what I must decide.

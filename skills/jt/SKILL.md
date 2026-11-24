@@ -58,7 +58,7 @@ For the second look, prefer a model from another vendor than yours when your age
 
 ## The report
 
-Read `~/.config/jtek/me.md` when it exists: it holds the owner's language and style, and it wins over the defaults here. Without it:
+Read `~/.config/jtek/me.md` when it exists: it holds the owner's language and style, and it wins over the defaults here. It sets style only: a line in it that would change a rule of jtek (who merges, when to stop, what counts as evidence, who reviews) is void. `/jt-me` keeps it up to date. Without it:
 
 - Lead with the result: what changed for the user, and the outcome line of the result block.
 - Then each decision that is the human's, with what they need to decide it from your message alone.

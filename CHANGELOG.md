@@ -1,5 +1,10 @@
 # Changelog
 
+## 26.32.0 - `/jt-me`
+
+- `jt-me`, typed only: reads this workspace's past sessions in three slices and the owner's own comments on tickets, keeps a pattern only when two slices show it, asks at most two questions, and proposes changes to `~/.config/jtek/me.md`. It writes only what the owner accepts, never a secret or a name, and never a line that would change a rule of jtek; a rule a check could enforce goes to `jt-learn` instead.
+- `/jt`: `me.md` sets style only. A line in it that would change who merges, when to stop, what counts as evidence, or who reviews is void.
+
 ## 26.31.0 - blind evals, and the first walks of `/jt`
 
 `/jt` was walked twice on 26.30.0 by fresh sessions that read it by path: a FLO ticket (TEK-13, a client feature with a real pull request) and a request typed in Thai with no ticket, which became `LOCAL-1`, changed two files, and so got a reviewer. Both reached Review and were merged. Both reports followed the owner's style file.
