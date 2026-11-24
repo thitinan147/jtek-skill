@@ -35,7 +35,7 @@ Write each ticket in the ticket format of `jt-work`'s `references/ticket.md`: a 
 
 ## 5. Size and order
 
-One ticket is one pull request a session can finish. When the items fall into groups that could ship apart, or the work crosses repositories, split it:
+One ticket is one pull request a session can finish, and a reviewer can break item by item: as a rule, at most six `Done when` items. When there are more, when the items fall into groups that could ship apart, or when the work crosses repositories, split it:
 
 - Each ticket ships something a user or another program can see.
 - A ticket that needs another one done first names it under `after:`. The provider of an interface comes before its consumer, as `jt-work`'s `references/two-repos.md` says.

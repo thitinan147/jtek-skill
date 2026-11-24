@@ -1,5 +1,11 @@
 # Changelog
 
+## 26.35.0 - tickets small enough to review
+
+`/jt-ticket` was walked on a two-repository ask (tags on notes). Its questions were numbered with a recommendation each, it found in advance the contract check, `verify`, and stand-in changes the work would need, it carried a changed answer into every item, and it refused to create tickets on an approval that came from another agent instead of the owner. `/jt` then worked the API ticket it wrote without stopping once, through a FAIL verdict and a fix to PASS+NOTES and green CI. The ticket had nine `Done when` items and took over an hour.
+
+- `jt-ticket`: a ticket holds at most six `Done when` items as a rule; more is split.
+
 ## 26.34.0 - `/jt-ticket`
 
 The owner asked for jtek's own skill to write tickets, so that a session gets a ticket it can work without guessing, and large work arrives in pieces.
