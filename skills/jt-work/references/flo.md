@@ -16,7 +16,7 @@ A FLO product can be the board instead of a Notion database. Each item is a tick
 | `# <title>` | the item's title | human |
 | `status:` | the item's column, spelled in FLO `To do`, `In progress`, `Review`, and `Done`: To do is `Todo`, In progress is `In Progress`, Review is `Review`, Done is `Done`. An item on no board is `Backlog`. An archived item is `Cancelled` | see below |
 | `repo:` | the tag `repo:<name>`, such as `repo:api` | human |
-| `kind:` | the item's type (`type.name`): Bug is `bug`. The tag `refactor` makes it `refactor`. Anything else is `feature` | human |
+| `kind:` | the item's type (`type.name`): Bug is `bug`. The tag `refactor` makes it `refactor`, whatever the type. Anything else is `feature` | human |
 | `area:` | the tag `area:<name>` | human |
 | `after:` | the items listed as `blocked by` in its related items. An item listed as `blocks` waits for this one, and is not on the line | human |
 | `review: human` | the tag `review:human` | human |

@@ -1923,6 +1923,7 @@ class RecordedRuns(Scratch):
         self.assertIn("exit: 0", record)
         self.assertRegex(record, r"--- stdout ---\n\s*2\n--- stderr ---\n$")
         self.assertIn(f"cwd: {self.repo} (at commit ", record)
+        self.assertIn("(the worktree's, not the folder's above)", record)
         code, out = self.jtek("run", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("not both and not neither", out)

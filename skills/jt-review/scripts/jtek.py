@@ -998,7 +998,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     if cwd != worktree and not there:
         there = "none: not in a git repository"
     record = (f"run: {number}\ncommand: {shown}\ncwd: {cwd}" + (f" (at commit {there})" if there else "")
-              + f"\ncommit: {sha}" + (" (with uncommitted files)" if dirty else "")
+              + f"\ncommit: {sha}" + (" (the worktree's, not the folder's above)" if cwd != worktree else "")
+              + (" (with uncommitted files)" if dirty else "")
               + f"\nexit: {code}\nseconds: {seconds:.2f}\n--- stdout ---\n{stdout}--- stderr ---\n{stderr}")
     (runs / f"{number}.txt").write_text(record)
     print(record if len(record) <= 4000 else record[:4000] + "\n... (the rest is in the run file)")

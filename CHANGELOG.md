@@ -1,5 +1,14 @@
 # Changelog
 
+## 26.28.0 - a bug and a refactor on FLO
+
+Round four on FLO, on 26.27.0: a Bug item (tally counted a Windows line end as one character) went through the bug playbook, tests first; a Feature item tagged `refactor` went through the refactor playbook with a real pull request. Both passed review and are Done. No wrong action; the notes were about the documents.
+
+- The bug playbook records the reproduction with `jtek.py run`, before any edit: it is the base run the evidence cites.
+- A run made in another folder says that its `commit:` line is the worktree's. Three sessions read it as the folder's.
+- `evidence.md`: an item about the code itself may be `seen:` in a recorded read of the code, and the line says it is a read.
+- `flo.md`: the tag `refactor` wins over the item's type.
+
 ## 26.27.0 - the consumer half of a two-repository pair on FLO
 
 TEK-8, the client half of TEK-7, started once TEK-7 was Done, moved the pin to the provider's new commit, and passed review and CI on a real pull request.

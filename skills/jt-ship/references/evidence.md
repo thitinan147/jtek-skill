@@ -41,7 +41,7 @@ Notes:
 - **Give the exact command, request, or steps,** then the result after `->`. A passing test counts when you run it through `jtek.py run`, cite the run, and the test covers the item.
 - **`not run:` is honest, not a failure.** Give the reason. The human then knows what to check by hand.
 - **An item you saw only in part is `seen:` for that part,** and the same line says which part you did not see for real and why, for example a value the real service never sends.
-- **Never write `seen:` for something you only read in the code.**
+- **Never write `seen:` for something you only read in the code.** The one exception is an item about the code itself, such as "the commands live in one table": record the read with `jtek.py run` (a `grep` or `git diff`), cite it, and say in the line that it is a read of the code.
 - **At most 40 lines that are not blank.** Put long output in a file and pass it with `--attach`.
 - **Notes are short.** A choice you made, a workaround you did not copy, a file the reviewer should open first.
 - **A `clean-up:` line is required.** It says the diff was read once more before shipping, as `jt-cleanup` says.
