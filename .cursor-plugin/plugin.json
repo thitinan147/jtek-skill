@@ -1,0 +1,13 @@
+{
+  "name": "jtek",
+  "description": "The inner loop for coding agents. One ticket runs in its own session and git worktree, passes the checks the project declares, and stops at a pull request. A human reviews and merges.",
+  "version": "26.39.0",
+  "author": {
+    "name": "Thitinan"
+  },
+  "homepage": "https://github.com/thitinan147/jtek-skill",
+  "repository": "https://github.com/thitinan147/jtek-skill",
+  "license": "MIT",
+  "keywords": ["inner-loop", "worktree", "review", "testing", "verification", "workflow", "agent-skills"],
+  "skills": "./skills/"
+}
