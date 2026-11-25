@@ -18,7 +18,7 @@ You are the reviewer. You did not write this change. If this session wrote any o
 
 ## 2. Try to break it
 
-1. For each item under `Done when`, run the change in the worktree and see whether the item is true. Use the app, the API, or the command-line tool, not only the tests. When `~/.jtek/repos/<repo id>/verify.md` exists, it says how to start and drive the app. When it does not, read the README and the code, and write in the notes that no verify guide was found. Stop what you started. For a case the real thing cannot produce, such as an answer in an odd form, a stand-in you write outside the worktree is fine: say in the notes that you used one.
+1. For each item under `Done when`, run the change in the worktree and see whether the item is true. Use the app, the API, or the command-line tool, not only the tests. When `$HOME/.jtek/repos/<repo id>/verify.md` exists, it says how to start and drive the app. When it does not, read the README and the code, and write in the notes that no verify guide was found. Stop what you started. For a case the real thing cannot produce, such as an answer in an odd form, a stand-in you write outside the worktree is fine: say in the notes that you used one.
 2. Look for what the tests do not cover: empty and very large input, the wrong order of events, a repeated request, a failure halfway through, a missing permission. (P6, P12)
 3. Check that the diff stays inside the ticket and out of `Out of scope`.
 4. Check that no test was deleted, skipped, or loosened, and that no check was weakened.

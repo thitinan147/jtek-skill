@@ -1,8 +1,8 @@
 # Setup for a repository
 
-The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, or have no config file at all, and its tickets are files under `~/.jtek/repos/<repo id>/tickets`, as [files.md](files.md) says. Nothing of jtek is written into the repository. Config is `~/.jtek/repos/<repo id>/jtek.json`. The verify guide, feature map, rule table, and ticket files live beside that file. `~/.jtek/config`, when it exists, is the default for a repository that has no file of its own. No file at either place means the defaults: an empty board, so tickets are files. Claims, logs, and results stay under the git directory and are never committed.
+The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, or have no config file at all, and its tickets are files under `$HOME/.jtek/repos/<repo id>/tickets`, as [files.md](files.md) says. Nothing of jtek is written into the repository. Config is `$HOME/.jtek/repos/<repo id>/jtek.json`. The verify guide, feature map, rule table, and ticket files live beside that file. `$HOME/.jtek/config`, when it exists, is the default for a repository that has no file of its own. No file at either place means the defaults: an empty board, so tickets are files. Claims, logs, and results stay under the git directory and are never committed.
 
-The repository id is the origin URL's host, a non-default port, and its path. `https://github.com/acme/widget.git`, `ssh://git@github.com/acme/widget.git`, and `git@github.com:acme/widget.git` are `github.com/acme/widget`. `ssh://git@gitlab.example:2222/acme/widget.git` is `gitlab.example:2222/acme/widget`. Userinfo, a trailing `.git`, and the default ports 443, 80, 22, and 9418 are left out. With no origin, the id is `path` plus the main checkout's absolute path, such as `path/tmp/app`. `JTEK_HOME` overrides `~/.jtek`.
+The repository id is the origin URL's host, a non-default port, and its path. `https://github.com/acme/widget.git`, `ssh://git@github.com/acme/widget.git`, and `git@github.com:acme/widget.git` are `github.com/acme/widget`. `ssh://git@gitlab.example:2222/acme/widget.git` is `gitlab.example:2222/acme/widget`. Userinfo, a trailing `.git`, and the default ports 443, 80, 22, and 9418 are left out. With no origin, the id is `path` plus the main checkout's absolute path, such as `path/tmp/app`. `JTEK_HOME` overrides `$HOME/.jtek`.
 
 1. Run `jtek.py init`. It writes a template on this machine, not in the repository:
 
@@ -10,7 +10,7 @@ The repository id is the origin URL's host, a non-default port, and its path. `h
    {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
    ```
 
-   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `~/.jtek/repos/<repo id>/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository, `<name>.jtek/_tickets`, is still read.
+   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `$HOME/.jtek/repos/<repo id>/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository, `<name>.jtek/_tickets`, is still read.
 
    **`setup`** installs dependencies in a new worktree, for example `npm ci` or `uv sync`. A new worktree has none, so without it the checks fail before any edit. Leave it empty when nothing is needed.
 
@@ -45,7 +45,7 @@ The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. S
 
 **`headings`** is optional. Tickets may use your own words for the three headings: `{"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ", "Out of scope": "นอกขอบเขต"}`. The copy the session works from has the English ones.
 
-**`forge`** is optional. Set it to `false` in this machine's config for this repository when the remote is not a forge, so that tickets may end with `finish --no-pr`. A commit cannot set it. `~/.jtek/config` can set it as the default for every repository that has no file of its own.
+**`forge`** is optional. Set it to `false` in this machine's config for this repository when the remote is not a forge, so that tickets may end with `finish --no-pr`. A commit cannot set it. `$HOME/.jtek/config` can set it as the default for every repository that has no file of its own.
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 

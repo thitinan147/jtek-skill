@@ -6,7 +6,7 @@ A FLO product can be the board instead of a Notion database. Each item is a tick
 
 1. Connect the FLO MCP server in the agent, signed in as a person who can read and write the product's backlog items.
 2. On the board the tickets go on, add a column named **Review** between In progress and Done. FLO creates a board with To do, In progress, and Done only, and no tool can add a column.
-3. Put the product's link in `~/.jtek/repos/<repo id>/jtek.json` as `"board"`, such as `https://flo.odt.co.th/products/248/backlog`, for every repository the product serves. It is not committed.
+3. Put the product's link in `$HOME/.jtek/repos/<repo id>/jtek.json` as `"board"`, such as `https://flo.odt.co.th/products/248/backlog`, for every repository the product serves. It is not committed.
 
 ## Where each part of a ticket lives
 

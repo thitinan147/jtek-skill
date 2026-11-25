@@ -4,7 +4,7 @@
 The board is a Notion database or a FLO product, which the agent reads and writes
 with its own tool. This script never talks to the board: it takes the ticket as a file
 and prints what to write back. Config and per-repository knowledge live on this machine,
-under ~/.jtek (or JTEK_HOME). No file there means the defaults: an empty board, so tickets
+under $HOME/.jtek (or JTEK_HOME). No file there means the defaults: an empty board, so tickets
 are files. Nothing is read from jtek.json or .jtek/ inside the repository.
 Claims, logs, and results live under the repository's common git directory, so every
 worktree sees the same claims and no tracked file is shared between sessions.
@@ -523,117 +523,6 @@ def main_root() -> Path:
     raise Refuse("no main worktree found")
 
 
-def machine_root() -> Path:
-    """Where this machine keeps jtek config. JTEK_HOME overrides ~/.jtek. No file there means the defaults."""
-    override = os.environ.get("JTEK_HOME", "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return (Path.home() / ".jtek").resolve()
-
-
-def machine_config_path() -> Path:
-    """Machine-wide defaults. Absent, and with no per-repository file either, the board is empty."""
-    return machine_root() / "config"
-
-
-def repo_storage_id(url: str) -> str:
-    """A repository id safe to use as directories under ~/.jtek/repos.
-
-    An origin URL contributes its host, a non-default port, and its path. Userinfo is left out.
-    `https://github.com/acme/widget.git`, `ssh://git@github.com/acme/widget.git`, and
-    `git@github.com:acme/widget.git` are `github.com/acme/widget`.
-    `ssh://git@gitlab.example:2222/acme/widget.git` is `gitlab.example:2222/acme/widget`.
-    `https://git.example:8443/acme/widget` keeps port 8443. The default ports 443, 80, 22, and 9418
-    are left out. A trailing slash and a trailing `.git` are left out.
-    A local path, and a repository with no origin, is `path` plus that absolute path, such as
-    `path/tmp/app`. `..` is refused so the id cannot step out of ~/.jtek/repos.
-    """
-    text = url.strip()
-    host = ""
-    port: int | None = None
-    scheme = ""
-    path = text
-    if "://" in text:
-        parsed = urllib.parse.urlparse(text)
-        scheme = (parsed.scheme or "").lower()
-        host = (parsed.hostname or "").lower()
-        port = parsed.port
-        path = urllib.parse.unquote(parsed.path or "")
-    else:
-        scp = re.fullmatch(r"(?:[^@/\s]+@)?([^:/\s]+):(.+)", text)
-        if scp and not text.startswith("/") and not text.startswith("."):
-            host = scp.group(1).lower()
-            path = scp.group(2)
-    path = path.rstrip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
-    if host:
-        path = path.lstrip("/")
-    else:
-        path = os.path.normpath(path or ".")
-    parts = [part for part in path.split("/") if part not in ("", ".")]
-    if any(part == ".." for part in parts):
-        raise Refuse(f"the repository id for `{url}` is not usable: it contains '..'")
-    path = "/".join(parts)
-    if host:
-        default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
-        if port and port != default:
-            host = f"{host}:{port}"
-        return f"{host}/{path}" if path else host
-    if path.startswith("/"):
-        return "path" + path
-    return "path/" + path
-
-
-def candidate_homes(cwd: Path | None = None) -> list[Path]:
-    """Per-repository folders, the origin id first and the checkout path second.
-
-    A config written before this clone had an origin still lives under the path id.
-    The origin id wins when both have a file of the same kind.
-    """
-    homes: list[Path] = []
-    url = origin_url(cwd)
-    if url:
-        homes.append(machine_root() / "repos" / repo_storage_id(url))
-    path_home = machine_root() / "repos" / repo_storage_id(main_root().as_posix())
-    if path_home not in homes:
-        homes.append(path_home)
-    return homes
-
-
-def repo_home(cwd: Path | None = None) -> Path:
-    """Where new files for this repository are written. The origin id when there is an origin."""
-    return candidate_homes(cwd)[0]
-
-
-def find_config(cwd: Path | None = None) -> Path | None:
-    """The config file in force: per-repository jtek.json, else ~/.jtek/config, else none."""
-    for home in candidate_homes(cwd):
-        path = home / CONFIG
-        if path.is_file():
-            return path
-    if machine_config_path().is_file():
-        return machine_config_path()
-    return None
-
-
-def config_name() -> str:
-    """The name error text uses. A per-repository file is still called jtek.json."""
-    path = find_config()
-    if path is None or path.name == CONFIG:
-        return CONFIG
-    return str(path)
-
-
-def knowledge_path(name: str, cwd: Path | None = None) -> Path | None:
-    """An existing verify guide, feature directory, rules file, or tickets directory."""
-    for home in candidate_homes(cwd):
-        path = home / name
-        if path.exists():
-            return path
-    return None
-
-
 def base_branch() -> str:
     override = os.environ.get("JTEK_BASE")
     if override:
@@ -656,7 +545,7 @@ def base_ref(base: str) -> str:
 def load_config(base: str) -> dict:
     """Config from this machine, never from the worktree or from a commit.
 
-    No per-repository file and no ~/.jtek/config means the defaults: an empty board and no checks.
+    No per-repository file and no $HOME/.jtek/config means the defaults: an empty board and no checks.
     `base` is unused. Callers still pass the branch they are on.
     """
     del base
@@ -1458,7 +1347,7 @@ def ticket_folders() -> list[Path]:
 def tickets_dir() -> Path:
     """Where new ticket files are written, when the config names no board.
 
-    On this machine, at ~/.jtek/repos/<repo id>/tickets. The repository is not touched.
+    On this machine, at $HOME/.jtek/repos/<repo id>/tickets. The repository is not touched.
     A second checkout of the same origin on this machine sees the same files. A new machine does not,
     until someone copies that folder or runs `jtek.py migrate` there.
     """
@@ -2489,9 +2378,8 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse("--pr takes the link of the pull request, as the forge gave it")
     if args.no_pr and not no_pr_allowed(worktree):
         raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
-                     f"--pr <url>. `finish --no-pr` is allowed only when there is no remote, or when this machine's "
-                     f"config for this repository has `\"forge\": false` in {config_name()}. "
-                     "A commit on any branch does not count, and neither does a local origin/HEAD or a replace ref.")
+                     "--pr <url>. finish --no-pr is allowed only when there is no remote, or when this machine config sets forge to false. "
+                     "A commit cannot set that flag.")
     sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
     passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])
@@ -2851,7 +2739,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
-    sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into ~/.jtek").set_defaults(func=cmd_other)
+    sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek").set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
     doctor.add_argument("--agents", action="store_true", help="instead: the coding agents on this machine, their models, and the owner's list of reviewers")
     doctor.set_defaults(func=cmd_other)
@@ -2969,6 +2857,117 @@ def main(argv: list[str] | None = None) -> int:
               "damaged or edited by hand. Set JTEK_DEBUG=1 to see where")
         return 2
     return 0
+
+
+def machine_root() -> Path:
+    """Where this machine keeps jtek config. JTEK_HOME overrides $HOME/.jtek. No file there means the defaults."""
+    override = os.environ.get("JTEK_HOME", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (Path.home() / ".jtek").resolve()
+
+
+def machine_config_path() -> Path:
+    """Machine-wide defaults. Absent, and with no per-repository file either, the board is empty."""
+    return machine_root() / "config"
+
+
+def repo_storage_id(url: str) -> str:
+    """A repository id safe to use as directories under $HOME/.jtek/repos.
+
+    An origin URL contributes its host, a non-default port, and its path. Userinfo is left out.
+    https://github.com/acme/widget.git, ssh://git@github.com/acme/widget.git, and
+    git@github.com:acme/widget.git are github.com/acme/widget.
+    ssh://git@gitlab.example:2222/acme/widget.git is gitlab.example:2222/acme/widget.
+    https://git.example:8443/acme/widget keeps port 8443. The default ports 443, 80, 22, and 9418
+    are left out. A trailing slash and a trailing .git are left out.
+    A local path, and a repository with no origin, is path plus that absolute path, such as
+    path/tmp/app. .. is refused so the id cannot step out of $HOME/.jtek/repos.
+    """
+    text = url.strip()
+    host = ""
+    port: int | None = None
+    scheme = ""
+    path = text
+    if "://" in text:
+        parsed = urllib.parse.urlparse(text)
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+        path = urllib.parse.unquote(parsed.path or "")
+    else:
+        scp = re.fullmatch(r"(?:[^@/\s]+@)?([^:/\s]+):(.+)", text)
+        if scp and not text.startswith("/") and not text.startswith("."):
+            host = scp.group(1).lower()
+            path = scp.group(2)
+    path = path.rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if host:
+        path = path.lstrip("/")
+    else:
+        path = os.path.normpath(path or ".")
+    parts = [part for part in path.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise Refuse(f"the repository id for {url} is not usable: it contains '..'")
+    path = "/".join(parts)
+    if host:
+        default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
+        if port and port != default:
+            host = f"{host}:{port}"
+        return f"{host}/{path}" if path else host
+    if path.startswith("/"):
+        return "path" + path
+    return "path/" + path
+
+
+def candidate_homes(cwd: Path | None = None) -> list[Path]:
+    """Per-repository folders, the origin id first and the checkout path second.
+
+    A config written before this clone had an origin still lives under the path id.
+    The origin id wins when both have a file of the same kind.
+    """
+    homes: list[Path] = []
+    url = origin_url(cwd)
+    if url:
+        homes.append(machine_root() / "repos" / repo_storage_id(url))
+    path_home = machine_root() / "repos" / repo_storage_id(main_root().as_posix())
+    if path_home not in homes:
+        homes.append(path_home)
+    return homes
+
+
+def repo_home(cwd: Path | None = None) -> Path:
+    """Where new files for this repository are written. The origin id when there is an origin."""
+    return candidate_homes(cwd)[0]
+
+
+def find_config(cwd: Path | None = None) -> Path | None:
+    """The config file in force: per-repository jtek.json, else $HOME/.jtek/config, else none."""
+    for home in candidate_homes(cwd):
+        path = home / CONFIG
+        if path.is_file():
+            return path
+    if machine_config_path().is_file():
+        return machine_config_path()
+    return None
+
+
+def config_name() -> str:
+    """The name error text uses. A per-repository file is still called jtek.json."""
+    path = find_config()
+    if path is None or path.name == CONFIG:
+        return CONFIG
+    return str(path)
+
+
+def knowledge_path(name: str, cwd: Path | None = None) -> Path | None:
+    """An existing verify guide, feature directory, rules file, or tickets directory."""
+    for home in candidate_homes(cwd):
+        path = home / name
+        if path.exists():
+            return path
+    return None
 
 
 if __name__ == "__main__":

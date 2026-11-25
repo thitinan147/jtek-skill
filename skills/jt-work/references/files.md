@@ -4,9 +4,9 @@ A repository needs no board. When `board` is empty, or there is no config file, 
 
 ## Where the files are
 
-`~/.jtek/repos/<repo id>/tickets/<id>.md`, on this machine. The repository id is the origin URL's host, non-default port, and path, or `path` plus the checkout path when there is no origin. See [setup.md](setup.md). `ticket --save` writes there and says so. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`. A second checkout of the same origin on this machine reads the same file. A new machine, such as a cloud agent, does not have the folder until you copy it or run `jtek.py migrate` there.
+`$HOME/.jtek/repos/<repo id>/tickets/<id>.md`, on this machine. The repository id is the origin URL's host, non-default port, and path, or `path` plus the checkout path when there is no origin. See [setup.md](setup.md). `ticket --save` writes there and says so. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`. A second checkout of the same origin on this machine reads the same file. A new machine, such as a cloud agent, does not have the folder until you copy it or run `jtek.py migrate` there.
 
-An older checkout may still have tickets beside the repository, at `<repository>.jtek/_tickets/<id>.md`. Those files are still read. A new ticket is not written there. When both places have the same id, the file under `~/.jtek` wins, and an id used in either place is not given out again.
+An older checkout may still have tickets beside the repository, at `<repository>.jtek/_tickets/<id>.md`. Those files are still read. A new ticket is not written there. When both places have the same id, the file under `$HOME/.jtek` wins, and an id used in either place is not given out again.
 
 Nothing is set up. The folder appears with the first ticket. It is not committed. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into this folder and tells you to commit the removal.
 

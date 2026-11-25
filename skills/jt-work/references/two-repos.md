@@ -19,7 +19,7 @@ What keeps the two sides in agreement is a contract file and checks that read it
    - Refuse a pin that is not on the provider's base branch.
    - Refuse a copy that differs from the provider's contract at the pin.
    - Start the provider at the pin, and drive the consumer against it. Do not use a mock here.
-4. Say in `~/.jtek/repos/<repo id>/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it.
+4. Say in `$HOME/.jtek/repos/<repo id>/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it.
 
 A check command is one program with arguments, so each of these is a script.
 
