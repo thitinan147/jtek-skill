@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.39.0-111111?style=flat-square" alt="Version 26.39.0">
+  <img src="https://img.shields.io/badge/version-26.40.0-111111?style=flat-square" alt="Version 26.40.0">
   <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -132,7 +132,7 @@ Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or F
 
 Three things, once. Every step, with what you should see after it, is in **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
-**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, and the tickets are files beside the repository ([files.md](skills/jt-work/references/files.md)).
+**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, and the tickets are files in `.jtek/tickets` inside the repository ([files.md](skills/jt-work/references/files.md)).
 
 **2. The checks.** In each repository, ask the agent:
 
@@ -150,7 +150,7 @@ A command is one program with arguments, so a pipeline goes into a script. `jtek
 
 **3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/`, which says how to run the real app, and proposes the `verify` check. Without it, a passing check only means the code compiles.
 
-`jtek.json` and `.jtek/` are all jtek adds to a repository. Everything else lives under the git directory and is never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+`jtek.json` and `.jtek/` are all jtek adds to a repository. Ticket files in `.jtek/tickets` are committed, so a fresh clone has them. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
 
 ## Commands
 
@@ -158,7 +158,7 @@ A command is one program with arguments, so a pipeline goes into a script. `jtek
 |---|---|
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
-| Work with no board at all | Leave `board` empty in `jtek.json`. `/jt <what to do>` works as before, and tickets are files beside the repository: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
+| Work with no board at all | Leave `board` empty in `jtek.json`. `/jt <what to do>` works as before, and tickets are files in `.jtek/tickets`: `/jt-ticket` saves them, you commit that folder, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
@@ -393,7 +393,7 @@ The rules are fixed. The numbers and names around them are yours, in `jtek.json`
 
 Details: [setup.md](skills/jt-work/references/setup.md).
 
-**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
+**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the broke record, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
 
 <details>
 <summary><strong>Which agent, which model, and where it does not fit yet</strong></summary>
@@ -457,7 +457,7 @@ It can say so. The script wants the checks, the evidence, and a verdict for the 
 Not by editing `jtek.json`: the script reads it from the base branch. What a check runs is read from the worktree, so a ticket can change it. The result names such a file on the `attention:` line when it is a known name or on your `watch` list, and that ticket cannot waive the review. A file the list does not know is not named.
 
 **Can it give the verdict on its own change?**
-The script cannot tell who ran a command. The skills forbid it, and nothing in code stops an agent that ignores them. See [SECURITY.md](SECURITY.md).
+`start` records the session, and `verdict` refuses that same session. Set `JTEK_SESSION` to one id for the writing session and a different id for the reviewer. Without it, the script uses the process that launched the command. An agent that changes `JTEK_SESSION` for the verdict can still bypass this. Do not put `verdict` on an always-allow list in the session that writes code. See [SECURITY.md](SECURITY.md).
 
 **Why does the script not talk to the board?**
 Your agent already has a Notion or FLO tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.

@@ -4,7 +4,8 @@
 The board is a Notion database or a FLO product, which the agent reads and writes
 with its own tool. This script never talks to the board: it takes the ticket as a file
 and prints what to write back. A repository whose jtek.json names no board keeps its
-tickets as files beside the repository, and those files are its board. Claims, logs, and results live under the
+tickets as files in `.jtek/tickets`, inside the repository, so a fresh clone has them.
+The old folder beside the repository is still read. Claims, logs, and results live under the
 repository's common git directory, so every worktree sees the same claims and
 no tracked file is shared between sessions.
 Standard library only. Python 3.10+.
@@ -35,12 +36,23 @@ WAITING = ["input", "approval"]
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONFIG = "jtek.json"
 LOCAL_RE = re.compile(r"^LOCAL-([0-9]+)$")
-TICKETS = "_tickets"  # never a ticket id: an id starts with a letter or a digit
+TICKETS = "_tickets"  # the old folder beside the repository. Never a ticket id: an id starts with a letter or a digit
 WORKTREE_COMMIT = " (of the worktree, not of that folder)"
 MAX_FAILED_RUNS = 3
 MAX_EVIDENCE_LINES = 40
 DEFAULT_TIMEOUT = 1800
 MAX_RUN_OUTPUT = 20000
+CI_TRIES = 40  # how many times finish looks again while CI is still pending
+CI_WAIT = 15.0  # seconds between those looks. JTEK_CI_TRIES and JTEK_CI_WAIT override them
+# The first name that is set identifies the session. The raw value is hashed and never printed.
+SESSION_KEYS = ("JTEK_SESSION", "CURSOR_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+UNOBSERVABLE_WORD = re.compile(
+    r"\b(?:fast(?:er|est)?|slow(?:er|est)?|eas(?:y|ier|iest)|delight(?:ful)?|better|nicer|smoother|snappy|"
+    r"feel(?:s|ing|t)?|usable|user-friendly|convenient|intuitive)\b",
+    re.I,
+)
+# Longer phrases first, so "ใช้งานง่าย" is the word that is named, not the "ง่าย" inside it.
+THAI_UNOBSERVABLE = ("รู้สึก", "ใช้งานง่าย", "น่าใช้", "เร็วขึ้น", "ง่ายขึ้น", "เร็ว", "ง่าย")
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
 
 
@@ -79,6 +91,76 @@ SENSITIVE = [
 
 class Refuse(Exception):
     """A rule is not met. The message says what to do next."""
+
+
+def redact(text: str) -> str:
+    """Drop values that can be a token. The name of a variable, such as GH_TOKEN, stays."""
+    text = re.sub(r"(?i)(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+", "[redacted]", text)
+    text = re.sub(r"(?i)\b(token|authorization|bearer)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
+    text = re.sub(r"//[^/\s:@]+:[^@\s/]+@", "//", text)
+    return text
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def session_identity() -> str:
+    """Who launched this command, as 16 hex characters. The raw id is never stored or printed."""
+    for key in SESSION_KEYS:
+        value = " ".join(os.environ.get(key, "").split())
+        if value:
+            return hashlib.sha256(f"{key}\0{value}".encode()).hexdigest()[:16]
+    ppid = os.getppid()
+    stamp = "0"
+    try:
+        stamp = str(int(Path(f"/proc/{ppid}").stat().st_ctime))
+    except OSError:
+        pass
+    return hashlib.sha256(f"ppid\0{ppid}\0{stamp}".encode()).hexdigest()[:16]
+
+
+def note_author(meta: dict) -> None:
+    """Remember this session as one that wrote the ticket. A later resume adds itself; it does not erase the earlier ones."""
+    ident = session_identity()
+    authors = [a for a in meta.get("authors", []) if isinstance(a, str) and a]
+    if isinstance(meta.get("author"), str) and meta["author"] and meta["author"] not in authors:
+        authors.append(meta["author"])
+    if ident not in authors:
+        authors.append(ident)
+    meta["author"] = ident
+    meta["authors"] = authors[-20:]
+
+
+def unobservable_word(line: str) -> str:
+    """A quality word with no number, or "" when the item names something that can be checked.
+    A number, such as 200 ms, keeps the item: the same word then has a result a person can see."""
+    text = re.sub(r"^-\s*", "", line.strip())
+    if re.search(r"\d", text):
+        return ""
+    found = UNOBSERVABLE_WORD.search(text)
+    if found:
+        return found.group(0)
+    for word in THAI_UNOBSERVABLE:
+        if word in text:
+            return word
+    return ""
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False):
@@ -262,6 +344,15 @@ def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
     if other:
         raise Refuse("`Done when` may hold only top-level list items, one outcome each, because every item must be "
                      f"answered in the evidence. Not an item: {other[0].strip()[:80]}")
+    vague = [f"{n}. {line.strip()[1:].strip()[:80]} (`{word}`)"
+             for n, line in enumerate(done, 1) if (word := unobservable_word(line))]
+    if vague:
+        raise Refuse(
+            "`Done when` must name something a person can see from outside. These items are a quality with no number, "
+            "so they cannot be checked, and `ticket` refuses them before `start`:\n" + "\n".join(vague) + "\n"
+            "Name a command, a request, or a screen, with a concrete input and result. A word such as fast, easy, "
+            "better, or feels needs a number."
+        )
     wanted = [name.strip() for name in ticket["fields"].get("checks", "").split(",") if name.strip()]
     unknown = [name for name in wanted if name not in checks]
     if unknown:
@@ -373,16 +464,122 @@ def claimed(ticket_id: str) -> str:
     return f"an earlier start of {ticket_id} was interrupted. Run `jtek.py release {ticket_id}`, then start again"
 
 
+def diff_spec(repo: Path, base: str, head: str, landed: bool = False) -> str:
+    """The diff that shows `head`. `base...head` is that change.
+
+    It is empty when `head` is already on the base, which is a squash commit on the base branch.
+    Only a commit the caller named as the one that landed (`--at`) then uses that commit's parent
+    range. A ticket branch that has not moved is also empty against the base, and its parent range
+    would be the base's previous commit, which is not this ticket."""
+    spec = f"{base_ref(base)}...{head}"
+    if git("diff", "--quiet", spec, cwd=repo, code=True) == 1:
+        return spec
+    if not landed:
+        return ""
+    if not git("rev-parse", "--verify", "--quiet", f"{head}^", cwd=repo, check=False):
+        return ""
+    parent_spec = f"{head}^..{head}"
+    if git("diff", "--quiet", parent_spec, cwd=repo, code=True) == 1:
+        return parent_spec
+    return ""
+
+
+def patch_from(repo: Path, spec: str) -> str:
+    """Identify a diff by its content. Hunk positions are left out, so the same edit moved within a file
+    still matches, and `--raw` keeps the id of each file's content before and after."""
+    diff = subprocess.run(["git", "diff", "--raw", "--patch", "--no-abbrev", "--no-ext-diff", "--no-textconv", "--binary",
+                           "--no-renames", spec], cwd=repo, capture_output=True)
+    kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
+    return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
+
+
 def patch_id(worktree: Path, base: str) -> str:
     """Identify the change by its content: the diff, and the content of every file it changes, before and after.
     A rebase keeps the verdict unless the base changed a file this change also touches.
     Whitespace counts: in Python or YAML, an indent is a change of behaviour."""
-    # Hunk positions are left out below, so the same edit at another place of a file would look the same.
-    # --raw adds one line per changed file with the full id of its content before and after, which tells them apart.
-    diff = subprocess.run(["git", "diff", "--raw", "--patch", "--no-abbrev", "--no-ext-diff", "--no-textconv", "--binary",
-                           "--no-renames", f"{base_ref(base)}...HEAD"], cwd=worktree, capture_output=True)
-    kept = [re.sub(rb"^@@ .*? @@", b"@@", line) for line in diff.stdout.split(b"\n") if not line.startswith(b"index ")]
-    return hashlib.sha256(b"\n".join(kept)).hexdigest() if diff.stdout.strip() else ""
+    if not worktree.is_dir():
+        return ""
+    spec = diff_spec(worktree, base, "HEAD")
+    return patch_from(worktree, spec) if spec else ""
+
+
+def pull_number(url: str) -> str:
+    match = re.search(r"/pull/(\d+)\b", url) or re.fullmatch(r"\s*(\d+)\s*", url)
+    return match.group(1) if match else ""
+
+
+def parse_github_pull(url: str) -> tuple[str, str, str] | None:
+    match = re.search(r"github\.com[:/]([^/\s]+)/([^/\s]+)/pull/(\d+)\b", url)
+    if not match:
+        return None
+    repo = match.group(2)
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return match.group(1), repo, match.group(3)
+
+
+def resolve_pull_head(repo: Path, number: str) -> str:
+    """The commit `refs/pull/<n>/head` names. Fetch it when this repository does not have it yet."""
+    for ref in (f"refs/pull/{number}/head", f"refs/remotes/origin/pull/{number}/head", f"refs/jtek/pull/{number}/head"):
+        sha = git("rev-parse", "--verify", "--quiet", ref, cwd=repo, check=False)
+        if sha:
+            return sha
+    try:
+        fetched = subprocess.run(
+            ["git", "fetch", "--quiet", "origin", f"pull/{number}/head:refs/jtek/pull/{number}/head"],
+            cwd=repo, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        raise Refuse(
+            f"refs/pull/{number}/head is not in this repository, and fetching it did not run ({err}). "
+            f"Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
+            "--at <the commit that landed on the base>."
+        ) from None
+    sha = git("rev-parse", "--verify", "--quiet", f"refs/jtek/pull/{number}/head", cwd=repo, check=False)
+    if fetched.returncode == 0 and sha:
+        return sha
+    detail = redact(" ".join((fetched.stderr or fetched.stdout).split())[:200])
+    raise Refuse(
+        f"refs/pull/{number}/head is not in this repository"
+        + (f", and fetching it failed: {detail}" if detail else "")
+        + f". Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
+        "--at <the commit that landed on the base>, which is reviewed by that commit's parent range."
+    )
+
+
+def review_target(meta: dict, pr: str = "", at: str = "") -> tuple[Path, str, str, str]:
+    """Where a review reads the change when the worktree is gone, or when the caller names a pull request
+    or the commit that landed. Returns (repo, full commit, diff spec, a short note for the session)."""
+    worktree = Path(meta["worktree"])
+    repo = worktree if worktree.is_dir() else main_root()
+    if at:
+        head = git("rev-parse", "--verify", "--quiet", at, cwd=repo, check=False)
+        if not head:
+            raise Refuse(f"--at `{at}` is not a commit in this repository")
+        spec = diff_spec(repo, meta["base"], head, landed=True)
+        if not spec:
+            raise Refuse(
+                f"{head[:7]} has no diff against {meta['base']} and no parent range. "
+                "There is nothing to review at that commit."
+            )
+        return repo, head, spec, f"parent range of {head[:7]}"
+    number = pull_number(pr or meta.get("pr") or "")
+    if not number:
+        gone = meta["worktree"]
+        raise Refuse(
+            f"the worktree of {meta.get('id', 'this ticket')} is gone: {gone}. "
+            "Pass --pr <pull request link> to review refs/pull/<n>/head, or --at <the commit that landed> "
+            "to review that commit's parent range. A squash commit compared with the base is an empty diff; "
+            "the parent range is the change."
+        )
+    head = resolve_pull_head(repo, number)
+    spec = diff_spec(repo, meta["base"], head)
+    if not spec:
+        raise Refuse(
+            f"refs/pull/{number}/head ({head[:7]}) has an empty diff against {meta['base']}, "
+            "which happens when those commits are already on the base. "
+            f"Pass --at <the commit that landed> to review its parent range."
+        )
+    return repo, head, spec, f"refs/pull/{number}/head"
 
 
 def ticket_id_of_text(work: Path) -> str:
@@ -640,10 +837,40 @@ def refresh_base(base: str) -> str:
 
 
 def tickets_dir() -> Path:
-    """Where the tickets are files, when jtek.json names no board: beside the repository, with the worktrees.
-    Outside the repository, so a ticket is never part of a change and every worktree reads the same file."""
+    """Where new ticket files are written, when jtek.json names no board.
+
+    Inside the repository, at `.jtek/tickets`, so a clone on a fresh machine has the tickets.
+    The human commits that folder on the base branch. Every worktree reads the main checkout's copy.
+    """
+    return main_root() / ".jtek" / "tickets"
+
+
+def legacy_tickets_dir() -> Path:
+    """The old place, beside the repository. Still read, so a ticket saved before the move is not lost."""
     root = main_root()
     return root.parent / f"{root.name}.jtek" / TICKETS
+
+
+def ticket_file(ticket_id: str) -> Path:
+    """The file for this id: the one inside the repository when it exists, otherwise the old folder."""
+    new = tickets_dir() / f"{ticket_id}.md"
+    old = legacy_tickets_dir() / f"{ticket_id}.md"
+    if new.is_file():
+        return new
+    if old.is_file():
+        return old
+    return new
+
+
+def iter_ticket_files() -> list[Path]:
+    """Every ticket file, the copy inside the repository winning when both folders have the same id."""
+    found: dict[str, Path] = {}
+    for folder in (legacy_tickets_dir(), tickets_dir()):
+        if not folder.is_dir():
+            continue
+        for path in folder.glob("*.md"):
+            found[path.stem] = path
+    return [found[key] for key in sorted(found)]
 
 
 def has_board(base: str) -> bool:
@@ -655,7 +882,10 @@ def file_status(ticket_id: str) -> str:
     if not ID_RE.match(ticket_id):
         return ""
     try:
-        return canon_status(parse_ticket((tickets_dir() / f"{ticket_id}.md").read_text())["fields"].get("status", ""))
+        path = ticket_file(ticket_id)
+        if not path.is_file():
+            return ""
+        return canon_status(parse_ticket(path.read_text())["fields"].get("status", ""))
     except (OSError, ValueError, Refuse):
         return ""
 
@@ -669,7 +899,9 @@ def open_after(value: str) -> list[str]:
 def next_free(prefix: str) -> str:
     """The next free id with this prefix. A released ticket keeps its branch, so its number is never given out again."""
     taken = [p.name for p in (state_dir() / "work").glob(f"{prefix}-*")]
-    taken += [p.stem for p in tickets_dir().glob(f"{prefix}-*.md")]
+    for folder in (tickets_dir(), legacy_tickets_dir()):
+        if folder.is_dir():
+            taken += [p.stem for p in folder.glob(f"{prefix}-*.md")]
     taken += [b.rsplit("/", 1)[-1] for b in git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", check=False).split()]
     numbers = [int(m.group(1)) for m in (re.match(rf"^{prefix}-([0-9]+)$", name) for name in taken) if m]
     return f"{prefix}-{max(numbers, default=0) + 1}"
@@ -743,7 +975,8 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     print(f"ticket: ok, {items} item(s) under Done when, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
-        print(f"saved: {path}  (Backlog; the human releases it by writing `status: Todo` in that file)")
+        print(f"saved: {path}  (Backlog, inside the repository. Commit it on the base branch so another machine can see it. "
+              "The human releases it by writing `status: Todo` in that file)")
 
 
 def read_ticket_file(path: str) -> str:
@@ -769,10 +1002,11 @@ def cmd_start(args: argparse.Namespace) -> None:
         # Without a board the tickets are files, and the id alone names one.
         if has_board(base):
             raise Refuse("pass --from-file: the page, read just now from the board and saved in the ticket format")
-        page = tickets_dir() / f"{check_id(args.ref)}.md"
+        page = ticket_file(check_id(args.ref))
         if not page.is_file():
-            raise Refuse(f"there is no ticket file {page}. This repository has no board, so its tickets are files there; "
-                         "for work that has no ticket, pass --local")
+            raise Refuse(f"there is no ticket file {page}. This repository has no board, so its tickets are files in "
+                         f"{tickets_dir()} (older ones are still read from {legacy_tickets_dir()}). "
+                         "For work that has no ticket, pass --local")
         text = read_ticket_file(str(page))
     english = {own: name for name, own in load_settings(base)["headings"].items()}
     if english:
@@ -820,6 +1054,16 @@ def cmd_start(args: argparse.Namespace) -> None:
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
             raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
+        fails_now = int(meta.get("fails") or 0)
+        # A question the human released, on a board, is the only thing that starts the FAIL count again.
+        # `--answered` does not: it only says the human replied in the chat, and it must not open a fourth round.
+        if fails_now >= 3 and not (status == "Todo" and asked and not args.local):
+            raise Refuse(
+                f"{ticket_id} has had {fails_now} FAIL verdicts. Stop with `jtek.py stop {ticket_id} --waiting input`: "
+                "the ticket or the reviewer's standard needs the human. `--answered` does not start another round. "
+                "On a board, the human answers on the page and sets Status to Todo; that is the only reset. "
+                "A local ticket has no reset: start a new one."
+            )
         if parked:
             try:
                 # A rename happens once, so two sessions cannot both pick up the same parked ticket.
@@ -925,6 +1169,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
     meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
+    note_author(meta)
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
@@ -1059,10 +1304,104 @@ def read_file(path: str, what: str) -> str:
         raise Refuse(f"cannot read the {what} file: {err}") from None
 
 
-def cmd_verdict(args: argparse.Namespace) -> None:
+def cmd_broke(args: argparse.Namespace) -> None:
+    """Record that breaking one Done when item made a declared check fail. The edit stays uncommitted;
+    the author restores it afterwards. finish refuses until every item has such a record for this commit."""
     meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
-    sha, dirty = head_state(Path(meta["worktree"]))
+    worktree = Path(meta["worktree"])
+    items = done_when_items(work)
+    try:
+        number = int(str(args.item).strip())
+    except ValueError:
+        number = 0
+    if not 1 <= number <= len(items):
+        raise Refuse(f"--item is a Done when item from 1 to {len(items) or 0}")
+    sha, dirty = head_state(worktree)
+    if not dirty:
+        raise Refuse(
+            "nothing is broken in the worktree. Change the behaviour this item names, leave the change uncommitted, "
+            f"and run `jtek.py broke {args.id} --item {number}` again. Then restore the file (`git checkout -- <file>`)."
+        )
+    diff_text = git("diff", "HEAD", cwd=worktree, check=False)
+    untracked = [line[3:] for line in dirty.splitlines() if line.startswith("??")]
+    shown = diff_text
+    if untracked:
+        shown += ("\n" if shown else "") + "untracked:\n" + "\n".join(untracked)
+    if not shown.strip():
+        raise Refuse("the worktree is dirty, but there is no diff to record. Break a tracked file, or add a file a check reads.")
+    declared = load_checks(meta["base"])
+    _results, failed = run_checks(worktree, meta["checks"], declared, work / "logs" / "broke")
+    if not failed:
+        raise Refuse(
+            f"every check still passed while item {number} was broken (`{items[number - 1][:80]}`). "
+            "No declared check covers that behaviour. A proof needs one of them to fail. "
+            "The break is still in the worktree."
+        )
+    record = read_json(work / "broke.json")
+    got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
+    got[str(number)] = {"item": items[number - 1], "check": failed, "diff": shown[:4000], "sha": sha}
+    write_json(work / "broke.json", {"sha": sha, "items": got})
+    print(f"broke: item {number} made `{failed}` fail at {sha[:7]}")
+    print(f"next: restore the break (`git checkout -- <file>`), then record the next item. "
+          f"{len(got)} of {len(items)} recorded")
+
+
+def require_broke(work: Path, sha: str) -> None:
+    """finish refuses without a recorded break for every Done when item, on this commit."""
+    items = done_when_items(work)
+    record = read_json(work / "broke.json")
+    got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
+    missing = []
+    for n, item in enumerate(items, 1):
+        entry = got.get(str(n))
+        if not isinstance(entry, dict) or not str(entry.get("check") or "").strip() or not str(entry.get("diff") or "").strip():
+            missing.append(f"{n}. {item}")
+    if missing:
+        raise Refuse(
+            "finish needs a broke proof for every `Done when` item. Break that behaviour in the worktree, leave the "
+            "edit uncommitted, and run `jtek.py broke <id> --item <n>` so a declared check fails. Then restore the "
+            "file (`git checkout -- <file>`). A check that still passes does not prove the item. Missing:\n"
+            + "\n".join(missing)
+        )
+
+
+def author_sessions(meta: dict) -> list[str]:
+    authors = [a for a in meta.get("authors", []) if isinstance(a, str) and a]
+    if isinstance(meta.get("author"), str) and meta["author"] and meta["author"] not in authors:
+        authors.append(meta["author"])
+    return authors
+
+
+def cmd_verdict(args: argparse.Namespace) -> None:
+    meta = load_meta(args.id)
+    work = work_dir(args.id)
+    authors = author_sessions(meta)
+    if not authors:
+        raise Refuse(
+            "this claim recorded no session at start, so a verdict cannot be told from the author's. "
+            "Run start again in the session that writes the code, then verdict in a different session. "
+            "Set JTEK_SESSION to an id that stays the same for the whole writing session, and to a different id "
+            "in the session that reviews."
+        )
+    if session_identity() in authors:
+        raise Refuse(
+            "this session is one that wrote the code, so its verdict does not count. "
+            "Start a session that did not write the change and run verdict there. "
+            "`jtek.py reviewer` prints a command when the owner keeps a list. "
+            "A session is the value of JTEK_SESSION, or otherwise the process that launched jtek.py. "
+            "The writing session must keep the same value the whole time."
+        )
+    worktree = Path(meta["worktree"])
+    if args.pr or args.at or not worktree.is_dir():
+        repo, sha, spec, _note = review_target(meta, args.pr or "", args.at or "")
+        dirty = ""
+        if worktree.is_dir() and sha == git("rev-parse", "HEAD", cwd=worktree, check=False):
+            sha, dirty = head_state(worktree)
+        patch = patch_from(repo, spec)
+    else:
+        sha, dirty = head_state(worktree)
+        patch = patch_id(worktree, meta["base"])
     reviewed = (args.commit or "").strip().lower()
     if len(reviewed) < 7 or not re.fullmatch(r"[0-9a-f]+", reviewed):
         raise Refuse("pass --commit with the commit id `jtek.py show` printed when you began, at least 7 characters")
@@ -1074,9 +1413,12 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         # FAIL opens nothing, so it is allowed here: a reviewer must not have to delete the author's files to say so.
         raise Refuse("a pass is for a commit, and these files are not committed. If your review made them, remove "
                      f"them. If the author left them, give FAIL and say so in the notes\n{dirty}")
-    patch = patch_id(Path(meta["worktree"]), meta["base"])
     if not patch:
-        raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on")
+        raise Refuse(
+            f"the branch has no change against {meta['base']}, so there is nothing to give a verdict on. "
+            "When the worktree is gone after a squash, pass --pr <link> to review refs/pull/<n>/head, "
+            "or --at <the commit that landed> to review that commit's parent range."
+        )
     if not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with your notes, in the form of the review notes")
     notes_text = read_file(args.notes_file, "notes")
@@ -1284,6 +1626,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
                      "and pass --evidence-file <file>")
     else:
         check_evidence(work, saved.read_text())  # the ticket may have gained an item since
+    require_broke(work, sha)
     for item in args.attach or []:
         source = Path(item)
         if not source.is_file():
@@ -1301,13 +1644,39 @@ def cmd_finish(args: argparse.Namespace) -> None:
             "Only when this repository has no forge to open one on, pass --no-pr"
         )
     else:
-        state, head, ci = pr_info(pr, meta["base"])
+        state, head, ci, problem = pr_info(pr, meta["base"])
         for _ in range(PR_HEAD_TRIES):
             # A forge needs a moment after a push before the pull request shows the new commit.
             if state != "OPEN" or head == sha or not pushed(worktree, meta["branch"], sha):
                 break
             time.sleep(PR_HEAD_WAIT)
-            state, head, ci = pr_info(pr, meta["base"])
+            state, head, ci, problem = pr_info(pr, meta["base"])
+
+        def refuse_unread() -> None:
+            extra = ""
+            if git("remote", cwd=worktree, check=False) and not pushed(worktree, meta["branch"], sha):
+                extra = (f" The pull request could not be read, and the branch is not pushed at {sha[:7]}: "
+                         "push the branch, check that the link is the pull request for it, and finish again.")
+            raise Refuse(
+                f"cannot read {pr}, so this change is not sent for review. {problem}{extra} "
+                "Check the link, then make `gh` able to read the pull request and its checks "
+                "(the GH_TOKEN needs access to pull requests and checks, such as the repo scope) and run finish again."
+            )
+
+        if state == "unknown" or ci == "unknown":
+            refuse_unread()
+        waited = 0
+        if state == "OPEN" and head == sha and ci == "pending":
+            # Pending is not a result. Look again, with a bound, and refuse when it is still pending.
+            looks = max(0, env_int("JTEK_CI_TRIES", CI_TRIES))
+            pause = max(0.0, env_float("JTEK_CI_WAIT", CI_WAIT))
+            waited = 0
+            while ci == "pending" and state == "OPEN" and waited < looks:
+                time.sleep(pause)
+                state, head, ci, problem = pr_info(pr, meta["base"])
+                waited += 1
+            if state == "unknown" or ci == "unknown":
+                refuse_unread()
         if state == "DRAFT":
             raise Refuse(f"{pr} is a draft. Mark it ready for review, then finish again")
         if state in ("CLOSED", "MERGED"):
@@ -1325,15 +1694,22 @@ def cmd_finish(args: argparse.Namespace) -> None:
                 raise Refuse(f"{pr} is at {head[:7]}, which this branch does not have: someone added commits on the forge. "
                              f"Bring them in (`git pull --ff-only` or a rebase), check again, push, and finish again")
             raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
-        if state == "unknown" and git("remote", cwd=worktree, check=False) and not pushed(worktree, meta["branch"], sha):
-            raise Refuse(f"the pull request could not be read, and the branch is not pushed at {sha[:7]}: push the "
-                         "branch, check that the link is the pull request for it, and finish again")
         if ci == "fail":
             raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
+        if ci == "pending":
+            raise Refuse(
+                f"CI is still pending on {pr} after {waited if state == 'OPEN' else 0} look(s). "
+                "A pull request whose checks have not finished does not ship. "
+                "Wait until CI is pass, or until there are no checks (none), then finish again. "
+                f"The bound is JTEK_CI_TRIES={max(0, env_int('JTEK_CI_TRIES', CI_TRIES))} and "
+                f"JTEK_CI_WAIT={max(0.0, env_float('JTEK_CI_WAIT', CI_WAIT)):g} seconds between looks."
+            )
+        if ci not in ("pass", "none"):
+            raise Refuse(f"CI on {pr} is `{ci or 'unknown'}`, not pass or none, so this change is not sent for review.")
         if state == "OPEN" and pr_conflicts(pr, meta["base"]):
             raise Refuse(f"{pr} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
                          "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
-        pr_note = "" if state == "OPEN" else " The PR link was not verified because `gh` could not read it."
+        pr_note = ""
     meta = update_meta(work, pr=pr, ci=ci, no_pr=bool(args.no_pr))
     verdict = current_verdict(args.id, meta)
     if not meta.get("review") and needs_verdict(meta):
@@ -1379,14 +1755,31 @@ def cmd_result(args: argparse.Namespace) -> None:
 
 
 def cmd_show(args: argparse.Namespace) -> None:
-    """Everything a reviewer needs, without the author's chat."""
+    """Everything a reviewer needs, without the author's chat.
+
+    After a squash the worktree and the branch are gone, and a diff of the landed commit against the
+    base is empty. `--pr` reviews `refs/pull/<n>/head`. `--at` reviews that commit's parent range.
+    """
     meta = load_meta(args.id)
+    worktree = Path(meta["worktree"])
+    note = ""
+    if worktree.is_dir() and not (args.pr or args.at):
+        repo_path = meta["worktree"]
+        head = git("rev-parse", "HEAD", cwd=worktree, check=False) or "unknown"
+        spec = diff_spec(worktree, meta["base"], "HEAD") or f"{base_ref(meta['base'])}...HEAD"
+    else:
+        _repo, head, spec, note = review_target(meta, args.pr or "", args.at or "")
+        repo_path = meta["worktree"] if worktree.is_dir() else str(_repo)
     print(f"ticket: {work_dir(args.id) / 'ticket.md'}")
-    print(f"worktree: {meta['worktree']}")
-    print(f"commit: {git('rev-parse', 'HEAD', cwd=Path(meta['worktree']), check=False) or 'unknown'}")
+    print(f"worktree: {meta['worktree']}" if worktree.is_dir() else "worktree: gone")
+    print(f"commit: {head}")
     print(f"base: {meta['base']}")
     print(f"main checkout: {main_root()}")
-    print(f"diff: git -C {shlex.quote(meta['worktree'])} diff {base_ref(meta['base'])}...HEAD")
+    print(f"diff: git -C {shlex.quote(repo_path)} diff {spec}")
+    if note:
+        print(f"reviewing: {note}")
+    if not worktree.is_dir():
+        print(f"checkout: git worktree add --detach <a folder outside the repository> {head}")
     try:
         declared = load_checks(meta["base"])
     except Refuse:
@@ -1408,10 +1801,11 @@ PR_STATES = ["OPEN", "DRAFT", "MERGED", "CLOSED"]
 CI_STATES = ["pass", "fail", "pending", "none"]
 
 
-def pr_info(url: str, base: str = "") -> tuple[str, str, str]:
-    """Return (state, head commit, CI state) of a pull request.
+def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
+    """Return (state, head commit, CI state, problem) of a pull request.
     State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
-    GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown").
+    GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown", why).
+    `why` is a short redacted reason, or "" when the read worked.
     For another forge, `pr_state` in jtek.json names a command that gets the link as its last argument and
     prints those three words. It runs in the main checkout, so a ticket's branch cannot change what runs.
     A project that names its own command gets a refusal, and not "unknown", when that command does not answer."""
@@ -1433,7 +1827,9 @@ def pr_info(url: str, base: str = "") -> tuple[str, str, str]:
         problem = f"did not run: {type(err).__name__}: {err}"
     if problem and custom:
         raise Refuse(f"the `pr_state` command of {CONFIG} {problem}")
-    return ("unknown", "", "unknown") if problem else (parts[0], parts[1], parts[2])
+    if problem:
+        return ("unknown", "", "unknown", redact(problem))
+    return (parts[0], parts[1], parts[2], "")
 
 
 def pr_conflicts(url: str, base: str = "") -> bool:
@@ -1447,6 +1843,69 @@ def pr_conflicts(url: str, base: str = "") -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0 and proc.stdout.strip() == "CONFLICTING"
+
+
+def comment_permission_denied(text: str) -> bool:
+    """True when `gh pr comment` failed because the token cannot add a comment."""
+    folded = re.sub(r"\s+", "", text).lower()
+    return "addcomment" in folded or "resourcenotaccessible" in folded
+
+
+def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str]:
+    """Post `text` on a pull request. Returns (posted, how or why).
+
+    `gh pr comment` first. When that answer is addComment or Resource not accessible, post an issue
+    comment with `gh api`. Anything else is a failure, and the caller writes the file.
+    """
+    try:
+        proc = subprocess.run(["gh", "pr", "comment", url, "--body-file", str(body_path)],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return False, f"`gh pr comment` did not run ({err})."
+    if proc.returncode == 0:
+        return True, "gh pr comment"
+    err = redact(" ".join(proc.stderr.split())[:300])
+    if not comment_permission_denied(proc.stderr):
+        return False, f"`gh pr comment` failed: {err}."
+    parsed = parse_github_pull(url)
+    if not parsed:
+        return False, (f"`gh pr comment` failed: {err}. The link is not a github.com pull request, "
+                       "so an issue comment cannot be posted with `gh api`.")
+    owner, repo, number = parsed
+    payload = json.dumps({"body": text}).encode()
+    try:
+        api = subprocess.run(
+            ["gh", "api", "--method", "POST", "--input", "-", f"repos/{owner}/{repo}/issues/{number}/comments"],
+            input=payload, capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err_api:
+        return False, f"`gh pr comment` failed: {err}. `gh api` did not run ({err_api})."
+    if api.returncode == 0:
+        return True, "gh api repos/.../issues/.../comments"
+    api_err = redact(" ".join(api.stderr.decode(errors="replace").split())[:300])
+    return False, f"`gh pr comment` failed ({err}). `gh api` issue comment failed: {api_err}."
+
+
+def cmd_comment(args: argparse.Namespace) -> None:
+    """Post the verdict comment. A failure names the file that holds it and does not exit 0."""
+    meta = load_meta(args.id)
+    work = work_dir(args.id)
+    pr = " ".join((args.pr or meta.get("pr") or "").split())
+    if not pr:
+        raise Refuse("no pull request on this ticket. Pass --pr <link>, the one `show` printed.")
+    body_path = work / "review-comment.md"
+    if not body_path.is_file():
+        raise Refuse(f"no comment to post. Run verdict first; it writes {body_path}")
+    text = body_path.read_text()
+    posted, detail = post_review_comment(pr, body_path, text)
+    if posted:
+        print(f"posted: {pr} ({detail})")
+        return
+    fallback = work / "unposted-comment.md"
+    fallback.write_text(text)
+    raise Refuse(
+        f"the comment was not posted on {pr}. {detail} "
+        f"The comment is in {fallback}. Post that file on the pull request; nothing was posted."
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1486,7 +1945,19 @@ def build_parser() -> argparse.ArgumentParser:
     verdict.add_argument("--by", required=True)
     verdict.add_argument("--commit", help="the `commit:` that `show` printed when the review began (required)")
     verdict.add_argument("--notes-file")
+    verdict.add_argument("--pr", help="review refs/pull/<n>/head when the worktree is gone")
+    verdict.add_argument("--at", help="the commit that landed on the base, reviewed by its parent range")
     verdict.set_defaults(func=cmd_verdict)
+
+    broke = sub.add_parser("broke", help="record that breaking one Done when item made a declared check fail")
+    broke.add_argument("id")
+    broke.add_argument("--item", required=True, help="the Done when item number, starting at 1")
+    broke.set_defaults(func=cmd_broke)
+
+    comment = sub.add_parser("comment", help="post the verdict comment on the pull request")
+    comment.add_argument("id")
+    comment.add_argument("--pr", help="the pull request link, when the claim has none")
+    comment.set_defaults(func=cmd_comment)
 
     finish = sub.add_parser("finish", help="move to Review when checks and verdict hold on the current commit")
     finish.add_argument("id")
@@ -1514,8 +1985,13 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--note", required=True)
     stop.set_defaults(func=cmd_stop)
 
+    show = sub.add_parser("show", help="print what a reviewer needs")
+    show.add_argument("id")
+    show.add_argument("--pr", help="review refs/pull/<n>/head when the worktree is gone")
+    show.add_argument("--at", help="the commit that landed on the base, reviewed by its parent range")
+    show.set_defaults(func=cmd_show)
+
     for name, func, text in (("result", cmd_result, "print the last result"),
-                             ("show", cmd_show, "print what a reviewer needs"),
                              ("release", cmd_other, "only when the human asks: drop the claim and the worktree")):
         item = sub.add_parser(name, help=text)
         item.add_argument("id")

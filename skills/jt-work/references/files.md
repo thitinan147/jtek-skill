@@ -4,9 +4,11 @@ A repository needs no board. When `board` in `jtek.json` is empty, each ticket i
 
 ## Where the files are
 
-`<repository>.jtek/_tickets/<id>.md`: beside the repository, next to the worktrees, and outside git. A ticket is never part of a change, and every worktree reads the same file. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`.
+`.jtek/tickets/<id>.md`, inside the repository. A fresh clone has the tickets, because the folder is committed on the base branch. `ticket --save` writes there and says so. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`. Every command reads the main checkout's copy, so a ticket worktree and a second machine see the same file once it is committed.
 
-Nothing is set up. The folder appears with the first ticket.
+An older checkout may still have tickets beside the repository, at `<repository>.jtek/_tickets/<id>.md`. Those files are still read. A new ticket is not written there. When both folders have the same id, the file inside the repository wins, and an id used in either folder is not given out again.
+
+Nothing is set up. The folder appears with the first ticket. Commit it on the base branch. The script does not commit it.
 
 ## Where each part of a ticket lives
 

@@ -1,6 +1,6 @@
 # Setup for a repository
 
-The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, and its tickets are files, as [files.md](files.md) says. Then two things go into each repository: `jtek.json`, and the `.jtek/` folder (how to run and drive the app and a feature map, written by the `jt-harness` skill, and a rule table kept by the `jt-learn` skill). Tickets, claims, logs, and results stay under the git directory and are never committed.
+The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, and its tickets are files in `.jtek/tickets`, as [files.md](files.md) says. Then two things go into each repository: `jtek.json`, and the `.jtek/` folder (how to run and drive the app and a feature map, written by the `jt-harness` skill, a rule table kept by the `jt-learn` skill, and the ticket files when there is no board). Claims, logs, and results stay under the git directory and are never committed. Ticket files are committed.
 
 1. Run `jtek.py init`. It writes a template:
 
@@ -8,7 +8,7 @@ The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) fo
    {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
    ```
 
-   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files beside the repository, and `start`, `next`, and `sync` read them there.
+   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `.jtek/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository is still read.
 
    **`setup`** installs dependencies in a new worktree, for example `npm ci` or `uv sync`. A new worktree has none, so without it the checks fail before any edit. Leave it empty when nothing is needed.
 

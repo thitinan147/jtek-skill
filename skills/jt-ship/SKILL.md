@@ -33,7 +33,9 @@ Pass `--evidence-file` again whenever the code changed since the last `finish`. 
 
 - **`outcome: review`:** stop. The human reviews and merges. Write on the ticket's page exactly what the `board:` line of the result says. The page is the ticket file when the repository has no board, and `board: -` means write nothing.
 - **`outcome: needs-review`:** the usual first result. A session that did not write the change records a verdict, and then `finish` runs again. When the `board:` line holds the pull request's link, write it on the page.
-- **`ci: pending`:** nothing to do. The next `finish` reads the forge again.
+- **`refused: cannot read`:** `gh` could not read the pull request, so nothing was sent for review. The message says what to fix, including the GH_TOKEN scope. An unknown state and an unknown CI result both refuse.
+- **`refused: CI is still pending`:** `finish` looked again, up to `JTEK_CI_TRIES` times with `JTEK_CI_WAIT` seconds between looks, and the checks had not finished. Wait, then finish again. Only `pass` and `none` ship.
+- **`refused:` a broke proof:** for each `Done when` item, break that behaviour, run `jtek.py broke <id> --item <n>` while the edit is uncommitted, then restore the file. `finish` refuses until every item has a record on this commit.
 - **`refused: verdict is FAIL`:** the change does not ship. Read the review notes the script names.
 - **`refused: CI is failing`**, or **`conflicts with`** the base: the pull request is not ready for the human. The refusal says what to do next.
 
