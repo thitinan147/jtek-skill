@@ -3772,7 +3772,16 @@ class RoundThree(Scratch):
                                capture_output=True, text=True, check=True).stdout
         self.assertIn("a.txt", names)
         self.assertIn("b.txt", names)
-        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        # Moving the local tracking ref used to shrink the review to the last commit.
+        self.git("update-ref", "refs/remotes/origin/main", self.git("rev-parse", "HEAD^"))
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 0, out)
+        spec = next(line for line in out.splitlines() if line.startswith("diff: ")).split(" diff ", 1)[1]
+        names = subprocess.run(["git", "diff", "--name-only", *spec.split()], cwd=self.repo,
+                               capture_output=True, text=True, check=True).stdout
+        self.assertIn("a.txt", names)
+        self.assertIn("b.txt", names)
+        self.git("remote", "set-url", "origin", str(Path(self.tmp.name) / "missing.git"))
         code, out = self.jtek("show", "T-1", "--at", tip)
         self.assertEqual(code, 1, out)
         self.assertIn("not reviewed as only the last commit", out)
@@ -3793,6 +3802,102 @@ class RoundThree(Scratch):
         code, out = self.jtek("doctor", env={"PATH": path})
         self.assertEqual(code, 1, out)
         self.assertIn("ensurepip is not available", out)
+
+
+class RoundFour(Scratch):
+    """The holes still open in 26.42.0. Each attack ships on that version and is refused after the guard."""
+
+    def _forge_off_remote(self, name: str) -> Path:
+        bare = Path(self.tmp.name) / name
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        return bare
+
+    def test_a_replace_ref_does_not_change_the_remote_forge(self):
+        bare = self._forge_off_remote("origin.git")
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        # The published tip is a later commit than the one the worktree started from,
+        # so replacing that tip does not wipe the worktree's diff.
+        (self.repo / "later.txt").write_text("later\n")
+        self.git("add", "later.txt")
+        self.git("commit", "-q", "-m", "published tip")
+        self.git("push", "-q", "origin", "main")
+        remote = self.git("ls-remote", "origin", "HEAD").split()[0]
+        # Parent is the pre-push commit, not the published tip, so the replace ref does not loop.
+        self.git("checkout", "-q", "-b", "evil", "HEAD^")
+        cfg = json.loads((self.repo / "jtek.json").read_text())
+        cfg["forge"] = False
+        (self.repo / "jtek.json").write_text(json.dumps(cfg))
+        self.git("add", "jtek.json")
+        self.git("commit", "-q", "-m", "forge off, not the remote")
+        evil = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.git("replace", remote, evil)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("pull request", out)
+
+    def test_a_rewritten_origin_does_not_skip_the_pull_request(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        honest = self._forge_off_remote("origin.git")
+        evil = self._forge_off_remote("evil.git")
+        self.git("remote", "add", "origin", str(honest))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.git("remote", "set-url", "origin", str(evil))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("origin URL", out)
+        self.git("remote", "set-url", "origin", str(honest))
+        self.git("config", f"url.{evil}/.insteadOf", str(honest))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("insteadOf", out)
+        self.git("config", "--unset-all", f"url.{evil}/.insteadof")
+        sealed = (self.repo / ".git" / "jtek" / "origin-url.json").read_text()
+        record = json.loads(sealed)
+        record["url"] = str(evil)
+        (self.repo / ".git" / "jtek" / "origin-url.json").write_text(json.dumps(record) + "\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("seal", out)
+        (self.repo / ".git" / "jtek" / "origin-url.json").write_text(sealed)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+
+    def test_bandit_semgrep_and_other_linters_are_not_behaviour_checks(self):
+        fail = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                "sys.exit(p.is_file() and 'LONG' in p.read_text())\"")
+        names = ["bandit", "semgrep", "shellcheck", "hadolint", "stylelint", "markdownlint"]
+        self.write_config({name: fail for name in names})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "feature.txt").write_text("LONG only\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("behaviour check", out)
+        for name in names:
+            self.assertNotIn(f"made `{name}` fail", out)
+        mod = jtek_module()
+        self.assertTrue(mod.is_behaviour_check("behaviour-bandit"))
+        self.assertTrue(mod.is_behaviour_check("test"))
+        for name in names:
+            self.assertFalse(mod.is_behaviour_check(name), name)
 
 
 if __name__ == "__main__":

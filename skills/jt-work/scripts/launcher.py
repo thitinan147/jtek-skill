@@ -22,6 +22,7 @@ def init(j, args) -> None:
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
     print("Delete a check the project does not have. The human commits this file on the base branch.")
+    j.remember_origin()
 
 
 def file_rows(j) -> list[dict]:

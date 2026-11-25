@@ -86,6 +86,7 @@ LINT_TOKENS = frozenset({
     "black", "isort", "stylelint", "biome", "rubocop", "clippy", "phpcs", "golint",
     "syntax", "format", "fmt", "type", "types", "typecheck", "import", "imports", "style",
     "rustfmt", "gofmt", "shfmt",
+    "bandit", "semgrep", "shellcheck", "hadolint", "markdownlint",
 })
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
 
@@ -187,6 +188,105 @@ def author_key() -> bytes:
 
 def mac_of(payload: bytes, key: bytes | None = None) -> str:
     return hmac.new(key if key is not None else author_key(), payload, hashlib.sha256).hexdigest()
+
+
+def origin_url(cwd: Path | None = None) -> str:
+    """The configured origin URL, or "" when this repository has no origin.
+
+    This is `remote.origin.url`, not `git remote get-url`. get-url expands `url.*.insteadOf`,
+    so a rewrite would look like a different remote instead of a rewrite of this one."""
+    if "origin" not in git("remote", cwd=cwd, check=False).split():
+        return ""
+    return git("config", "--get", "remote.origin.url", cwd=cwd, check=False)
+
+
+def origin_seal(url: str) -> str:
+    """The same HMAC as the authors list, over the origin URL and nothing else."""
+    return mac_of(url.encode())
+
+
+def origin_record_path() -> Path:
+    return state_dir() / "origin-url.json"
+
+
+def read_origin_record() -> dict:
+    path = origin_record_path()
+    if not path.is_file():
+        return {}
+    try:
+        return read_json(path)
+    except Refuse:
+        return {}
+
+
+def origin_intact(record: dict) -> bool:
+    """False when the sealed origin URL was written or edited without the machine key."""
+    url = record.get("url") if isinstance(record, dict) else None
+    seal = record.get("seal") if isinstance(record, dict) else None
+    if not isinstance(url, str) or not isinstance(seal, str) or not seal:
+        return False
+    return hmac.compare_digest(origin_seal(url), seal)
+
+
+def remember_origin(cwd: Path | None = None) -> None:
+    """Seal the origin URL the first time `init` or `start` can see one.
+
+    An empty URL means there was no origin yet. A later init or start that sees one seals that URL, once.
+    A sealed non-empty URL is never replaced here. A hand edit that does not recompute the seal is ignored.
+    A process that can rewrite both the key and this file can still forge it."""
+    url = origin_url(cwd)
+    record = read_origin_record()
+    if origin_intact(record):
+        if record["url"] or not url:
+            return
+    elif record:
+        return
+    path = origin_record_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, {"url": url, "seal": origin_seal(url)})
+
+
+def insteadof_applies(url: str, cwd: Path | None = None) -> bool:
+    """True when a url.*.insteadOf value is a prefix of `url`.
+
+    git then rewrites ls-remote and fetch. The rule is not printed: its key can hold a credential."""
+    if not url:
+        return False
+    raw = git("config", "--null", "--get-regexp", r"^url\..*\.insteadof$", cwd=cwd, check=False)
+    for record in raw.split("\0"):
+        if not record:
+            continue
+        _key, sep, value = record.partition("\n")
+        if sep and value and url.startswith(value):
+            return True
+    return False
+
+
+def require_honest_origin(cwd: Path | None = None) -> None:
+    """Refuse when finish --no-pr would ask a different repository than the one sealed at init or start."""
+    url = origin_url(cwd)
+    if insteadof_applies(url, cwd):
+        raise Refuse(
+            "a url.*.insteadOf rule rewrites the origin URL, so ls-remote and fetch would not ask the sealed origin. "
+            "This change is not sent without a pull request."
+        )
+    record = read_origin_record()
+    if not origin_intact(record):
+        raise Refuse(
+            "the origin URL sealed at init or start is missing or was edited. The seal does not match. "
+            "This change is not sent without a pull request."
+        )
+    if record["url"] and url != record["url"]:
+        try:
+            remote_default(cwd)
+        except Refuse as err:
+            raise Refuse(
+                "the origin URL changed from the one sealed at init or start, so this change is not sent without a pull request. "
+                + str(err)
+            ) from None
+        raise Refuse(
+            "the origin URL changed from the one sealed at init or start, so this change is not sent without a pull request."
+        )
 
 
 def authors_seal(authors: list) -> str:
@@ -291,7 +391,8 @@ def unobservable_word(line: str) -> str:
 def is_behaviour_check(name: str) -> bool:
     """True when this declared check can prove a Done when item.
 
-    Lint, format, and type tools cannot, whatever the exact name: eslint, ruff-format, prettier, tsc.
+    Lint, format, and type tools cannot, whatever the exact name: eslint, ruff-format, prettier, tsc,
+    bandit, semgrep, shellcheck, hadolint, stylelint, markdownlint.
     A behaviour check is any other name. Prefix behaviour- to force one, as in behaviour-eslint."""
     folded = name.strip().lower()
     if not folded:
@@ -302,16 +403,25 @@ def is_behaviour_check(name: str) -> bool:
     return not any(part in LINT_TOKENS or part.startswith("lint") for part in parts)
 
 
-def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None):
-    """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`)."""
+def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None,
+        replace: bool = True):
+    """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`).
+
+    `replace=False` reads the stored objects. A `git replace` ref must not stand in for a fetched tip.
+    That is `git --no-replace-objects` and `GIT_NO_REPLACE_OBJECTS=1` together."""
+    argv = ["git", *args] if replace else ["git", "--no-replace-objects", *args]
+    env = None
+    if not replace:
+        env = os.environ.copy()
+        env["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
-        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as err:
-        raise Refuse(f"git {' '.join(args)}: timed out") from err
+        raise Refuse(f"git {' '.join(argv[1:])}: timed out") from err
     if code:
         return proc.returncode
     if check and proc.returncode != 0:
-        raise Refuse(f"git {' '.join(args)}: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise Refuse(f"git {' '.join(argv[1:])}: {proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout.strip()
 
 
@@ -674,53 +784,70 @@ def diff_spec(repo: Path, base: str, head: str, landed: bool = False) -> str:
     return parent_span(repo, head)
 
 
-def parent_span(repo: Path, head: str) -> str:
-    if not git("rev-parse", "--verify", "--quiet", f"{head}^", cwd=repo, check=False):
+def parent_span(repo: Path, head: str, replace: bool = True) -> str:
+    if not git("rev-parse", "--verify", "--quiet", f"{head}^", cwd=repo, check=False, replace=replace):
         return ""
     spec = f"{head}^..{head}"
-    if git("diff", "--quiet", spec, cwd=repo, code=True) == 1:
+    if git("diff", "--quiet", spec, cwd=repo, code=True, replace=replace) == 1:
         return spec
     return ""
 
 
-def commit_span(repo: Path, older: str, head: str) -> tuple[str, int]:
+def commit_span(repo: Path, older: str, head: str, replace: bool = True) -> tuple[str, int]:
     """Return the range and how many commits it holds. Empty when older is not an ancestor or the diff is empty."""
-    if not older or git("merge-base", "--is-ancestor", older, head, cwd=repo, code=True) != 0:
+    if not older or git("merge-base", "--is-ancestor", older, head, cwd=repo, code=True, replace=replace) != 0:
         return "", 0
     spec = f"{older}..{head}"
-    count = git("rev-list", "--count", spec, cwd=repo, check=False)
+    count = git("rev-list", "--count", spec, cwd=repo, check=False, replace=replace)
     if not count.isdigit() or int(count) < 1:
         return "", 0
-    if git("diff", "--quiet", spec, cwd=repo, code=True) != 1:
+    if git("diff", "--quiet", spec, cwd=repo, code=True, replace=replace) != 1:
         return "", 0
     return spec, int(count)
+
+
+def remote_tip(repo: Path, base: str) -> str:
+    """The sha `ls-remote` reports for `refs/heads/<base>`, or "" when the remote cannot be read.
+
+    `refs/remotes/origin/<base>` is a local ref. Moving it does not change this sha."""
+    try:
+        text = git("ls-remote", "origin", f"refs/heads/{base}", cwd=repo, check=False, timeout=60, replace=False)
+    except Refuse:
+        return ""
+    wanted = f"refs/heads/{base}"
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == wanted and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+            return parts[0]
+    return ""
 
 
 def landed_span(repo: Path, base: str, head: str) -> str:
     """The commits that landed on the current base tip, or "" when that range cannot be named.
 
     A fast-forward of several commits is not reviewed as only the last commit. With the reflog gone,
-    the remote-tracking base (origin/<base>) is the fallback. If that is missing too, the range is unknown."""
+    the sha the remote reports for the base is the fallback. A local `refs/remotes/origin/<base>` is not.
+    If that sha cannot be read either, the range is unknown. The walk ignores replace refs."""
     ref = base_ref(base)
     older: list[str] = []
-    prev = git("rev-parse", "--verify", "--quiet", f"{ref}@{{1}}", cwd=repo, check=False)
+    prev = git("rev-parse", "--verify", "--quiet", f"{ref}@{{1}}", cwd=repo, check=False, replace=False)
     if prev:
         older.append(prev)
-    fork = git("merge-base", "--fork-point", ref, head, cwd=repo, check=False)
+    fork = git("merge-base", "--fork-point", ref, head, cwd=repo, check=False, replace=False)
     if fork and fork not in older:
         older.append(fork)
-    remote = git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{base}", cwd=repo, check=False)
+    remote = remote_tip(repo, base)
     if remote and remote not in older:
         older.append(remote)
     singles: list[str] = []
     for candidate in older:
-        spec, count = commit_span(repo, candidate, head)
+        spec, count = commit_span(repo, candidate, head, replace=False)
         if count > 1:
             return spec
         if count == 1:
             singles.append(spec)
     if singles:
-        return parent_span(repo, head)
+        return parent_span(repo, head, replace=False)
     return ""
 
 
@@ -817,8 +944,8 @@ def review_target(meta: dict, pr: str = "", at: str = "") -> tuple[Path, str, st
             raise Refuse(
                 f"{head[:7]} has no diff against {meta['base']} and no parent range. "
                 "A fast-forward of several commits is not reviewed as only the last commit. "
-                "The reflog or the remote base (origin/" + meta["base"] + ") has to name the whole range. "
-                "There is nothing to review at that commit."
+                "The reflog, or the sha the remote reports for " + meta["base"] + ", has to name the whole range. "
+                "A local origin/" + meta["base"] + " does not. There is nothing to review at that commit."
             )
         return repo, head, spec, f"parent range of {head[:7]}"
     number = pull_number(pr or meta.get("pr") or "")
@@ -1522,6 +1649,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
     meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
     note_author(meta)
+    remember_origin()
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
     print("jtek start: resumed" if resumed else "jtek start: allowed")
@@ -2050,20 +2178,23 @@ def remote_default(cwd: Path | None = None) -> tuple[str, str]:
 
 
 def remote_forge_off(cwd: Path | None = None) -> bool:
-    """Whether the remote tip has forge set to false."""
+    """Whether the remote tip has forge set to false.
+
+    The fetched object is read with replace refs off. A sha match is not the remote's bytes while
+    `git replace` is allowed to answer `git show`."""
     branch, sha = remote_default(cwd)
     if not sha:
         return False
     stored = "refs/jtek/remote-base"
     spec = "+refs/heads/" + branch + ":" + stored
     try:
-        git("fetch", "--quiet", "origin", spec, cwd=cwd, timeout=60)
+        git("fetch", "--quiet", "origin", spec, cwd=cwd, timeout=60, replace=False)
     except Refuse as err:
         raise Refuse("the remote default branch could not be fetched, so this change is not sent without a pull request. " + str(err)) from None
-    fetched = git("rev-parse", "--verify", "--quiet", stored, cwd=cwd, check=False)
+    fetched = git("rev-parse", "--verify", "--quiet", stored, cwd=cwd, check=False, replace=False)
     if fetched != sha:
         raise Refuse("the fetched tip does not match the remote, so this change is not sent without a pull request.")
-    text = git("show", sha + ":" + CONFIG, cwd=cwd, check=False)
+    text = git("show", sha + ":" + CONFIG, cwd=cwd, check=False, replace=False)
     try:
         config = json.loads(text) if text else {}
     except json.JSONDecodeError:
@@ -2075,6 +2206,7 @@ def no_pr_allowed(worktree: Path) -> bool:
     """Whether a result may be recorded with no pull request."""
     if not git("remote", cwd=worktree, check=False).strip():
         return True
+    require_honest_origin(worktree)
     return remote_forge_off(worktree)
 
 
