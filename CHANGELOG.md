@@ -1,6 +1,8 @@
 # Changelog
 
-## 26.43.0 - a draft is a card, a repeat is a rule, a FAIL is a bug
+## 26.44.0 - a draft is a card, a repeat is a rule, a FAIL is a bug
+
+26.43.0 is the forge follow-up that was already open, so this release takes the next number.
 
 Three checks moved out of the skill text and into the script.
 
