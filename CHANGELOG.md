@@ -1,5 +1,15 @@
 # Changelog
 
+## 26.46.0 - a removed seal stays removed, and the review sees the whole landing
+
+- A missing, empty, or damaged origin seal is not written again by a later `start`. `finish --no-pr` keeps refusing it, so swapping `origin` after the first start does not ship.
+- `show --at` uses a remote tip only when that tip covers more than the last commit. With the reflog gone, a tip at `HEAD^` (from `set-url` or from `url.*.insteadOf`) is refused instead of reviewing one commit of a longer fast-forward. A one-commit landing the reflog still names is unchanged.
+- A blank `## Done when` is not a list. It does not hide `## Done check`. `finish` still wants a `seen:` or `not run:` line and a broke proof for every item.
+- `ticket` refuses a guessed cause or fix with or without a list bullet. `- The cause is …` and `- the fix is to add a counter` are the same refusal as the line without the bullet.
+- A repeated lesson is structural only in a concrete shape: `architecture: <target>`, `type: <target>`, `lint <rule>: use <replacement>`, or `test:` / `check:` plus a path to a test file that exists in the repository. `check the docs` and `a note: a type is impossible` stay prose and are refused.
+- A nit anywhere in the notes blocks `PASS`. The same word under `Dropped:` or `Nits:` does not.
+- `finish --no-pr` allows a `url.*.insteadOf` rewrite that still names the sealed repository, such as a credential on `https://github.com/`. A rewrite to a different repository is still refused.
+
 ## 26.45.0 - the object that is read is the one the remote named
 
 26.44.0 landed first, so this release takes the next number.
