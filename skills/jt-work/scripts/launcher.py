@@ -37,17 +37,41 @@ def init(j, args) -> None:
     j.remember_origin()
 
 
+def user_file_moves(j) -> list[tuple[Path, Path]]:
+    """~/.config/jtek/agents.json and me.md move beside the other machine files.
+
+    Checked before anything is moved. A destination that already exists is refused, not overwritten.
+    """
+    planned: list[tuple[Path, Path]] = []
+    root = j.machine_root()
+    for name in ("agents.json", "me.md"):
+        src = Path.home() / ".config" / "jtek" / name
+        dest = root / name
+        if src.is_symlink():
+            raise j.Refuse(f"{src} is a symlink; not moving it")
+        if not src.is_file():
+            continue
+        if dest.exists():
+            raise j.Refuse(f"{dest} already exists; not overwriting it. Move that file aside and run migrate again")
+        planned.append((src, dest))
+    return planned
+
+
 def migrate(j, args) -> None:
     """Move jtek.json and .jtek/ out of the repository and onto this machine.
 
-    The repository is left with those paths missing. The human commits the removal. This command does not commit.
+    Also moves ~/.config/jtek/agents.json and me.md to ~/.jtek (or JTEK_HOME). The repository is left with
+    those paths missing. The human commits the removal. This command does not commit, and it does not overwrite.
     """
+    user_plan = user_file_moves(j)
     root = Path(j.git("rev-parse", "--show-toplevel"))
     home = j.repo_home()
     home.mkdir(parents=True, exist_ok=True)
     moved: list[str] = []
+    repo_moved = False
 
     def take(src: Path, dest: Path) -> None:
+        nonlocal repo_moved
         if not src.exists() and not src.is_symlink():
             return
         if src.is_symlink():
@@ -57,6 +81,7 @@ def migrate(j, args) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dest))
         moved.append(f"{src.relative_to(root)} -> {dest}")
+        repo_moved = True
 
     take(root / j.CONFIG, home / j.CONFIG)
     dot = root / ".jtek"
@@ -70,13 +95,19 @@ def migrate(j, args) -> None:
         except OSError:
             left = sorted(p.name for p in dot.iterdir())
             print(f"left in {dot}: {', '.join(left)}. Those names are not jtek knowledge; delete them yourself if you want .jtek gone.")
+    for src, dest in user_plan:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dest))
+        moved.append(f"{src} -> {dest}")
     if not moved:
-        raise j.Refuse(f"nothing to migrate: no {j.CONFIG} and no .jtek/verify.md, features, rules.md, or tickets in {root}")
+        raise j.Refuse(f"nothing to migrate: no {j.CONFIG} and no .jtek/verify.md, features, rules.md, or tickets in {root}, "
+                       "and no ~/.config/jtek/agents.json or me.md")
     print(f"repository id: {home.relative_to(j.machine_root() / 'repos')}")
     for line in moved:
         print(f"moved: {line}")
-    print("These paths are gone from the work tree. Review `git status` and commit the removal.")
-    print("jtek does not commit it. A checkout on another machine does not have this folder until you copy it or migrate there.")
+    if repo_moved:
+        print("These paths are gone from the work tree. Review `git status` and commit the removal.")
+        print("jtek does not commit it. A checkout on another machine does not have this folder until you copy it or migrate there.")
 
 
 def file_rows(j) -> list[dict]:
@@ -304,6 +335,62 @@ def release(j, args) -> None:
           + (". A local ticket has no board" if j.LOCAL_RE.match(args.id) else ". The board is not changed: set Status on the page yourself"))
 
 
+def guess(j, args) -> None:
+    import guess as module
+    module.run(j, args)
+
+
+def session_label(meta: dict) -> str:
+    """The stored session hash, or '-' . A value that is not that hash is not printed."""
+    author = meta.get("author")
+    if isinstance(author, str) and len(author) == 16 and all(char in "0123456789abcdef" for char in author):
+        return f"session {author}"
+    return "session -"
+
+
+def status(j, args) -> None:
+    """Read-only table: in progress, waiting for review, waiting for merge, and the one next action.
+
+    The words are Thai. Nothing is written: no claim, no release, no board change.
+    """
+    repo = this_repo(j)
+    doing: list[str] = []
+    review: list[str] = []
+    merge: list[str] = []
+    ranked: list[tuple[int, str, str, str]] = []
+    for row in load_board(j, args.board_file):
+        action, reason = next_step(j, row, repo)
+        if action == "other":
+            continue
+        ticket_id = row["id"]
+        detail = " ".join(str(reason).split())
+        if action == "running":
+            try:
+                meta = j.read_json(j.work_dir(ticket_id) / "meta.json")
+            except j.Refuse:
+                meta = {}
+            doing.append(f"กำลังทำ\t{ticket_id}\t{session_label(meta)}")
+        elif action == "review":
+            review.append(f"รอรีวิว\t{ticket_id}\t{detail}")
+            ranked.append((1, ticket_id, action, detail))
+        elif action == "human" and detail.startswith("review and merge"):
+            merge.append(f"รอ merge\t{ticket_id}\t{detail}")
+            ranked.append((2, ticket_id, action, detail))
+        if action == "work":
+            ranked.append((0, ticket_id, action, detail))
+        elif action == "stuck":
+            ranked.append((3, ticket_id, action, detail))
+    for lines, empty in ((doing, "กำลังทำ\t-"), (review, "รอรีวิว\t-"), (merge, "รอ merge\t-")):
+        for line in lines or [empty]:
+            print(line)
+    if ranked:
+        ranked.sort()
+        _rank, ticket_id, action, detail = ranked[0]
+        print(f"ถัดไป\t{action}\t{ticket_id}\t{detail}")
+    else:
+        print("ถัดไป\t-")
+
+
 def doctor(j, args) -> None:
     if getattr(args, "agents", False):
         import agents
@@ -318,4 +405,5 @@ def reviewer(j, args) -> None:
     agents.reviewer(j, args)
 
 
-COMMANDS = {"init": init, "migrate": migrate, "next": next_, "sync": sync, "release": release, "doctor": doctor, "reviewer": reviewer}
+COMMANDS = {"init": init, "migrate": migrate, "guess": guess, "status": status, "next": next_, "sync": sync,
+            "release": release, "doctor": doctor, "reviewer": reviewer}

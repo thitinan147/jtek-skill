@@ -27,18 +27,27 @@ KNOWN = [
 ]
 
 
-def agents_file() -> Path:
-    return Path.home() / ".config" / "jtek" / "agents.json"
+def owner_file(j, name: str) -> tuple[Path, str]:
+    """The machine file, or the old ~/.config/jtek path when that is the one that exists.
+
+    The notice is one line when the old path is in use, and empty otherwise. A missing file returns the new path.
+    """
+    new = j.machine_root() / name
+    old = Path.home() / ".config" / "jtek" / name
+    if new.is_file() and not new.is_symlink():
+        return new, ""
+    if old.is_file() and not old.is_symlink():
+        return old, f"notice: reading {old}. Run `jtek.py migrate` to move it to {new}."
+    return new, ""
 
 
 def one_line(value) -> str:
     return " ".join(str(value).split())  # a value cannot add a line to the output
 
 
-def load_reviewers(j) -> list[dict] | None:
+def load_reviewers(j, path: Path) -> list[dict] | None:
     """The owner's list, in the owner's order, or None when there is no file. Every entry is checked before any is used."""
-    path = agents_file()
-    if not path.exists():
+    if not path.is_file():
         return None
     form = ('{"reviewers": [{"command": "codex exec -m <model>", "vendor": "openai", "model": "<model>"}]}')
     try:
@@ -97,8 +106,14 @@ def report(j, args) -> None:
         print(f"         models: {models}" if isinstance(models, str) else f"         models ({len(models)}): " + ", ".join(models))
     print("not checked: whether each program is signed in, and an agent this script does not know. A shell alias is "
           "not seen either.")
-    path = agents_file()
-    reviewers = load_reviewers(j)
+    path, notice = owner_file(j, "agents.json")
+    if notice:
+        print(notice)
+    style, style_notice = owner_file(j, "me.md")
+    if style_notice:
+        print(style_notice)
+    print(f"style: {style}" if style.is_file() else f"style: no file at {style}")
+    reviewers = load_reviewers(j, path)
     if reviewers is None:
         print(f"reviewers: no list at {path}; `/jt-agents` proposes one, and the owner approves it")
     else:
@@ -117,8 +132,10 @@ def reviewer(j, args) -> None:
     mine = one_line(args.vendor).lower()
     if not mine:
         raise j.Refuse("pass --vendor with the vendor of the model you run on, such as `anthropic` or `openai`")
-    path = agents_file()
-    reviewers = load_reviewers(j)
+    path, notice = owner_file(j, "agents.json")
+    if notice:
+        print(notice)
+    reviewers = load_reviewers(j, path)
     fallback = "reviewer: a fresh session of your own model, one that shares none of this conversation"
     if reviewers is None:
         print(fallback)

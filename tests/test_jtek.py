@@ -2936,8 +2936,9 @@ class AgentTests(unittest.TestCase):
         path.write_text(f"#!/bin/sh\n{body}\n")
         path.chmod(0o755)
 
-    def reviewers(self, *entries, raw=None):
-        path = self.home / ".config" / "jtek" / "agents.json"
+    def reviewers(self, *entries, raw=None, legacy=False):
+        folder = self.home / ".config" / "jtek" if legacy else self.home / ".jtek"
+        path = folder / "agents.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(raw if raw is not None else json.dumps({"reviewers": [
             {"command": command, "vendor": vendor, "model": model} for command, vendor, model in entries]}))
@@ -3050,6 +3051,37 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(len([line for line in out.splitlines() if line.startswith("reviewer: ")]), 1, out)
         self.assertEqual(len([line for line in out.splitlines() if line.startswith("model: ")]), 1, out)
+
+    def test_an_old_owner_file_is_read_with_one_notice(self):
+        self.program("codex")
+        self.reviewers(("codex exec -m gpt-9", "openai", "gpt-9"), legacy=True)
+        old_style = self.home / ".config" / "jtek" / "me.md"
+        old_style.write_text("style\n")
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("notice: reading ", out)
+        self.assertIn(str(self.home / ".config" / "jtek" / "agents.json"), out)
+        self.assertIn(str(self.home / ".jtek" / "agents.json"), out)
+        self.assertIn("reviewer: codex exec -m gpt-9", out)
+        self.assertEqual(out.count("notice:"), 1, out)
+        code, out = self.jtek("doctor", "--agents")
+        self.assertEqual(code, 0, out)
+        self.assertIn(str(old_style), out)
+        self.assertIn(f"style: {old_style}", out)
+        self.assertGreaterEqual(out.count("notice:"), 2, out)
+
+    def test_the_new_owner_file_wins_and_prints_no_notice(self):
+        self.program("codex")
+        self.reviewers(("codex exec -m gpt-9", "openai", "gpt-9"))
+        old = self.home / ".config" / "jtek"
+        old.mkdir(parents=True)
+        (old / "agents.json").write_text(json.dumps({"reviewers": [
+            {"command": "gemini -p", "vendor": "google", "model": "gem"}]}))
+        code, out = self.jtek("reviewer", "--vendor", "anthropic")
+        self.assertEqual(code, 0, out)
+        self.assertIn("reviewer: codex exec -m gpt-9", out)
+        self.assertNotIn("notice:", out)
+        self.assertNotIn("gemini", out)
 
     def test_the_reviewers_copy_of_the_script_says_where_the_command_lives(self):
         copy = ROOT / "skills" / "jt-review" / "scripts" / "jtek.py"
@@ -4265,6 +4297,173 @@ class MachineConfig(Scratch):
         self.assertNotIn(".jtek", tracked)
         self.assertFalse((self.repo / "jtek.json").exists())
         self.assertFalse((self.repo / ".jtek").exists())
+
+    def test_migrate_moves_owner_files_and_refuses_to_overwrite(self):
+        unix = Path(self.tmp.name) / "unix-home"
+        old = unix / ".config" / "jtek"
+        old.mkdir(parents=True)
+        (old / "agents.json").write_text('{"reviewers":[]}\n')
+        (old / "me.md").write_text("style\n")
+        (self.repo / "jtek.json").write_text("{}\n")
+        self.git("add", "jtek.json")
+        self.git("commit", "-q", "-m", "old layout in the repo")
+        dest = self.home / "agents.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("keep\n")
+        code, out = self.jtek("migrate", env={"HOME": str(unix)})
+        self.assertEqual(code, 1, out)
+        self.assertIn("not overwriting", out)
+        self.assertEqual(dest.read_text(), "keep\n")
+        self.assertTrue((old / "agents.json").is_file())
+        self.assertTrue((old / "me.md").is_file())
+        self.assertTrue((self.repo / "jtek.json").is_file())
+        dest.unlink()
+        self.config_file().unlink()
+        code, out = self.jtek("migrate", env={"HOME": str(unix)})
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.home / "agents.json").read_text(), '{"reviewers":[]}\n')
+        self.assertEqual((self.home / "me.md").read_text(), "style\n")
+        self.assertFalse((old / "agents.json").exists())
+        self.assertFalse((old / "me.md").exists())
+        self.assertFalse((self.repo / "jtek.json").exists())
+        self.assertIn("commit the removal", out)
+
+
+SENTINEL = "SUPER_SECRET_SENTINEL_9f3a"
+
+
+class EasyStart(Scratch):
+    """Guessed checks, the init trigger, and the read-only status table."""
+
+    def test_doctor_points_at_init_or_migrate(self):
+        self.config_file().unlink()
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1, out)
+        self.assertIn("init: needed", out)
+        self.assertIn("/jt-init", out)
+        self.assertIn("run `jtek.py init`", out)
+        self.write_config({"test": "true"})
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("init: ok", out)
+        self.assertNotIn("init: needed", out)
+        (self.repo / "jtek.json").write_text("{}\n")
+        (self.repo / ".jtek").mkdir()
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1, out)
+        self.assertIn("init: migrate", out)
+        self.assertIn("jtek.py migrate", out)
+        self.assertIn("/jt-init", out)
+        self.assertIn("jtek.json", out)
+        self.assertIn(".jtek/", out)
+
+    def test_guess_reads_scripts_and_ci_and_not_a_secret_file(self):
+        (self.repo / ".env").write_text(f"TOKEN={SENTINEL}\n")
+        (self.repo / "package.json").write_text(json.dumps({"scripts": {
+            "lint": f"echo {SENTINEL}",
+            "typecheck": "tsc --noEmit",
+            "test": "jest",
+        }}))
+        (self.repo / "package-lock.json").write_text("{}\n")
+        workflows = self.repo / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\nenv:\n  TOKEN: " + SENTINEL + "\n"
+            "jobs:\n  t:\n    steps:\n"
+            "      - run: npm ci && npm test\n"
+            "      - run: echo " + SENTINEL + "\n"
+            "      - run: node scripts/verify.mjs\n")
+        (workflows / "secrets.yml").write_text("jobs:\n  t:\n    steps:\n      - run: make audit\n")
+        before = self.config_file().read_text()
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(SENTINEL, out)
+        self.assertNotIn("&&", out)
+        self.assertNotIn("audit", out)
+        self.assertIn("guess\tsetup\tnpm ci\tpackage-lock.json", out)
+        self.assertIn("guess\tlint\tnpm run lint\tpackage.json", out)
+        self.assertIn("guess\ttypes\tnpm run typecheck\tpackage.json", out)
+        self.assertIn("guess\ttest\tnpm test\tpackage.json", out)
+        self.assertIn("guess\tverify\tnode scripts/verify.mjs\t.github/workflows/ci.yml", out)
+        self.assertIn("ask\tboard? none (tickets as files) / Notion database link / FLO product link", out)
+        self.assertEqual(self.config_file().read_text(), before)
+        self.assertFalse((self.repo / "jtek.json").exists())
+
+    def test_guess_uses_a_makefile_without_printing_its_recipe(self):
+        (self.repo / "Makefile").write_text(f"lint:\n\techo {SENTINEL}\ntest:\n\tpytest\n")
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(SENTINEL, out)
+        self.assertIn("guess\tlint\tmake lint\tMakefile", out)
+        self.assertIn("guess\ttest\tmake test\tMakefile", out)
+
+    def test_guess_uses_pyproject_tools(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n[tool.mypy]\n[tool.pytest.ini_options]\n")
+        (self.repo / "uv.lock").write_text("")
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertIn("guess\tsetup\tuv sync\tuv.lock", out)
+        self.assertIn("guess\tlint\tuv run ruff check .\tpyproject.toml", out)
+        self.assertIn("guess\ttypes\tuv run mypy .\tpyproject.toml", out)
+        self.assertIn("guess\ttest\tuv run pytest -q\tpyproject.toml", out)
+
+    def test_guess_splits_a_ci_line_and_drops_the_shell_join(self):
+        workflows = self.repo / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text("jobs:\n  t:\n    steps:\n      - run: npm ci && npm test\n")
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertIn("guess\tsetup\tnpm ci\t.github/workflows/ci.yml", out)
+        self.assertIn("guess\ttest\tnpm test\t.github/workflows/ci.yml", out)
+        self.assertNotIn("&&", out)
+
+    def test_guess_on_a_repo_with_no_build_files_asks_the_board_and_writes_nothing(self):
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertIn("guess\t-\t-\tnothing to guess", out)
+        self.assertIn("ask\tboard? none (tickets as files) / Notion database link / FLO product link", out)
+        self.assertFalse((self.repo / "jtek.json").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_status_is_a_thai_table_and_it_does_not_write(self):
+        def claim(ticket_id, author, parked=False):
+            work = self.repo / ".git" / "jtek" / "work" / ticket_id
+            work.mkdir(parents=True)
+            tree = self.repo.parent / f"wt-{ticket_id}"
+            tree.mkdir()
+            (work / "meta.json").write_text(json.dumps({
+                "worktree": str(tree), "branch": f"jtek/{ticket_id}", "base": "main", "author": author}))
+            if parked:
+                (work / "result.md").write_text("outcome: needs-review\n")
+            return work
+
+        claim("T-1", "0123456789abcdef")
+        claim("T-2", "RAW-SESSION-SECRET", parked=True)
+        board = Path(self.tmp.name) / "board.json"
+        board.write_text(json.dumps([
+            {"id": "T-1", "status": "In Progress", "repo": "", "title": "A"},
+            {"id": "T-2", "status": "In Progress", "repo": "", "title": "B"},
+            {"id": "T-3", "status": "Review", "repo": "", "pr": "https://example.invalid/pr/3", "title": "C"},
+            {"id": "T-4", "status": "Todo", "repo": "", "title": "D"},
+        ]))
+        stamp = (self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json").read_text()
+        code, out = self.jtek("status", "--board-file", str(board))
+        self.assertEqual(code, 0, out)
+        self.assertIn("กำลังทำ\tT-1\tsession 0123456789abcdef", out)
+        self.assertIn("รอรีวิว\tT-2\t", out)
+        self.assertIn("รอ merge\tT-3\treview and merge https://example.invalid/pr/3", out)
+        self.assertIn("ถัดไป\twork\tT-4\tnew", out)
+        self.assertNotIn("RAW-SESSION-SECRET", out)
+        self.assertEqual((self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json").read_text(), stamp)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work" / "T-1" / "result.md").exists())
+        empty = Path(self.tmp.name) / "empty.json"
+        empty.write_text("[]")
+        code, out = self.jtek("status", "--board-file", str(empty))
+        self.assertEqual(code, 0, out)
+        self.assertIn("กำลังทำ\t-", out)
+        self.assertIn("รอรีวิว\t-", out)
+        self.assertIn("รอ merge\t-", out)
+        self.assertIn("ถัดไป\t-", out)
 
 
 if __name__ == "__main__":
