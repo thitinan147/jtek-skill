@@ -322,9 +322,11 @@ def rewritten_origin(url: str, cwd: Path | None = None) -> str:
         folded = key.lower()
         if not (folded.startswith("url.") and folded.endswith(".insteadof")):
             continue
-        base = key[len("url."):-len(".insteadof")]
+        # Not named `base`: that name is the branch argument of the git commands below, and a
+        # scanner treats one assignment as the source of every later use.
+        replacement = key[len("url."):-len(".insteadof")]
         if url.startswith(value) and (best is None or len(value) > best[0]):
-            best = (len(value), base, value)
+            best = (len(value), replacement, value)
     if best is None:
         return url
     return best[1] + url[len(best[2]):]
