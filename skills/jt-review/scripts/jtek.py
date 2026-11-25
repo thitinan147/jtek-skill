@@ -379,7 +379,7 @@ def load_checks(base: str) -> dict[str, str]:
     return checks
 
 
-HEADINGS = ["Goal", "Done when", "Out of scope"]
+HEADINGS = ["Goal", "Done when", "Out of scope", "Done check", "Proof", "Context", "Constraints"]
 
 
 def load_settings(base: str) -> dict:
@@ -395,7 +395,7 @@ def load_settings(base: str) -> dict:
     except (ValueError, AttributeError):
         raise Refuse(f'`pr_state` in {CONFIG} must be one command as text, such as "python3 scripts/pr-state.py"') from None
     names = {} if config.get("headings") is None else config["headings"]
-    form = '{"Goal": "...", "Done when": "...", "Out of scope": "..."}'
+    form = '{"Goal": "...", "Done check": "...", "Proof": "...", "Context": "...", "Constraints": "..."}'
     if not isinstance(names, dict) or any(not isinstance(v, str) or not v.strip() for v in names.values()):
         raise Refuse(f"`headings` in {CONFIG} must be an object such as {form}")
     unknown = [key for key in names if key not in HEADINGS]
@@ -472,6 +472,53 @@ def canon_status(value: str) -> str:
     return found or ""
 
 
+def outcome_lines(sections: dict) -> tuple[str, list[str]]:
+    """The outcomes live under Done check on a draft card, or under Done when on a page already written that way."""
+    present = [name for name in ("done when", "done check") if name in sections]
+    if len(present) > 1:
+        raise Refuse(
+            "the ticket has both `## Done when` and `## Done check`. "
+            "A draft puts the outcomes under `## Done check` only"
+        )
+    name = present[0] if present else "done when"
+    label = "Done check" if name == "done check" else "Done when"
+    return label, sections.get(name, [])
+
+
+CARD_SLOTS = ("Goal", "Done check", "Proof", "Context", "Constraints")
+SKILL_STEP = re.compile(r"(?i)\b(jt-[a-z]+|playbook)\b")
+GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^(caused by|fix:)\b")
+
+
+def require_card(ticket: dict) -> None:
+    """A draft is five slots and nothing else. start still reads a page that uses Done when."""
+    sections = ticket["sections"]
+    missing = [label for label in CARD_SLOTS if not any(line.strip() for line in sections.get(label.lower(), []))]
+    extra = [" ".join(word.capitalize() for word in name.split())
+             for name in sections if name not in {label.lower() for label in CARD_SLOTS}]
+    if missing or extra:
+        raise Refuse(
+            "a draft has exactly five slots: Goal, Done check, Proof, Context, Constraints. "
+            f"Missing or empty: {', '.join(missing) or '-'}. "
+            f"Not a slot: {', '.join(extra) or '-'}. "
+            "Outcomes go under Done check. Behaviour that must stay goes under Constraints. "
+            "Leave out a guessed cause, a guessed fix, and any step the skills already run."
+        )
+    for line in sections.get("done check", []):
+        if re.match(r"^-\s*\S", line) and SKILL_STEP.search(line):
+            raise Refuse(
+                "a Done check item is an outcome someone can see, not a step the skills already run: "
+                f"{line.strip()[:80]}"
+            )
+    for lines in sections.values():
+        for line in lines:
+            if GUESSED_LINE.match(line.strip()):
+                raise Refuse(
+                    "leave the guessed cause or fix out of the draft. Say the goal and the check, not where the bug lives. "
+                    f"Not a slot line: {line.strip()[:80]}"
+                )
+
+
 def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
     sections = ticket["sections"]
     if ticket.get("repeated"):
@@ -479,18 +526,19 @@ def validate_ticket(ticket: dict, checks: dict[str, str]) -> list[str]:
                      "The human gives each heading once; an example of a heading goes inside a code block")
     if not any(line.strip() for line in sections.get("goal", [])):
         raise Refuse("ticket has no `## Goal`")
-    done = [line for line in sections.get("done when", []) if re.match(r"^-\s*\S", line)]
+    done_label, done_lines = outcome_lines(sections)
+    done = [line for line in done_lines if re.match(r"^-\s*\S", line)]
     if not done:
-        raise Refuse("ticket has no item under `## Done when`")
-    other = [line for line in sections.get("done when", []) if line.strip() and not re.match(r"^-\s*\S", line)]
+        raise Refuse(f"ticket has no item under `## {done_label}`")
+    other = [line for line in done_lines if line.strip() and not re.match(r"^-\s*\S", line)]
     if other:
-        raise Refuse("`Done when` may hold only top-level list items, one outcome each, because every item must be "
+        raise Refuse(f"`{done_label}` may hold only top-level list items, one outcome each, because every item must be "
                      f"answered in the evidence. Not an item: {other[0].strip()[:80]}")
     vague = [f"{n}. {line.strip()[1:].strip()[:80]} (`{word}`)"
              for n, line in enumerate(done, 1) if (word := unobservable_word(line))]
     if vague:
         raise Refuse(
-            "`Done when` must name something a person can see from outside. These items are a quality with no number, "
+            f"`{done_label}` must name something a person can see from outside. These items are a quality with no number, "
             "so they cannot be checked, and `ticket` refuses them before `start`:\n" + "\n".join(vague) + "\n"
             "Name a command, a request, or a screen, with a concrete input and result. A word such as fast, easy, "
             "better, or feels needs a number."
@@ -798,7 +846,7 @@ def ticket_id_of_text(work: Path) -> str:
     sections = parse_ticket((work / "ticket.md").read_text())["sections"]
     # Only what the ticket asks for counts: an answer added under Notes, or a blank line, is not a new ticket.
     asked = {name: [" ".join(line.split()) for line in sections.get(name, []) if line.strip()]
-             for name in ("goal", "done when", "out of scope")}
+             for name in ("goal", "done when", "done check", "out of scope", "proof", "context", "constraints")}
     return hashlib.sha256(json.dumps(asked, sort_keys=True).encode()).hexdigest()
 
 
@@ -832,9 +880,9 @@ DIRTY_HINT = "commit them, or add build output to .gitignore"
 
 
 def done_when_items(work: Path) -> list[str]:
-    ticket = parse_ticket((work / "ticket.md").read_text())
-    return [m.group(1).strip() for line in ticket["sections"].get("done when", [])
-            if (m := re.match(r"^-\s*(\S.*)$", line))]
+    sections = parse_ticket((work / "ticket.md").read_text())["sections"]
+    lines = sections.get("done when") or sections.get("done check") or []
+    return [m.group(1).strip() for line in lines if (m := re.match(r"^-\s*(\S.*)$", line))]
 
 
 def is_test_path(path: str) -> bool:
@@ -1202,6 +1250,61 @@ def local_ticket(text: str) -> str:
     return f"# {ticket['title'] or 'Local work'}\n" + "\n".join(header) + "\n\n" + body
 
 
+def lesson_kind(enforced_by: str) -> str:
+    """architecture, type, lint (only when the text says what to use instead), test, or prose."""
+    text = " ".join(enforced_by.lower().split())
+    if not text or text in {"prose", "not yet", "warning", "reminder", "note", "written", "docs"}:
+        return "prose"
+    if text.startswith("architecture") or "impossible" in text or text.startswith("unexport") or "private " in text:
+        return "architecture"
+    if text.startswith("type") or re.search(r"\btype\b", text):
+        return "type"
+    if "lint" in text:
+        if any(mark in text for mark in ("use ", "instead", "error:", "fix:", "says ")):
+            return "lint"
+        return "lint-silent"
+    if text.startswith("test") or text.startswith("check"):
+        return "test"
+    return "prose"
+
+
+def cmd_lesson(args: argparse.Namespace) -> None:
+    """The first record of a mistake may be prose. The same mistake again must name a structural rule."""
+    mistake = " ".join(args.mistake.split())
+    if not mistake:
+        raise Refuse("lesson needs --mistake: one sentence, what was done and what should have been done")
+    key = mistake.lower()
+    kind = lesson_kind(args.enforced_by or "")
+    if kind == "lint-silent":
+        raise Refuse(
+            "a lint rule has to say how to fix the mistake, and the error says how to fix it. "
+            "Pass --enforced-by with the replacement, such as `lint no-float-money: use Cents instead`"
+        )
+    path = state_dir() / "lessons.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = read_json(path)
+    lessons = data.get("lessons")
+    if not isinstance(lessons, list):
+        lessons = []
+    prior = [row for row in lessons if isinstance(row, dict) and row.get("key") == key]
+    if prior and kind == "prose":
+        raise Refuse(
+            "this mistake was already recorded, so a prose lesson is refused. "
+            "A repeat needs a structural rule, strongest first: architecture (make the wrong shape impossible), "
+            "then a type, then a lint rule whose error says what to use instead, then a test. "
+            f"Pass --enforced-by with that rule. The earlier record was: {prior[-1].get('enforced_by', 'prose')}"
+        )
+    row = {"key": key, "mistake": mistake, "enforced_by": " ".join((args.enforced_by or "prose").split()),
+           "kind": kind, "times": len(prior) + 1}
+    lessons.append(row)
+    write_json(path, {"lessons": lessons})
+    if prior:
+        print(f"lesson: structural ({kind}), time {row['times']}. "
+              "Put this enforcer on the row in .jtek/rules.md, in the ticket that adds it.")
+    else:
+        print(f"lesson: recorded ({kind}). The same mistake again needs a structural rule, not prose.")
+
+
 def cmd_ticket(args: argparse.Namespace) -> None:
     """Check a drafted ticket the way start will, without claiming anything."""
     try:
@@ -1214,10 +1317,12 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     here = str(load_config(base).get("name") or main_root().name)
     if repo and repo != here:
         raise Refuse(f"the ticket is for `{repo}`; check it in that repository, this one is `{here}`")
-    items = sum(1 for line in ticket["sections"].get("done when", []) if re.match(r"^-\s*\S", line))
+    require_card(ticket)
+    label, lines = outcome_lines(ticket["sections"])
+    items = sum(1 for line in lines if re.match(r"^-\s*\S", line))
     if args.save and has_board(base):
         raise Refuse(f"this repository has a board (`board` in {CONFIG}); create the ticket there with the board's tool")
-    print(f"ticket: ok, {items} item(s) under Done when, as start will read it")
+    print(f"ticket: ok, {items} item(s) under {label}, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
         print(f"saved: {path}  (Backlog, inside the repository. Commit it on the base branch so another machine can see it. "
@@ -1645,6 +1750,62 @@ def author_sessions(meta: dict) -> list[str]:
     return authors
 
 
+NIT_WORD = re.compile(
+    r"\b(nit|nits|nitpick|style|rename|typo|wording|preference|formatting|whitespace|comment)\b", re.I)
+BUG_WORD = re.compile(
+    r"\b(crash|fail|fails|failed|error|wrong|regression|bug|exception|broken|incorrect|loses|drops|rejects|"
+    r"500|404|timeout|corrupt|uncommitted)\b", re.I)
+
+
+def review_regions(text: str) -> str:
+    """The notes that count. A Dropped or Nits list is optional and never a verdict."""
+    kept: list[str] = []
+    dropping = False
+    for line in text.splitlines():
+        head = line.strip().lower().rstrip(":")
+        if head in {"dropped", "## dropped", "nits", "## nits"}:
+            dropping = True
+            continue
+        if head in {"findings", "## findings", "notes", "## notes"}:
+            dropping = False
+        if not dropping:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def review_findings(text: str) -> tuple[list[str], list[str]]:
+    """Real findings, and the problems in the rest (nit, thin). Dropped lines are ignored."""
+    counted = review_regions(text)
+    blocks: list[list[str]] = []
+    open_block = False
+    for line in counted.splitlines():
+        if re.match(r"^\s*[-*]\s*reproduces:", line):
+            blocks.append([line])
+            open_block = True
+        elif open_block and (line.startswith((" ", "\t")) or not line.strip()):
+            blocks[-1].append(line)
+        else:
+            open_block = False
+    real: list[str] = []
+    problems: list[str] = []
+    for block in blocks:
+        if not block:
+            continue
+        body = "\n".join(block)
+        repro = re.search(r"reproduces:\s*(.*)", body, re.I)
+        shown = repro.group(1) if repro else ""
+        if NIT_WORD.search(shown) and not BUG_WORD.search(body):
+            problems.append("nit")
+            continue
+        has_steps = re.search(r"(?im)^\s*(steps|scenario):\s*\S", body)
+        has_expected = re.search(r"(?im)^\s*expected:\s*\S", body)
+        if has_steps and has_expected:
+            real.append(body)
+        else:
+            problems.append("thin")
+    return real, problems
+
+
 def cmd_verdict(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
@@ -1703,15 +1864,27 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     if not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with your notes, in the form of the review notes")
     notes_text = read_file(args.notes_file, "notes")
-    finding = re.search(r"^\s*[-*]\s*reproduces:", notes_text, re.M)
+    real, problems = review_findings(notes_text)
     weigh = re.search(r"^\s*[-*]\s*to weigh:", notes_text, re.M)
     # The word of the verdict and the notes must say the same thing, because the human reads the word first.
-    if args.verdict == "FAIL" and not finding:
-        raise Refuse("FAIL needs at least one finding in the notes: a line `- reproduces: <what goes wrong>` with its steps. "
-                     "Without one, the verdict is PASS or PASS+NOTES")
-    if args.verdict != "FAIL" and finding:
+    if "nit" in problems:
+        raise Refuse(
+            "a nit is not a finding and not a FAIL. Put it under `Dropped:` or leave it out. "
+            "FAIL is only for a bug or a regression."
+        )
+    if "thin" in problems:
+        raise Refuse(
+            "a finding needs a reproduction (`steps:`) or a concrete failing scenario (`scenario:`), and `expected:`. "
+            "A line that only says `- reproduces:` is not a finding. A nit goes under `Dropped:`."
+        )
+    if args.verdict == "FAIL" and not real:
+        raise Refuse(
+            "FAIL is only for a bug or a regression you can show: `- reproduces:` with `steps:` or `scenario:`, "
+            "and `expected:`. A nit under `Dropped:` is not a FAIL. Without a finding, the verdict is PASS or PASS+NOTES"
+        )
+    if args.verdict != "FAIL" and real:
         raise Refuse(f"the notes hold a finding (`- reproduces:`), so the verdict is FAIL, not {args.verdict}. "
-                     "If it does not count as a finding, write it as a note")
+                     "If it does not count as a finding, write it as a note or under `Dropped:`")
     if args.verdict != "FAIL":
         # The two steps a quick review skips: testing the tests, and naming why the change is safe.
         lacking = [form for form, key in (("- broke: <the line you broke, and which checks failed or still passed>", "broke"),
@@ -2290,6 +2463,11 @@ def build_parser() -> argparse.ArgumentParser:
     reviewer = sub.add_parser("reviewer", help="print the command that starts the reviewer, from the owner's list of reviewers")
     reviewer.add_argument("--vendor", required=True, help="the vendor of the model you run on; an entry of that vendor is used only when no other is installed")
     reviewer.set_defaults(func=cmd_other)
+
+    lesson = sub.add_parser("lesson", help="record a mistake; the second time must name a structural rule")
+    lesson.add_argument("--mistake", required=True, help="what was done, and what should have been done")
+    lesson.add_argument("--enforced-by", default="", help="prose the first time; then architecture, a type, a lint rule that says what to use instead, or a test")
+    lesson.set_defaults(func=cmd_lesson)
 
     ticket = sub.add_parser("ticket", help="check a drafted ticket file the way start will, without claiming it")
     ticket.add_argument("file")

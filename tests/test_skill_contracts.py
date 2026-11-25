@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "26.42.0"
+VERSION = "26.43.0"
 STEPS = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
 # Modes sit above the router: the human types them, and they hand ticket work to jt-work.
 MODES = ["jt", "jt-agents", "jt-me", "jt-ticket"]
@@ -116,6 +116,10 @@ class SkillContracts(unittest.TestCase):
         market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
         self.assertEqual(plugin["version"], VERSION)
         self.assertEqual(market["plugins"][0]["version"], VERSION)
+        cursor = json.loads((ROOT / ".cursor-plugin" / "plugin.json").read_text())
+        cursor_market = json.loads((ROOT / ".cursor-plugin" / "marketplace.json").read_text())
+        self.assertEqual(cursor["version"], VERSION)
+        self.assertEqual(cursor_market["metadata"]["version"], VERSION)
         self.assertIn(f"## {VERSION}", (ROOT / "CHANGELOG.md").read_text())
 
 

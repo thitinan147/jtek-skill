@@ -24,7 +24,7 @@ This skill owns the order of the steps and the script. Each step's judgement liv
 | Second look | `jt-review` in another session | `verdict` |
 | A pull request needs work again | `jt-babysit` | `check`, `finish` |
 | Stop and wait, at any step | `jt-work` | `stop` |
-| When the human corrects you | `jt-learn` | |
+| When the human corrects you | `jt-learn` | `lesson` |
 | Once per repository, before any ticket. A ticket session does not run it: without `.jtek/verify.md` it goes on, as `jt-verify` says | `jt-harness` | |
 
 Any agent you start, for any step, gets that same first line: [worker.md](worker.md) holds the rules it keeps whatever its prompt says.

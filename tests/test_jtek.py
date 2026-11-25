@@ -40,6 +40,12 @@ def with_session(extra=None):
     return env
 
 BODY = "## Goal\nAdd the thing.\n## Done when\n- the command prints `ok`\n"
+CARD = ("## Goal\nAdd the thing.\n## Done check\n- the command prints `ok`\n"
+        "## Proof\n- the command output\n## Context\n- today the command prints nothing\n"
+        "## Constraints\n- other commands stay as they are\n")
+FAIL_NOTES = ("Findings:\n- reproduces: crash on empty input\n"
+              "  steps: run the command with an empty file\n"
+              "  expected: it prints ok, by Done when item 1\n")
 NAMES = {"status": "Status", "waiting": "Waiting", "pr": "PR", "repo": "Repo", "kind": "Kind", "area": "Area",
          "review": "Review", "checks": "Checks"}
 
@@ -103,7 +109,7 @@ class Scratch(unittest.TestCase):
         in_done = False
         for line in ticket.read_text().splitlines():
             if line.startswith("## "):
-                in_done = line[3:].strip().lower() == "done when"
+                in_done = line[3:].strip().lower() in {"done when", "done check"}
                 continue
             if in_done and line.startswith("- ") and line[2:].strip():
                 items.append(line[2:].strip())
@@ -468,7 +474,7 @@ class FinishTests(Scratch):
         self.assertEqual(code, 1)
         self.assertIn("--notes-file", out)
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("- reproduces: crash on empty input\n")
+        notes.write_text(FAIL_NOTES)
         self.assertEqual(self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))[0], 0)
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
@@ -1000,7 +1006,7 @@ class ReviewFindings(FindingsBase):
     def test_a_waived_ticket_does_not_show_an_old_fail(self):
         self.to_needs_review(extra="review: human\n")
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
         self.recommit("fix.txt", "x\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
@@ -1010,7 +1016,7 @@ class ReviewFindings(FindingsBase):
     def test_a_pass_replaces_the_notes_of_an_earlier_fail(self):
         self.to_needs_review()
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
         review = self.repo / ".git" / "jtek" / "work" / "T-1" / "review.md"
         self.assertTrue(review.exists())
@@ -1535,7 +1541,8 @@ class ThirdReview(Scratch):
         self.commit_change("T-1")
         (self.worktree("T-1") / "wip.txt").write_text("the author's\n")
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("- reproduces: wip.txt is not committed\n")
+        notes.write_text("Findings:\n- reproduces: wip.txt is not committed\n"
+                         "  steps: git status in the worktree\n  expected: a clean worktree\n")
         self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 1)
         code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
         self.assertEqual(code, 0, out)
@@ -1908,20 +1915,49 @@ class ThirdLoopRound(Scratch):
             return self.jtek("verdict", "T-1", word, "--by", "review-x", "--notes-file", str(notes))
 
         seen = PASS_NOTES + "- item 1 seen: ran it\n"
-        finding = "Findings:\n- reproduces: crash on empty input\n  steps: run it with nothing\n"
+        finding = ("Findings:\n- reproduces: crash on empty input\n"
+                    "  steps: run it with nothing\n  expected: it prints ok\n")
         code, out = verdict("PASS+NOTES", seen)
         self.assertEqual(code, 1, out)
         self.assertIn("give PASS and keep --notes-file", out)
         self.assertEqual(verdict("PASS", seen)[0], 0)
         code, out = verdict("FAIL", seen)
         self.assertEqual(code, 1, out)
-        self.assertIn("FAIL needs at least one finding", out)
+        self.assertIn("FAIL is only for a bug", out)
         for word in ("PASS", "PASS+NOTES"):
             code, out = verdict(word, finding + "\nNotes:\n- to weigh: something\n")
             self.assertEqual(code, 1, out)
             self.assertIn("so the verdict is FAIL", out)
         self.assertEqual(verdict("FAIL", finding)[0], 0)
         self.assertEqual(verdict("PASS+NOTES", PASS_NOTES + "- to weigh: an empty value prints a tab\n")[0], 0)
+
+    def test_fail_needs_a_reproduced_bug_and_a_nit_is_not_one(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        notes = Path(self.tmp.name) / "notes.md"
+
+        def verdict(word, text):
+            notes.write_text(text)
+            return self.jtek("verdict", "T-1", word, "--by", "review-x", "--notes-file", str(notes))
+
+        # Before: a one-line reproduces was enough to FAIL.
+        code, out = verdict("FAIL", "Findings:\n- reproduces: crash on empty input\n")
+        self.assertEqual(code, 1, out)
+        self.assertIn("steps:", out)
+        nit = ("Findings:\n- reproduces: rename the helper for style\n"
+               "  steps: read the diff\n  expected: a shorter name\n")
+        code, out = verdict("FAIL", nit)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not a FAIL", out)
+        # After: the same nit can sit in the optional list, and a real crash can FAIL.
+        parked = "Findings: none\n\nDropped:\n- reproduces: rename the helper for style\n  steps: read the diff\n  expected: a shorter name\n\n" + PASS_NOTES
+        self.assertEqual(verdict("PASS", parked)[0], 0)
+        self.assertEqual(verdict("FAIL", FAIL_NOTES)[0], 0)
+        scenario = ("Findings:\n- reproduces: an empty file raises FileNotFoundError\n"
+                    "  scenario: the input path does not exist\n  expected: it prints ok, by Done when item 1\n")
+        self.assertEqual(verdict("FAIL", scenario)[0], 0)
 
     def test_a_pass_says_what_was_broken_and_why_the_change_is_safe(self):
         self.ticket("T-1")
@@ -1948,7 +1984,7 @@ class ThirdLoopRound(Scratch):
         self.jtek("check", "T-1")
         self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings:\n- reproduces: crash on empty input\n")
+        notes.write_text(FAIL_NOTES)
         self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 0, out)
@@ -2040,7 +2076,7 @@ class FifthLoopRound(Scratch):
         self.ticket("T-1")
         self.jtek("start", "T-1")
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings:\n- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         for n in range(1, 4):
             self.commit_change("T-1", f"f{n}.txt")
             self.jtek("check", "T-1")
@@ -2103,9 +2139,10 @@ class TicketCheck(Scratch):
         return proc.returncode, proc.stdout + proc.stderr
 
     def test_a_good_draft_passes_and_nothing_is_claimed(self):
-        code, out = self.check("# Add the thing\nkind: feature\n\n" + BODY + "- the command prints `ready`\n")
+        two = CARD.replace("- the command prints `ok`\n", "- the command prints `ok`\n- the command prints `ready`\n", 1)
+        code, out = self.check("# Add the thing\nkind: feature\n\n" + two)
         self.assertEqual(code, 0, out)
-        self.assertIn("ticket: ok, 2 item(s) under Done when", out)
+        self.assertIn("ticket: ok, 2 item(s) under Done check", out)
         self.assertFalse((self.repo / ".git" / "jtek" / "work").exists())
 
     def test_a_bad_draft_gets_the_refusal_start_would_give(self):
@@ -2115,6 +2152,62 @@ class TicketCheck(Scratch):
         code, out = self.check("# x\nrepo: elsewhere\n\n" + BODY)
         self.assertEqual(code, 1)
         self.assertIn("is for `elsewhere`", out)
+
+    def test_a_draft_is_the_five_slot_card(self):
+        # Before: Goal, Done when, and Out of scope was a complete draft.
+        old = "# Add\n\n" + BODY + "## Out of scope\n- other commands stay\n"
+        code, out = self.check(old)
+        self.assertEqual(code, 1, out)
+        self.assertIn("exactly five slots", out)
+        self.assertIn("Done check", out)
+        guessed = CARD + "## Fix\nThe cause is in parser.py\n"
+        code, out = self.check("# Add\n\n" + guessed)
+        self.assertEqual(code, 1, out)
+        self.assertIn("Not a slot: Fix", out)
+        stepped = CARD.replace("- the command prints `ok`\n", "- run jt-verify and then the playbook\n", 1)
+        code, out = self.check("# Add\n\n" + stepped)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not a step the skills already run", out)
+        caused = CARD.replace("Add the thing.\n", "Add the thing.\nThe cause is a missing check.\n", 1)
+        code, out = self.check("# Add\n\n" + caused)
+        self.assertEqual(code, 1, out)
+        self.assertIn("guessed cause", out)
+        # After: the five slots, and no other heading.
+        code, out = self.check("# Add\n\n" + CARD)
+        self.assertEqual(code, 0, out)
+        self.assertIn("under Done check", out)
+
+
+class Lessons(Scratch):
+    """A repeated mistake has to become a structural rule. Prose is only the first record."""
+
+    def lesson(self, mistake, enforced_by=""):
+        args = ["lesson", "--mistake", mistake]
+        if enforced_by:
+            args += ["--enforced-by", enforced_by]
+        return self.jtek(*args)
+
+    def test_a_repeat_cannot_stay_prose(self):
+        code, out = self.lesson("used a float for money", "prose")
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded (prose)", out)
+        # Before: the same lesson could be written down again.
+        code, out = self.lesson("used a float for money", "write a reminder in the docs")
+        self.assertEqual(code, 1, out)
+        self.assertIn("prose lesson is refused", out)
+        code, out = self.lesson("used a float for money", "lint no-float-money")
+        self.assertEqual(code, 1, out)
+        self.assertIn("says how to fix", out)
+        # After: architecture, then a type, then a lint rule that names the replacement, then a test.
+        code, out = self.lesson("used a float for money", "lint no-float-money: use Cents instead")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (lint)", out)
+        code, out = self.lesson("skipped the tenant check", "architecture: unexport the raw query so the wrong call is impossible")
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded (architecture)", out)
+        code, out = self.lesson("skipped the tenant check", "type TenantId on every handler")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (type)", out)
 
 
 class LocalTickets(Scratch):
@@ -2437,7 +2530,7 @@ class OutsideReview(Scratch):
     def test_the_human_setting_todo_resets_the_fail_count_and_one_commit_counts_once(self):
         tree = self.ready()
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings:\n- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
         self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
         meta = json.loads((self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json").read_text())
@@ -2505,7 +2598,7 @@ class NextTests(Scratch):
         self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(self.next()["T-1"][0], "review")
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("- reproduces: crash on empty input\n")
+        notes.write_text(FAIL_NOTES)
         self.jtek("verdict", "T-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))
         self.assertEqual(self.next()["T-1"], ["work", "the verdict is FAIL; the findings are in the review notes"])
         self.jtek("start", "T-1")
@@ -2552,7 +2645,7 @@ class NextTests(Scratch):
 class FileBoard(Scratch):
     """A repository whose jtek.json names no board: the tickets are files beside it, and the file is the page."""
 
-    DRAFT = "# Tidy the thing\nkind: feature\n\n" + BODY + "## Out of scope\n- nothing else\n"
+    DRAFT = "# Tidy the thing\nkind: feature\n\n" + CARD
 
     def raw(self, *args):
         """Run jtek.py as typed: no page link, no board file."""
@@ -2579,7 +2672,7 @@ class FileBoard(Scratch):
         path.write_text("\n".join(lines) + "\n")
 
     def test_save_gives_the_next_id_and_backlog_whatever_the_draft_says(self):
-        code, out = self.save("# One\nid: X-9\nstatus: Todo\nkind: bug\n\n" + BODY)
+        code, out = self.save("# One\nid: X-9\nstatus: Todo\nkind: bug\n\n" + CARD)
         self.assertEqual(code, 0, out)
         self.assertIn(f"saved: {self.folder() / 'T-1.md'}", out)
         text = (self.folder() / "T-1.md").read_text()
@@ -2641,7 +2734,7 @@ class FileBoard(Scratch):
 
     def test_after_counts_an_id_only_while_its_file_is_not_done(self):
         self.save()
-        self.save("# Two\nkind: feature\nafter: T-1\n\n" + BODY)
+        self.save("# Two\nkind: feature\nafter: T-1\n\n" + CARD)
         self.write("T-2", status="Todo")
         code, out = self.raw("start", "T-2")
         self.assertEqual(code, 1)
@@ -2952,7 +3045,7 @@ class PilotFixes(Scratch):
         self.commit_change("T-1")
         self.jtek("check", "T-1")
         notes = Path(self.tmp.name) / "fail.md"
-        notes.write_text("Findings:\n- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         for word, extra in (("PASS", []), ("FAIL", ["--notes-file", str(notes)]), ("PASS+NOTES", [])):
             code, out = self.jtek("verdict", "T-1", word, "--by", "writer", *extra, env={"JTEK_SESSION": "writer"})
             self.assertEqual(code, 1, out)
@@ -2984,7 +3077,8 @@ class PilotFixes(Scratch):
         self.assertIn("cannot be checked", out)
         self.assertFalse(self.worktree("T-1").exists())
         path = Path(self.tmp.name) / "draft.md"
-        path.write_text("# Speed\n\n## Goal\nBound it.\n## Done when\n- the page answers in under 200 ms\n")
+        path.write_text("# Speed\n\n## Goal\nBound it.\n## Done check\n- the page answers in under 200 ms\n"
+                        "## Proof\n- the timing line\n## Context\n- none\n## Constraints\n- other pages stay as they are\n")
         proc = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(path)], cwd=self.repo,
                               capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -2997,7 +3091,7 @@ class PilotFixes(Scratch):
                               cwd=self.repo, capture_output=True, text=True, env=with_session())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         notes = Path(self.tmp.name) / "notes.md"
-        notes.write_text("Findings:\n- reproduces: crash\n")
+        notes.write_text(FAIL_NOTES)
         for n in range(1, 4):
             self.commit_change("LOCAL-1", f"f{n}.txt")
             self.assertEqual(self.jtek("check", "LOCAL-1")[0], 0)
@@ -3299,14 +3393,15 @@ class RoundTwo(Scratch):
 
     def test_save_keeps_header_fields_across_a_blank_line(self):
         item = "- the command prints `ok`\n"
-        draft = "# Count\n\nkind: feature\narea: cli\nrepo: app\n\n## Goal\nAdd.\n## Done when\n" + item
+        draft = "# Count\n\nkind: feature\narea: cli\nrepo: app\n\n" + CARD.replace(
+            "- the command prints `ok`\n", item, 1)
         path = Path(self.tmp.name) / "draft.md"
         path.write_text(draft)
         code, out = self.jtek("ticket", str(path), "--save")
         self.assertEqual(code, 0, out)
         saved = self.repo / ".jtek" / "tickets" / "T-1.md"
         self.assertIn("status: Backlog\nkind: feature\narea: cli\nrepo: app\n", saved.read_text())
-        path.write_text("# Count\nkind: feature\n\nrepo: other-repo\n\n## Goal\nAdd.\n## Done when\n" + item)
+        path.write_text("# Count\nkind: feature\n\nrepo: other-repo\n\n" + CARD)
         code, out = self.jtek("ticket", str(path), "--save")
         self.assertEqual(code, 0, out)
         text = (self.repo / ".jtek" / "tickets" / "T-2.md").read_text()
@@ -3321,9 +3416,8 @@ class RoundTwo(Scratch):
         self.assertIn("other-repo", out)
 
     def test_commit_history_and_remote_refs_take_an_id(self):
-        item = "- the command prints `ok`\n"
         draft = Path(self.tmp.name) / "draft.md"
-        draft.write_text("# Count\n\n## Goal\nAdd.\n## Done when\n" + item)
+        draft.write_text("# Count\n\n" + CARD)
         code, out = self.jtek("ticket", str(draft), "--save")
         self.assertIn("T-1.md", out)
         self.assertEqual(code, 0, out)
@@ -3642,9 +3736,8 @@ class RoundThree(Scratch):
         self.assertNotIn("outcome:", out)
 
     def test_a_tag_reserves_a_ticket_id(self):
-        item = "- the command prints `ok`\n"
         draft = Path(self.tmp.name) / "draft.md"
-        draft.write_text("# Count\n\n## Goal\nAdd.\n## Done when\n" + item)
+        draft.write_text("# Count\n\n" + CARD)
         code, out = self.jtek("ticket", str(draft), "--save")
         self.assertEqual(code, 0, out)
         self.assertIn("T-1.md", out)

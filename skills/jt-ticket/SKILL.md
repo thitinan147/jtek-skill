@@ -27,15 +27,17 @@ Ask at most four questions at a time, the one that changes the most first. Each 
 
 ## 4. Draft
 
-Write each ticket in the ticket format of `jt-work`'s `references/ticket.md`: a title, `kind:`, `repo:`, `area:`, and the three sections.
+Write each ticket in the five-slot card of `jt-work`'s `references/ticket-template.md`: a title, `kind:`, `repo:`, `area:`, and exactly these sections. No other heading. No guessed cause or fix, and no step the skills already run.
 
-- **Goal:** who wants what, and why. For a bug: the steps, the wrong result, and the right one.
-- **Done when:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", "secure", or "quicker" unless the item has a measurable comparison (under 200 ms) or the quality word itself sits inside a backtick or a quote (`the label reads `faster``). A backtick elsewhere does not help: `feels faster `x`` is refused, and so is a line that only says the command prints something. A digit anywhere, including `v2`, a Thai digit, or a fullwidth digit, does not make a quality checkable. Format characters (zero-width, word joiner, direction marks, soft hyphen) are stripped before the check. Ordinary Thai such as ไม่ง่าย is allowed. รู้สึกเร็วขึ้น and ใช้งานดีขึ้น are not. ความเร็ว is the noun for speed and is refused on its own; the short word เร็ว does not also match inside it. `jtek.py ticket` refuses the quality. Fix that before `start`. Put in the edge cases the owner decided.
-- **Out of scope:** behaviour that must stay exactly as it is now, named as behaviour, with the code's facts you found.
+- **Goal:** who wants what, and why. For a bug: the steps, the wrong result, and the right one. Not a theory of which line is wrong.
+- **Done check:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", "secure", or "quicker" unless the item has a measurable comparison (under 200 ms) or the quality word itself sits inside a backtick or a quote (`the label reads `faster``). A backtick elsewhere does not help: `feels faster `x`` is refused, and so is a line that only says the command prints something. A digit anywhere, including `v2`, a Thai digit, or a fullwidth digit, does not make a quality checkable. Format characters (zero-width, word joiner, direction marks, soft hyphen) are stripped before the check. Ordinary Thai such as ไม่ง่าย is allowed. รู้สึกเร็วขึ้น and ใช้งานดีขึ้น are not. ความเร็ว is the noun for speed and is refused on its own; the short word เร็ว does not also match inside it. `jtek.py ticket` refuses the quality. Fix that before `start`. Put in the edge cases the owner decided.
+- **Proof:** what to show when it is done (command output, a stored value, a before and after number).
+- **Context:** what is already known (a symptom, a log, a file and line). Write `none` when there is nothing.
+- **Constraints:** behaviour that must stay exactly as it is now, named as behaviour, with the code's facts you found.
 
 ## 5. Size and order
 
-One ticket is one pull request a session can finish, and a reviewer can break item by item: as a rule, at most six `Done when` items. When there are more, when the items fall into groups that could ship apart, or when the work crosses repositories, split it:
+One ticket is one pull request a session can finish, and a reviewer can break item by item: as a rule, at most six `Done check` items. When there are more, when the items fall into groups that could ship apart, or when the work crosses repositories, split it:
 
 - Each ticket ships something a user or another program can see.
 - A ticket that needs another one done first names it under `after:`. The provider of an interface comes before its consumer, as `jt-work`'s `references/two-repos.md` says.
@@ -52,7 +54,7 @@ Show every draft in full, numbered, with what you found in the code under each. 
 Create each approved ticket on the board with the board's tool, as `jt-work`'s `references/notion.md` or `references/flo.md` says where each field lives:
 
 - **Status Backlog.** In FLO, the item stays off the board; in Notion, Status is `Backlog`. Never Todo.
-- The title, the kind, the repo and area, and the three sections as the body.
+- The title, the kind, the repo and area, and the five slots as the body.
 - Each `after:` as the board's own link: After in Notion, `blocked by` in FLO.
 
 **The repository has no board** (`board` is empty in `jtek.json`): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog, and prints where the file is. A blank line in the draft does not drop `kind`, `area`, or `repo`. An id already used by a commit message or by `refs/remotes/*/jtek/<id>` is not given out again. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it.

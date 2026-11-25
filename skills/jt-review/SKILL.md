@@ -31,7 +31,7 @@ You are the reviewer. You did not write this change. If this session wrote any o
 
 ## 3. Count only what reproduces
 
-A finding counts when you can show it, and it breaks a `Done when` item, changes something under `Out of scope`, is a defect the change introduced, or is a break from step 6 that no check noticed in something `Done when` names. Write each one as: the exact command or steps, what you expected, and the output you got. Run it against the real code in the worktree, through `jtek.py run <id>` so the run is recorded, and cite it in the finding. Leave out anything you did not run. You may read the author's run files in `runs/` beside the ticket file to see what a `seen:` line rests on; a line that cites no run, or a run that does not show what the line says, is a note.
+A finding counts only when you can reproduce it or name a concrete failing scenario. Write `- reproduces:`, then `steps:` or `scenario:`, then `expected:`, and the output you got. It has to be a bug or a regression: a `Done when` item that is false, behaviour under `Out of scope` that changed, a defect this change introduced, or a break from step 6 that no check noticed in something `Done when` names. Run it against the real code in the worktree, through `jtek.py run <id>` so the run is recorded, and cite it in the finding. Leave out anything you did not run. A nit, a rename, or a style note goes under `Dropped:` or is left out. `verdict` refuses a FAIL that has no such finding, and it refuses a finding with no steps and no expected result. You may read the author's run files in `runs/` beside the ticket file to see what a `seen:` line rests on; a line that cites no run, or a run that does not show what the line says, is a note.
 
 A behaviour change you can show but that the ticket may have intended is a note. So is an item that holds for the ticket's own examples and fails only for inputs or environments the ticket never mentions, when the base branch fails the same way. When the base handled that case and the change handles it worse, it is a defect the change introduced: a finding, even though the ticket never mentions the case. To see what the base does, run it in the main checkout when that is on the base branch, and change nothing there. A claim about the base comes from such a run; if you only read it in the diff, the note says `read from the diff:`. A guess about what might go wrong is a note. Do not report style preferences.
 
@@ -43,11 +43,11 @@ Write the findings first, then the notes, as a short Markdown list in a file out
 
 - `jtek.py verdict <id> PASS --by <name> --commit <commit> --notes-file <file>`: every `Done when` item is true, and there is no finding. The notes of a pass hold at least one `broke:` line from step 6 and the `safe because:` line from step 7; `verdict` refuses a pass without them. The name says who reviewed, for example `review-<your model>`. Any name works when you have none.
 - `jtek.py verdict <id> PASS+NOTES --by <name> --commit <commit> --notes-file <file>`: the same, with at least one `to weigh:` line, for something the human should decide before merging. Lines that only say what you saw, broke, or did not check do not make it `PASS+NOTES`.
-- `jtek.py verdict <id> FAIL --by <name> --commit <commit> --notes-file <file>`: an item is not true, or there is a finding.
+- `jtek.py verdict <id> FAIL --by <name> --commit <commit> --notes-file <file>`: a bug or a regression you reproduced. A nit is not a FAIL.
 
 `<commit>` is the one `show` printed when you began. If the author committed since, `verdict` refuses: review the new commit.
 
-If you could not run the change, give `FAIL` and say why. Passing checks and a clean-looking diff are not a verdict.
+If you could not run the change, stop and say why. That is not a FAIL. Passing checks and a clean-looking diff are not a verdict.
 
 ## 5. Stop
 

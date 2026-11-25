@@ -18,9 +18,12 @@ Notes:
 - did not reproduce: <what you suspected, what you tried, what happened>
 - not checked: <what you did not look at>
 - safe because: <the one fact the change is safe because of> (run <n> | read: <file>:<line> | unproven)
+
+Dropped:
+- nit: <a rename, a style note, or anything that is not a bug; left out of the verdict>
 ```
 
-Use the lines that apply, and leave out the rest.
+Use the lines that apply, and leave out the rest. `Dropped` is optional. Nothing under it changes the verdict.
 
 With nothing to report, the first line is `Findings: none`.
 
@@ -42,8 +45,8 @@ Notes:
 
 ## Rules
 
-- **A finding has steps that fail when anyone runs them.** A suspicion without steps goes under Notes as `did not reproduce`, or is left out.
-- **Tie each finding to a `Done when` item, an `Out of scope` line, or something that worked before.** Taste is not a finding.
+- **A finding has `steps:` or `scenario:`, and `expected:`.** A suspicion without them goes under Notes as `did not reproduce`, or is left out. The script refuses a `- reproduces:` line that has neither.
+- **Tie each finding to a bug or a regression:** a `Done when` item, an `Out of scope` line, or something that worked before. A nit goes under `Dropped` or is left out. Taste is not a FAIL.
 - **Say what you did not check.** The human decides whether that matters.
-- **`FAIL` needs at least one finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither. Both passes need at least one `broke:` line and a `safe because:` line, and the script refuses a pass without them.
+- **`FAIL` needs at least one such finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither. Both passes need at least one `broke:` line and a `safe because:` line, and the script refuses a pass without them. The script also refuses a FAIL that is only a nit.
 - **Do not paste the diff.** Name the file and the line.
