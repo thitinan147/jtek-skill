@@ -207,7 +207,7 @@ def mac_of(payload: bytes, key: bytes | None = None) -> str:
 def origin_url(cwd: Path | None = None) -> str:
     """The configured origin URL, or "" when this repository has no origin.
 
-    This is `remote.origin.url`, not `git remote get-url`. get-url expands `url.*.insteadOf`,
+    This is remote.origin.url, not git remote get-url. get-url expands url.*.insteadOf,
     so a rewrite would look like a different remote instead of a rewrite of this one."""
     if "origin" not in git("remote", cwd=cwd, check=False).split():
         return ""
@@ -243,7 +243,7 @@ def origin_intact(record: dict) -> bool:
 
 
 def remember_origin(cwd: Path | None = None) -> None:
-    """Seal the origin URL the first time `init` or `start` can see one.
+    """Seal the origin URL the first time init or start can see one.
 
     An empty URL means there was no origin yet. A later init or start that sees one seals that URL, once.
     A sealed non-empty URL is never replaced here. A hand edit that does not recompute the seal is ignored.
@@ -261,7 +261,7 @@ def remember_origin(cwd: Path | None = None) -> None:
 
 
 def insteadof_applies(url: str, cwd: Path | None = None) -> bool:
-    """True when a url.*.insteadOf value is a prefix of `url`.
+    """True when a url.*.insteadOf value is a prefix of the origin URL.
 
     git then rewrites ls-remote and fetch. The rule is not printed: its key can hold a credential."""
     if not url:
@@ -419,11 +419,8 @@ def is_behaviour_check(name: str) -> bool:
 
 def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None,
         replace: bool = True):
-    """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`).
-
-    `replace=False` reads the stored objects. A `git replace` ref must not stand in for a fetched tip.
-    `git --no-replace-objects` is git's switch for that, the same as GIT_NO_REPLACE_OBJECTS=1.
-    The flag is passed on the command. The process environment is not copied."""
+    """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`)."""
+    # replace=False reads the stored objects. git --no-replace-objects is the switch for GIT_NO_REPLACE_OBJECTS.
     argv = ["git", *args] if replace else ["git", "--no-replace-objects", *args]
     try:
         proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
@@ -818,9 +815,9 @@ def commit_span(repo: Path, older: str, head: str, replace: bool = True) -> tupl
 
 
 def remote_tip(repo: Path, base: str) -> str:
-    """The sha `ls-remote` reports for `refs/heads/<base>`, or "" when the remote cannot be read.
+    """The sha ls-remote reports for refs/heads/<base>, or "" when the remote cannot be read.
 
-    `refs/remotes/origin/<base>` is a local ref. Moving it does not change this sha."""
+    refs/remotes/origin/<base> is a local ref. Moving it does not change this sha."""
     try:
         text = git("ls-remote", "origin", f"refs/heads/{base}", cwd=repo, check=False, timeout=60, replace=False)
     except Refuse:
@@ -837,7 +834,7 @@ def landed_span(repo: Path, base: str, head: str) -> str:
     """The commits that landed on the current base tip, or "" when that range cannot be named.
 
     A fast-forward of several commits is not reviewed as only the last commit. With the reflog gone,
-    the sha the remote reports for the base is the fallback. A local `refs/remotes/origin/<base>` is not.
+    the sha the remote reports for the base is the fallback. A local refs/remotes/origin/<base> is not.
     If that sha cannot be read either, the range is unknown. The walk ignores replace refs."""
     ref = base_ref(base)
     older: list[str] = []
@@ -2189,10 +2186,8 @@ def remote_default(cwd: Path | None = None) -> tuple[str, str]:
 
 
 def remote_forge_off(cwd: Path | None = None) -> bool:
-    """Whether the remote tip has forge set to false.
-
-    The fetched object is read with replace refs off. A sha match is not the remote's bytes while
-    `git replace` is allowed to answer `git show`."""
+    """Whether the remote tip has forge set to false."""
+    # Read the fetched object with replace refs off, so a git replace ref cannot stand in for that tip.
     branch, sha = remote_default(cwd)
     if not sha:
         return False
