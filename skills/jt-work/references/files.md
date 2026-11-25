@@ -12,7 +12,7 @@ Nothing is set up. The folder appears with the first ticket. Commit it on the ba
 
 ## Where each part of a ticket lives
 
-The file is in the ticket format of [ticket.md](ticket.md): the title, the header lines right under it, and the three sections.
+The file is in the ticket format of [ticket.md](ticket.md): the title, the header lines right under it, and the five card slots (`Goal`, `Done check`, `Proof`, `Context`, `Constraints`).
 
 | Ticket | In the file | Who writes it |
 |---|---|---|
@@ -21,7 +21,7 @@ The file is in the ticket format of [ticket.md](ticket.md): the title, the heade
 | `kind:`, `repo:`, `area:`, `after:`, `review: human`, `checks:` | header lines | human |
 | `waiting:` | a header line: `input` or `approval` | the session sets it, and clears it at the next start |
 | `pr:` | a header line with the pull request's link | the session |
-| the body | `## Goal`, `## Done when`, `## Out of scope` | human |
+| the body | `## Goal`, `## Done check`, `## Proof`, `## Context`, `## Constraints` | human |
 | comments | `## Log`, the last section of the file | the session, and the human for an answer |
 
 `after:` lists ticket ids. The script reads each one's file and counts an id only while that file is not Done.

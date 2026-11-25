@@ -1,5 +1,15 @@
 # Changelog
 
+## 26.44.0 - a draft is a card, a repeat is a rule, a FAIL is a bug
+
+26.43.0 is the forge follow-up that was already open, so this release takes the next number.
+
+Three checks moved out of the skill text and into the script.
+
+- `jtek.py ticket` accepts a draft only when it has exactly five slots: Goal, Done check, Proof, Context, and Constraints. Any other heading is refused, including a guessed cause or fix and the old Done when / Out of scope pair. A Done check item that names a skill step is refused, and so is a line that states the cause or the fix. `start` still reads a page whose outcomes are under Done when, and it also reads Done check, so a card that was saved can be worked.
+- `jtek.py lesson` records a mistake. The first record may be prose. The same mistake again is refused until `--enforced-by` is architecture (make the wrong shape impossible), a type, a lint rule whose text says what to use instead, or a test. A lint rule that does not say the replacement is refused the first time too. The rows live in the state directory, in `lessons.json`.
+- `verdict` counts a finding only when it has `steps:` or `scenario:` and `expected:`. A nit is refused, including as a FAIL. The same text under `Dropped:` (or `Nits:`) is ignored. FAIL with no such finding is refused.
+
 ## 26.42.0 - the remote, not a local ref, says whether there is a forge
 
 A re-review of 26.41.0 moved `refs/remotes/origin/HEAD` onto an unpushed commit with `"forge": false`, and `finish --no-pr` shipped. The other gates from that review held. This reads the remote.

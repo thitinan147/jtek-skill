@@ -24,8 +24,8 @@ A short table of what this project has learned the hard way. Each row names what
 ## Rules for the table
 
 - **Add a row only for a mistake that happened twice.** Once is an accident.
-- **Prefer the strongest enforcer that fits:** a type first, then a lint rule, then a test or a check, and prose last.
-- **`prose` rows say what would replace them.** They are the next thing to turn into a check.
+- **Prefer the strongest enforcer that fits:** architecture first (make the wrong shape impossible), then a type, then a lint rule whose error says what to use instead, then a test or a check. A written reminder is not a fix for a mistake that already happened twice.
+- **`prose` is only the first record.** `jtek.py lesson` refuses a second prose record of the same mistake. The row says what would replace it, and that replacement is the next change.
 - **Drop a row when the mistake cannot happen any more,** for example when the type makes it impossible.
 - **An exception needs a reason, an end date, and the human's approval.** Remove it when the date passes.
 - **Keep it short.** Past about twenty rows, nobody reads it, and the rules belong in code.

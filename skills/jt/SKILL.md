@@ -26,7 +26,7 @@ When you think the request is wrong, or a part of it does not earn its place, sa
 
 Work the user asked for in the chat, with no ticket, goes through the same pipeline under a local id.
 
-1. Write a ticket file in your session's temporary folder, in the format of `jt-work`'s `references/ticket.md`: a title, `kind:`, `## Goal`, `## Done when` with one observable outcome per item, and `## Out of scope`. Leave out `id:` and `status:`.
+1. Write a ticket file in your session's temporary folder, in the five-slot card of `jt-work`'s `references/ticket-template.md`: a title, `kind:`, `## Goal`, `## Done check` with one observable outcome per item, `## Proof`, `## Context`, and `## Constraints`. No other heading, no guessed cause, and no step the skills already run. Leave out `id:` and `status:`.
 2. Show the user the `Done when` items before you start, in one short list. You wrote them, so they are the bar the work is held to, and the user should see it. Go on unless the user changes them.
 3. Run `jtek.py start --local --from-file <file>` from the repository. The script gives the ticket an id such as `LOCAL-3`, and the result says the session wrote the ticket.
    - **`start` refuses because `jtek.json` is not committed on the base:** run `jtek.py init`, give each check a command the repository really has (its package scripts, Makefile, or CI), delete the checks it has none for, and leave `board` empty when there is no board. Show the user the file and stop: the human merges it. `jt-work`'s `references/setup.md` has the details.

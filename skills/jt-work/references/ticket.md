@@ -14,14 +14,22 @@ checks: lint, test
 after: T-10
 
 ## Goal
-What should be true when this is done, and why.
+What should be true when this is done, and why. No guessed cause, and no fix.
 
-## Done when
-- One observable outcome per line.
+## Done check
+- One observable outcome per line. Not a step the skills already run.
 
-## Out of scope
-- What this ticket must not change.
+## Proof
+- The command output, a stored value, or a before and after number.
+
+## Context
+- What is already known, or `none`.
+
+## Constraints
+- Behaviour that must stay as it is now.
 ```
+
+A page that was written with `## Done when` and `## Out of scope` still starts. A draft checked with `jtek.py ticket` does not: it has to be the five slots above, and no other heading. The blank form is [ticket-template.md](ticket-template.md).
 
 - **`id`:** the page's Ticket ID. It names the branch `jtek/<id>` and the worktree.
 - **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
@@ -30,8 +38,8 @@ What should be true when this is done, and why.
 - **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
 - **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket. The waiver is ignored when the change touches a file on the `attention:` line.
-- **`## Goal` and `## Done when`:** required. `start` refuses a ticket without them.
-- **`## Out of scope`:** behaviour that must stay exactly as it is now. Write the behaviour, not only the topic: "titles with non-ASCII letters give the same slug as today" is clearer than "non-ASCII letters".
+- **`## Goal` and the outcomes:** required. The outcomes are `## Done check` on a draft, and `start` also reads `## Done when` on a page already written that way. `start` refuses a ticket with neither.
+- **`## Proof`, `## Context`, and `## Constraints`:** required on a draft. `jtek.py ticket` refuses a missing slot, any other heading, a skill step under Done check, and a line that states the cause or the fix. Constraints name behaviour, not only a topic: "titles with non-ASCII letters give the same slug as today" is clearer than "non-ASCII letters".
 
 A blank form to copy, a filled example, and what makes a ticket workable: [ticket-template.md](ticket-template.md).
 

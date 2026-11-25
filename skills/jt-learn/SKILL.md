@@ -22,15 +22,16 @@ A mistake that happened once is fixed in the ticket and noted. It becomes a mech
 
 ## 3. Propose the strongest fix that fits
 
-Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Try these in order, and propose the first one that works:
+Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. A mistake that has happened twice is not another written reminder. Try these in order, and propose the first one that works:
 
-1. **Make it impossible:** change the type or the function's shape, or hide the internal so the wrong import fails.
-2. **A lint rule:** when the mistake has a pattern a tool can match. Its error message names what to use instead.
-3. **Fix the old examples:** when the code taught it. List the files that still have the wrong pattern, and delete the old way so nothing is left to copy.
-4. **A new check or test:** when the mistake only shows at run time. Add it to the project, and to `jtek.json` if it is a new command.
-5. **A written rule (P2):** only when none of the above can work, because nothing fails when an agent skips it. Put it in the project's agent instructions, with the condition for when it applies.
+1. **Architecture:** change the shape so the wrong call cannot be written. Hide the internal, or split the module so the bad import does not exist.
+2. **A type:** change the type or the function's shape so the wrong value does not compile.
+3. **A lint rule:** when the mistake has a pattern a tool can match. Its error message names what to use instead.
+4. **A test or a check:** when the mistake only shows at run time. Add it to the project, and to `jtek.json` if it is a new command.
 
-If a structural fix exists, use only that. Do not add a written rule beside it.
+Fix the old examples in the same change when the code taught the mistake: list the files that still have the wrong pattern, and delete the old way so nothing is left to copy.
+
+Record it with `jtek.py lesson --mistake "<what was done, and what should have been done>" --enforced-by "<the rule>"`. The first record may say `prose`. The same mistake again is refused until `--enforced-by` is architecture, a type, a lint rule whose text says what to use instead, or a test. Do not write a prose row for that second time. If a structural fix exists, use only that. Do not add a written rule beside it.
 
 A new lint rule, check, or test must fail on the real past mistake. Run it against that commit or that code and see it fail before you propose it. The commit is the one where the mistake reached the base branch. Build the trial in a copy outside the repository, such as one made with `git archive`, never in the checkout.
 
@@ -44,6 +45,6 @@ A new lint rule, check, or test must fail on the real past mistake. Run it again
 
 The row for `.jtek/rules.md` (the rule, what enforces it, and the date) goes into the new ticket's `Done when`, so it lands with its enforcer. Do not add it in this change. Propose the file as text in your report when it is missing. Its form is in [references/rules-template.md](references/rules-template.md).
 
-- A rule with no enforcer is marked `prose`, and is the first to replace.
+- A rule with no enforcer is marked `prose` only the first time that mistake is recorded. `jtek.py lesson` refuses prose for a repeat.
 - Drop a rule once its mistake cannot happen any more.
 - An exception to a rule needs a reason, an end date, and the human's approval.
