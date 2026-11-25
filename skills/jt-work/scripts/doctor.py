@@ -70,6 +70,34 @@ def legacy_names(j) -> list[str]:
     return found
 
 
+def legacy_conflicts(j) -> list[tuple[Path, Path]]:
+    """Legacy repo files that already exist on the machine with different contents."""
+    try:
+        root = j.main_root()
+        home = j.repo_home()
+    except j.Refuse:
+        return []
+    candidates: list[tuple[Path, Path]] = [(root / j.CONFIG, home / j.CONFIG)]
+    dot = root / ".jtek"
+    if dot.is_dir() and not dot.is_symlink():
+        for name in ("verify.md", "features", "rules.md", "tickets"):
+            candidates.append((dot / name, home / name))
+    conflicts: list[tuple[Path, Path]] = []
+    for src, dest in candidates:
+        if not src.exists() or src.is_symlink():
+            continue
+        if not dest.exists() and not dest.is_symlink():
+            continue
+        if src.is_file() and dest.is_file() and not dest.is_symlink():
+            try:
+                if src.read_bytes() == dest.read_bytes():
+                    continue
+            except OSError:
+                pass
+        conflicts.append((src, dest))
+    return conflicts
+
+
 def run(j, args=None) -> None:
     """`j` is the jtek module, for its git helper and its config reader."""
     rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
@@ -154,8 +182,15 @@ def run(j, args=None) -> None:
                      "run the jt-harness skill once. It writes the guide on this machine. "
                      "When that file is missing, jt-verify reads the README and the code and says no guide was found"))
     if legacy:
-        rows.append(("missing", "old files in the repository: " + ", ".join(legacy),
-                     "run `/jt-init` or `jtek.py migrate`, then commit the removal"))
+        conflicts = legacy_conflicts(j)
+        if conflicts:
+            pairs = "; ".join(f"{src} differs from {dest}" for src, dest in conflicts)
+            todo = (f"{pairs}; `jtek.py migrate` will not overwrite the machine file. "
+                    "Compare them, then either move the machine file aside and run `/jt-init` or `jtek.py migrate`, "
+                    "or delete the repo copy yourself and commit the removal")
+        else:
+            todo = "run `/jt-init` or `jtek.py migrate`, then commit the removal"
+        rows.append(("missing", "old files in the repository: " + ", ".join(legacy), todo))
     rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
                  "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())

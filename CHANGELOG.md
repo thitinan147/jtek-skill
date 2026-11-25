@@ -1,5 +1,15 @@
 # Changelog
 
+## 27.2.0 - honest repo ids, full status rows, and unblocked migration
+
+Six bugs in repository identity, relative origins, `status`, and `migrate` are fixed.
+
+- **`repo_identity` keeps non-default ports.** A `url.*.insteadOf` rule that rewrites the origin to the same host and path on a different port now counts as a different repository, so `finish --no-pr` is refused. A rewrite that adds a credential or uses a default port (443, 80, 22, 9418) still counts as the same repository.
+- **`repo_identity` keeps `.git` on local and `file://` paths.** Only URLs with a host strip a trailing `.git`. `file:///…/origin.git` and a different directory `…/origin` are no longer treated as the same repository, so `finish --no-pr` is refused.
+- **Relative `origin` paths resolve against the checkout.** `repo_storage_id` resolves relative origins such as `../relbase` or `./widget.git` against the main worktree before checking for `..`. Two unrelated repositories that both use `./widget.git` now get distinct repository ids bound to their own checkout, and `../relbase` no longer fails every command. The `..` check still refuses any unresolved `..` that would step out of `$HOME/.jtek/repos`.
+- **`jtek.py status` shows every row that `jtek.py next` shows.** Tickets waiting for human input, finished results or questions that still need to be written to the board, damaged claims (`stuck`) when another ticket is `work`, and other ungrouped rows now appear under `ถัดไป` while keeping the highest-priority next action first. `status` stays read-only.
+- **`jtek.py migrate` and `doctor` no longer deadlock on an existing machine config.** When a legacy repository file such as `jtek.json` has the exact same bytes as the machine copy, `migrate` removes the repository copy without overwriting the machine file and moves the remaining `.jtek/` knowledge files. When the two copies differ, `migrate` still refuses without overwriting and names both paths and how to resolve them, and `doctor` explains the conflict instead of only pointing at `migrate`.
+
 ## 27.1.0 - one command to start, and one place for the owner files
 
 `/jt`, `/jt-review`, and `/jt-status` are the everyday commands. Setup is `/jt-init`, or nothing when the defaults are enough (an empty board, tickets as files, no checks until you add them).

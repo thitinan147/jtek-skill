@@ -62,34 +62,48 @@ def migrate(j, args) -> None:
 
     Also moves ~/.config/jtek/agents.json and me.md to ~/.jtek (or JTEK_HOME). The repository is left with
     those paths missing. The human commits the removal. This command does not commit, and it does not overwrite.
+    A repo copy whose bytes match the machine copy is removed without overwriting the machine copy.
     """
     user_plan = user_file_moves(j)
     root = Path(j.git("rev-parse", "--show-toplevel"))
     home = j.repo_home()
-    home.mkdir(parents=True, exist_ok=True)
-    moved: list[str] = []
-    repo_moved = False
-
-    def take(src: Path, dest: Path) -> None:
-        nonlocal repo_moved
-        if not src.exists() and not src.is_symlink():
-            return
-        if src.is_symlink():
-            raise j.Refuse(f"{src} is a symlink; not moving it")
-        if dest.exists():
-            raise j.Refuse(f"{dest} already exists; not overwriting it. Move that file aside and run migrate again")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dest))
-        moved.append(f"{src.relative_to(root)} -> {dest}")
-        repo_moved = True
-
-    take(root / j.CONFIG, home / j.CONFIG)
     dot = root / ".jtek"
     if dot.is_symlink():
         raise j.Refuse(f"{dot} is a symlink; not moving it")
+    candidates: list[tuple[Path, Path]] = [(root / j.CONFIG, home / j.CONFIG)]
     if dot.is_dir():
         for name in ("verify.md", "features", "rules.md", "tickets"):
-            take(dot / name, home / name)
+            candidates.append((dot / name, home / name))
+    repo_plan: list[tuple[str, Path, Path]] = []
+    for src, dest in candidates:
+        if not src.exists() and not src.is_symlink():
+            continue
+        if src.is_symlink():
+            raise j.Refuse(f"{src} is a symlink; not moving it")
+        if dest.exists() or dest.is_symlink():
+            if src.is_file() and dest.is_file() and not dest.is_symlink() and src.read_bytes() == dest.read_bytes():
+                repo_plan.append(("drop", src, dest))
+                continue
+            raise j.Refuse(
+                f"{src} and {dest} both exist and differ; not overwriting {dest}. "
+                f"Compare them, then either move {dest} aside and run migrate again, "
+                f"or remove {src} yourself if {dest} is the copy to keep"
+            )
+        repo_plan.append(("move", src, dest))
+
+    home.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    repo_moved = False
+    for action, src, dest in repo_plan:
+        if action == "drop":
+            src.unlink()
+            moved.append(f"removed duplicate {src.relative_to(root)} (already at {dest})")
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dest))
+            moved.append(f"{src.relative_to(root)} -> {dest}")
+        repo_moved = True
+    if dot.is_dir():
         try:
             dot.rmdir()
         except OSError:
@@ -407,15 +421,16 @@ def session_label(meta: dict) -> str:
 
 
 def status(j, args) -> None:
-    """Read-only table: in progress, waiting for review, waiting for merge, and the one next action.
+    """Read-only table: in progress, waiting for review, waiting for merge, and the next actions.
 
-    The words are Thai. Nothing is written: no claim, no release, no board change.
+    The words are Thai. Every row that `next` prints appears either in a group or under `ถัดไป`.
+    Nothing is written: no claim, no release, no board change.
     """
     repo = this_repo(j)
     doing: list[str] = []
     review: list[str] = []
     merge: list[str] = []
-    ranked: list[tuple[int, str, str, str]] = []
+    ranked: list[tuple[int, str, str, str, bool]] = []
     for row in load_board(j, args.board_file, include_claims=True):
         action, reason = next_step(j, row, repo)
         if action == "other":
@@ -428,24 +443,33 @@ def status(j, args) -> None:
             except j.Refuse:
                 meta = {}
             doing.append(f"กำลังทำ\t{ticket_id}\t{session_label(meta)}")
-            ranked.append((4, ticket_id, action, detail))
+            ranked.append((6, ticket_id, action, detail, True))
         elif action == "review":
             review.append(f"รอรีวิว\t{ticket_id}\t{detail}")
-            ranked.append((1, ticket_id, action, detail))
+            ranked.append((2, ticket_id, action, detail, True))
         elif action == "human" and detail.startswith("review and merge"):
             merge.append(f"รอ merge\t{ticket_id}\t{detail}")
-            ranked.append((2, ticket_id, action, detail))
-        if action == "work":
-            ranked.append((0, ticket_id, action, detail))
+            ranked.append((3, ticket_id, action, detail, True))
+        elif action == "work":
+            ranked.append((0, ticket_id, action, detail, False))
+        elif action == "board":
+            ranked.append((1, ticket_id, action, detail, False))
+        elif action == "human":
+            ranked.append((4, ticket_id, action, detail, False))
         elif action == "stuck":
-            ranked.append((3, ticket_id, action, detail))
+            ranked.append((5, ticket_id, action, detail, False))
+        elif action == "elsewhere":
+            ranked.append((7, ticket_id, action, detail, False))
+        else:
+            ranked.append((8, ticket_id, action, detail, False))
     for lines, empty in ((doing, "กำลังทำ\t-"), (review, "รอรีวิว\t-"), (merge, "รอ merge\t-")):
         for line in lines or [empty]:
             print(line)
     if ranked:
         ranked.sort()
-        _rank, ticket_id, action, detail = ranked[0]
-        print(f"ถัดไป\t{action}\t{ticket_id}\t{detail}")
+        for index, (_rank, ticket_id, action, detail, grouped) in enumerate(ranked):
+            if index == 0 or not grouped:
+                print(f"ถัดไป\t{action}\t{ticket_id}\t{detail}")
     else:
         print("ถัดไป\t-")
 
