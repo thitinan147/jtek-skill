@@ -6,7 +6,7 @@
 
 A re-review of 26.42.0 still shipped `finish --no-pr` when `git replace` swapped the fetched tip, and when `origin` or `url.*.insteadOf` pointed the read at another repository. `show --at` still trusted a local `refs/remotes/origin/<base>`.
 
-- `finish --no-pr` reads the fetched tip with replace objects disabled (`GIT_NO_REPLACE_OBJECTS=1` and `git --no-replace-objects`), including `rev-parse` and `git show` of `jtek.json`. A replace ref that keeps the same sha does not change the bytes.
+- `finish --no-pr` reads the fetched tip with replace objects disabled (`git --no-replace-objects`, git's switch for `GIT_NO_REPLACE_OBJECTS=1`), including `rev-parse` and `git show` of `jtek.json`. A replace ref that keeps the same sha does not change the bytes.
 - `init` and `start` seal the configured origin URL (`remote.origin.url`, not the `insteadOf` expansion) with the same key as the authors list. `finish --no-pr` is refused when a `url.*.insteadOf` rule applies to that URL, or when a non-empty sealed URL is not the configured one. A sealed empty URL means no origin existed yet. A hand edit of the sealed file does not count. A process that can rewrite both the key and that state can still forge the seal.
 - `show --at` on a fast-forward takes the base sha from `git ls-remote`, not from `refs/remotes/origin/<base>`. Moving that local ref does not shrink the range. When the remote sha cannot be read and the reflog cannot name the range, the review is refused.
 - `bandit`, `semgrep`, `shellcheck`, `hadolint`, `stylelint`, and `markdownlint` are lint-class names, the same as `eslint`. `behaviour-bandit` is still a behaviour check.

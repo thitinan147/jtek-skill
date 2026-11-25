@@ -174,16 +174,30 @@ def session_identity() -> str:
 
 
 def author_key() -> bytes:
-    """A key that stays on this machine, so a hand edit of meta.json cannot recompute the seal."""
+    """A key that stays on this machine, so a hand edit of meta.json cannot recompute the seal.
+
+    Two starts can create the file at the same moment. The one that loses the exclusive create reads
+    the key the other wrote, once those bytes are there."""
     key_file = state_dir() / "author.key"
     key_file.parent.mkdir(parents=True, exist_ok=True)
-    if not key_file.is_file():
-        handle = os.open(key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    for _ in range(20):
+        try:
+            data = key_file.read_bytes()
+        except FileNotFoundError:
+            data = b""
+        if len(data) >= 32:
+            return data
+        try:
+            handle = os.open(key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            time.sleep(0.01)
+            continue
         try:
             os.write(handle, os.urandom(32))
         finally:
             os.close(handle)
-    return key_file.read_bytes()
+        return key_file.read_bytes()
+    raise Refuse(f"could not read {key_file}")
 
 
 def mac_of(payload: bytes, key: bytes | None = None) -> str:
@@ -408,14 +422,11 @@ def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = Fa
     """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`).
 
     `replace=False` reads the stored objects. A `git replace` ref must not stand in for a fetched tip.
-    That is `git --no-replace-objects` and `GIT_NO_REPLACE_OBJECTS=1` together."""
+    `git --no-replace-objects` is git's switch for that, the same as GIT_NO_REPLACE_OBJECTS=1.
+    The flag is passed on the command. The process environment is not copied."""
     argv = ["git", *args] if replace else ["git", "--no-replace-objects", *args]
-    env = None
-    if not replace:
-        env = os.environ.copy()
-        env["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
-        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as err:
         raise Refuse(f"git {' '.join(argv[1:])}: timed out") from err
     if code:
