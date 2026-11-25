@@ -256,7 +256,9 @@ def origin_seal_due() -> bool:
             meta = json.loads(meta_path.read_text())
         except (OSError, ValueError):
             continue
-        if isinstance(meta, dict) and meta.get("authors_seal") and not meta.get("starting"):
+        if isinstance(meta, dict) and (
+            meta.get("authors_seal") or meta.get("authors") or meta.get("author") or not meta.get("starting")
+        ):
             return True
     return False
 
@@ -691,13 +693,23 @@ def outcome_lines(sections: dict) -> tuple[str, list[str]]:
 
 
 CARD_SLOTS = ("Goal", "Done check", "Proof", "Context", "Constraints")
-SKILL_STEP = re.compile(r"(?i)\b(jt-[a-z]+|playbook)\b")
-GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^(caused by|fix:)\b")
+SKILL_STEP = re.compile(
+    r"(?i)\bjt-[a-z]+\b"
+    r"|\b(?:follow|run|use|execute|complete|finish|apply|check|read)\s+(?:the\s+|this\s+|our\s+|a\s+)?(?:skill\s+)?playbook\b"
+    r"|\bplaybook\s+steps?\b"
+)
+GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^caused by\b|^fix:")
 
 
 def guessed_line(line: str) -> bool:
-    """A guessed cause or fix. A list bullet in front of the sentence does not hide it."""
-    return bool(GUESSED_LINE.match(re.sub(r"^[-*]\s+", "", line.strip())))
+    """A guessed cause or fix. List markers, checkboxes, and emphasis in front of the sentence do not hide it."""
+    text = line.strip()
+    while True:
+        updated = re.sub(r"^(?:[-*+]\s+|\[\s*[xX ]?\s*\]\s*|>\s*|[`*_~]+(?=\S))", "", text)
+        if updated == text:
+            break
+        text = updated.lstrip()
+    return bool(GUESSED_LINE.match(text))
 
 
 def require_card(ticket: dict) -> None:
@@ -917,7 +929,7 @@ def remote_tip(repo: Path, base: str) -> str:
     wanted = f"refs/heads/{base}"
     for line in text.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[1] == wanted and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+        if len(parts) >= 2 and parts[1] == wanted and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):
             return parts[0]
     return ""
 
@@ -1128,8 +1140,22 @@ def done_when_items(work: Path) -> list[str]:
     return items
 
 
+TEST_DIRS = frozenset({"test", "tests", "spec", "specs", "__tests__", "__specs__"})
+TEST_TOKENS = frozenset({"test", "tests", "spec", "specs"})
+
+
 def is_test_path(path: str) -> bool:
-    return "test" in path.lower() or "spec" in path.lower()
+    parts = [p for p in re.split(r"[/\\]+", path.strip()) if p]
+    if not parts:
+        return False
+    if any(part.lower() in TEST_DIRS for part in parts[:-1]):
+        return True
+    name = parts[-1]
+    tokens = [tok for tok in re.split(r"[._-]+", name.lower()) if tok]
+    if any(tok in TEST_TOKENS for tok in tokens):
+        return True
+    stem = name.split(".", 1)[0]
+    return bool(re.search(r"(?:^Test[A-Z]|[a-z0-9](?:Tests?|Specs?)$)", stem))
 
 
 def stale_seen(work: Path, worktree: Path, text: str) -> list[str]:
@@ -1521,8 +1547,7 @@ def existing_test_file(token: str) -> bool:
         return False
     if not path.is_file():
         return False
-    folded = path.name.lower()
-    return "test" in folded or "spec" in folded
+    return is_test_path(path.relative_to(root).as_posix())
 
 
 def lesson_kind(enforced_by: str) -> str:
@@ -2045,6 +2070,8 @@ def author_sessions(meta: dict) -> list[str]:
 
 NIT_WORD = re.compile(
     r"\b(nit|nits|nitpick|style|rename|typo|wording|preference|formatting|whitespace|comment)\b", re.I)
+STRICT_NIT_WORD = re.compile(
+    r"\b(nit|nits|nitpick|typo|wording|preference|formatting|whitespace|for\s+style|code\s+style|style\s+only)\b", re.I)
 BUG_WORD = re.compile(
     r"\b(crash|fail|fails|failed|error|wrong|regression|bug|exception|broken|incorrect|loses|drops|rejects|"
     r"500|404|timeout|corrupt|uncommitted)\b", re.I)
@@ -2070,6 +2097,7 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
     """Real findings, and the problems in the rest (nit, thin). Dropped lines are ignored."""
     counted = review_regions(text)
     blocks: list[list[str]] = []
+    outside_lines: list[str] = []
     open_block = False
     for line in counted.splitlines():
         if re.match(r"^\s*[-*]\s*reproduces:", line):
@@ -2079,6 +2107,7 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
             blocks[-1].append(line)
         else:
             open_block = False
+            outside_lines.append(line)
     real: list[str] = []
     problems: list[str] = []
     for block in blocks:
@@ -2087,18 +2116,23 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
         body = "\n".join(block)
         repro = re.search(r"reproduces:\s*(.*)", body, re.I)
         shown = repro.group(1) if repro else ""
-        if NIT_WORD.search(shown) and not BUG_WORD.search(body):
-            problems.append("nit")
-            continue
         has_steps = re.search(r"(?im)^\s*(steps|scenario):\s*\S", body)
         has_expected = re.search(r"(?im)^\s*expected:\s*\S", body)
+        if not BUG_WORD.search(body):
+            if NIT_WORD.search(shown) and not (has_steps and has_expected):
+                problems.append("nit")
+                continue
+            if STRICT_NIT_WORD.search(shown):
+                problems.append("nit")
+                continue
         if has_steps and has_expected:
             real.append(body)
         else:
             problems.append("thin")
-    # A nit anywhere in the notes that count blocks a pass. Dropped and Nits were removed above,
-    # and a nit that only appeared on a reproduces line is already recorded.
-    if "nit" not in problems and re.search(r"(?i)\bnit(?:s|pick)?\b", counted):
+    # A nit anywhere outside real findings in the notes that count blocks a pass.
+    # Dropped and Nits were removed above, and a nit that only appeared on a reproduces line is already recorded.
+    outside = "\n".join(outside_lines)
+    if "nit" not in problems and re.search(r"(?i)\bnit(?:s|pick)?\b", outside):
         problems.append("nit")
     return real, problems
 
@@ -2161,8 +2195,9 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     if not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with your notes, in the form of the review notes")
     notes_text = read_file(args.notes_file, "notes")
+    counted_notes = review_regions(notes_text)
     real, problems = review_findings(notes_text)
-    weigh = re.search(r"^\s*[-*]\s*to weigh:", notes_text, re.M)
+    weigh = re.search(r"^\s*[-*]\s*to weigh:", counted_notes, re.M)
     # The word of the verdict and the notes must say the same thing, because the human reads the word first.
     if "nit" in problems:
         raise Refuse(
@@ -2186,7 +2221,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         # The two steps a quick review skips: testing the tests, and naming why the change is safe.
         lacking = [form for form, key in (("- broke: <the line you broke, and which checks failed or still passed>", "broke"),
                                           ("- safe because: <the one fact the change is safe because of> (run <n>)", "safe because"))
-                   if not re.search(rf"^\s*[-*]\s*{key}:", notes_text, re.M)]
+                   if not re.search(rf"^\s*[-*]\s*{key}:", counted_notes, re.M)]
         if lacking:
             raise Refuse("the notes of a pass say what you broke to test the tests, and why the change is safe, "
                          "as the `jt-review` skill says. Add:\n" + "\n".join(lacking))
@@ -2339,7 +2374,7 @@ def remote_default(cwd: Path | None = None) -> tuple[str, str]:
         parts = line.split()
         if len(parts) >= 2 and parts[0] == "ref:" and parts[1].startswith("refs/heads/"):
             branch = parts[1].split("/", 2)[-1]
-        elif parts and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+        elif parts and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):
             sha = parts[0]
     if not sha or not branch:
         raise Refuse("the remote did not name a default branch tip, so this change is not sent without a pull request.")

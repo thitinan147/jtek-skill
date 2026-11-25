@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -4693,6 +4694,278 @@ class EasyStart(Scratch):
             self.assertIn(f"\t{ticket_id}\t", out, f"{ticket_id} shown by next but missing from status:\n{out}")
         self.assertEqual((work_stuck / "meta.json").read_text(), "{damaged")
         self.assertEqual((work_board / "result.md").read_text(), "outcome: review\n")
+
+
+class P2BacklogDefects(Scratch):
+    """Regression tests for P2 backlog defects SQ-88 through SQ-95."""
+
+    def _forge_off_remote(self, name: str) -> Path:
+        remote = Path(self.tmp.name) / name
+        self.git("clone", "-q", "--bare", str(self.repo), str(remote))
+        return remote
+
+    def _seal(self) -> Path:
+        return self.repo / ".git" / "jtek" / "origin-url.json"
+
+    def test_sq88_missing_authors_seal_or_starting_flag_does_not_reseal_origin(self):
+        """SQ-88: deleting authors_seal or setting starting:true after authors are recorded must not reseal origin."""
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        honest = self._forge_off_remote("sq88-origin.git")
+        evil = self._forge_off_remote("sq88-evil.git")
+        self.git("remote", "add", "origin", str(honest))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.ticket("T-2")
+        self.ticket("T-3")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        seal = self._seal()
+        self.assertEqual(json.loads(seal.read_text())["url"], str(honest))
+
+        # Case 1: delete authors_seal from meta.json, swap origin, delete origin-url.json.
+        meta_path = self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json"
+        original_meta = json.loads(meta_path.read_text())
+        no_seal_meta = {k: v for k, v in original_meta.items() if k != "authors_seal"}
+        meta_path.write_text(json.dumps(no_seal_meta))
+        self.git("remote", "set-url", "origin", str(evil))
+        seal.unlink()
+        self.assertEqual(self.jtek("start", "T-2", "--no-fetch")[0], 0)
+        self.assertFalse(seal.is_file(), "deleting authors_seal must not allow resealing a swapped origin")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+
+        # Case 2: set starting:true on T-1 (with authors already recorded), remove T-2 work dir so only T-1 exists.
+        shutil.rmtree(self.repo / ".git" / "jtek" / "work" / "T-2")
+        meta_path.write_text(json.dumps({**original_meta, "starting": True}))
+        if seal.exists():
+            seal.unlink()
+        self.assertEqual(self.jtek("start", "T-3", "--no-fetch")[0], 0)
+        self.assertFalse(seal.is_file(), "setting starting:true after authors are recorded must not reseal origin")
+        meta_path.write_text(json.dumps(original_meta))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+
+        # Case 3: an in-progress start (starting:true and no authors recorded yet) may still write the first seal.
+        work_root = self.repo / ".git" / "jtek" / "work"
+        for child in list(work_root.iterdir()):
+            shutil.rmtree(child)
+        in_progress = work_root / "T-INIT"
+        in_progress.mkdir()
+        (in_progress / "meta.json").write_text(json.dumps({"starting": True, "pid": os.getpid(), "base": "main"}))
+        mod = jtek_module()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.repo)
+            self.assertFalse(mod.origin_seal_due())
+        finally:
+            os.chdir(old_cwd)
+
+    def test_sq89_word_nit_inside_real_fail_finding_is_allowed(self):
+        """SQ-89: the word 'nit' inside a real FAIL finding must not refuse the verdict."""
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        notes = Path(self.tmp.name) / "sq89-notes.md"
+        notes.write_text(
+            "Findings:\n"
+            "- reproduces: saving a nit returns 500\n"
+            "  steps: POST /nits with a valid payload\n"
+            "  expected: 201 Created\n"
+        )
+        code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+        self.assertEqual(code, 0, out)
+        self.assertIn("verdict: FAIL", out)
+
+    def test_sq90_prefixed_guessed_cause_or_fix_is_refused(self):
+        """SQ-90: checkbox, emphasis, or repeated-bullet prefixes must not hide a guessed cause or fix."""
+        path = Path(self.tmp.name) / "sq90-draft.md"
+
+        def check(text: str):
+            path.write_text(text)
+            proc = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(path)], cwd=self.repo,
+                                  capture_output=True, text=True)
+            return proc.returncode, proc.stdout + proc.stderr
+
+        cases = [
+            "- [ ] The cause is a missing check.",
+            "* [ ] caused by a stale cache",
+            "- [x] fix: reset the counter",
+            "- **The cause is a missing check.**",
+            "* **fix:** add a counter",
+            "- - The cause is a missing check.",
+            "* * caused by a race",
+        ]
+        for line in cases:
+            draft = "# Add\n\n" + CARD.replace("Add the thing.\n", f"Add the thing.\n{line}\n", 1)
+            code, out = check(draft)
+            self.assertEqual(code, 1, f"expected refusal for `{line}`, got: {out}")
+            self.assertIn("guessed cause", out)
+
+    def test_sq91_non_test_paths_containing_test_or_spec_are_not_test_enforcers(self):
+        """SQ-91: src/contest.py and src/special.py must not count as test enforcers; real test paths still do."""
+        src_dir = self.repo / "src"
+        src_dir.mkdir(exist_ok=True)
+        (src_dir / "contest.py").write_text("x = 1\n")
+        (src_dir / "special.py").write_text("y = 2\n")
+        (self.repo / "tests").mkdir(exist_ok=True)
+        (self.repo / "tests" / "test_foo.py").write_text("def test_ok():\n    assert True\n")
+        (self.repo / "__tests__").mkdir(exist_ok=True)
+        (self.repo / "__tests__" / "foo.js").write_text("test('ok', () => {});\n")
+
+        self.assertEqual(self.jtek("lesson", "--mistake", "used float for money", "--enforced-by", "prose")[0], 0)
+        for bad in ("test: src/contest.py", "test: src/special.py"):
+            code, out = self.jtek("lesson", "--mistake", "used float for money", "--enforced-by", bad)
+            self.assertEqual(code, 1, f"expected `{bad}` to be refused as prose, got: {out}")
+            self.assertIn("prose lesson is refused", out)
+
+        code, out = self.jtek("lesson", "--mistake", "used float for money", "--enforced-by", "test: tests/test_foo.py")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (test)", out)
+        code, out = self.jtek("lesson", "--mistake", "used float for money", "--enforced-by", "test: __tests__/foo.js")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (test)", out)
+
+        mod = jtek_module()
+        for non_test in ("src/contest.py", "src/special.py", "src/latest.py", "src/inspect.py"):
+            self.assertFalse(mod.is_test_path(non_test), f"{non_test} must not be a test path")
+        for real_test in (
+            "tests/test_foo.py",
+            "foo_test.py",
+            "foo_spec.py",
+            "spec/foo_spec.py",
+            "__tests__/foo.js",
+            "test/helper.py",
+            "tests/helper.py",
+            "spec/helper.rb",
+        ):
+            self.assertTrue(mod.is_test_path(real_test), f"{real_test} must be a test path")
+
+    def test_sq92_dropped_section_does_not_satisfy_pass_or_pass_notes_requirements(self):
+        """SQ-92: broke:, safe because:, and to weigh: only under Dropped: must not satisfy PASS or PASS+NOTES."""
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        notes = Path(self.tmp.name) / "sq92-notes.md"
+
+        def verdict(word: str, text: str):
+            notes.write_text(text)
+            return self.jtek("verdict", "T-1", word, "--by", "review-x", "--notes-file", str(notes))
+
+        dropped_only = (
+            "Findings: none\n\n"
+            "Dropped:\n"
+            "- broke: the new branch; test failed\n"
+            "- safe because: the change only adds a branch (run 1)\n"
+            "- to weigh: an empty value prints a tab\n"
+        )
+        code, out = verdict("PASS", dropped_only)
+        self.assertEqual(code, 1, out)
+        self.assertIn("- broke:", out)
+        self.assertIn("- safe because:", out)
+
+        weigh_only_dropped = PASS_NOTES + "\nDropped:\n- to weigh: an empty value prints a tab\n"
+        code, out = verdict("PASS+NOTES", weigh_only_dropped)
+        self.assertEqual(code, 1, out)
+        self.assertIn("- to weigh:", out)
+
+        # Outside Dropped: still succeeds.
+        code, out = verdict("PASS+NOTES", PASS_NOTES + "- to weigh: an empty value prints a tab\n")
+        self.assertEqual(code, 0, out)
+        self.assertIn("verdict: PASS+NOTES", out)
+
+    def test_sq93_sha256_remote_tip_is_accepted(self):
+        """SQ-93: remote_tip and show --at must accept 64-hex SHA-256 object ids from ls-remote."""
+        sha256_repo = Path(self.tmp.name) / "sha256-repo"
+        sha256_repo.mkdir()
+        subprocess.run(["git", "init", "--object-format=sha256", "-b", "main", "-q"], cwd=sha256_repo, check=True)
+        for key, val in (("user.name", "Test"), ("user.email", "t@example.com")):
+            subprocess.run(["git", "config", key, val], cwd=sha256_repo, check=True)
+        (sha256_repo / "app.txt").write_text("base\n")
+        subprocess.run(["git", "add", "app.txt"], cwd=sha256_repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=sha256_repo, check=True)
+        base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sha256_repo,
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(len(base_sha), 64)
+
+        remote = Path(self.tmp.name) / "sha256-origin.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(sha256_repo), str(remote)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=sha256_repo, check=True)
+        subprocess.run(["git", "fetch", "-q", "origin"], cwd=sha256_repo, check=True)
+
+        mod = jtek_module()
+        self.assertEqual(mod.remote_tip(sha256_repo, "main"), base_sha)
+        self.assertEqual(mod.remote_default(sha256_repo), ("main", base_sha))
+
+        # Two commits fast-forwarded on main, reflog removed -> landed_span uses remote_tip().
+        for name in ("a.txt", "b.txt"):
+            (sha256_repo / name).write_text(name + "\n")
+            subprocess.run(["git", "add", name], cwd=sha256_repo, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", f"add {name}"], cwd=sha256_repo, check=True)
+        tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sha256_repo,
+                             capture_output=True, text=True, check=True).stdout.strip()
+        shutil.rmtree(sha256_repo / ".git" / "logs")
+        span = mod.landed_span(sha256_repo, "main", tip)
+        self.assertEqual(span, f"{base_sha}..{tip}")
+
+    def test_sq94_style_comment_rename_in_complete_reproduces_finding_is_not_a_nit(self):
+        """SQ-94: comment/rename/style on - reproduces: with steps: and expected: is a real finding, not a nit."""
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        notes = Path(self.tmp.name) / "sq94-notes.md"
+
+        for desc in (
+            "posting a comment leaves the list unchanged",
+            "rename button keeps the old title on screen",
+            "dark style hides the submit button",
+        ):
+            notes.write_text(
+                f"Findings:\n- reproduces: {desc}\n"
+                "  steps: open the page and trigger the action\n"
+                "  expected: the updated state is visible\n"
+            )
+            code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+            self.assertEqual(code, 0, f"expected FAIL to succeed for `{desc}`, got: {out}")
+            self.assertIn("verdict: FAIL", out)
+
+        # Style-only comment without steps/expected is still refused as a nit.
+        notes.write_text("Findings:\n- reproduces: style could be cleaner\n")
+        code, out = self.jtek("verdict", "T-1", "FAIL", "--by", "review-x", "--notes-file", str(notes))
+        self.assertEqual(code, 1, out)
+        self.assertIn("not a FAIL", out)
+
+    def test_sq95_playbook_outcome_in_done_check_is_allowed_while_skill_step_is_refused(self):
+        """SQ-95: a Done check naming a playbook outcome is allowed; skill/playbook step instructions are refused."""
+        path = Path(self.tmp.name) / "sq95-draft.md"
+
+        def check(item: str):
+            draft = "# Add\n\n" + CARD.replace("- the command prints `ok`\n", f"- {item}\n", 1)
+            path.write_text(draft)
+            proc = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(path)], cwd=self.repo,
+                                  capture_output=True, text=True)
+            return proc.returncode, proc.stdout + proc.stderr
+
+        for allowed in (
+            "the published playbook lists all active services",
+            "POST /playbooks saves the playbook and prints its id",
+        ):
+            code, out = check(allowed)
+            self.assertEqual(code, 0, f"expected `{allowed}` to be allowed, got: {out}")
+
+        for refused in (
+            "follow the playbook",
+            "run jt-work",
+            "use jt-verify",
+        ):
+            code, out = check(refused)
+            self.assertEqual(code, 1, f"expected `{refused}` to be refused, got: {out}")
+            self.assertIn("not a step the skills already run", out)
 
 
 if __name__ == "__main__":
