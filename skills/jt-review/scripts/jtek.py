@@ -565,7 +565,7 @@ def load_checks(base: str) -> dict[str, str]:
     checks = load_config(base).get("checks", {})
     if not isinstance(checks, dict) or not checks:
         if find_config() is None:
-            raise Refuse("no jtek config for this repository; run `jtek.py init`, fill it in, and give at least one check "
+            raise Refuse("no jtek config for this repository; run `jtek.py init` or `/jt-init`, fill it in, and give at least one check "
                          "a command. With no config file the board is empty and tickets are files on this machine")
         raise Refuse(f"{config_name()} declares no checks; a ticket needs at least one real check")
     for name, cmd in checks.items():
@@ -2739,7 +2739,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
-    sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek").set_defaults(func=cmd_other)
+    sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek, and move the owner files").set_defaults(func=cmd_other)
+    sub.add_parser("guess", help="print guessed check commands for this repository; reads only").set_defaults(func=cmd_other)
+    status = sub.add_parser("status", help="read-only table of claims, reviews, and the one next action")
+    status.add_argument("--board-file", help="the open tickets, read from the board and saved as JSON; not needed when the tickets are files")
+    status.set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
     doctor.add_argument("--agents", action="store_true", help="instead: the coding agents on this machine, their models, and the owner's list of reviewers")
     doctor.set_defaults(func=cmd_other)

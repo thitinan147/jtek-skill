@@ -56,9 +56,24 @@ def setup_uses_venv(setup: str, root: Path) -> bool:
     return False
 
 
+def legacy_names(j) -> list[str]:
+    """jtek.json or .jtek/ still in the repository. Empty when git cannot name the checkout."""
+    try:
+        root = j.main_root()
+    except j.Refuse:
+        return []
+    found = []
+    if (root / j.CONFIG).exists():
+        found.append(j.CONFIG)
+    if (root / ".jtek").exists():
+        found.append(".jtek/")
+    return found
+
+
 def run(j, args=None) -> None:
     """`j` is the jtek module, for its git helper and its config reader."""
     rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
+    legacy = legacy_names(j)
 
     try:
         found = re.search(r"(\d+)\.(\d+)", j.git("--version", check=False))
@@ -87,7 +102,7 @@ def run(j, args=None) -> None:
         rows.append(("ok", "`board`: the Notion database or FLO product link" if board
                      else f"no board: the tickets are files in {j.tickets_dir()}", ""))
         if source is None:
-            rows.append(("missing", "checks", "run `jtek.py init` and give at least one check a command. "
+            rows.append(("missing", "checks", "run `jtek.py init` or `/jt-init` and give at least one check a command. "
                          "With no config file the board is empty and tickets are files on this machine"))
         else:
             rows.append(("ok", f"config {source}", ""))
@@ -138,6 +153,9 @@ def run(j, args=None) -> None:
         rows.append(("ok" if guide else "optional", f"verify guide {shown}",
                      "run the jt-harness skill once. It writes the guide on this machine. "
                      "When that file is missing, jt-verify reads the README and the code and says no guide was found"))
+    if legacy:
+        rows.append(("missing", "old files in the repository: " + ", ".join(legacy),
+                     "run `/jt-init` or `jtek.py migrate`, then commit the removal"))
     rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
                  "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())
@@ -155,6 +173,13 @@ def run(j, args=None) -> None:
     if has_board:
         print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
               "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
+    if legacy:
+        trigger = "migrate"
+    elif j.find_config() is None:
+        trigger = "needed"
+    else:
+        trigger = "ok"
+    print(f"init: {trigger}")
     if any(state == "missing" for state, _, _ in rows):
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
     if has_board:

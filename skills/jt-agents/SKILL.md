@@ -1,12 +1,12 @@
 ---
 name: jt-agents
-description: Keeps the owner's list of reviewers, ~/.config/jtek/agents.json, true to the coding agents and models this machine really has, by running the script's own survey and proposing an ordered list the owner approves. Use when the user types /jt-agents, and only then.
+description: Keeps the owner's list of reviewers, ~/.jtek/agents.json, true to the coding agents and models this machine really has, by running the script's own survey and proposing an ordered list the owner approves. Use when the user types /jt-agents, and only then.
 disable-model-invocation: true
 ---
 
 # jt-agents
 
-jtek prefers a second look from another vendor's model than the author's. `jtek.py reviewer` picks that model from `~/.config/jtek/agents.json`, the owner's list. This skill keeps that list true. It proposes; the owner decides. It never writes the file before the owner says yes.
+jtek prefers a second look from another vendor's model than the author's. `jtek.py reviewer` picks that model from `~/.jtek/agents.json`, the owner's list. An old file at `~/.config/jtek/agents.json` is still read, and the script prints one line saying so, until `jtek.py migrate` moves it. This skill keeps the new list true. It proposes; the owner decides. It never writes the file before the owner says yes.
 
 ## What the list is
 
@@ -51,7 +51,7 @@ Show the owner, in their own language:
 - What you would drop from the present list, and why: the program is gone, or the model is no longer listed.
 - What you could not check.
 
-Write `agents.json` only after the owner says yes, and only what they accepted. Then run `jtek.py doctor --agents` again and show its `reviewers:` lines, and run `jtek.py reviewer --vendor <the vendor of your own model>` and show what it picks.
+Record `~/.jtek/agents.json` only after the owner says yes, and only what they accepted. Do not record the old `~/.config/jtek/` path. Then run `jtek.py doctor --agents` again and show its `reviewers:` lines, and run `jtek.py reviewer --vendor <the vendor of your own model>` and show what it picks.
 
 ## What this skill does not do
 

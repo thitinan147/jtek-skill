@@ -34,7 +34,7 @@ Or in Claude Code, as two separate prompts:
 /plugin install jtek@jtek-skill
 ```
 
-**You should see:** fifteen skills, `jt` and fourteen whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way.
+**You should see:** seventeen skills, `jt` and sixteen whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way. Day to day you type `/jt`, `/jt-review`, and `/jt-status`.
 
 ## 2. Connect GitHub
 
@@ -65,38 +65,33 @@ or spelled differently. Change nothing.
 
 ## 4. Set up the repository
 
-Do this in each repository the board serves.
+Do this in each repository. You can also skip it: with no config file the board is empty and there are no checks until you add them.
 
 ```text
-Run jtek.py init in this repository. Then read the package scripts and the CI
-config, and propose one command per check for the file it wrote under ~/.jtek.
-Set "board" to <link> and "name" to <the name tickets will use for this repository>.
-Show me the file. Do not commit it: it does not belong in the repository.
+/jt-init
 ```
 
-Read the file. A command is one program with arguments: a pipeline goes into a script. Delete the checks your project does not have. Leave the file on this machine.
+It guesses the checks from package.json scripts, the Makefile, pyproject, and CI, and asks once. The question includes the board:
 
 ```text
-Run jtek.py doctor.
+board? none (tickets as files) / Notion database link / FLO product link
 ```
 
-**You should see:** no `missing` line, and `ready:` at the end. The `optional` lines about `verify` and the verify guide are step 5.
+Answer `none` to keep tickets as files, or paste the Notion database link or the FLO product link. Edit any guessed command in that same answer. It records `~/.jtek/repos/<repo id>/jtek.json` on this machine, runs the harness, and then doctor. Nothing is written into the repository. A command is one program with arguments: a pipeline goes into a script.
+
+If the repository still has `jtek.json` or `.jtek/`, `/jt-init` runs `jtek.py migrate` instead and tells you to commit the removal.
+
+**You should see:** no `missing` line, and `ready:` at the end. A line that is only `optional` can wait.
 
 If it says it cannot find the base branch, the repository has no commit yet: make the first commit.
 
-## 5. Build the harness
+## 5. The harness, which /jt-init already ran
 
-```text
-Follow the jt-harness skill for this repository.
-```
-
-It writes `~/.jtek/repos/<repo id>/verify.md`, a feature map beside it, and one script, and it proposes a `verify` check. It must show you the check passing on the working app and failing when a feature is broken on purpose.
-
-Read what it wrote and add `verify` to the machine config. Neither file is committed.
+`/jt-init` follows the `jt-harness` skill. It records `~/.jtek/repos/<repo id>/verify.md`, a feature map beside it, and one script, and it proposes a `verify` check. It must show you the check passing on the working app and failing when a feature is broken on purpose. Neither the guide nor the machine config is committed.
 
 **You should see:** `jtek.py doctor` with no `optional` line for `verify`.
 
-You can skip this step for a first try. Then a passing check only means the code compiles and the tests pass, and nothing has run the real app.
+You can tell it to skip the harness for a first try. Then a passing check only means the code compiles and the tests pass, and nothing has run the real app. Run `/jt-init` again later, or ask for the `jt-harness` skill, when you want it.
 
 ## 6. Write the first ticket
 
@@ -194,7 +189,8 @@ The same three steps ask for a fix on a ticket that is in Review.
 
 | It says | What it means | What you do |
 |---|---|---|
-| `no jtek config for this repository` | There is no machine config yet, so there are no checks | Run `jtek.py init` and fill in one check. The file stays on this machine |
+| `no jtek config for this repository` | There is no machine config yet, so there are no checks | Type `/jt-init`, or run `jtek.py init` and fill in one check. The file stays on this machine |
+| `old files in the repository` | `jtek.json` or `.jtek/` is still in the checkout | Type `/jt-init`, or run `jtek.py migrate`, then commit the removal |
 | `is ..., not Todo` | Only a Todo ticket can start | Set Status to Todo |
 | `comes after ..., which is not Done` | A ticket in After is not merged yet | Merge that one first |
 | `is for the repository ...` | The ticket's Repo is another repository | Start the session there |

@@ -1,5 +1,15 @@
 # Changelog
 
+## 27.1.0 - one command to start, and one place for the owner files
+
+`/jt`, `/jt-review`, and `/jt-status` are the everyday commands. Setup is `/jt-init`, or nothing when the defaults are enough (an empty board, tickets as files, no checks until you add them).
+
+- **`/jt-init`**, typed only. It runs `jtek.py init`, then `jtek.py guess`, which reads package.json script names, Makefile target names, pyproject tool sections, and CI `run:` lines. It shows the guesses and asks once, including `board? none (tickets as files) / Notion database link / FLO product link`. `none` records an empty `board`. It records `~/.jtek/repos/<repo id>/jtek.json`, follows `jt-harness`, then runs `jtek.py doctor` until that prints `ready` or names what is still missing. Nothing is written into the repository. `guess` does not open a dotenv file and prints a command only when it matches a fixed shape.
+- A repository that still has `jtek.json` or `.jtek/` takes `jtek.py migrate` instead of `init`. The human commits the removal. `doctor` prints `init: migrate` and points at `/jt-init` or `jtek.py migrate`. With no machine config it prints `init: needed`.
+- **`/jt` and `/jt-work`** run that flow themselves when doctor prints `init: needed` or `init: migrate`, say so in one line, ask once, then continue the original request.
+- **`/jt-status`**, typed only, and read-only. `jtek.py status` prints a Thai table: tickets in progress with the stored session hash, waiting for review, waiting for merge, and the one next action. A value that is not the stored hash is not printed. With no board, `status` and `next` also read a claim that has no ticket file, such as a local ticket under `.git/jtek/work/`. `sync` still reads only the ticket files.
+- **Owner files move to `~/.jtek`.** `agents.json` and `me.md` now live at `~/.jtek/agents.json` and `~/.jtek/me.md`, next to the rest of the machine config. The old `~/.config/jtek/` paths are still read, and the script prints one line saying so. `jtek.py migrate` moves them and refuses to overwrite a file that is already at the new path. `/jt-agents` and `/jt-me` record the new paths.
+
 ## 27.0.0 - config leaves the repository (breaking)
 
 This is a new major version. The skill version is semver, and this release changes where every existing repository keeps its config, its tickets, and its verify guide. 26.47.0 would have hidden that. A repository that still has `jtek.json` or `.jtek/` keeps working only after `jtek.py migrate`.

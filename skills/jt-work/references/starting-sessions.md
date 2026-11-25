@@ -12,7 +12,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
    `after` lists only the related tickets that are not Done. Read the board again each time. Do not reuse an old file.
 
-   A repository with no board needs no such file: its tickets are files, as [files.md](files.md) says, and `next` and `sync` read them when you leave `--board-file` out.
+   A repository with no board needs no such file: its tickets are files, as [files.md](files.md) says, and `next` and `sync` read them when you leave `--board-file` out. `next` and `status` also read a claim that has no ticket file, such as a local ticket. `sync` does not: it only tidies a ticket the page already names.
 2. Run `jtek.py next --board-file <file>` in the repository. It prints one line for each of this repository's tickets: the id, an action, and the reason, separated by tabs.
 
 | Action | What to do |
@@ -43,7 +43,7 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 
 ## Which agent reviews
 
-For a `review` line, run `jtek.py reviewer --vendor <the vendor of the model that wrote the change>`. It reads the owner's list, `~/.config/jtek/agents.json`, and prints the command of the first entry that is installed and comes from another vendor; without one, the first installed entry of the same vendor; with no list, it says to start a fresh session of your own agent. It prints a command and starts nothing. The list is the owner's ranking and holds only models they trust to review. `jtek.py doctor --agents` shows which agent programs this machine has and the models of those that can list them.
+For a `review` line, run `jtek.py reviewer --vendor <the vendor of the model that wrote the change>`. It reads the owner's list, `~/.jtek/agents.json`, and prints the command of the first entry that is installed and comes from another vendor; without one, the first installed entry of the same vendor; with no list, it says to start a fresh session of your own agent. An old list at `~/.config/jtek/agents.json` is still read, with a one-line notice, until `jtek.py migrate` moves it. It prints a command and starts nothing. The list is the owner's ranking and holds only models they trust to review. `jtek.py doctor --agents` shows which agent programs this machine has and the models of those that can list them.
 
 When you do not know which model wrote the change, name your own vendor. Another agent may not have these skills installed: give it the full path of `worker.md` and of `jt-review`'s `SKILL.md` in place of the skill's name.
 

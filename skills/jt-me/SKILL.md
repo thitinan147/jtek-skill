@@ -1,12 +1,12 @@
 ---
 name: jt-me
-description: Keeps the owner's style file, ~/.config/jtek/me.md, true to how they really work, by reading this workspace's past sessions and the owner's own comments on tickets, then proposing changes the owner approves. Use when the user types /jt-me, and only then.
+description: Keeps the owner's style file, ~/.jtek/me.md, true to how they really work, by reading this workspace's past sessions and the owner's own comments on tickets, then proposing changes the owner approves. Use when the user types /jt-me, and only then.
 disable-model-invocation: true
 ---
 
 # jt-me
 
-`/jt` reads `~/.config/jtek/me.md` for the owner's language and style. This skill keeps that file true. It proposes; the owner decides. It never writes the file before the owner says yes.
+`/jt` reads `~/.jtek/me.md` for the owner's language and style. When that file is missing and `~/.config/jtek/me.md` exists, read the old one and tell the owner in one line to run `jtek.py migrate`. This skill keeps the new file true. It proposes; the owner decides. It never writes the file before the owner says yes.
 
 ## What the file may hold
 
@@ -20,7 +20,7 @@ It may not hold, and you never propose:
 
 ## 1. Read what is there
 
-Read `~/.config/jtek/me.md`. Its last line, `read through: <date>`, says how far this skill has read before. Look only at what happened after that date, and keep every line nothing contradicts. When the line is missing, the file was written another way, so look at the last two to four weeks, whatever the file's age.
+Read `~/.jtek/me.md`, or `~/.config/jtek/me.md` when only the old path exists. Its last line, `read through: <date>`, says how far this skill has read before. Look only at what happened after that date, and keep every line nothing contradicts. When the line is missing, the file was written another way, so look at the last two to four weeks, whatever the file's age.
 
 ## 2. Read how the owner works
 
@@ -52,4 +52,4 @@ Show the owner, in their own language:
 - The lines you would add, change, or drop in `me.md`, each with the pattern behind it and where you saw it.
 - The rules you found that belong in a check, as candidates for the `jt-learn` skill.
 
-Write `me.md` only after the owner says yes, and only what they accepted, and set its last line to `read through: <the date of the newest session you read>`. Then show the file as it now is.
+Record `~/.jtek/me.md` only after the owner says yes, and only what they accepted, and set its last line to `read through: <the date of the newest session you read>`. Then show the file as it now is. `jtek.py migrate` moves an old file there and refuses to overwrite.

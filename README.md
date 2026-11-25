@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-27.0.0-111111?style=flat-square" alt="Version 27.0.0">
-  <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
+  <img src="https://img.shields.io/badge/version-27.1.0-111111?style=flat-square" alt="Version 27.1.0">
+  <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
@@ -96,7 +96,7 @@ jtek is the inner loop, plus the one command the outer loop needs. Black boxes a
 
 ## The prompt
 
-The whole set is fifteen skills and one Python script: eleven steps, and four modes you type (`/jt`, `/jt-ticket`, `/jt-me`, `/jt-agents`). Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Three small files beside it, `launcher.py`, `doctor.py`, and `agents.py`, hold the commands that are not part of working a ticket.
+The whole set is seventeen skills and one Python script: eleven steps, and six modes you type (`/jt`, `/jt-init`, `/jt-status`, `/jt-ticket`, `/jt-me`, `/jt-agents`). Start with [`skills/jt-work/SKILL.md`](skills/jt-work/SKILL.md): it is the router, and the only skill that knows the order. The script is [`skills/jt-work/scripts/jtek.py`](skills/jt-work/scripts/jtek.py), standard library only. Three small files beside it, `launcher.py`, `doctor.py`, and `agents.py`, hold the commands that are not part of working a ticket. `guess.py` is the read-only check guesser `/jt-init` uses.
 
 It uses no other skill set.
 
@@ -117,7 +117,7 @@ npx skills add thitinan147/jtek-skill
 /plugin install jtek@jtek-skill
 ```
 
-Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
+Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it. After that, day to day is `/jt`, `/jt-review`, and `/jt-status`. The first repository is `/jt-init`, or nothing if you want the defaults.
 
 Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in the machine config.
 
@@ -126,36 +126,42 @@ Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or F
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/setup-dark.svg">
-    <img src="assets/setup.svg" width="880" alt="Set up once, in three steps and one check. One: the board, which is a Notion database, a FLO product, or none, with tickets as files on this machine. Two: the checks; jtek.py init writes ~/.jtek/repos/&lt;repo id&gt;/jtek.json, you give each check one command, and nothing is committed. Three: the harness; the jt-harness skill writes how to run the real app under ~/.jtek and proposes the verify check. Then jtek.py doctor says what is still missing, and prints ready.">
+    <img src="assets/setup.svg" width="880" alt="Set up once with /jt-init. It guesses the checks, asks once for the board (none, a Notion database link, or a FLO product link), records ~/.jtek/repos/&lt;repo id&gt;/jtek.json, runs the harness, and jtek.py doctor prints ready. Nothing is committed.">
   </picture>
 </p>
 
-Three things, once. Every step, with what you should see after it, is in **[GETTING-STARTED.md](GETTING-STARTED.md)**.
-
-**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, or skip the config file, and the tickets are files in `~/.jtek/repos/<repo id>/tickets` ([files.md](skills/jt-work/references/files.md)).
-
-**2. The checks.** In each repository, ask the agent:
+One command, once per repository. Every step, with what you should see after it, is in **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
 ```text
-Run jtek.py init in this repository.
+/jt-init
 ```
 
-It writes `~/.jtek/repos/<repo id>/jtek.json` on this machine. Give each check one command, and set `board` and `name`. Nothing is committed:
+Or nothing: with no config file the board is empty, tickets are files, and there are no checks until you add them.
+
+`/jt-init` runs `jtek.py init` (or `jtek.py migrate` when the repository still has `jtek.json` or `.jtek/`, and then you commit that removal). It guesses each check from package.json scripts, the Makefile, pyproject, and CI, shows the guesses, and asks once:
+
+```text
+board? none (tickets as files) / Notion database link / FLO product link
+```
+
+You can edit any guessed command in that same answer. `none` records `"board": ""`, so tickets are files ([files.md](skills/jt-work/references/files.md)). A Notion database link ([notion.md](skills/jt-work/references/notion.md)) or a FLO product link ([flo.md](skills/jt-work/references/flo.md)) is recorded as `board`. It writes `~/.jtek/repos/<repo id>/jtek.json` on this machine, runs the `jt-harness` skill, then `jtek.py doctor` until that prints `ready` or names what is still missing. Nothing is written into the repository.
 
 ```json
-{"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
+{"board": "", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
 ```
 
-A command is one program with arguments, so a pipeline goes into a script. `jtek.py doctor` says what is still missing.
+A command is one program with arguments, so a pipeline goes into a script. Without the harness, a passing check only means the code compiles. A machine that has no guide, such as a fresh cloud agent, reads the README and the code and says so. `/jt` and `/jt-work` run this same flow themselves when the repository has no machine config yet, ask once, and then continue what you asked.
 
-**3. The harness.** Run the `jt-harness` skill once per repository. It writes `~/.jtek/repos/<repo id>/`, which says how to run the real app, and proposes the `verify` check. Without it, a passing check only means the code compiles. A machine that has no guide, such as a fresh cloud agent, reads the README and the code and says so.
-
-jtek adds no file to a repository. Config, the verify guide, the feature map, the rule table, and ticket files live under `~/.jtek`. The repository id is the origin's host, non-default port, and path (`github.com/acme/widget`, or `gitlab.example:2222/acme/widget`). With no origin it is `path` plus the checkout path. No `~/.jtek/config` and no per-repository file means the defaults: an empty board, so tickets are files. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into that folder and tells you to commit the removal. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+jtek adds no file to a repository. Config, the verify guide, the feature map, the rule table, and ticket files live under `~/.jtek`. The repository id is the origin's host, non-default port, and path (`github.com/acme/widget`, or `gitlab.example:2222/acme/widget`). With no origin it is `path` plus the checkout path. No `~/.jtek/config` and no per-repository file means the defaults: an empty board, so tickets are files. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into that folder and tells you to commit the removal. The same command moves `~/.config/jtek/agents.json` and `~/.config/jtek/me.md` to `~/.jtek` and refuses to overwrite. The old path is still read, with a one-line notice, until then. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
 
 ## Commands
 
+Day to day you type `/jt`, `/jt-review`, and `/jt-status`. Setup is `/jt-init`, or nothing when the defaults are enough.
+
 | You want to | Do this |
 |---|---|
+| Set up this repository | `/jt-init`, once. One confirmation covers the guessed checks and `board? none (tickets as files) / Notion database link / FLO product link`. Or type nothing and leave the defaults |
+| See where the work stands | `/jt-status`. A short table in Thai: in progress (session), waiting for review, waiting for merge, and the one next action. It only reads |
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
 | Work with no board at all | Leave `board` empty, or have no config file. `/jt <what to do>` works as before, and tickets are files in `~/.jtek/repos/<repo id>/tickets`: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
@@ -173,17 +179,19 @@ Something has to choose the next ticket and start the session. That is you, a Cl
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/skills-dark.svg">
-    <img src="assets/skills.svg" width="880" alt="What you type, and what runs. Four modes load only when you type them: /jt for any task with a ticket or without, /jt-ticket to turn what you want into tickets, /jt-me for your report style, and /jt-agents for your list of reviewers. One ticket, with /jt-work, runs eight steps in order: start, understand, build, check, verify, clean up, ship, and review; start and check belong to jt-work itself, and the other six are skills of their own; check and verify run something real, and review is a second session. Four more skills answer an event: jt-debug when a check fails, jt-babysit when the pull request needs work, jt-learn after you correct the agent, and jt-harness once per repository.">
+    <img src="assets/skills.svg" width="880" alt="What you type, and what runs. Six modes load only when you type them: /jt for any task, /jt-init to set the repository up, /jt-status to read where the work stands, /jt-ticket to turn what you want into tickets, /jt-me for your report style, and /jt-agents for your list of reviewers. One ticket, with /jt-work, runs the steps in order.">
   </picture>
 </p>
 
-Black boxes are what you type. Green boxes run something real. `start` and `check` are `jt-work` and its script; every other box is a skill of its own, fifteen with `jt-work`. The table has each by name:
+Black boxes are what you type. Green boxes run something real. `start` and `check` are `jt-work` and its script; every other box is a skill of its own, seventeen with `jt-work`. The table has each by name:
 
 | Step | Skill | What it does |
 |---|---|---|
+| Set up a repository | `jt-init` | Typed as `/jt-init` only. Guesses the checks, asks once (checks and board), records the machine config, runs the harness, then doctor. An old `jtek.json` or `.jtek/` is migrated instead, and you commit the removal |
+| Where the work stands | `jt-status` | Typed as `/jt-status` only. A read-only Thai table: in progress, waiting for review, waiting for merge, and the one next action |
 | Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
-| Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.config/jtek/agents.json`, which you accept or not |
-| Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.config/jtek/me.md`, which you accept or not |
+| Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.jtek/agents.json`, which you accept or not |
+| Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.jtek/me.md`, which you accept or not |
 | Your mode | `jt` | Typed as `/jt` only. Restates the goal, sends ticket work to `jt-work`, gives work without a ticket a local id, and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
@@ -208,7 +216,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 
 Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
 
-Your own style lives outside this repository, in `~/.config/jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists, and `/jt-me` proposes changes to it from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
+Your own style lives outside this repository, in `~/.jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists. An old `~/.config/jtek/me.md` is still read, with a one-line notice, until `jtek.py migrate` moves it. `/jt-me` proposes changes from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
 
 ```markdown
 - Report in Thai. Short, with tables. The result first, then what I must decide.
@@ -231,7 +239,7 @@ A reviewer from another vendor than the author's is preferred, because two model
 | Make or update your list | Type `/jt-agents`. It runs the survey, asks which models you trust and in what order, and writes the file after your yes |
 | Know who would review now | `jtek.py reviewer --vendor <the author's vendor>`, for example `--vendor anthropic` |
 
-The list is `~/.config/jtek/agents.json`, outside every repository:
+The list is `~/.jtek/agents.json`, outside every repository. `jtek.py migrate` moves `~/.config/jtek/agents.json` there and refuses to overwrite a file that is already in the new place:
 
 ```json
 {"reviewers": [
