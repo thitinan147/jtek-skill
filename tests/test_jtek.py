@@ -3900,5 +3900,218 @@ class RoundFour(Scratch):
             self.assertFalse(mod.is_behaviour_check(name), name)
 
 
+class RoundFive(Scratch):
+    """The holes still open in 26.45.0. Each one ships on that version and is refused after the guard."""
+
+    def _forge_off_remote(self, name: str) -> Path:
+        bare = Path(self.tmp.name) / name
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        return bare
+
+    def _seal(self) -> Path:
+        return self.repo / ".git" / "jtek" / "origin-url.json"
+
+    def test_a_missing_or_empty_origin_seal_is_not_rewritten(self):
+        # Before: deleting or emptying the seal lets the next start write the swapped origin,
+        # and finish --no-pr then ships.
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        honest = self._forge_off_remote("origin.git")
+        evil = self._forge_off_remote("evil.git")
+        self.git("remote", "add", "origin", str(honest))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.ticket("T-2")
+        self.ticket("T-3")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        seal = self._seal()
+        self.assertEqual(json.loads(seal.read_text())["url"], str(honest))
+        self.git("remote", "set-url", "origin", str(evil))
+        seal.unlink()
+        self.assertEqual(self.jtek("start", "T-2", "--no-fetch")[0], 0)
+        self.assertFalse(seal.is_file(), "a missing seal must not be written again")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("seal", out)
+        seal.write_text("")
+        self.assertEqual(self.jtek("start", "T-3", "--no-fetch")[0], 0)
+        self.assertEqual(seal.read_text(), "", "an empty seal must not be written again")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        seal.write_text("{}\n")
+        self.ticket("T-4")
+        self.assertEqual(self.jtek("start", "T-4", "--no-fetch")[0], 0)
+        self.assertNotIn("seal", json.loads(seal.read_text()))
+
+    def test_show_at_does_not_shrink_a_fast_forward_to_the_last_commit(self):
+        # Before: with the reflog gone, ls-remote at HEAD^ reviews only the last commit.
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "a.txt").write_text("a\n")
+        self.git("add", "a.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add a", cwd=tree)
+        (tree / "b.txt").write_text("b\n")
+        self.git("add", "b.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add b", cwd=tree)
+        honest = self._forge_off_remote("ff-origin.git")
+        self.git("remote", "add", "origin", str(honest))
+        self.git("fetch", "-q", "origin")
+        self.git("merge", "--ff-only", "jtek/T-1")
+        tip = self.git("rev-parse", "HEAD")
+        subprocess.run(["rm", "-rf", str(self.repo / ".git" / "logs")], check=True)
+
+        def names_of(text):
+            spec = next(line for line in text.splitlines() if line.startswith("diff: ")).split(" diff ", 1)[1]
+            shown = subprocess.run(["git", "diff", "--name-only", *spec.split()], cwd=self.repo,
+                                   capture_output=True, text=True, check=True).stdout
+            return shown
+
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 0, out)
+        shown = names_of(out)
+        self.assertIn("a.txt", shown)
+        self.assertIn("b.txt", shown)
+        parent = self.git("rev-parse", "HEAD^")
+        evil = Path(self.tmp.name) / "ff-evil.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(evil))
+        self.git("update-ref", "refs/heads/main", parent, cwd=evil)
+        self.git("remote", "set-url", "origin", str(evil))
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not reviewed as only the last commit", out)
+        self.assertNotIn("diff:", out)
+        self.git("remote", "set-url", "origin", str(honest))
+        self.git("config", f"url.{evil}/.insteadOf", str(honest))
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not reviewed as only the last commit", out)
+        self.assertNotIn("diff:", out)
+
+    def test_a_blank_done_when_does_not_hide_done_check(self):
+        # Before: a blank Done when above Done check makes finish accept evidence with no seen line
+        # and no broke proof.
+        self.ticket("T-1", body=CARD)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        bare = Path(self.tmp.name) / "blank-evidence.md"
+        bare.write_text("Notes:\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(bare), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("the command prints `ok`", out)
+        ticket = self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md"
+        ticket.write_text(ticket.read_text().replace("## Done check\n", "## Done when\n\n## Done check\n", 1))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(bare), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("the command prints `ok`", out)
+        good = Path(self.tmp.name) / "good-evidence.md"
+        good.write_text("1. seen: the command prints ok\n\nNotes:\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(good), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("broke proof", out)
+
+    def test_a_guessed_cause_or_fix_is_refused_with_a_bullet(self):
+        # Before: the same sentence is refused only when it starts at column 0.
+        path = Path(self.tmp.name) / "draft.md"
+
+        def check(text):
+            path.write_text(text)
+            proc = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(path)], cwd=self.repo,
+                                  capture_output=True, text=True)
+            return proc.returncode, proc.stdout + proc.stderr
+
+        plain = CARD.replace("Add the thing.\n", "Add the thing.\nThe cause is a missing check.\n", 1)
+        code, out = check("# Add\n\n" + plain)
+        self.assertEqual(code, 1, out)
+        self.assertIn("guessed cause", out)
+        bullet = CARD.replace("Add the thing.\n", "Add the thing.\n- The cause is a missing check.\n", 1)
+        code, out = check("# Add\n\n" + bullet)
+        self.assertEqual(code, 1, out)
+        self.assertIn("guessed cause", out)
+        fix = CARD.replace("- the command prints `ok`\n", "- the fix is to add a counter\n", 1)
+        code, out = check("# Add\n\n" + fix)
+        self.assertEqual(code, 1, out)
+        self.assertIn("guessed cause", out)
+
+    def test_a_repeat_lesson_needs_a_real_enforcer(self):
+        # Before: "check the docs" is stored as a test, and "a note: a type is impossible" as architecture.
+        def lesson(enforced_by):
+            return self.jtek("lesson", "--mistake", "used a float for money", "--enforced-by", enforced_by)
+
+        code, out = lesson("prose")
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded (prose)", out)
+        code, out = lesson("check the docs")
+        self.assertEqual(code, 1, out)
+        self.assertIn("prose lesson is refused", out)
+        code, out = lesson("a note: a type is impossible")
+        self.assertEqual(code, 1, out)
+        self.assertIn("prose lesson is refused", out)
+        folder = self.repo / "tests"
+        folder.mkdir()
+        (folder / "test_money.py").write_text("def test_cents():\n    assert True\n")
+        code, out = lesson("test: tests/test_money.py")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (test)", out)
+        code, out = self.jtek("lesson", "--mistake", "skipped the tenant check",
+                              "--enforced-by", "architecture: unexport the raw query so the wrong call is impossible")
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded (architecture)", out)
+        code, out = self.jtek("lesson", "--mistake", "skipped the tenant check",
+                              "--enforced-by", "type TenantId on every handler")
+        self.assertEqual(code, 0, out)
+        self.assertIn("structural (type)", out)
+
+    def test_a_nit_outside_dropped_blocks_a_pass(self):
+        # Before: only a nit inside `- reproduces:` blocks PASS. A Notes line `- nit:` does not.
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        notes = Path(self.tmp.name) / "notes.md"
+
+        def verdict(text):
+            notes.write_text(text)
+            return self.jtek("verdict", "T-1", "PASS", "--by", "review-x", "--notes-file", str(notes))
+
+        code, out = verdict(PASS_NOTES + "- nit: rename the helper\n")
+        self.assertEqual(code, 1, out)
+        self.assertIn("nit", out.lower())
+        self.assertNotIn("verdict: PASS", out)
+        parked = ("Findings: none\n\nDropped:\n- nit: rename the helper\n\nNits:\n- nit: wording\n\n"
+                  "Notes:\n- broke: the new branch; test passed=fail\n"
+                  "- safe because: the change only adds a branch (run 1)\n")
+        self.assertEqual(verdict(parked)[0], 0)
+
+    def test_a_same_repository_insteadof_still_finishes(self):
+        # Before: any url.*.insteadOf prefix of the origin refuses finish --no-pr, including a rewrite
+        # that still names the same repository (the https://github.com/ credential form).
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        honest = self._forge_off_remote("origin.git")
+        self.git("config", "protocol.file.allow", "always")
+        self.git("remote", "add", "origin", f"file://{honest}")
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.git("config", f"url.{honest}/.insteadOf", f"file://{honest}")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        mod = jtek_module()
+        self.git("config", "url.https://git@github.com/.insteadOf", "https://github.com/")
+        self.assertFalse(mod.insteadof_applies("https://github.com/acme/widget.git", self.repo))
+        evil = self._forge_off_remote("evil.git")
+        self.git("config", f"url.{evil}/.insteadOf", "https://github.com/acme/widget.git")
+        self.assertTrue(mod.insteadof_applies("https://github.com/acme/widget.git", self.repo))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -31,7 +31,7 @@ Assume the next contributor is an agent that sees only the files it opened, copi
 
 Fix the old examples in the same change when the code taught the mistake: list the files that still have the wrong pattern, and delete the old way so nothing is left to copy.
 
-Record it with `jtek.py lesson --mistake "<what was done, and what should have been done>" --enforced-by "<the rule>"`. The first record may say `prose`. The same mistake again is refused until `--enforced-by` is architecture, a type, a lint rule whose text says what to use instead, or a test. Do not write a prose row for that second time. If a structural fix exists, use only that. Do not add a written rule beside it.
+Record it with `jtek.py lesson --mistake "<what was done, and what should have been done>" --enforced-by "<the rule>"`. The first record may say `prose`. The same mistake again is refused until `--enforced-by` is `architecture: <target>`, `type: <target>`, a lint rule whose text says what to use instead, or `test: <path>` to a test file that exists. Do not write a prose row for that second time. If a structural fix exists, use only that. Do not add a written rule beside it.
 
 A new lint rule, check, or test must fail on the real past mistake. Run it against that commit or that code and see it fail before you propose it. The commit is the one where the mistake reached the base branch. Build the trial in a copy outside the repository, such as one made with `git archive`, never in the checkout.
 

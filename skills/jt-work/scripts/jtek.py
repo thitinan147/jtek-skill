@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+import urllib.parse
 from pathlib import Path
 
 try:
@@ -242,38 +243,104 @@ def origin_intact(record: dict) -> bool:
     return hmac.compare_digest(origin_seal(url), seal)
 
 
-def remember_origin(cwd: Path | None = None) -> None:
-    """Seal the origin URL the first time init or start can see one.
+def origin_seal_due() -> bool:
+    """True when a start has already recorded authors, so a missing seal file was removed.
 
-    An empty URL means there was no origin yet. A later init or start that sees one seals that URL, once.
-    A sealed non-empty URL is never replaced here. A hand edit that does not recompute the seal is ignored.
+    The start that writes the seal still has `starting` on disk until it finishes, and it has no
+    author seal yet. A later start must not treat that missing file as the first sight of an origin."""
+    work = state_dir() / "work"
+    if not work.is_dir():
+        return False
+    for meta_path in work.glob("*/meta.json"):
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(meta, dict) and meta.get("authors_seal") and not meta.get("starting"):
+            return True
+    return False
+
+
+def remember_origin(cwd: Path | None = None) -> None:
+    """Seal the origin URL the first time start can see one.
+
+    An empty URL means there was no origin yet. A later start that sees one seals that URL, once.
+    A sealed non-empty URL is never replaced here. A missing, empty, or damaged file is not written
+    again: finish keeps refusing it. A hand edit that does not recompute the seal is ignored.
     A process that can rewrite both the key and this file can still forge it."""
     url = origin_url(cwd)
+    path = origin_record_path()
     record = read_origin_record()
     if origin_intact(record):
         if record["url"] or not url:
             return
-    elif record:
+    elif path.is_file() or origin_seal_due():
         return
-    path = origin_record_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json(path, {"url": url, "seal": origin_seal(url)})
 
 
-def insteadof_applies(url: str, cwd: Path | None = None) -> bool:
-    """True when a url.*.insteadOf value is a prefix of the origin URL.
+def repo_identity(url: str) -> tuple[str, str]:
+    """Host and path of a repository URL, ignoring userinfo, a trailing slash, and `.git`.
 
-    git then rewrites ls-remote and fetch. The rule is not printed: its key can hold a credential."""
-    if not url:
-        return False
+    `https://github.com/acme/widget.git` and the same path with a credential are one repository.
+    A local path is its own identity. The credential itself is not part of the result."""
+    text = url.strip()
+    host = ""
+    path = text
+    if "://" in text:
+        parsed = urllib.parse.urlparse(text)
+        host = (parsed.hostname or "").lower()
+        path = urllib.parse.unquote(parsed.path or "")
+    else:
+        scp = re.fullmatch(r"(?:[^@/\s]+@)?([^:/\s]+):(.+)", text)
+        if scp and not text.startswith("/"):
+            host = scp.group(1).lower()
+            path = scp.group(2)
+    path = path.rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if host:
+        path = path.lstrip("/")
+    else:
+        path = os.path.normpath(path)
+    return host, path
+
+
+def rewritten_origin(url: str, cwd: Path | None = None) -> str:
+    """The URL git would ask after the longest matching url.*.insteadOf rule.
+
+    The rule's key can hold a credential, so this string is compared and never printed."""
     raw = git("config", "--null", "--get-regexp", r"^url\..*\.insteadof$", cwd=cwd, check=False)
+    best: tuple[int, str, str] | None = None
     for record in raw.split("\0"):
         if not record:
             continue
-        _key, sep, value = record.partition("\n")
-        if sep and value and url.startswith(value):
-            return True
-    return False
+        key, sep, value = record.partition("\n")
+        if not sep or not value:
+            continue
+        folded = key.lower()
+        if not (folded.startswith("url.") and folded.endswith(".insteadof")):
+            continue
+        base = key[len("url."):-len(".insteadof")]
+        if url.startswith(value) and (best is None or len(value) > best[0]):
+            best = (len(value), base, value)
+    if best is None:
+        return url
+    return best[1] + url[len(best[2]):]
+
+
+def insteadof_applies(url: str, cwd: Path | None = None) -> bool:
+    """True when a url.*.insteadOf rule would send ls-remote and fetch to a different repository.
+
+    A rewrite that keeps the same host and path, such as a credential on https://github.com/, does not.
+    The rule is not printed: its key can hold a credential."""
+    if not url:
+        return False
+    rewritten = rewritten_origin(url, cwd)
+    if rewritten == url:
+        return False
+    return repo_identity(rewritten) != repo_identity(url)
 
 
 def require_honest_origin(cwd: Path | None = None) -> None:
@@ -608,6 +675,11 @@ SKILL_STEP = re.compile(r"(?i)\b(jt-[a-z]+|playbook)\b")
 GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^(caused by|fix:)\b")
 
 
+def guessed_line(line: str) -> bool:
+    """A guessed cause or fix. A list bullet in front of the sentence does not hide it."""
+    return bool(GUESSED_LINE.match(re.sub(r"^[-*]\s+", "", line.strip())))
+
+
 def require_card(ticket: dict) -> None:
     """A draft is five slots and nothing else. start still reads a page that uses Done when."""
     sections = ticket["sections"]
@@ -630,7 +702,7 @@ def require_card(ticket: dict) -> None:
             )
     for lines in sections.values():
         for line in lines:
-            if GUESSED_LINE.match(line.strip()):
+            if guessed_line(line):
                 raise Refuse(
                     "leave the guessed cause or fix out of the draft. Say the goal and the check, not where the bug lives. "
                     f"Not a slot line: {line.strip()[:80]}"
@@ -833,28 +905,32 @@ def remote_tip(repo: Path, base: str) -> str:
 def landed_span(repo: Path, base: str, head: str) -> str:
     """The commits that landed on the current base tip, or "" when that range cannot be named.
 
-    A fast-forward of several commits is not reviewed as only the last commit. With the reflog gone,
-    the sha the remote reports for the base is the fallback. A local refs/remotes/origin/<base> is not.
-    If that sha cannot be read either, the range is unknown. The walk ignores replace refs."""
+    A fast-forward of several commits is not reviewed as only the last commit. The reflog and the
+    fork point name the range, including a landing of one commit. With both gone, the sha the remote
+    reports is used only when it covers more than the last commit. A remote tip one commit behind is
+    the same shape as a one-commit landing and as a longer landing whose remote was moved to HEAD^,
+    so the review is refused. A local refs/remotes/origin/<base> is not a source. The walk ignores
+    replace refs."""
     ref = base_ref(base)
-    older: list[str] = []
+    local: list[str] = []
     prev = git("rev-parse", "--verify", "--quiet", f"{ref}@{{1}}", cwd=repo, check=False, replace=False)
     if prev:
-        older.append(prev)
+        local.append(prev)
     fork = git("merge-base", "--fork-point", ref, head, cwd=repo, check=False, replace=False)
-    if fork and fork not in older:
-        older.append(fork)
+    if fork and fork not in local:
+        local.append(fork)
     remote = remote_tip(repo, base)
-    if remote and remote not in older:
-        older.append(remote)
-    singles: list[str] = []
-    for candidate in older:
+    candidates = list(local)
+    if remote and remote not in candidates:
+        candidates.append(remote)
+    local_one = False
+    for candidate in candidates:
         spec, count = commit_span(repo, candidate, head, replace=False)
         if count > 1:
             return spec
-        if count == 1:
-            singles.append(spec)
-    if singles:
+        if count == 1 and candidate in local:
+            local_one = True
+    if local_one:
         return parent_span(repo, head, replace=False)
     return ""
 
@@ -1014,10 +1090,22 @@ def local_one_file(meta: dict) -> bool:
 DIRTY_HINT = "commit them, or add build output to .gitignore"
 
 
-def done_when_items(work: Path) -> list[str]:
-    sections = parse_ticket((work / "ticket.md").read_text())["sections"]
-    lines = sections.get("done when") or sections.get("done check") or []
+def bullet_items(lines: list[str]) -> list[str]:
     return [m.group(1).strip() for line in lines if (m := re.match(r"^-\s*(\S.*)$", line))]
+
+
+def done_when_items(work: Path) -> list[str]:
+    """Outcomes under Done when, and under Done check when that list has items too.
+
+    A blank `## Done when` is not a list. It must not hide the Done check items, or finish
+    would accept evidence with no `seen:` line and no broke proof."""
+    sections = parse_ticket((work / "ticket.md").read_text())["sections"]
+    items: list[str] = []
+    for name in ("done when", "done check"):
+        found = bullet_items(sections.get(name, []))
+        if found:
+            items.extend(found)
+    return items
 
 
 def is_test_path(path: str) -> bool:
@@ -1385,21 +1473,55 @@ def local_ticket(text: str) -> str:
     return f"# {ticket['title'] or 'Local work'}\n" + "\n".join(header) + "\n\n" + body
 
 
+def existing_test_file(token: str) -> bool:
+    """True when `token` is a test or spec file inside this repository."""
+    if not token or "://" in token or token.startswith("~"):
+        return False
+    root = main_root().resolve()
+    try:
+        path = (root / token).resolve()
+    except OSError:
+        return False
+    if path != root and root not in path.parents:
+        return False
+    if not path.is_file():
+        return False
+    folded = path.name.lower()
+    return "test" in folded or "spec" in folded
+
+
 def lesson_kind(enforced_by: str) -> str:
-    """architecture, type, lint (only when the text says what to use instead), test, or prose."""
+    """architecture, type, lint (only when the text says what to use instead), test, or prose.
+
+    A repeat is one of these shapes, and nothing looser:
+    `architecture: <target>`, `type: <target>`, `lint <rule>: use <replacement>`,
+    or `test: <path>` / `check: <path>` where the path is an existing test file.
+    """
     text = " ".join(enforced_by.lower().split())
     if not text or text in {"prose", "not yet", "warning", "reminder", "note", "written", "docs"}:
         return "prose"
-    if text.startswith("architecture") or "impossible" in text or text.startswith("unexport") or "private " in text:
+
+    def target_of(prefix: str) -> str:
+        if text.startswith(prefix + ":"):
+            return text[len(prefix) + 1:].strip()
+        if text.startswith(prefix + " "):
+            return text[len(prefix) + 1:].strip()
+        return ""
+
+    if target_of("architecture"):
         return "architecture"
-    if text.startswith("type") or re.search(r"\btype\b", text):
+    target = target_of("type")
+    if target and re.match(r"[a-z_][a-z0-9_.]*\b", target):
         return "type"
-    if "lint" in text:
+    if text.startswith("lint:") or text.startswith("lint "):
         if any(mark in text for mark in ("use ", "instead", "error:", "fix:", "says ")):
             return "lint"
         return "lint-silent"
-    if text.startswith("test") or text.startswith("check"):
-        return "test"
+    if text.startswith("test:") or text.startswith("test ") or text.startswith("check:") or text.startswith("check "):
+        rest = re.sub(r"^(?:test|check)\s*:?\s*", "", text, count=1)
+        token = rest.split()[0] if rest.split() else ""
+        if existing_test_file(token):
+            return "test"
     return "prose"
 
 
@@ -1939,6 +2061,10 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
             real.append(body)
         else:
             problems.append("thin")
+    # A nit anywhere in the notes that count blocks a pass. Dropped and Nits were removed above,
+    # and a nit that only appeared on a reproduces line is already recorded.
+    if "nit" not in problems and re.search(r"(?i)\bnit(?:s|pick)?\b", counted):
+        problems.append("nit")
     return real, problems
 
 

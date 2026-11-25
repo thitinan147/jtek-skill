@@ -46,7 +46,7 @@ Notes:
 ## Rules
 
 - **A finding has `steps:` or `scenario:`, and `expected:`.** A suspicion without them goes under Notes as `did not reproduce`, or is left out. The script refuses a `- reproduces:` line that has neither.
-- **Tie each finding to a bug or a regression:** a `Done when` item, an `Out of scope` line, or something that worked before. A nit goes under `Dropped` or is left out. Taste is not a FAIL.
+- **Tie each finding to a bug or a regression:** a `Done when` item, an `Out of scope` line, or something that worked before. A nit goes under `Dropped` or `Nits`, or is left out. A nit anywhere else in the notes blocks a pass. Taste is not a FAIL.
 - **Say what you did not check.** The human decides whether that matters.
 - **`FAIL` needs at least one such finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither. Both passes need at least one `broke:` line and a `safe because:` line, and the script refuses a pass without them. The script also refuses a FAIL that is only a nit.
 - **Do not paste the diff.** Name the file and the line.
