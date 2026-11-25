@@ -12,7 +12,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
    `after` lists only the related tickets that are not Done. Read the board again each time. Do not reuse an old file.
 
-   A repository with no board needs no such file: its tickets are files, as [files.md](files.md) says, and `next` and `sync` read them when you leave `--board-file` out.
+   A repository with no board needs no such file: its tickets are files, as [files.md](files.md) says, and `next` and `sync` read them when you leave `--board-file` out. `next` and `status` also read a claim that has no ticket file, such as a local ticket. `sync` does not: it only tidies a ticket the page already names.
 2. Run `jtek.py next --board-file <file>` in the repository. It prints one line for each of this repository's tickets: the id, an action, and the reason, separated by tabs.
 
 | Action | What to do |

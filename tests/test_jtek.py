@@ -2807,6 +2807,55 @@ class FileBoard(Scratch):
         self.assertIn("resumed", out)
         self.assertIn(before.split("## Log")[0].strip(), (work / "ticket.md").read_text())
 
+    def test_a_claimed_local_ticket_with_no_files_is_visible_to_status_and_next(self):
+        """No board and no ticket files. The claim under .git/jtek/work is the ticket."""
+        local = Path(self.tmp.name) / "local.md"
+        local.write_text(self.DRAFT)
+        code, out = self.raw("start", "--local", "--from-file", str(local))
+        self.assertEqual(code, 0, out)
+        work = self.repo / ".git" / "jtek" / "work" / "LOCAL-1"
+        self.assertTrue((work / "meta.json").is_file())
+        self.assertTrue(self.worktree("LOCAL-1").is_dir())
+        self.assertFalse(self.folder().exists() and any(self.folder().glob("*.md")))
+        author = json.loads((work / "meta.json").read_text())["author"]
+        stamp = (work / "meta.json").read_bytes()
+
+        code, out = self.raw("status")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("no ticket files", out)
+        self.assertIn(f"กำลังทำ\tLOCAL-1\tsession {author}", out)
+        self.assertIn("รอรีวิว\t-", out)
+        self.assertIn("รอ merge\t-", out)
+        self.assertIn("ถัดไป\trunning\tLOCAL-1\t", out)
+        self.assertNotIn("author-session", out)
+        code, nxt = self.raw("next")
+        self.assertEqual(code, 0, nxt)
+        self.assertNotIn("no ticket files", nxt)
+        self.assertIn("LOCAL-1\trunning\t", nxt)
+        self.assertEqual((work / "meta.json").read_bytes(), stamp)
+        self.assertFalse((work / "result.md").exists())
+
+        (work / "result.md").write_text(
+            "jtek-result\nid: LOCAL-1\nstatus: In Progress\noutcome: needs-review\nwaiting: -\n"
+            "pr: https://example.invalid/pr/9\n")
+        code, out = self.raw("status")
+        self.assertEqual(code, 0, out)
+        self.assertIn("รอรีวิว\tLOCAL-1\tneeds a verdict", out)
+        self.assertIn("กำลังทำ\t-", out)
+        self.assertIn("ถัดไป\treview\tLOCAL-1\t", out)
+        self.assertIn("LOCAL-1\treview\t", self.raw("next")[1])
+
+        (work / "result.md").write_text(
+            "jtek-result\nid: LOCAL-1\nstatus: Review\noutcome: review\nwaiting: -\n"
+            "pr: https://example.invalid/pr/9\n")
+        code, out = self.raw("status")
+        self.assertEqual(code, 0, out)
+        self.assertIn("รอ merge\tLOCAL-1\treview and merge https://example.invalid/pr/9", out)
+        self.assertIn("รอรีวิว\t-", out)
+        self.assertIn("ถัดไป\thuman\tLOCAL-1\treview and merge https://example.invalid/pr/9", out)
+        self.assertIn("LOCAL-1\thuman\treview and merge https://example.invalid/pr/9", self.raw("next")[1])
+        self.assertEqual((work / "meta.json").read_bytes(), stamp)
+
     def test_next_and_sync_read_the_ticket_files(self):
         code, out = self.raw("next")
         self.assertEqual(code, 0, out)

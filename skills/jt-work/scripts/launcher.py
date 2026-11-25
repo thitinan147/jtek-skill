@@ -110,8 +110,64 @@ def migrate(j, args) -> None:
         print("jtek does not commit it. A checkout on another machine does not have this folder until you copy it or migrate there.")
 
 
-def file_rows(j) -> list[dict]:
-    """The rows of a repository with no board: one for each ticket file, read from its header."""
+def plain_text(path) -> str:
+    """The text of a regular file. A symlink is not opened."""
+    if not path.is_file() or path.is_symlink():
+        return ""
+    try:
+        return path.read_text()
+    except OSError:
+        return ""
+
+
+def header_value(text: str, key: str) -> str:
+    prefix = f"{key}:"
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return " ".join(line[len(prefix):].split())
+    return ""
+
+
+def claim_rows(j, known: set[str]) -> list[dict]:
+    """Claims that have no ticket file. A local ticket never has one: its state is the claim folder.
+
+    Read-only. The result file, when the session has written one, supplies the status, the pull
+    request, and what the ticket is waiting for. A claim with no result is in progress.
+    """
+    root = j.state_dir() / "work"
+    if not root.is_dir():
+        return []
+    rows = []
+    for folder in sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink()):
+        ticket_id = folder.name
+        if ticket_id in known or not j.ID_RE.match(ticket_id):
+            continue
+        ticket = plain_text(folder / "ticket.md")
+        title = next((line[2:].strip() for line in ticket.splitlines() if line.startswith("# ")), "")
+        result = plain_text(folder / "result.md")
+        status = header_value(result, "status")
+        waiting = header_value(result, "waiting")
+        pr = header_value(result, "pr")
+        if waiting == "-":
+            waiting = ""
+        if pr == "-":
+            pr = ""
+        if not pr and (folder / "meta.json").is_file() and not (folder / "meta.json").is_symlink():
+            try:
+                pr = " ".join(str(j.read_json(folder / "meta.json").get("pr") or "").split())
+            except j.Refuse:
+                pr = ""
+        rows.append({"id": ticket_id, "title": title, "status": status or "In Progress", "repo": "",
+                     "waiting": waiting, "pr": pr, "after": []})
+    return rows
+
+
+def file_rows(j, *, include_claims: bool = False) -> list[dict]:
+    """The rows of a repository with no board: one for each ticket file, read from its header.
+
+    With `include_claims`, a claim that has no ticket file is a row too. `sync` leaves that out:
+    it only tidies tickets the page already names.
+    """
     rows = []
     for path in j.iter_ticket_files():
         try:
@@ -122,19 +178,21 @@ def file_rows(j) -> list[dict]:
         rows.append({"id": fields.get("id") or path.stem, "title": ticket["title"], "status": fields.get("status", ""),
                      "repo": fields.get("repo", ""), "waiting": fields.get("waiting", ""), "pr": fields.get("pr", ""),
                      "after": j.open_after(fields.get("after", ""))})
+    if include_claims:
+        rows.extend(claim_rows(j, {row["id"] for row in rows}))
     if not rows:
         print(f"no ticket files in {j.tickets_dir()}")
     return rows
 
 
-def load_board(j, path: str | None) -> list[dict]:
+def load_board(j, path: str | None, *, include_claims: bool = False) -> list[dict]:
     """Rows that the launcher read from the board with its own tool, or the ticket files when there is no board.
     Every row is checked before any is used."""
     if not path:
         if j.has_board(j.base_branch()):
             raise j.Refuse("pass --board-file: the open tickets, read from the board and saved as JSON; "
                            "see references/starting-sessions.md")
-        rows = file_rows(j)
+        rows = file_rows(j, include_claims=include_claims)
     else:
         try:
             rows = json.loads(Path(path).read_text())
@@ -242,7 +300,7 @@ def next_step(j, row: dict, repo: str) -> tuple[str, str]:
 
 def next_(j, args) -> None:
     repo = this_repo(j)
-    for row in load_board(j, args.board_file):
+    for row in load_board(j, args.board_file, include_claims=True):
         action, reason = next_step(j, row, repo)
         if action != "other":
             print(f"{row['id']}\t{action}\t{reason}")
@@ -358,7 +416,7 @@ def status(j, args) -> None:
     review: list[str] = []
     merge: list[str] = []
     ranked: list[tuple[int, str, str, str]] = []
-    for row in load_board(j, args.board_file):
+    for row in load_board(j, args.board_file, include_claims=True):
         action, reason = next_step(j, row, repo)
         if action == "other":
             continue
@@ -370,6 +428,7 @@ def status(j, args) -> None:
             except j.Refuse:
                 meta = {}
             doing.append(f"กำลังทำ\t{ticket_id}\t{session_label(meta)}")
+            ranked.append((4, ticket_id, action, detail))
         elif action == "review":
             review.append(f"รอรีวิว\t{ticket_id}\t{detail}")
             ranked.append((1, ticket_id, action, detail))

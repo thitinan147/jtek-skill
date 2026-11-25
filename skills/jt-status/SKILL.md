@@ -19,7 +19,7 @@ Read-only. Show where the work stands, then stop. Do not claim a ticket, do not 
 
 A `-` in a group means none.
 
-With a board, read the open tickets the way [starting-sessions.md](../jt-work/references/starting-sessions.md) says and pass them as `--board-file`. With no board, run `jtek.py status` with no file: the ticket files are on this machine.
+With a board, read the open tickets the way [starting-sessions.md](../jt-work/references/starting-sessions.md) says and pass them as `--board-file`. With no board, run `jtek.py status` with no file. It reads the ticket files on this machine, and a claim that has no ticket file, such as a local ticket.
 
 ## 2. Show the table
 
