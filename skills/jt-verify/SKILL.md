@@ -7,11 +7,11 @@ description: Runs the changed feature the way a user would and looks at the real
 
 Passing checks do not replace this step. Do it after `jtek.py check` passes.
 
-Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0, and remember that a pipe's exit code is its last command's. To run the base, give `--cwd` the main checkout, so the run names the commit it ran at. A screen you drive by hand cannot be recorded this way: attach a screenshot instead. A service that keeps running is not started through `run`, which waits for it to end: start it as `.jtek/verify.md` says, or in a session of its own, and record the calls you make to it.
+Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> --sh "<pipeline>"` for a pipe, with `--cwd <folder>` to run somewhere else, such as the base. It records exactly what ran, where, at which commit, the exit code, and what came back, and prints a run number. Let it record the exit code: do not end the line with `; echo $?`, which makes the run's own exit code 0, and remember that a pipe's exit code is its last command's. To run the base, give `--cwd` the main checkout, so the run names the commit it ran at. A screen you drive by hand cannot be recorded this way: attach a screenshot instead. A service that keeps running is not started through `run`, which waits for it to end: start it as the verify guide says, or in a session of its own, and record the calls you make to it.
 
 ## 1. Run the real thing
 
-If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. If the repository has `.jtek/verify.md`, follow it to launch and drive the app, and read the file in `.jtek/features/` for the feature you changed. If it has none, do not stop and do not build one: use the list below, and say in the evidence that the repository has no verify guide.
+If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. The verify guide is `verify.md` in `~/.jtek/repos/<repo id>/` (the same id `jtek.py init` prints: host, non-default port, and path of the origin, or the checkout path when there is no origin). Follow it, and read `features/<name>.md` beside it for the feature you changed. When that folder is missing, do not stop and do not build one: read the README and the code, use the list below, and say in the evidence that no verify guide was found.
 
 For each `Done when` item, do what you named before you built it:
 
@@ -59,4 +59,4 @@ First rule out the way you looked: a stale build or cache, the wrong worktree, p
 
 If the project has no way to run the real thing, say so in the evidence and say that the repository needs a verification harness.
 
-If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `.jtek/features/` in the same change. The result will name the file on its `attention:` line. That line asks the human to look, and it makes a ticket with `review: human` need a reviewer after all. It does not forbid the edit.
+If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `~/.jtek/repos/<repo id>/features/`. That edit is not in the pull request. Say in the evidence which file you changed.

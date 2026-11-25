@@ -48,12 +48,30 @@ def copy_skills(skills: Path, lean: bool) -> None:
     shutil.copytree(ROOT / "skills" / "jt-review", skills / "jt-review", ignore=ignore)
 
 
+def install_checks(repo: Path) -> None:
+    """Move a scenario's jtek.json onto the machine, under the same id the script uses with no origin.
+
+    The built repository does not contain jtek.json. Set JTEK_HOME to choose the machine folder;
+    otherwise this writes ~/.jtek, which is where a person running the eval already keeps config.
+    """
+    src = repo / "jtek.json"
+    if not src.is_file():
+        return
+    override = os.environ.get("JTEK_HOME", "").strip()
+    base = Path(override).expanduser().resolve() if override else Path.home() / ".jtek"
+    ident = "path" + repo.resolve().as_posix()
+    dest = base / "repos" / ident / "jtek.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), dest)
+
+
 def build(name: str, dest: Path, lean: bool = False) -> None:
     folder, scenario = load(name)
     if dest.exists() and any(dest.iterdir()):
         sys.exit(f"{dest} is not empty")
     repo = dest / "app"
     shutil.copytree(folder / "repo", repo)
+    install_checks(repo)
     git("init", "-q", "-b", "main", cwd=repo)
     # Nothing the agent sees may say it is being measured: a run that knows it is watched is not an ordinary run.
     git("config", "user.email", "sam.okafor@example.com", cwd=repo)

@@ -27,7 +27,7 @@ Assume the next contributor is an agent that sees only the files it opened, copi
 1. **Architecture:** change the shape so the wrong call cannot be written. Hide the internal, or split the module so the bad import does not exist.
 2. **A type:** change the type or the function's shape so the wrong value does not compile.
 3. **A lint rule:** when the mistake has a pattern a tool can match. Its error message names what to use instead.
-4. **A test or a check:** when the mistake only shows at run time. Add it to the project, and to `jtek.json` if it is a new command.
+4. **A test or a check:** when the mistake only shows at run time. Add it to the project, and to `~/.jtek/repos/<repo id>/jtek.json` if it is a new command.
 
 Fix the old examples in the same change when the code taught the mistake: list the files that still have the wrong pattern, and delete the old way so nothing is left to copy.
 
@@ -39,11 +39,11 @@ A new lint rule, check, or test must fail on the real past mistake. Run it again
 
 1. Fix the ticket's own work first, in its worktree. When that work is already merged, the fix goes into the new ticket below.
 2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so. Write the ticket out in your report, in the ticket format. Put it on the board, or save it as a ticket file when the repository has no board, only when the human asks, and then as Backlog. A repair the mechanism needs before it can pass belongs in the same ticket. Save a working trial as a patch file, and say where it is and that the folder may be temporary.
-3. A change to lint config, CI, or `jtek.json` is the human's to commit on the base branch.
+3. A change to lint config or CI is the human's to commit on the base branch. A change to the machine config is the human's to edit on this machine.
 
 ## 5. Keep the rule table small
 
-The row for `.jtek/rules.md` (the rule, what enforces it, and the date) goes into the new ticket's `Done when`, so it lands with its enforcer. Do not add it in this change. Propose the file as text in your report when it is missing. Its form is in [references/rules-template.md](references/rules-template.md).
+The row for `~/.jtek/repos/<repo id>/rules.md` (the rule, what enforces it, and the date) goes into the new ticket's `Done when`, so it lands with its enforcer. Do not add it in this change. Propose the file as text in your report when it is missing. Its form is in [references/rules-template.md](references/rules-template.md).
 
 - A rule with no enforcer is marked `prose` only the first time that mistake is recorded. `jtek.py lesson` refuses prose for a repeat.
 - Drop a rule once its mistake cannot happen any more.

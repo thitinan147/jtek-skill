@@ -13,7 +13,7 @@ The rules a good ticket follows are in `jt-work`'s `references/ticket-template.m
 
 ## 1. Restate
 
-Say in two or three lines what the owner wants and why, in their words. Name the repository it belongs to, from `jtek.json` (`name`), and the board, from its `board` link. An empty `board` means the tickets are files. When it spans two repositories, say which part goes where.
+Say in two or three lines what the owner wants and why, in their words. Name the repository it belongs to, from the machine config (`name`), and the board, from its `board` link. No config file, or an empty `board`, means the tickets are files under `~/.jtek/repos/<repo id>/tickets`. When it spans two repositories, say which part goes where.
 
 ## 2. Find the facts yourself
 
@@ -57,7 +57,7 @@ Create each approved ticket on the board with the board's tool, as `jt-work`'s `
 - The title, the kind, the repo and area, and the five slots as the body.
 - Each `after:` as the board's own link: After in Notion, `blocked by` in FLO.
 
-**The repository has no board** (`board` is empty in `jtek.json`): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog, and prints where the file is. A blank line in the draft does not drop `kind`, `area`, or `repo`. An id already used by a commit message or by `refs/remotes/*/jtek/<id>` is not given out again. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it.
+**The repository has no board** (`board` is empty, which is also the default when no config file exists): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog under `~/.jtek/repos/<repo id>/tickets`, and prints where the file is. A blank line in the draft does not drop `kind`, `area`, or `repo`. An id already used by a commit message or by `refs/remotes/*/jtek/<id>` is not given out again. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it. The file is not committed.
 
 Every agent you start for this work, to read code in parallel for example, gets as the first line of its prompt `Read <absolute path of jt-work>/worker.md before anything else.`
 

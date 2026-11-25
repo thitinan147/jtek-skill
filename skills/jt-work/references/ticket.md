@@ -32,9 +32,9 @@ What should be true when this is done, and why. No guessed cause, and no fix.
 A page that was written with `## Done when` and `## Out of scope` still starts. A draft checked with `jtek.py ticket` does not: it has to be the five slots above, and no other heading. The blank form is [ticket-template.md](ticket-template.md).
 
 - **`id`:** the page's Ticket ID. It names the branch `jtek/<id>` and the worktree.
-- **`checks`:** optional. Names from `jtek.json` on the base branch. Leave it out to run every declared check. A ticket cannot add a command.
+- **`checks`:** optional. Names from the machine config. Leave it out to run every declared check. A ticket cannot add a command.
 - **`after`:** optional. The tickets in After that are not Done yet. They may belong to any repository on the board. `start` refuses a new ticket that has this line.
-- **`repo`:** optional. The repository the ticket is for, when one board serves several. It is the `name` in that repository's `jtek.json`, or its folder name. `start` refuses a ticket whose `repo` is another one.
+- **`repo`:** optional. The repository the ticket is for, when one board serves several. It is the `name` in that repository's machine config, or its folder name. `start` refuses a ticket whose `repo` is another one.
 - **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
 - **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket. The waiver is ignored when the change touches a file on the `attention:` line.
@@ -71,7 +71,7 @@ The page on the board is the source of truth. The layout of the board is in [not
 
 Before anything else, `start` fetches the base branch from `origin` and moves the local one forward when it is only behind, so a ticket starts from what is merged. It never rewrites the branch: when both sides have moved it says so and starts from the local one, and when the branch cannot move it refuses. `--no-fetch` skips this.
 
-After creating the worktree, `start` runs the `setup` command from `jtek.json`, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo on the board, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
+After creating the worktree, `start` runs the `setup` command from the machine config, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one fails, the worktree and the claim are removed, the ticket stays Todo on the board, and the log is kept in `<git-common-dir>/jtek/baseline/<id>/`. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
 
 `start` creates `<git-common-dir>/jtek/work/<id>/`. Creating a directory is atomic, so when two sessions start the same id, one is refused. Each ticket gets the worktree `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 

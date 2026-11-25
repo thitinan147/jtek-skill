@@ -25,7 +25,7 @@ This skill owns the order of the steps and the script. Each step's judgement liv
 | A pull request needs work again | `jt-babysit` | `check`, `finish` |
 | Stop and wait, at any step | `jt-work` | `stop` |
 | When the human corrects you | `jt-learn` | `lesson` |
-| Once per repository, before any ticket. A ticket session does not run it: without `.jtek/verify.md` it goes on, as `jt-verify` says | `jt-harness` | |
+| Once per repository, before any ticket. A ticket session does not run it: without a verify guide on this machine it goes on, as `jt-verify` says | `jt-harness` | |
 
 Any agent you start, for any step, gets that same first line: [worker.md](worker.md) holds the rules it keeps whatever its prompt says.
 
@@ -41,7 +41,7 @@ The playbook gives the default order and the step numbers. You may combine or re
 
 ## Start
 
-1. The board is named as `board` in `jtek.json`: a Notion database, or a FLO product when the link is a FLO one. Find the ticket with that board's tool, save it as a ticket file, and run `jtek.py start <page link> --from-file <file>`. Then write on the page what the `board:` line says. How to read the page and what to write back: [references/notion.md](references/notion.md), or [references/flo.md](references/flo.md) for FLO. The ticket format: [references/ticket.md](references/ticket.md).
+1. The board is named as `board` in the machine config (`$HOME/.jtek/repos/<repo id>/jtek.json`, or `$HOME/.jtek/config` when that per-repository file is absent): a Notion database, or a FLO product when the link is a FLO one. No config file means an empty board. Find the ticket with that board's tool, save it as a ticket file, and run `jtek.py start <page link> --from-file <file>`. Then write on the page what the `board:` line says. How to read the page and what to write back: [references/notion.md](references/notion.md), or [references/flo.md](references/flo.md) for FLO. The ticket format: [references/ticket.md](references/ticket.md).
    - **You have no tool for the board:** stop and say so. Use a ticket file only when the human hands you one, and pass the page link the human gave, or the file's path, as the first argument of `start`.
    - **`board` is empty:** the repository has no board, and each ticket is a file, as [references/files.md](references/files.md) says. Run `jtek.py start <id>` with no `--from-file`. The file it prints as `page:` is the page: write there what a `board:` line says.
    - **No ticket given:** ask which one. Do not choose. When the human describes work that has no ticket, do not start it: say that `/jt` followed by the work does it.
@@ -52,9 +52,9 @@ The playbook gives the default order and the step numbers. You may combine or re
 
 ## Check
 
-1. Run `jtek.py check <id>`. It runs the checks the base branch declares in `jtek.json`, in order, and stops at the first failure.
+1. Run `jtek.py check <id>`. It runs the checks declared in the machine config, in order, and stops at the first failure. A file named `jtek.json` in the worktree is not that config.
 2. On a failure, use `jt-debug`, then commit and run `check` again.
-3. After three failed runs the script tells you to stop, and refuses another run. Stop. The project may set another number as `max_failed_runs` in `jtek.json`.
+3. After three failed runs the script tells you to stop, and refuses another run. Stop. The project may set another number as `max_failed_runs` in the machine config.
 4. `finish` only accepts checks that passed on the last commit, so run `check` again after a new commit, except one the playbook makes red on purpose.
 
 ## Second look

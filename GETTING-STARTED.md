@@ -12,8 +12,8 @@ Most steps are things you say to your agent. Text in a `text` block is a prompt.
 |---|---|---|
 | A coding agent that loads skills (Claude Code, Cursor, Antigravity, Codex, ...) | It does the work | Yes |
 | `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
-| Notion, as a tool in the agent | The board lives there | No. FLO works too, and with no board at all the tickets are files: leave `board` empty in `jtek.json`, skip step 3, and read [files.md](skills/jt-work/references/files.md) |
-| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in `jtek.json` instead |
+| Notion, as a tool in the agent | The board lives there | No. FLO works too, and with no board at all the tickets are files: leave `board` empty, or skip the config file, skip step 3, and read [files.md](skills/jt-work/references/files.md) |
+| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in the machine config instead |
 | Your project's own commands for lint, types, and tests | They are the checks | At least one |
 | A way to run your real app from the command line | So the agent can see a change work | Strongly advised |
 
@@ -69,18 +69,18 @@ Do this in each repository the board serves.
 
 ```text
 Run jtek.py init in this repository. Then read the package scripts and the CI
-config, and propose one command per check for jtek.json. Set "board" to <link>
-and "name" to <the name tickets will use for this repository>.
-Show me the file. Do not commit it.
+config, and propose one command per check for the file it wrote under ~/.jtek.
+Set "board" to <link> and "name" to <the name tickets will use for this repository>.
+Show me the file. Do not commit it: it does not belong in the repository.
 ```
 
-Read the file. A command is one program with arguments: a pipeline goes into a script. Delete the checks your project does not have. Then commit `jtek.json` on your base branch yourself.
+Read the file. A command is one program with arguments: a pipeline goes into a script. Delete the checks your project does not have. Leave the file on this machine.
 
 ```text
 Run jtek.py doctor.
 ```
 
-**You should see:** no `missing` line, and `ready:` at the end. The `optional` lines about `verify` and `.jtek/verify.md` are step 5.
+**You should see:** no `missing` line, and `ready:` at the end. The `optional` lines about `verify` and the verify guide are step 5.
 
 If it says it cannot find the base branch, the repository has no commit yet: make the first commit.
 
@@ -90,9 +90,9 @@ If it says it cannot find the base branch, the repository has no commit yet: mak
 Follow the jt-harness skill for this repository.
 ```
 
-It writes `.jtek/verify.md`, a feature map, and one script, and it proposes a `verify` check. It must show you the check passing on the working app and failing when a feature is broken on purpose.
+It writes `~/.jtek/repos/<repo id>/verify.md`, a feature map beside it, and one script, and it proposes a `verify` check. It must show you the check passing on the working app and failing when a feature is broken on purpose.
 
-Read what it wrote, add `verify` to `jtek.json`, and commit both on the base branch.
+Read what it wrote and add `verify` to the machine config. Neither file is committed.
 
 **You should see:** `jtek.py doctor` with no `optional` line for `verify`.
 
@@ -104,7 +104,7 @@ Pick something small and safe. Create a page on the board. The blank form and th
 
 - **Name:** `Add a --version flag to the command-line tool`
 - **Kind:** `feature`
-- **Repo:** the `name` in this repository's `jtek.json`
+- **Repo:** the `name` in this repository's machine config
 - **Body:**
 
 ```markdown
@@ -119,7 +119,7 @@ Running the tool with --version prints its version, so a user can report it in a
 - the output of every other flag stays exactly as it is now
 ```
 
-The three headings must be named exactly like this, or with the words that `headings` in `jtek.json` gives them. A heading appears once. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
+The three headings must be named exactly like this, or with the words that `headings` in the machine config gives them. A heading appears once. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
 
 Notion gives the page an id, such as `T-1`. If you made other pages while testing, yours has another number: use that one below.
 
@@ -194,7 +194,7 @@ The same three steps ask for a fix on a ticket that is in Review.
 
 | It says | What it means | What you do |
 |---|---|---|
-| `jtek.json is not committed on <base>` | The checks are read from the base branch | Commit `jtek.json` there |
+| `no jtek config for this repository` | There is no machine config yet, so there are no checks | Run `jtek.py init` and fill in one check. The file stays on this machine |
 | `is ..., not Todo` | Only a Todo ticket can start | Set Status to Todo |
 | `comes after ..., which is not Done` | A ticket in After is not merged yet | Merge that one first |
 | `is for the repository ...` | The ticket's Repo is another repository | Start the session there |

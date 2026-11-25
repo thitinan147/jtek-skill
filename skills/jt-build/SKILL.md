@@ -28,9 +28,9 @@ This never applies to security, input validation at a trust boundary, or error h
 
 ## Stop instead of building
 
-A new dependency, a migration file, or a change to CI or `jtek.json` is part of the change: make it when the ticket needs it, and say it and why in the evidence. The `attention:` line shows it to the human, and the change then needs a verdict. Two limits:
+A new dependency, a migration file, or a change to CI is part of the change: make it when the ticket needs it, and say it and why in the evidence. The `attention:` line shows it to the human, and the change then needs a verdict. The machine config is not in the repository. Two limits:
 
-- The checks install from `setup` in `jtek.json` on the base, and read their commands from there. A dependency that `setup` does not install, or a new check, does not take effect in this ticket: stop with `jtek.py stop <id> --waiting approval --note "<what to add on the base, and why>"`.
+- The checks install from `setup` in the machine config, and read their commands from there. A dependency that `setup` does not install, or a new check, does not take effect in this ticket: stop with `jtek.py stop <id> --waiting approval --note "<what to add to the machine config, and why>"`.
 - Anything that acts outside the pull request, such as running a migration against a shared database or a deploy, waits for the human (P16).
 
 Stop with `--waiting input` when the change grows past the ticket. A second ticket is cheaper than a wide diff.

@@ -3,11 +3,11 @@
 
 The board is a Notion database or a FLO product, which the agent reads and writes
 with its own tool. This script never talks to the board: it takes the ticket as a file
-and prints what to write back. A repository whose jtek.json names no board keeps its
-tickets as files in `.jtek/tickets`, inside the repository, so a fresh clone has them.
-The old folder beside the repository is still read. Claims, logs, and results live under the
-repository's common git directory, so every worktree sees the same claims and
-no tracked file is shared between sessions.
+and prints what to write back. Config and per-repository knowledge live on this machine,
+under $HOME/.jtek (or JTEK_HOME). No file there means the defaults: an empty board, so tickets
+are files. Nothing is read from jtek.json or .jtek/ inside the repository.
+Claims, logs, and results live under the repository's common git directory, so every
+worktree sees the same claims and no tracked file is shared between sessions.
 Standard library only. Python 3.10+.
 """
 from __future__ import annotations
@@ -543,26 +543,34 @@ def base_ref(base: str) -> str:
 
 
 def load_config(base: str) -> dict:
-    """The config comes from the base branch, never from the ticket or the worktree."""
-    proc = subprocess.run(["git", "show", f"{base_ref(base)}:{CONFIG}"], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise Refuse(f"{CONFIG} is not committed on {base}; run `jtek.py init`, fill it in, and have the human merge it")
+    """Config from this machine, never from the worktree or from a commit.
+
+    No per-repository file and no $HOME/.jtek/config means the defaults: an empty board and no checks.
+    `base` is unused. Callers still pass the branch they are on.
+    """
+    del base
+    path = find_config()
+    if path is None:
+        return {"board": "", "setup": "", "checks": {}}
     try:
-        config = json.loads(proc.stdout)
+        config = json.loads(path.read_text())
     except json.JSONDecodeError as err:
-        raise Refuse(f"{CONFIG} on {base} is not valid JSON: {err}") from err
+        raise Refuse(f"{path} is not valid JSON: {err}") from err
     if not isinstance(config, dict):
-        raise Refuse(f"{CONFIG} on {base} must be a JSON object")
+        raise Refuse(f"{path} must be a JSON object")
     return config
 
 
 def load_checks(base: str) -> dict[str, str]:
     checks = load_config(base).get("checks", {})
     if not isinstance(checks, dict) or not checks:
-        raise Refuse(f"{CONFIG} on {base} declares no checks; a ticket needs at least one real check")
+        if find_config() is None:
+            raise Refuse("no jtek config for this repository; run `jtek.py init`, fill it in, and give at least one check "
+                         "a command. With no config file the board is empty and tickets are files on this machine")
+        raise Refuse(f"{config_name()} declares no checks; a ticket needs at least one real check")
     for name, cmd in checks.items():
         if not isinstance(cmd, str) or not cmd.strip():
-            raise Refuse(f"check `{name}` in {CONFIG} has no command")
+            raise Refuse(f"check `{name}` in {config_name()} has no command")
     return checks
 
 
@@ -570,30 +578,31 @@ HEADINGS = ["Goal", "Done when", "Out of scope", "Done check", "Proof", "Context
 
 
 def load_settings(base: str) -> dict:
-    """The optional settings of jtek.json, checked in one place so `doctor` and `start` find a bad value,
+    """The optional settings, checked in one place so `doctor` and `start` find a bad value,
     and not the first `check` after the ticket is claimed."""
     config = load_config(base)
+    name = config_name()
     limit = config.get("max_failed_runs", MAX_FAILED_RUNS)
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        raise Refuse(f"`max_failed_runs` in {CONFIG} must be a whole number of at least 1")
+        raise Refuse(f"`max_failed_runs` in {name} must be a whole number of at least 1")
     pr_state = config.get("pr_state") or ""
     try:
         shlex.split(pr_state)
     except (ValueError, AttributeError):
-        raise Refuse(f'`pr_state` in {CONFIG} must be one command as text, such as "python3 scripts/pr-state.py"') from None
+        raise Refuse(f'`pr_state` in {name} must be one command as text, such as "python3 scripts/pr-state.py"') from None
     names = {} if config.get("headings") is None else config["headings"]
     form = '{"Goal": "...", "Done check": "...", "Proof": "...", "Context": "...", "Constraints": "..."}'
     if not isinstance(names, dict) or any(not isinstance(v, str) or not v.strip() for v in names.values()):
-        raise Refuse(f"`headings` in {CONFIG} must be an object such as {form}")
+        raise Refuse(f"`headings` in {name} must be an object such as {form}")
     unknown = [key for key in names if key not in HEADINGS]
     if unknown:
-        raise Refuse(f"`headings` in {CONFIG} has the name `{unknown[0]}`. Its names are exactly: {', '.join(HEADINGS)}")
+        raise Refuse(f"`headings` in {name} has the name `{unknown[0]}`. Its names are exactly: {', '.join(HEADINGS)}")
     own = {key: " ".join(value.split()).lower() for key, value in names.items()}
     if len(set(own.values())) != len(own):
-        raise Refuse(f"`headings` in {CONFIG} gives two headings the same words")
+        raise Refuse(f"`headings` in {name} gives two headings the same words")
     clash = [key for key, value in own.items() if any(value == other.lower() and other != key for other in HEADINGS)]
     if clash:
-        raise Refuse(f"`headings` in {CONFIG} names `{clash[0]}` with the English name of another heading")
+        raise Refuse(f"`headings` in {name} names `{clash[0]}` with the English name of another heading")
     return {"max_failed_runs": limit, "pr_state": pr_state.strip(), "headings": own}
 
 
@@ -1320,13 +1329,29 @@ def refresh_base(base: str) -> str:
     return f"note: `{base}` was {behind} commits behind origin/{base} and was moved forward before the ticket started"
 
 
-def tickets_dir() -> Path:
-    """Where new ticket files are written, when jtek.json names no board.
+def ticket_folders() -> list[Path]:
+    """Every place a ticket file may be, later entries winning on the same id.
 
-    Inside the repository, at `.jtek/tickets`, so a clone on a fresh machine has the tickets.
-    The human commits that folder on the base branch. Every worktree reads the main checkout's copy.
+    New files go to the last folder: the origin id when this clone has an origin, otherwise the
+    checkout's path id. A folder from before the origin was added is still read. So is the old
+    folder beside the repository, `<name>.jtek/_tickets`.
     """
-    return main_root() / ".jtek" / "tickets"
+    folders = [legacy_tickets_dir()]
+    homes = candidate_homes()
+    # Prefer the write folder last so it wins. candidate_homes already lists the origin id first.
+    for home in reversed(homes):
+        folders.append(home / "tickets")
+    return folders
+
+
+def tickets_dir() -> Path:
+    """Where new ticket files are written, when the config names no board.
+
+    On this machine, at $HOME/.jtek/repos/<repo id>/tickets. The repository is not touched.
+    A second checkout of the same origin on this machine sees the same files. A new machine does not,
+    until someone copies that folder or runs `jtek.py migrate` there.
+    """
+    return repo_home() / "tickets"
 
 
 def legacy_tickets_dir() -> Path:
@@ -1336,20 +1361,19 @@ def legacy_tickets_dir() -> Path:
 
 
 def ticket_file(ticket_id: str) -> Path:
-    """The file for this id: the one inside the repository when it exists, otherwise the old folder."""
-    new = tickets_dir() / f"{ticket_id}.md"
-    old = legacy_tickets_dir() / f"{ticket_id}.md"
-    if new.is_file():
-        return new
-    if old.is_file():
-        return old
-    return new
+    """The file for this id. The write folder wins, then any earlier folder, then the old folder beside the repo."""
+    found = tickets_dir() / f"{ticket_id}.md"
+    for folder in reversed(ticket_folders()):
+        path = folder / f"{ticket_id}.md"
+        if path.is_file():
+            return path
+    return found
 
 
 def iter_ticket_files() -> list[Path]:
-    """Every ticket file, the copy inside the repository winning when both folders have the same id."""
+    """Every ticket file. The write folder wins when two folders have the same id."""
     found: dict[str, Path] = {}
-    for folder in (legacy_tickets_dir(), tickets_dir()):
+    for folder in ticket_folders():
         if not folder.is_dir():
             continue
         for path in folder.glob("*.md"):
@@ -1386,7 +1410,7 @@ def next_free(prefix: str) -> str:
     A remote-tracking ref refs/remotes/*/jtek/<id>, a tag refs/tags/jtek/<id>, and an id named in any
     commit subject or body are taken too. Deleting the local branch does not make that id free."""
     taken = [p.name for p in (state_dir() / "work").glob(f"{prefix}-*")]
-    for folder in (tickets_dir(), legacy_tickets_dir()):
+    for folder in ticket_folders():
         if folder.is_dir():
             taken += [p.stem for p in folder.glob(f"{prefix}-*.md")]
     refs = git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", "refs/remotes", "refs/tags", check=False)
@@ -1559,7 +1583,7 @@ def cmd_lesson(args: argparse.Namespace) -> None:
     write_json(path, {"lessons": lessons})
     if prior:
         print(f"lesson: structural ({kind}), time {row['times']}. "
-              "Put this enforcer on the row in .jtek/rules.md, in the ticket that adds it.")
+              f"Put this enforcer on the row in {repo_home() / 'rules.md'}, in the ticket that adds it.")
     else:
         print(f"lesson: recorded ({kind}). The same mistake again needs a structural rule, not prose.")
 
@@ -2314,24 +2338,17 @@ def remote_default(cwd: Path | None = None) -> tuple[str, str]:
 
 
 def remote_forge_off(cwd: Path | None = None) -> bool:
-    """Whether the remote tip has forge set to false."""
-    # Read the fetched object with replace refs off, so a git replace ref cannot stand in for that tip.
-    branch, sha = remote_default(cwd)
-    if not sha:
-        return False
-    stored = "refs/jtek/remote-base"
-    spec = "+refs/heads/" + branch + ":" + stored
+    """Whether this machine's config for the repository says there is no forge.
+
+    The flag used to be `"forge": false` in jtek.json on the remote tip. A commit cannot set it:
+    not on the published base, not on an unmerged branch, and not through a replace ref or a
+    rewritten origin. The caller has already refused a rewritten or unsealed origin.
+    `cwd` is accepted so the call site stays the same; the config is this repository's.
+    """
+    del cwd
     try:
-        git("fetch", "--quiet", "origin", spec, cwd=cwd, timeout=60, replace=False)
-    except Refuse as err:
-        raise Refuse("the remote default branch could not be fetched, so this change is not sent without a pull request. " + str(err)) from None
-    fetched = git("rev-parse", "--verify", "--quiet", stored, cwd=cwd, check=False, replace=False)
-    if fetched != sha:
-        raise Refuse("the fetched tip does not match the remote, so this change is not sent without a pull request.")
-    text = git("show", sha + ":" + CONFIG, cwd=cwd, check=False, replace=False)
-    try:
-        config = json.loads(text) if text else {}
-    except json.JSONDecodeError:
+        config = load_config("")
+    except Refuse:
         return False
     return isinstance(config, dict) and config.get("forge") is False
 
@@ -2361,9 +2378,8 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse("--pr takes the link of the pull request, as the forge gave it")
     if args.no_pr and not no_pr_allowed(worktree):
         raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
-                     f"--pr <url>. `finish --no-pr` is allowed only when there is no remote, or when the default branch "
-                     f"the remote itself reports has `\"forge\": false` in {CONFIG}. "
-                     "A local origin/HEAD does not count. An unmerged branch that sets the flag does not either.")
+                     "--pr <url>. finish --no-pr is allowed only when there is no remote, or when this machine config sets forge to false. "
+                     "A commit cannot set that flag.")
     sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
     passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])
@@ -2610,7 +2626,7 @@ def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
     State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, none, or absent.
     GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown", why).
     `why` is a short redacted reason, or "" when the read worked.
-    For another forge, `pr_state` in jtek.json names a command that gets the link as its last argument and
+    For another forge, `pr_state` in the machine config names a command that gets the link as its last argument and
     prints those three words. It runs in the main checkout, so a ticket's branch cannot change what runs.
     A project that names its own command gets a refusal, and not "unknown", when that command does not answer."""
     custom = load_settings(base or base_branch())["pr_state"]
@@ -2630,7 +2646,7 @@ def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
     except (OSError, ValueError, subprocess.TimeoutExpired) as err:
         problem = f"did not run: {type(err).__name__}: {err}"
     if problem and custom:
-        raise Refuse(f"the `pr_state` command of {CONFIG} {problem}")
+        raise Refuse(f"the `pr_state` command of {config_name()} {problem}")
     if problem:
         return ("unknown", "", "unknown", redact(problem))
     return (parts[0], parts[1], parts[2], "")
@@ -2722,7 +2738,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jtek.py", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="write a jtek.json template").set_defaults(func=cmd_other)
+    sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
+    sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek").set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
     doctor.add_argument("--agents", action="store_true", help="instead: the coding agents on this machine, their models, and the owner's list of reviewers")
     doctor.set_defaults(func=cmd_other)
@@ -2777,7 +2794,7 @@ def build_parser() -> argparse.ArgumentParser:
     finish = sub.add_parser("finish", help="move to Review when checks and verdict hold on the current commit")
     finish.add_argument("id")
     finish.add_argument("--pr")
-    finish.add_argument("--no-pr", action="store_true", help="only for a repository with no remote, or with `\"forge\": false` in jtek.json")
+    finish.add_argument("--no-pr", action="store_true", help="only for a repository with no remote, or with `\"forge\": false` in this machine's config")
     finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; needed again whenever the code changed")
     finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
@@ -2840,6 +2857,117 @@ def main(argv: list[str] | None = None) -> int:
               "damaged or edited by hand. Set JTEK_DEBUG=1 to see where")
         return 2
     return 0
+
+
+def machine_root() -> Path:
+    """Where this machine keeps jtek config. JTEK_HOME overrides $HOME/.jtek. No file there means the defaults."""
+    override = os.environ.get("JTEK_HOME", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (Path.home() / ".jtek").resolve()
+
+
+def machine_config_path() -> Path:
+    """Machine-wide defaults. Absent, and with no per-repository file either, the board is empty."""
+    return machine_root() / "config"
+
+
+def repo_storage_id(url: str) -> str:
+    """A repository id safe to use as directories under $HOME/.jtek/repos.
+
+    An origin URL contributes its host, a non-default port, and its path. Userinfo is left out.
+    https://github.com/acme/widget.git, ssh://git@github.com/acme/widget.git, and
+    git@github.com:acme/widget.git are github.com/acme/widget.
+    ssh://git@gitlab.example:2222/acme/widget.git is gitlab.example:2222/acme/widget.
+    https://git.example:8443/acme/widget keeps port 8443. The default ports 443, 80, 22, and 9418
+    are left out. A trailing slash and a trailing .git are left out.
+    A local path, and a repository with no origin, is path plus that absolute path, such as
+    path/tmp/app. .. is refused so the id cannot step out of $HOME/.jtek/repos.
+    """
+    text = url.strip()
+    host = ""
+    port: int | None = None
+    scheme = ""
+    path = text
+    if "://" in text:
+        parsed = urllib.parse.urlparse(text)
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+        path = urllib.parse.unquote(parsed.path or "")
+    else:
+        scp = re.fullmatch(r"(?:[^@/\s]+@)?([^:/\s]+):(.+)", text)
+        if scp and not text.startswith("/") and not text.startswith("."):
+            host = scp.group(1).lower()
+            path = scp.group(2)
+    path = path.rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if host:
+        path = path.lstrip("/")
+    else:
+        path = os.path.normpath(path or ".")
+    parts = [part for part in path.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise Refuse(f"the repository id for {url} is not usable: it contains '..'")
+    path = "/".join(parts)
+    if host:
+        default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
+        if port and port != default:
+            host = f"{host}:{port}"
+        return f"{host}/{path}" if path else host
+    if path.startswith("/"):
+        return "path" + path
+    return "path/" + path
+
+
+def candidate_homes(cwd: Path | None = None) -> list[Path]:
+    """Per-repository folders, the origin id first and the checkout path second.
+
+    A config written before this clone had an origin still lives under the path id.
+    The origin id wins when both have a file of the same kind.
+    """
+    homes: list[Path] = []
+    url = origin_url(cwd)
+    if url:
+        homes.append(machine_root() / "repos" / repo_storage_id(url))
+    path_home = machine_root() / "repos" / repo_storage_id(main_root().as_posix())
+    if path_home not in homes:
+        homes.append(path_home)
+    return homes
+
+
+def repo_home(cwd: Path | None = None) -> Path:
+    """Where new files for this repository are written. The origin id when there is an origin."""
+    return candidate_homes(cwd)[0]
+
+
+def find_config(cwd: Path | None = None) -> Path | None:
+    """The config file in force: per-repository jtek.json, else $HOME/.jtek/config, else none."""
+    for home in candidate_homes(cwd):
+        path = home / CONFIG
+        if path.is_file():
+            return path
+    if machine_config_path().is_file():
+        return machine_config_path()
+    return None
+
+
+def config_name() -> str:
+    """The name error text uses. A per-repository file is still called jtek.json."""
+    path = find_config()
+    if path is None or path.name == CONFIG:
+        return CONFIG
+    return str(path)
+
+
+def knowledge_path(name: str, cwd: Path | None = None) -> Path | None:
+    """An existing verify guide, feature directory, rules file, or tickets directory."""
+    for home in candidate_homes(cwd):
+        path = home / name
+        if path.exists():
+            return path
+    return None
 
 
 if __name__ == "__main__":

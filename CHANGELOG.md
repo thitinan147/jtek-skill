@@ -1,5 +1,17 @@
 # Changelog
 
+## 27.0.0 - config leaves the repository (breaking)
+
+This is a new major version. The skill version is semver, and this release changes where every existing repository keeps its config, its tickets, and its verify guide. 26.47.0 would have hidden that. A repository that still has `jtek.json` or `.jtek/` keeps working only after `jtek.py migrate`.
+
+- Nothing in the work repository is read or written for config, the verify guide, the feature map, the rule table, or ticket files. `jtek.py init` writes `~/.jtek/repos/<repo id>/jtek.json`. `jt-harness`, `jt-learn`, and `jt-ticket` write beside that file. `JTEK_HOME` overrides `~/.jtek`.
+- No `~/.jtek/config` and no per-repository file means the defaults: `board` is empty, so tickets are files on this machine. `~/.jtek/config` is the default for a repository that has no file of its own. The per-repository file wins when both exist.
+- The repository id is the origin URL's host, a non-default port, and its path. `https://github.com/acme/widget.git` and `git@github.com:acme/widget.git` are `github.com/acme/widget`. `ssh://git@gitlab.example:2222/acme/widget.git` is `gitlab.example:2222/acme/widget`. Userinfo, a trailing `.git`, and the default ports 443, 80, 22, and 9418 are left out. With no origin, the id is `path` plus the main checkout's absolute path. A config written before an origin existed is still read from the path id. New files go to the origin id once there is an origin.
+- When `~/.jtek/repos/<repo id>/` has no verify guide, `jt-verify` reads the README and the code and says in the evidence that no guide was found.
+- Claims, logs, and results stay under the git directory.
+- `finish --no-pr` with a remote is allowed only when this machine's config for this repository has `"forge": false`. A commit cannot set the flag: not the published base, not an unmerged branch, not a replace ref, and not a rewritten origin. The origin seal and `url.*.insteadOf` checks are unchanged.
+- `jtek.py migrate` moves `jtek.json` and `.jtek/verify.md`, `features/`, `rules.md`, and `tickets/` into `~/.jtek/repos/<repo id>/`. It does not commit. Review `git status` and commit the removal yourself. Another machine does not have that folder until you copy it or migrate there.
+
 ## 26.46.0 - a removed seal stays removed, and the review sees the whole landing
 
 - A missing, empty, or damaged origin seal is not written again by a later `start`. `finish --no-pr` keeps refusing it, so swapping `origin` after the first start does not ship.
