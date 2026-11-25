@@ -1642,7 +1642,7 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     print(f"ticket: ok, {items} item(s) under {label}, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
-        print(f"saved: {path}  (Backlog, inside the repository. Commit it on the base branch so another machine can see it. "
+        print(f"saved: {path}  (Backlog, on this machine in {tickets_dir()}. "
               "The human releases it by writing `status: Todo` in that file)")
 
 
@@ -1980,6 +1980,14 @@ def read_file(path: str, what: str) -> str:
         raise Refuse(f"cannot read the {what} file: {err}") from None
 
 
+def uncommitted_test_files(worktree: Path) -> list[str]:
+    """Test files with uncommitted changes (tracked or untracked) in the worktree."""
+    tracked = git("diff", "--name-only", "HEAD", cwd=worktree, check=False).splitlines()
+    untracked = git("ls-files", "--others", "--exclude-standard", cwd=worktree, check=False).splitlines()
+    paths = [p.strip() for p in tracked + untracked if p.strip()]
+    return sorted({p for p in paths if is_test_path(p) or Path(p).name.lower() == "conftest.py"})
+
+
 def cmd_broke(args: argparse.Namespace) -> None:
     """Record that breaking one Done when item made a declared check fail. The edit stays uncommitted;
     the author restores it afterwards. finish refuses until every item has such a record for this commit."""
@@ -1998,6 +2006,13 @@ def cmd_broke(args: argparse.Namespace) -> None:
         raise Refuse(
             "nothing is broken in the worktree. Change the behaviour this item names, leave the change uncommitted, "
             f"and run `jtek.py broke {args.id} --item {number}` again. Then restore the file (`git checkout -- <file>`)."
+        )
+    uncommitted_tests = uncommitted_test_files(worktree)
+    if uncommitted_tests:
+        raise Refuse(
+            "a broke proof must fail against already-committed tests, not uncommitted test files: "
+            + ", ".join(uncommitted_tests)
+            + ". Commit the tests first, then leave only the behaviour break uncommitted and run broke again."
         )
     diff_text = git("diff", "HEAD", cwd=worktree, check=False)
     untracked = [line[3:] for line in dirty.splitlines() if line.startswith("??")]
@@ -2920,6 +2935,28 @@ def machine_config_path() -> Path:
     return machine_root() / "config"
 
 
+def same_content(src: Path, dest: Path) -> bool:
+    """True when src and dest are both regular files with identical bytes, or both directories with identical trees.
+    Symlinks are never considered equal."""
+    if src.is_symlink() or dest.is_symlink():
+        return False
+    if src.is_file() and dest.is_file():
+        try:
+            return src.read_bytes() == dest.read_bytes()
+        except OSError:
+            return False
+    if src.is_dir() and dest.is_dir():
+        try:
+            src_entries = {p.name: p for p in src.iterdir()}
+            dest_entries = {p.name: p for p in dest.iterdir()}
+        except OSError:
+            return False
+        if set(src_entries) != set(dest_entries):
+            return False
+        return all(same_content(src_entries[name], dest_entries[name]) for name in src_entries)
+    return False
+
+
 def repo_storage_id(url: str, base: Path | None = None) -> str:
     """A repository id safe to use as directories under $HOME/.jtek/repos.
 
@@ -2928,10 +2965,10 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
     git@github.com:acme/widget.git are github.com/acme/widget.
     ssh://git@gitlab.example:2222/acme/widget.git is gitlab.example:2222/acme/widget.
     https://git.example:8443/acme/widget keeps port 8443. The default ports 443, 80, 22, and 9418
-    are left out. A trailing slash and a trailing .git are left out.
+    are left out. A trailing slash is left out; a trailing .git is left out only for URLs with a host.
     A local path, and a repository with no origin, is path plus that absolute path, such as
-    path/tmp/app. A relative local path is resolved against `base` (the checkout) when given.
-    .. is refused so the id cannot step out of $HOME/.jtek/repos.
+    path/tmp/app (or path/tmp/app.git). A relative local path is resolved against `base` (the checkout) when given.
+    .. in host or path is refused so the id cannot step out of $HOME/.jtek/repos.
     """
     text = url.strip()
     host = ""
@@ -2950,15 +2987,19 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
             host = scp.group(1).lower()
             path = scp.group(2)
     path = path.rstrip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
     if host:
+        if host in (".", "..") or "/" in host or "\\" in host:
+            raise Refuse(f"the repository id for {url} is not usable: host {host!r} is not safe")
+        if path.endswith(".git"):
+            path = path[:-4]
         path = path.lstrip("/")
     else:
         if base is not None and not os.path.isabs(path):
             anchor = base if base.is_absolute() else base.resolve()
             path = os.path.join(anchor.as_posix(), path)
         path = os.path.normpath(path or ".")
+    if "\\" in path:
+        raise Refuse(f"the repository id for {url} is not usable: it contains a backslash")
     parts = [part for part in path.split("/") if part not in ("", ".")]
     if any(part == ".." for part in parts):
         raise Refuse(f"the repository id for {url} is not usable: it contains '..'")
@@ -2967,26 +3008,59 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
         default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
         if port and port != default:
             host = f"{host}:{port}"
-        return f"{host}/{path}" if path else host
-    if path.startswith("/"):
-        return "path" + path
-    return "path/" + path
+        result = f"{host}/{path}" if path else host
+    elif path.startswith("/"):
+        result = "path" + path
+    else:
+        result = "path/" + path
+    anchor_repos = Path("/repos")
+    resolved = (anchor_repos / result).resolve()
+    try:
+        resolved.relative_to(anchor_repos)
+    except ValueError:
+        raise Refuse(f"the repository id for {url} is not usable: it steps outside repos/") from None
+    if resolved == anchor_repos:
+        raise Refuse(f"the repository id for {url} is not usable: it is empty")
+    return result
+
+
+def _legacy_local_home(home: Path) -> Path | None:
+    """For a local/file:// storage home ending in `.git`, return the pre-27.3 stripped folder if it exists."""
+    repos_path = machine_root() / "repos" / "path"
+    try:
+        home.relative_to(repos_path)
+    except ValueError:
+        return None
+    if home.name.endswith(".git") and len(home.name) > 4:
+        legacy = home.with_name(home.name[:-4])
+        if legacy.exists():
+            return legacy
+    return None
 
 
 def candidate_homes(cwd: Path | None = None) -> list[Path]:
     """Per-repository folders, the origin id first and the checkout path second.
 
     A config written before this clone had an origin still lives under the path id.
+    A pre-existing folder under the legacy stripped local id (without `.git`) is also
+    checked as a fallback when the new unstripped id does not have the file yet.
     The origin id wins when both have a file of the same kind.
     """
     homes: list[Path] = []
     root = main_root(cwd)
     url = origin_url(cwd)
     if url:
-        homes.append(machine_root() / "repos" / repo_storage_id(url, base=root))
+        origin_home = machine_root() / "repos" / repo_storage_id(url, base=root)
+        homes.append(origin_home)
+        legacy = _legacy_local_home(origin_home)
+        if legacy is not None and legacy not in homes:
+            homes.append(legacy)
     path_home = machine_root() / "repos" / repo_storage_id(root.as_posix())
     if path_home not in homes:
         homes.append(path_home)
+    legacy_path = _legacy_local_home(path_home)
+    if legacy_path is not None and legacy_path not in homes:
+        homes.append(legacy_path)
     return homes
 
 

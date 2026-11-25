@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-27.2.0-111111?style=flat-square" alt="Version 27.2.0">
+  <img src="https://img.shields.io/badge/version-27.3.0-111111?style=flat-square" alt="Version 27.3.0">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">

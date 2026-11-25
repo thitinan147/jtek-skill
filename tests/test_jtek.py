@@ -4355,8 +4355,8 @@ class MachineConfig(Scratch):
                                 capture_output=True, text=True, env=env)
         out_b = proc_b.stdout + proc_b.stderr
         self.assertEqual(proc_b.returncode, 0, out_b)
-        cfg_a = self.home / "repos" / ("path" + (repo_a / "widget").as_posix()) / "jtek.json"
-        cfg_b = self.home / "repos" / ("path" + (repo_b / "widget").as_posix()) / "jtek.json"
+        cfg_a = self.home / "repos" / ("path" + (repo_a / "widget.git").as_posix()) / "jtek.json"
+        cfg_b = self.home / "repos" / ("path" + (repo_b / "widget.git").as_posix()) / "jtek.json"
         self.assertTrue(cfg_a.is_file(), out_a)
         self.assertTrue(cfg_b.is_file(), out_b)
         self.assertNotEqual(cfg_a, cfg_b)
@@ -4544,7 +4544,7 @@ class EasyStart(Scratch):
         self.assertEqual(code, 1, out)
         self.assertIn("init: migrate", out)
         self.assertIn("jtek.py migrate", out)
-        self.assertIn("/jt-init", out)
+        self.assertNotIn("/jt-init", out)
         self.assertIn("jtek.json", out)
         self.assertIn(".jtek/", out)
 
@@ -4966,6 +4966,289 @@ class P2BacklogDefects(Scratch):
             code, out = check(refused)
             self.assertEqual(code, 1, f"expected `{refused}` to be refused, got: {out}")
             self.assertIn("not a step the skills already run", out)
+
+    def _load_jtek_module(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("jtek_p2_mod", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_sq99_sq111_local_and_file_origins_keep_dot_git_with_legacy_fallback(self):
+        """SQ-99 & SQ-111: local and file:// origins keep .git in repo_storage_id, with legacy read fallback."""
+        mod = self._load_jtek_module()
+        base = Path(self.tmp.name) / "work"
+        # Local paths `app` and `app.git` must get distinct storage ids.
+        self.assertNotEqual(
+            mod.repo_storage_id("app", base=base),
+            mod.repo_storage_id("app.git", base=base),
+        )
+        self.assertTrue(mod.repo_storage_id("app.git", base=base).endswith("/app.git"))
+        # file:///.../origin.git vs .../origin must get distinct storage ids (and repo_identity stays distinct).
+        self.assertNotEqual(
+            mod.repo_storage_id("file:///tmp/origin.git"),
+            mod.repo_storage_id("/tmp/origin"),
+        )
+        self.assertNotEqual(
+            mod.repo_identity("file:///tmp/origin.git"),
+            mod.repo_identity("/tmp/origin"),
+        )
+        # Remote URLs with a host still strip trailing .git.
+        self.assertEqual(
+            mod.repo_storage_id("https://github.com/acme/widget.git"),
+            mod.repo_storage_id("https://github.com/acme/widget"),
+        )
+
+        # Legacy fallback: pre-existing stripped folder is found for reads, while new writes use unstripped id.
+        remote = self._forge_off_remote("sq111-origin.git")
+        self.git("remote", "add", "origin", f"file://{remote.as_posix()}")
+        # Remove the path-based config created by Scratch.setUp so only the legacy stripped origin folder exists.
+        self.config_file().unlink()
+        new_id = mod.repo_storage_id(f"file://{remote.as_posix()}", base=self.repo)
+        self.assertTrue(new_id.endswith(".git"))
+        legacy_dir = self.home / "repos" / new_id[:-4]
+        new_dir = self.home / "repos" / new_id
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        (legacy_dir / "jtek.json").write_text(json.dumps({"board": "", "checks": {"test": "true"}}) + "\n")
+        self.assertFalse(new_dir.exists())
+
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("init: ok", out)
+
+        # New writes (e.g. ticket --save) go to the unstripped id, not the legacy stripped folder.
+        draft = Path(self.tmp.name) / "sq111-draft.md"
+        draft.write_text("# Add\n\n" + CARD)
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((new_dir / "tickets").is_dir())
+        self.assertTrue(any((new_dir / "tickets").glob("*.md")))
+
+    def test_sq100_ssh_dotdot_host_cannot_write_outside_repos(self):
+        """SQ-100: ssh://../acme/widget.git and similar traversal hosts are refused and never write outside repos/."""
+        mod = self._load_jtek_module()
+        for bad in (
+            "ssh://../acme/widget.git",
+            "ssh://git@../acme/widget.git",
+            "https://../acme/widget.git",
+            "ssh://.:2222/acme/widget.git",
+            "ssh://example.com/%2e%2e/widget.git",
+        ):
+            with self.assertRaises(mod.Refuse, msg=f"expected Refuse for {bad}"):
+                mod.repo_storage_id(bad)
+
+        self.git("remote", "add", "origin", "ssh://../acme/widget.git")
+        code, out = self.jtek("init")
+        self.assertEqual(code, 1, out)
+        self.assertFalse((self.home / "acme" / "widget" / "jtek.json").exists())
+        self.assertFalse((self.home / "acme").exists())
+
+    def test_sq101_ticket_save_prints_machine_path_not_repo(self):
+        """SQ-101: ticket --save writes to ~/.jtek/repos/<id>/tickets and prints the machine path, not repo/commit advice."""
+        draft = Path(self.tmp.name) / "sq101-draft.md"
+        draft.write_text("# Add\n\n" + CARD)
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        tickets_path = self.config_file().parent / "tickets"
+        self.assertTrue(any(tickets_path.glob("*.md")))
+        self.assertIn(str(tickets_path), out)
+        self.assertNotIn("inside the repository", out.lower())
+        self.assertNotIn("commit it on the base branch", out.lower())
+
+    def test_sq102_doctor_recommends_migrate_not_init_for_leftover_config(self):
+        """SQ-102: doctor recommends migrate (not init or /jt-init) when leftover jtek.json exists."""
+        # Case 1: machine config exists and leftover jtek.json is at repo root.
+        (self.repo / "jtek.json").write_text("{}\n")
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1, out)
+        self.assertIn("init: migrate", out)
+        self.assertIn("jtek.py migrate", out)
+        self.assertNotIn("/jt-init", out)
+        self.assertNotIn("jtek.py init", out)
+
+        # Case 2: no machine config yet and leftover jtek.json is at repo root.
+        self.config_file().unlink()
+        code, out = self.jtek("doctor")
+        self.assertEqual(code, 1, out)
+        self.assertIn("init: migrate", out)
+        self.assertIn("jtek.py migrate", out)
+        self.assertNotIn("/jt-init", out)
+        self.assertNotIn("jtek.py init", out)
+
+    def test_sq103_broke_refuses_uncommitted_test_and_blocks_finish(self):
+        """SQ-103: broke rejects failures that rely on an uncommitted test file; committed tests still work."""
+        (self.repo / "app.py").write_text("def value():\n    return 1\n")
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests" / "test_app.py").write_text(
+            "import unittest\nimport app\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_base(self):\n"
+            "        self.assertIsNotNone(app.value())\n"
+        )
+        self.git("add", "app.py", "tests/test_app.py")
+        self.git("commit", "-m", "add app and baseline test")
+        self.write_config({"test": f"{sys.executable} -B -m unittest discover -s tests"})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "app.py").write_text("def value():\n    return 2\n")
+        self.git("add", "app.py", cwd=tree)
+        self.git("commit", "-m", "change value to 2", cwd=tree)
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+        # Add a new uncommitted test AND an uncommitted break in app.py -> broke must refuse.
+        (tree / "tests" / "test_new.py").write_text(
+            "import unittest\nimport app\n\n"
+            "class NewT(unittest.TestCase):\n"
+            "    def test_two(self):\n"
+            "        self.assertEqual(app.value(), 2)\n"
+        )
+        (tree / "app.py").write_text("def value():\n    return 999\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("uncommitted test", out)
+
+        # Restore uncommitted files; finish must still refuse because broke was never recorded.
+        self.git("checkout", "--", "app.py", cwd=tree)
+        (tree / "tests" / "test_new.py").unlink()
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("broke", out)
+        self.assertNotIn("outcome:", out)
+
+        # Commit the test, pass checks, then break ONLY app.py (uncommitted) -> broke and finish succeed.
+        (tree / "tests" / "test_new.py").write_text(
+            "import unittest\nimport app\n\n"
+            "class NewT(unittest.TestCase):\n"
+            "    def test_two(self):\n"
+            "        self.assertEqual(app.value(), 2)\n"
+        )
+        self.git("add", "tests/test_new.py", cwd=tree)
+        self.git("commit", "-m", "add test for value 2", cwd=tree)
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        (tree / "app.py").write_text("def value():\n    return 999\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("broke: item 1", out)
+        self.git("checkout", "--", "app.py", cwd=tree)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome:", out)
+
+    def test_sq107_migrate_from_linked_worktree_clears_doctor_warning(self):
+        """SQ-107: running migrate from a linked worktree clears main_root leftovers so doctor reports ok."""
+        self.config_file().unlink()
+        (self.repo / "jtek.json").write_text(json.dumps({"board": "", "checks": {"test": "true"}}) + "\n")
+        dot = self.repo / ".jtek"
+        dot.mkdir()
+        (dot / "verify.md").write_text("# guide\n")
+        self.git("add", "jtek.json", ".jtek/verify.md")
+        self.git("commit", "-m", "legacy config in repo")
+
+        wt = Path(self.tmp.name) / "linked-wt"
+        self.git("worktree", "add", "-b", "wt-branch", str(wt))
+
+        code, out = self.jtek("migrate", cwd=wt)
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.repo / "jtek.json").exists())
+        self.assertFalse((wt / "jtek.json").exists())
+
+        code_wt, doc_wt = self.jtek("doctor", cwd=wt)
+        self.assertEqual(code_wt, 0, doc_wt)
+        self.assertIn("init: ok", doc_wt)
+
+        code_main, doc_main = self.jtek("doctor", cwd=self.repo)
+        self.assertEqual(code_main, 0, doc_main)
+        self.assertIn("init: ok", doc_main)
+
+    def test_sq108_doctor_ignores_non_knowledge_dot_jtek_leftovers_after_migrate(self):
+        """SQ-108: doctor does not ask for migrate when .jtek/ only holds non-knowledge files left by migrate."""
+        self.config_file().unlink()
+        (self.repo / "jtek.json").write_text(json.dumps({"board": "", "checks": {"test": "true"}}) + "\n")
+        dot = self.repo / ".jtek"
+        dot.mkdir()
+        (dot / "verify.md").write_text("# guide\n")
+        (dot / "notes.txt").write_text("personal notes\n")
+
+        code, out = self.jtek("migrate")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((dot / "notes.txt").is_file())
+
+        code, doc_out = self.jtek("doctor")
+        self.assertEqual(code, 0, doc_out)
+        self.assertIn("init: ok", doc_out)
+        self.assertNotIn("init: migrate", doc_out)
+        self.assertIn("notes.txt", doc_out)
+
+        # Adding a real knowledge file back into .jtek/ triggers migrate again.
+        (dot / "rules.md").write_text("# rules\n")
+        code, doc_out2 = self.jtek("doctor")
+        self.assertEqual(code, 1, doc_out2)
+        self.assertIn("init: migrate", doc_out2)
+
+    def test_sq109_guess_prefers_ci_over_pyproject_and_picks_verify(self):
+        """SQ-109: CI workflow commands win over pyproject.toml defaults, and CI verify scripts are picked."""
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n[tool.mypy]\n[tool.pytest.ini_options]\n")
+        workflows = self.repo / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\njobs:\n  test:\n    steps:\n"
+            "      - run: ruff check src tests\n"
+            "      - run: mypy src\n"
+            "      - run: pytest tests/unit\n"
+            "      - run: python3 scripts/verify.py\n"
+        )
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertIn("guess\tlint\truff check src tests\t.github/workflows/ci.yml", out)
+        self.assertIn("guess\ttypes\tmypy src\t.github/workflows/ci.yml", out)
+        self.assertIn("guess\ttest\tpytest tests/unit\t.github/workflows/ci.yml", out)
+        self.assertIn("guess\tverify\tpython3 scripts/verify.py\t.github/workflows/ci.yml", out)
+        self.assertNotIn("pyproject.toml", out)
+
+        # When CI omits types, pyproject.toml still fills the missing kind.
+        (workflows / "ci.yml").write_text(
+            "name: ci\njobs:\n  test:\n    steps:\n"
+            "      - run: ruff check src\n"
+        )
+        code, out = self.jtek("guess")
+        self.assertEqual(code, 0, out)
+        self.assertIn("guess\tlint\truff check src\t.github/workflows/ci.yml", out)
+        self.assertIn("guess\ttypes\tmypy .\tpyproject.toml", out)
+        self.assertIn("guess\ttest\tpytest -q\tpyproject.toml", out)
+
+    def test_sq110_migrate_and_doctor_handle_identical_and_differing_directories(self):
+        """SQ-110: identical .jtek/tickets and features directories drop cleanly; differing trees are refused."""
+        home = self.config_file().parent
+        # Identical nested trees in repo and machine home.
+        for base in (self.repo / ".jtek", home):
+            (base / "tickets").mkdir(parents=True, exist_ok=True)
+            (base / "tickets" / "T-1.md").write_text("# Ticket 1\n")
+            (base / "features" / "sub").mkdir(parents=True, exist_ok=True)
+            (base / "features" / "sub" / "auth.md").write_text("# Auth\n")
+
+        code, doc_out = self.jtek("doctor")
+        self.assertEqual(code, 1, doc_out)
+        self.assertIn("init: migrate", doc_out)
+        self.assertNotIn("differs from", doc_out)
+
+        code, out = self.jtek("migrate")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.repo / ".jtek").exists())
+        self.assertEqual((home / "tickets" / "T-1.md").read_text(), "# Ticket 1\n")
+        self.assertEqual((home / "features" / "sub" / "auth.md").read_text(), "# Auth\n")
+
+        # Differing nested file must be reported by doctor and refused by migrate without overwriting.
+        (self.repo / ".jtek" / "features" / "sub").mkdir(parents=True, exist_ok=True)
+        (self.repo / ".jtek" / "features" / "sub" / "auth.md").write_text("# Different Auth\n")
+        code, doc_out2 = self.jtek("doctor")
+        self.assertEqual(code, 1, doc_out2)
+        self.assertIn("differs from", doc_out2)
+
+        code, out2 = self.jtek("migrate")
+        self.assertEqual(code, 1, out2)
+        self.assertIn("differ", out2)
+        self.assertEqual((home / "features" / "sub" / "auth.md").read_text(), "# Auth\n")
 
 
 if __name__ == "__main__":

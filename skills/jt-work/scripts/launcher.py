@@ -62,59 +62,72 @@ def migrate(j, args) -> None:
 
     Also moves ~/.config/jtek/agents.json and me.md to ~/.jtek (or JTEK_HOME). The repository is left with
     those paths missing. The human commits the removal. This command does not commit, and it does not overwrite.
-    A repo copy whose bytes match the machine copy is removed without overwriting the machine copy.
+    A repo copy whose contents match the machine copy is removed without overwriting the machine copy.
     """
     user_plan = user_file_moves(j)
-    root = Path(j.git("rev-parse", "--show-toplevel"))
+    main = j.main_root()
+    top = Path(j.git("rev-parse", "--show-toplevel")).resolve()
+    roots = [main] if top == main else [main, top]
     home = j.repo_home()
-    dot = root / ".jtek"
-    if dot.is_symlink():
-        raise j.Refuse(f"{dot} is a symlink; not moving it")
-    candidates: list[tuple[Path, Path]] = [(root / j.CONFIG, home / j.CONFIG)]
-    if dot.is_dir():
-        for name in ("verify.md", "features", "rules.md", "tickets"):
-            candidates.append((dot / name, home / name))
-    repo_plan: list[tuple[str, Path, Path]] = []
-    for src, dest in candidates:
-        if not src.exists() and not src.is_symlink():
-            continue
-        if src.is_symlink():
-            raise j.Refuse(f"{src} is a symlink; not moving it")
-        if dest.exists() or dest.is_symlink():
-            if src.is_file() and dest.is_file() and not dest.is_symlink() and src.read_bytes() == dest.read_bytes():
-                repo_plan.append(("drop", src, dest))
+    repo_plan: list[tuple[str, Path, Path, Path]] = []
+    planned_moves: dict[Path, Path] = {}
+    for root in roots:
+        dot = root / ".jtek"
+        if dot.is_symlink():
+            raise j.Refuse(f"{dot} is a symlink; not moving it")
+        candidates: list[tuple[Path, Path]] = [(root / j.CONFIG, home / j.CONFIG)]
+        if dot.is_dir():
+            for name in ("verify.md", "features", "rules.md", "tickets"):
+                candidates.append((dot / name, home / name))
+        for src, dest in candidates:
+            if not src.exists() and not src.is_symlink():
                 continue
-            raise j.Refuse(
-                f"{src} and {dest} both exist and differ; not overwriting {dest}. "
-                f"Compare them, then either move {dest} aside and run migrate again, "
-                f"or remove {src} yourself if {dest} is the copy to keep"
-            )
-        repo_plan.append(("move", src, dest))
+            if src.is_symlink():
+                raise j.Refuse(f"{src} is a symlink; not moving it")
+            existing = dest if (dest.exists() or dest.is_symlink()) else planned_moves.get(dest)
+            if existing is not None:
+                if j.same_content(src, existing):
+                    repo_plan.append(("drop", src, dest, root))
+                    continue
+                raise j.Refuse(
+                    f"{src} and {dest} both exist and differ; not overwriting {dest}. "
+                    f"Compare them, then either move {dest} aside and run migrate again, "
+                    f"or remove {src} yourself if {dest} is the copy to keep"
+                )
+            repo_plan.append(("move", src, dest, root))
+            planned_moves[dest] = src
 
     home.mkdir(parents=True, exist_ok=True)
     moved: list[str] = []
     repo_moved = False
-    for action, src, dest in repo_plan:
+    for action, src, dest, root in repo_plan:
         if action == "drop":
-            src.unlink()
+            if src.is_dir():
+                shutil.rmtree(src)
+            else:
+                src.unlink()
             moved.append(f"removed duplicate {src.relative_to(root)} (already at {dest})")
         else:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dest))
             moved.append(f"{src.relative_to(root)} -> {dest}")
         repo_moved = True
-    if dot.is_dir():
-        try:
-            dot.rmdir()
-        except OSError:
-            left = sorted(p.name for p in dot.iterdir())
-            print(f"left in {dot}: {', '.join(left)}. Those names are not jtek knowledge; delete them yourself if you want .jtek gone.")
+    for root in roots:
+        dot = root / ".jtek"
+        if dot.is_dir():
+            try:
+                dot.rmdir()
+                moved.append(f"removed empty {dot.relative_to(root)}/")
+                repo_moved = True
+            except OSError:
+                left = sorted(p.name for p in dot.iterdir())
+                print(f"left in {dot}: {', '.join(left)}. Those names are not jtek knowledge; delete them yourself if you want .jtek gone.")
     for src, dest in user_plan:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dest))
         moved.append(f"{src} -> {dest}")
     if not moved:
-        raise j.Refuse(f"nothing to migrate: no {j.CONFIG} and no .jtek/verify.md, features, rules.md, or tickets in {root}, "
+        raise j.Refuse(f"nothing to migrate: no {j.CONFIG} and no .jtek/verify.md, features, rules.md, or tickets in {main}, "
                        "and no ~/.config/jtek/agents.json or me.md")
     print(f"repository id: {home.relative_to(j.machine_root() / 'repos')}")
     for line in moved:
