@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 def uses_shell(command: str) -> bool:
@@ -26,6 +27,33 @@ def uses_shell(command: str) -> bool:
     plain = " ".join(token for token in bare if token not in quoted)
     return any(mark in plain for mark in ("$(", "`", "&", "|", ";", ">", "<")) or any(
         token.startswith("$") for token in bare if token not in quoted)
+
+
+def setup_uses_venv(setup: str, root: Path) -> bool:
+    """True when setup creates a virtualenv, including when that call is inside a script the command names."""
+    if re.search(r"\bvenv\b|virtualenv|ensurepip|EnvBuilder", setup):
+        return True
+    if uses_shell(setup):
+        return False
+    try:
+        tokens = shlex.split(setup)
+    except ValueError:
+        return False
+    for token in tokens:
+        if not token or token.startswith("-"):
+            continue
+        candidate = Path(token)
+        if not candidate.is_absolute():
+            candidate = root / token
+        if candidate.suffix not in {".py", ".sh", ".bash"} or not candidate.is_file():
+            continue
+        try:
+            text = candidate.read_text(errors="replace")
+        except OSError:
+            continue
+        if re.search(r"\bvenv\b|virtualenv|ensurepip|EnvBuilder", text):
+            return True
+    return False
 
 
 def run(j, args=None) -> None:
@@ -73,7 +101,7 @@ def run(j, args=None) -> None:
                          "a command runs without a shell, so `&&`, `|`, `>`, `$(...)` and `$VAR` do nothing; "
                          "put the pipeline in a script and name the script"))
         setup = config.get("setup") if isinstance(config.get("setup"), str) else ""
-        if re.search(r"\bvenv\b|virtualenv|ensurepip", setup):
+        if setup_uses_venv(setup, Path.cwd()):
             exe = "python3"
             if not uses_shell(setup):
                 try:

@@ -24,6 +24,7 @@ import shlex
 import subprocess
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 try:
@@ -63,26 +64,28 @@ UNOBSERVABLE_WORD = re.compile(
     re.I,
 )
 # A digit, a version, or a unit-less number does not make a quality word checkable.
-# Longer phrases first. ง่าย and เร็ว do not match inside ไม่ง่าย or ไม่เร็ว.
+# Longer phrases first. ง่าย and เร็ว do not match inside ไม่ง่าย, ไม่เร็ว, or ความเร็ว.
+# ความเร็ว is the noun for speed and is itself unobservable unless the item is measured.
 THAI_UNOBSERVABLE = re.compile(
-    r"(?<!ไม่)(?:รู้สึก|ใช้งานง่าย|ใช้งานดีขึ้น|น่าใช้|เร็วขึ้น|ง่ายขึ้น|เร็ว|ง่าย)"
+    r"(?<!ไม่)(?:รู้สึก|ใช้งานง่าย|ใช้งานดีขึ้น|น่าใช้|เร็วขึ้น|ง่ายขึ้น|ความเร็ว|เร็ว|ง่าย)"
 )
 MEASURE = re.compile(
     r"(?:\d+(?:\.\d+)?)\s*(?:ms|msec|milliseconds?|s|sec|secs|seconds?|min|mins|minutes?|%|px|mb|kb|gb|x)\b",
     re.I,
 )
 COMPARE = re.compile(r"\b(?:under|at least|at most|no more than|within|fewer than|less than)\b", re.I)
-OBSERVABLE = re.compile(
-    r"`[^`]+`|\"[^\"]+\"|'[^']+'|\b(?:prints?|returns?|raises?|exits?|throws?|shows?|displays?|opens?|writes?|responds?)\b",
-    re.I,
-)
-INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"), None)
-FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+_DQ = '"'
+_SQ = "'"
+QUOTED = re.compile("`[^`]*`|" + _DQ + "[^" + _DQ + "]*" + _DQ + "|" + _SQ + "[^" + _SQ + "]*" + _SQ)
+FULLWIDTH_DIGITS = str.maketrans("０１２３４５๖７８９", "0123456789")
 THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
-# A lint, syntax, format, or import check failing does not prove a Done when item.
-META_CHECKS = frozenset({
-    "lint", "syntax", "format", "fmt", "type", "types", "typecheck",
-    "import", "imports", "style", "ruff", "flake8", "mypy", "pyright", "black", "isort",
+# A check is lint-class when one of its name pieces is a lint, format, or type tool.
+# Name a behaviour check test, verify, or behaviour-<name> (behaviour-eslint still counts).
+LINT_TOKENS = frozenset({
+    "lint", "eslint", "ruff", "flake8", "prettier", "tsc", "mypy", "pyright", "pylint",
+    "black", "isort", "stylelint", "biome", "rubocop", "clippy", "phpcs", "golint",
+    "syntax", "format", "fmt", "type", "types", "typecheck", "import", "imports", "style",
+    "rustfmt", "gofmt", "shfmt",
 })
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
 
@@ -182,9 +185,34 @@ def author_key() -> bytes:
     return key_file.read_bytes()
 
 
+def mac_of(payload: bytes, key: bytes | None = None) -> str:
+    return hmac.new(key if key is not None else author_key(), payload, hashlib.sha256).hexdigest()
+
+
 def authors_seal(authors: list) -> str:
     body = "\n".join(str(item) for item in authors).encode()
-    return hmac.new(author_key(), body, hashlib.sha256).hexdigest()
+    return mac_of(body)
+
+
+def broke_body(record: dict) -> bytes:
+    """The bytes a broke proof is sealed over. The seal field itself is not part of them."""
+    body = {"sha": record.get("sha", ""), "items": record.get("items", {})}
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def attach_broke_seal(record: dict, key: bytes | None = None) -> dict:
+    """Return the proof with a seal. A hand-written broke.json does not have this seal."""
+    sealed = {"sha": record.get("sha", ""), "items": record.get("items", {})}
+    sealed["seal"] = mac_of(broke_body(sealed), key)
+    return sealed
+
+
+def broke_intact(record: dict) -> bool:
+    """False when broke.json was written or edited without the same key that seals the authors."""
+    seal = record.get("seal") if isinstance(record, dict) else None
+    if not isinstance(seal, str) or not seal:
+        return False
+    return hmac.compare_digest(mac_of(broke_body(record)), seal)
 
 
 def authors_intact(meta: dict) -> bool:
@@ -225,30 +253,53 @@ def note_author(meta: dict) -> None:
 
 
 def fold_item(text: str) -> str:
-    """Drop invisible characters and fold fullwidth and Thai digits, so a hidden letter cannot hide a word."""
-    return text.translate(INVISIBLE).translate(FULLWIDTH_DIGITS).translate(THAI_DIGITS)
+    """Drop format characters and fold fullwidth and Thai digits, so a hidden letter cannot hide a word.
+
+    Format characters are Unicode category Cf: zero-width spaces, word joiner (U+2060),
+    left-to-right and right-to-left marks (U+200E, U+200F), soft hyphen (U+00AD), and the same class."""
+    kept = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return kept.translate(FULLWIDTH_DIGITS).translate(THAI_DIGITS)
+
+
+def quoted_spans(text: str) -> list[tuple[int, int]]:
+    return [match.span() for match in QUOTED.finditer(text)]
+
+
+def inside_quotes(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
+    return any(left <= start and end <= right for left, right in spans)
 
 
 def unobservable_word(line: str) -> str:
     """A quality word with nothing a person can measure or watch, or "" when the item can be checked.
 
-    A digit anywhere, including a version or a fullwidth or Thai digit, does not by itself make the item
-    checkable. A comparison with a unit, or an observable action, does."""
+    A digit anywhere does not by itself make the item checkable. A comparison with a unit does.
+    A backtick or a quote exempts a quality word only when that word sits inside it.
+    A verb such as prints does not exempt the other words on the line. A backtick after feels faster does not count."""
     text = fold_item(re.sub(r"^-\s*", "", line.strip()))
-    measured = MEASURE.search(text) or (COMPARE.search(text) and re.search(r"\d", text))
-    if measured or OBSERVABLE.search(text):
+    if MEASURE.search(text) or (COMPARE.search(text) and re.search(r"\d", text)):
         return ""
+    spans = quoted_spans(text)
     found = UNOBSERVABLE_WORD.search(text)
-    if found:
+    if found and not inside_quotes(*found.span(), spans):
         return found.group(0)
     thai = THAI_UNOBSERVABLE.search(text)
-    return thai.group(0) if thai else ""
+    if thai and not inside_quotes(*thai.span(), spans):
+        return thai.group(0)
+    return ""
 
 
 def is_behaviour_check(name: str) -> bool:
-    """True when this declared check can prove a Done when item. Lint, syntax, and import checks cannot."""
+    """True when this declared check can prove a Done when item.
+
+    Lint, format, and type tools cannot, whatever the exact name: eslint, ruff-format, prettier, tsc.
+    A behaviour check is any other name. Prefix behaviour- to force one, as in behaviour-eslint."""
     folded = name.strip().lower()
-    return bool(folded) and folded not in META_CHECKS and not folded.startswith("lint")
+    if not folded:
+        return False
+    if folded.startswith("behaviour-") or folded.startswith("behavior-"):
+        return True
+    parts = [part for part in re.split(r"[^a-z0-9]+", folded) if part]
+    return not any(part in LINT_TOKENS or part.startswith("lint") for part in parts)
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None):
@@ -567,29 +618,61 @@ def diff_spec(repo: Path, base: str, head: str, landed: bool = False) -> str:
         return spec
     if not landed:
         return ""
-    # A fast-forward of several commits is already the tip of the base. The parent of that tip is only
-    # the last commit. The reflog (or the fork point) is the base as it was before those commits landed.
     tip = git("rev-parse", "--verify", "--quiet", base_ref(base), cwd=repo, check=False)
     if tip == head:
-        candidates = []
-        prev = git("rev-parse", "--verify", "--quiet", f"{base_ref(base)}@{{1}}", cwd=repo, check=False)
-        if prev:
-            candidates.append(prev)
-        fork = git("merge-base", "--fork-point", base_ref(base), head, cwd=repo, check=False)
-        if fork and fork not in candidates:
-            candidates.append(fork)
-        for older in candidates:
-            if git("merge-base", "--is-ancestor", older, head, cwd=repo, code=True) != 0:
-                continue
-            span = f"{older}..{head}"
-            count = git("rev-list", "--count", span, cwd=repo, check=False)
-            if count.isdigit() and int(count) > 1 and git("diff", "--quiet", span, cwd=repo, code=True) == 1:
-                return span
+        # The parent of the tip is only the last commit of a fast-forward. Use that parent only when
+        # the reflog, the fork point, or the remote base says the landed range is a single commit.
+        return landed_span(repo, base, head)
+    return parent_span(repo, head)
+
+
+def parent_span(repo: Path, head: str) -> str:
     if not git("rev-parse", "--verify", "--quiet", f"{head}^", cwd=repo, check=False):
         return ""
-    parent_spec = f"{head}^..{head}"
-    if git("diff", "--quiet", parent_spec, cwd=repo, code=True) == 1:
-        return parent_spec
+    spec = f"{head}^..{head}"
+    if git("diff", "--quiet", spec, cwd=repo, code=True) == 1:
+        return spec
+    return ""
+
+
+def commit_span(repo: Path, older: str, head: str) -> tuple[str, int]:
+    """Return the range and how many commits it holds. Empty when older is not an ancestor or the diff is empty."""
+    if not older or git("merge-base", "--is-ancestor", older, head, cwd=repo, code=True) != 0:
+        return "", 0
+    spec = f"{older}..{head}"
+    count = git("rev-list", "--count", spec, cwd=repo, check=False)
+    if not count.isdigit() or int(count) < 1:
+        return "", 0
+    if git("diff", "--quiet", spec, cwd=repo, code=True) != 1:
+        return "", 0
+    return spec, int(count)
+
+
+def landed_span(repo: Path, base: str, head: str) -> str:
+    """The commits that landed on the current base tip, or "" when that range cannot be named.
+
+    A fast-forward of several commits is not reviewed as only the last commit. With the reflog gone,
+    the remote-tracking base (origin/<base>) is the fallback. If that is missing too, the range is unknown."""
+    ref = base_ref(base)
+    older: list[str] = []
+    prev = git("rev-parse", "--verify", "--quiet", f"{ref}@{{1}}", cwd=repo, check=False)
+    if prev:
+        older.append(prev)
+    fork = git("merge-base", "--fork-point", ref, head, cwd=repo, check=False)
+    if fork and fork not in older:
+        older.append(fork)
+    remote = git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{base}", cwd=repo, check=False)
+    if remote and remote not in older:
+        older.append(remote)
+    singles: list[str] = []
+    for candidate in older:
+        spec, count = commit_span(repo, candidate, head)
+        if count > 1:
+            return spec
+        if count == 1:
+            singles.append(spec)
+    if singles:
+        return parent_span(repo, head)
     return ""
 
 
@@ -685,6 +768,8 @@ def review_target(meta: dict, pr: str = "", at: str = "") -> tuple[Path, str, st
         if not spec:
             raise Refuse(
                 f"{head[:7]} has no diff against {meta['base']} and no parent range. "
+                "A fast-forward of several commits is not reviewed as only the last commit. "
+                "The reflog or the remote base (origin/" + meta["base"] + ") has to name the whole range. "
                 "There is nothing to review at that commit."
             )
         return repo, head, spec, f"parent range of {head[:7]}"
@@ -1025,13 +1110,13 @@ def open_after(value: str) -> list[str]:
 def next_free(prefix: str) -> str:
     """The next free id with this prefix. A released ticket keeps its branch, so its number is never given out again.
 
-    A remote-tracking ref refs/remotes/*/jtek/<id> is taken too, and so is an id named in any commit subject or body.
-    Deleting the local branch does not make that id free."""
+    A remote-tracking ref refs/remotes/*/jtek/<id>, a tag refs/tags/jtek/<id>, and an id named in any
+    commit subject or body are taken too. Deleting the local branch does not make that id free."""
     taken = [p.name for p in (state_dir() / "work").glob(f"{prefix}-*")]
     for folder in (tickets_dir(), legacy_tickets_dir()):
         if folder.is_dir():
             taken += [p.stem for p in folder.glob(f"{prefix}-*.md")]
-    refs = git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", "refs/remotes", check=False)
+    refs = git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", "refs/remotes", "refs/tags", check=False)
     for ref in refs.split():
         if "/jtek/" in ref:
             taken.append(ref.rsplit("/", 1)[-1])
@@ -1520,7 +1605,7 @@ def cmd_broke(args: argparse.Namespace) -> None:
     got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
     got[str(number)] = {"item": items[number - 1], "check": behaviour[0], "fails": behaviour,
                         "diff": shown[:4000], "sha": sha}
-    write_json(work / "broke.json", {"sha": sha, "items": got})
+    write_json(work / "broke.json", attach_broke_seal({"sha": sha, "items": got}))
     print(f"broke: item {number} made `{behaviour[0]}` fail at {sha[:7]}")
     print(f"next: restore the break (`git checkout -- <file>`), then record the next item. "
           f"{len(got)} of {len(items)} recorded")
@@ -1530,6 +1615,11 @@ def require_broke(work: Path, sha: str) -> None:
     """finish refuses without a recorded break for every Done when item, on this commit."""
     items = done_when_items(work)
     record = read_json(work / "broke.json")
+    if record.get("items") and not broke_intact(record):
+        raise Refuse(
+            "the broke proof was changed after it was recorded. The seal does not match. "
+            "The same key that seals the authors seals this file. Run broke again for each Done when item."
+        )
     got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
     missing = []
     for n, item in enumerate(items, 1):
@@ -1765,25 +1855,42 @@ def pushed(worktree: Path, branch: str, sha: str) -> bool:
     return any(ref.endswith(f"/{branch}") for ref in refs.splitlines())
 
 
-def published_base_ref() -> str:
-    """The branch the remote publishes, such as origin/main. Empty when this repository has no remote."""
-    if not git("remote", check=False).strip():
-        return ""
-    head = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD", check=False)
-    if head.startswith("origin/"):
-        return head
-    for name in ("main", "master"):
-        if git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{name}", check=False):
-            return f"origin/{name}"
-    return ""
+def remote_default(cwd: Path | None = None) -> tuple[str, str]:
+    """Default branch name and tip sha from the remote. Empty when there is no remote."""
+    if not git("remote", cwd=cwd, check=False).strip():
+        return "", ""
+    try:
+        text = git("ls-remote", "--symref", "origin", "HEAD", cwd=cwd, timeout=60)
+    except Refuse as err:
+        raise Refuse("the remote could not be read, so this change is not sent without a pull request. " + str(err)) from None
+    branch = ""
+    sha = ""
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "ref:" and parts[1].startswith("refs/heads/"):
+            branch = parts[1].split("/", 2)[-1]
+        elif parts and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+            sha = parts[0]
+    if not sha or not branch:
+        raise Refuse("the remote did not name a default branch tip, so this change is not sent without a pull request.")
+    return branch, sha
 
 
-def published_forge_off() -> bool:
-    """True only when the published base says forge is false. An unmerged local branch does not count."""
-    ref = published_base_ref()
-    if not ref:
+def remote_forge_off(cwd: Path | None = None) -> bool:
+    """Whether the remote tip has forge set to false."""
+    branch, sha = remote_default(cwd)
+    if not sha:
         return False
-    text = git("show", f"{ref}:{CONFIG}", check=False)
+    stored = "refs/jtek/remote-base"
+    spec = "+refs/heads/" + branch + ":" + stored
+    try:
+        git("fetch", "--quiet", "origin", spec, cwd=cwd, timeout=60)
+    except Refuse as err:
+        raise Refuse("the remote default branch could not be fetched, so this change is not sent without a pull request. " + str(err)) from None
+    fetched = git("rev-parse", "--verify", "--quiet", stored, cwd=cwd, check=False)
+    if fetched != sha:
+        raise Refuse("the fetched tip does not match the remote, so this change is not sent without a pull request.")
+    text = git("show", sha + ":" + CONFIG, cwd=cwd, check=False)
     try:
         config = json.loads(text) if text else {}
     except json.JSONDecodeError:
@@ -1792,10 +1899,10 @@ def published_forge_off() -> bool:
 
 
 def no_pr_allowed(worktree: Path) -> bool:
-    """finish --no-pr is allowed with no remote, or when the published base has forge set to false."""
+    """Whether a result may be recorded with no pull request."""
     if not git("remote", cwd=worktree, check=False).strip():
         return True
-    return published_forge_off()
+    return remote_forge_off(worktree)
 
 
 def cmd_finish(args: argparse.Namespace) -> None:
@@ -1815,9 +1922,9 @@ def cmd_finish(args: argparse.Namespace) -> None:
         raise Refuse("--pr takes the link of the pull request, as the forge gave it")
     if args.no_pr and not no_pr_allowed(worktree):
         raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
-                     f"--pr <url>. `finish --no-pr` is allowed only when there is no remote, or when the published "
-                     f"base branch (origin/HEAD, or origin/main) has `\"forge\": false` in {CONFIG}. "
-                     "An unmerged branch that sets forge to false does not skip the pull request.")
+                     f"--pr <url>. `finish --no-pr` is allowed only when there is no remote, or when the default branch "
+                     f"the remote itself reports has `\"forge\": false` in {CONFIG}. "
+                     "A local origin/HEAD does not count. An unmerged branch that sets the flag does not either.")
     sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
     passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])

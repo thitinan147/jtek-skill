@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.42.0 - the remote, not a local ref, says whether there is a forge
+
+A re-review of 26.41.0 moved `refs/remotes/origin/HEAD` onto an unpushed commit with `"forge": false`, and `finish --no-pr` shipped. The other gates from that review held. This reads the remote.
+
+- `finish --no-pr` asks the remote for its default branch (`git ls-remote --symref origin HEAD`), fetches that exact tip, and reads `jtek.json` there. A local `origin/HEAD` does not count. If the remote cannot be read, or the fetched tip does not match, `--no-pr` is refused.
+- A backtick or a quote exempts a quality word only when that word is inside it. `feels faster `x`` is refused. `the label reads `faster`` is allowed. A verb such as `prints` does not exempt the other words on the line.
+- ความเร็ว is the unobservable noun for speed. The short word เร็ว does not also match inside it. ไม่ง่าย stays allowed.
+- Format characters (Unicode category Cf) are stripped before the Done when check: word joiner U+2060, direction marks U+200E and U+200F, soft hyphen U+00AD, and the zero-width characters already stripped.
+- A check is lint-class by the pieces of its name, not only the exact name `lint`: `eslint`, `ruff`, `ruff-format`, `prettier`, `tsc`, `mypy`, and the same family. A behaviour check is any other name. Prefix `behaviour-` to mark one whose command is a linter (`behaviour-eslint`).
+- `broke.json` is sealed with the same key as the authors list. A hand-written proof does not count.
+- `refs/tags/jtek/<id>` reserves that id.
+- `--at` on a fast-forward uses the reflog or the remote-tracking base. With both gone, the review is refused instead of showing only the last commit.
+- `doctor` warns when a setup script it can read creates a virtualenv, not only when the setup string itself says `venv`.
+
 ## 26.41.0 - a green light has to be a real one
 
 A review of 26.40.0 found ways through the new gates. Each one is closed in the script.

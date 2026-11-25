@@ -1,4 +1,5 @@
 """Behaviour of jtek.py against a scratch git repository. tests/board.py stands in for Notion and for the agent's Notion tool."""
+import importlib.util
 import json
 import os
 import subprocess
@@ -17,6 +18,17 @@ PASS_NOTES = ("Findings: none\n\nNotes:\n- broke: the new branch; test passed=fa
               "- safe because: the change only adds a branch (run 1)\n")
 
 SCRIPT = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
+
+
+def jtek_module():
+    """The script under test, loaded once so the harness can seal proofs the same way finish checks them."""
+    mod = getattr(jtek_module, "cached", None)
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("jtek_under_test", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        jtek_module.cached = mod
+    return mod
 
 
 def with_session(extra=None):
@@ -99,15 +111,18 @@ class Scratch(unittest.TestCase):
             return
         meta_path = work / "meta.json"
         behaviour = "test"
-        lint = {"lint", "syntax", "format", "fmt", "type", "types", "typecheck", "import", "imports", "style"}
+        mod = jtek_module()
         if meta_path.is_file():
             for name in json.loads(meta_path.read_text()).get("checks") or []:
-                if str(name).lower() not in lint and not str(name).lower().startswith("lint"):
+                if mod.is_behaviour_check(str(name)):
                     behaviour = name
                     break
         data = {"sha": sha, "items": {
             str(n): {"item": item, "check": behaviour, "diff": "break the behaviour\n", "sha": sha}
             for n, item in enumerate(items, 1)}}
+        key_path = self.repo / ".git" / "jtek" / "author.key"
+        if key_path.is_file():
+            data = mod.attach_broke_seal(data, key_path.read_bytes())
         (work / "broke.json").write_text(json.dumps(data) + "\n")
 
     def jtek(self, *args, cwd=None, env=None):
@@ -3528,6 +3543,163 @@ class RoundTwo(Scratch):
         self.assertIn("cannot read", out)
         self.assertIn("[redacted]", out)
         self.assertFalse(token in out)
+
+
+class RoundThree(Scratch):
+    """The hole still open in 26.41.0, and the follow-ups named with it."""
+
+    def test_a_moved_origin_head_does_not_skip_the_pull_request(self):
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.git("checkout", "-q", "-b", "loose")
+        cfg = json.loads((self.repo / "jtek.json").read_text())
+        cfg["forge"] = False
+        (self.repo / "jtek.json").write_text(json.dumps(cfg))
+        self.git("add", "jtek.json")
+        self.git("commit", "-q", "-m", "forge off, not pushed")
+        evil = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", "--no-fetch", env={"JTEK_BASE": "loose"})
+        self.assertEqual(code, 0, out)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.git("update-ref", "refs/remotes/origin/evil", evil)
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/evil")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), env={"JTEK_BASE": "loose"})
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        self.assertIn("pull request", out)
+        self.git("remote", "set-url", "origin", str(Path(self.tmp.name) / "missing.git"))
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), env={"JTEK_BASE": "loose"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("could not be read", out)
+        self.assertNotIn("outcome:", out)
+
+    def test_a_quote_does_not_exempt_a_quality_word_outside_it(self):
+        refused = [
+            "feels faster `x`",
+            "feels faster and the command prints ok",
+            "ความเร็วของหน้าตรงกับของเดิม",
+            "เ" + "ร" + "\u0e47" + "\u2060" + "วขึ้นชัดเจน",
+            "\u200eเร็วขึ้นชัดเจน",
+            "เร็" + "\u00ad" + "วขึ้นชัดเจน",
+        ]
+        for number, item in enumerate(refused, 1):
+            self.ticket(f"T-{number}", body=f"## Goal\nAdd.\n## Done when\n- {item}\n")
+            code, out = self.jtek("start", f"T-{number}")
+            self.assertEqual(code, 1, item + "\n" + out)
+            self.assertIn("cannot be checked", out)
+        self.ticket("T-20", body="## Goal\nAdd.\n## Done when\n- the command prints `ok`\n")
+        code, out = self.jtek("start", "T-20")
+        self.assertEqual(code, 0, out)
+        self.ticket("T-21", body="## Goal\nAdd.\n## Done when\n- the label reads `faster`\n")
+        code, out = self.jtek("start", "T-21")
+        self.assertEqual(code, 0, out)
+
+    def test_eslint_and_ruff_format_are_not_behaviour_checks(self):
+        fail_long = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                     "sys.exit(p.is_file() and 'LONG' in p.read_text())\"")
+        fail_behav = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                      "sys.exit(p.is_file() and 'BEHAV' in p.read_text())\"")
+        self.write_config({"eslint": fail_long, "ruff-format": fail_long, "test": fail_behav})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "feature.txt").write_text("LONG only\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("behaviour check", out)
+        self.assertNotIn("made `eslint` fail", out)
+        self.assertNotIn("made `ruff-format` fail", out)
+
+    def test_a_hand_written_broke_proof_is_refused(self):
+        check = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                 "sys.exit(p.is_file() and 'BROKEN' in p.read_text())\"")
+        self.write_config({"test": check})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "feature.txt").write_text("BROKEN\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        proof = self.repo / ".git" / "jtek" / "work" / "T-1" / "broke.json"
+        record = json.loads(proof.read_text())
+        self.assertIn("seal", record)
+        record["seal"] = "0" * 64
+        proof.write_text(json.dumps(record) + "\n")
+        self.git("checkout", "--", "feature.txt", cwd=tree)
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("seal", out)
+        self.assertNotIn("outcome:", out)
+
+    def test_a_tag_reserves_a_ticket_id(self):
+        item = "- the command prints `ok`\n"
+        draft = Path(self.tmp.name) / "draft.md"
+        draft.write_text("# Count\n\n## Goal\nAdd.\n## Done when\n" + item)
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertIn("T-1.md", out)
+        self.git("update-ref", "refs/tags/jtek/T-40", self.git("rev-parse", "HEAD"))
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("T-40.md", out)
+        self.assertIn("T-41.md", out)
+
+    def test_fast_forward_without_a_reflog_uses_the_remote_base_or_refuses(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "a.txt").write_text("a\n")
+        self.git("add", "a.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add a", cwd=tree)
+        (tree / "b.txt").write_text("b\n")
+        self.git("add", "b.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add b", cwd=tree)
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.git("merge", "--ff-only", "jtek/T-1")
+        tip = self.git("rev-parse", "HEAD")
+        logs = self.repo / ".git" / "logs"
+        subprocess.run(["rm", "-rf", str(logs)], check=True)
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 0, out)
+        spec = next(line for line in out.splitlines() if line.startswith("diff: ")).split(" diff ", 1)[1]
+        names = subprocess.run(["git", "diff", "--name-only", *spec.split()], cwd=self.repo,
+                               capture_output=True, text=True, check=True).stdout
+        self.assertIn("a.txt", names)
+        self.assertIn("b.txt", names)
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not reviewed as only the last commit", out)
+        self.assertNotIn("b.txt", out)
+
+    def test_doctor_reads_a_setup_script_for_venv(self):
+        script = self.repo / "scripts"
+        script.mkdir()
+        (script / "setup_dev.py").write_text("import venv\nvenv.EnvBuilder(with_pip=True)\n")
+        bin_dir = Path(self.tmp.name) / "pybin"
+        bin_dir.mkdir()
+        (bin_dir / "python3").write_text(
+            "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then echo 'ensurepip is not available' >&2; exit 1; fi\nexit 0\n"
+        )
+        (bin_dir / "python3").chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup="python3 scripts/setup_dev.py")
+        code, out = self.jtek("doctor", env={"PATH": path})
+        self.assertEqual(code, 1, out)
+        self.assertIn("ensurepip is not available", out)
 
 
 if __name__ == "__main__":
