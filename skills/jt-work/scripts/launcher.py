@@ -17,7 +17,7 @@ def init(j, args) -> None:
     j.write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
     print(f"wrote {path}")
     print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
-    print("Leave it empty to keep the tickets as files beside the repository; no board is needed then.")
+    print("Leave it empty to keep the tickets as files in `.jtek/tickets`, inside the repository; no board is needed then.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
@@ -27,7 +27,7 @@ def init(j, args) -> None:
 def file_rows(j) -> list[dict]:
     """The rows of a repository with no board: one for each ticket file, read from its header."""
     rows = []
-    for path in sorted(j.tickets_dir().glob("*.md")):
+    for path in j.iter_ticket_files():
         try:
             ticket = j.parse_ticket(path.read_text())
         except (OSError, ValueError) as err:
@@ -90,7 +90,7 @@ def sync(j, args) -> None:
             print(f"{ticket_id}\t-\tthe PR on the page is not a link; the human sets Done after merging")
         else:
             try:
-                state, head, ci = j.pr_info(row["pr"], j.base_branch())
+                state, head, ci, _problem = j.pr_info(row["pr"], j.base_branch())
             except j.Refuse as err:
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}: {err}")
                 continue
@@ -196,7 +196,7 @@ def tidy_done(j, ticket_id: str, pr: str = "", head: str | None = None) -> str:
     merged = j.git("rev-list", "--count", f"{j.base_ref(meta['base'])}..refs/heads/{branch}", check=False) == "0"
     if not merged and head is None and j.re.match(r"^https?://[^\s;]+$", pr):
         try:
-            state, head, _ = j.pr_info(pr, meta["base"])
+            state, head, _, _problem = j.pr_info(pr, meta["base"])
             head = head if state == "MERGED" else ""
         except j.Refuse:
             head = ""

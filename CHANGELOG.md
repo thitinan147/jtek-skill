@@ -1,5 +1,20 @@
 # Changelog
 
+## 26.40.0 - finish tells the truth about the pull request, and a check has to be able to fail
+
+A pilot of 26.39.0 shipped work the script could not see, took a verdict from the session that wrote the code, and kept tickets where a fresh machine could not find them. Each hole is closed in the script.
+
+- `finish` refuses when it cannot read the pull request. A missing `gh`, a token that cannot read checks, a draft it cannot see, and a link that is not a pull request used to print `needs-review` with `ci: unknown`. The refusal names the link and the GH_TOKEN scope. Token-like text in the forge's error is not printed.
+- `finish` waits while CI is `pending`, then refuses if it is still pending. The bound is `JTEK_CI_TRIES` (40) looks and `JTEK_CI_WAIT` (15) seconds between them. `pass` and `none` ship. `fail` still refuses.
+- `start` records the session, and `verdict` refuses that same session, including one that resumed the ticket later. Set `JTEK_SESSION` to an id that stays the same for the writing session. Otherwise the script uses `CURSOR_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, or the process that launched it. Only a hash is stored, and it is never printed.
+- `ticket` and `start` refuse a `Done when` item that is a quality with no number (fast, easy, feels, น่าใช้, เร็วขึ้น, and the same kind of word). A number keeps the item. Nothing is claimed.
+- Ticket files are written in `.jtek/tickets`, inside the repository, so a clone has them. Commit that folder on the base branch. The old folder beside the repository, `<name>.jtek/_tickets`, is still read, and its ids are not reused.
+- After three FAIL verdicts, `start` refuses, including `start --answered`. The only reset is a board ticket the human set back to Todo after a question. A local ticket has no reset.
+- `show` and `verdict` run after a squash, when the worktree and the branch are gone. `--pr <link>` reviews `refs/pull/<n>/head`, fetched when it is not local. `--at <commit>` reviews that commit's parent range, which is the diff a squash commit does not show against the base. An empty ticket branch does not use that parent range.
+- `jtek.py comment <id>` posts the verdict. It tries `gh pr comment`, then `gh api` as an issue comment when the token cannot add a comment, then writes `unposted-comment.md` and exits with a refusal. It does not report a comment as posted when it was not.
+- `jtek.py broke <id> --item <n>` runs the declared checks while one `Done when` item is broken and records the check that failed. `finish` refuses until every item has that record on the current commit. A check that still passes is not a record.
+- A prose apostrophe in a refusal is worded so the script can be read in full, and `gh` is started from one argument list. The skill scan stays at the same caution level as 26.39.0.
+
 ## 26.39.0 - the owner's list of reviewers, and a survey of the agents on the machine
 
 Until now the skills said "prefer a reviewer from another vendor" in `/jt` only, and left the agent to guess which programs the machine has. Now the script looks, and the owner keeps the order.

@@ -1,6 +1,7 @@
 """The eval builder and grader work on a scripted, known-good run."""
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,7 +15,14 @@ JTEK = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
 
 
 def run(*args, cwd=None):
-    proc = subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True)
+    env = os.environ.copy()
+    # The scripted run is two sessions: the author, then a reviewer. finish does not wait on CI here.
+    if args and str(args[0]).endswith("jtek.py"):
+        command = args[1] if len(args) > 1 else ""
+        env["JTEK_SESSION"] = "reviewer-session" if command == "verdict" else "author-session"
+        env.setdefault("JTEK_CI_TRIES", "0")
+        env.setdefault("JTEK_CI_WAIT", "0")
+    proc = subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True, env=env)
     return proc.returncode, proc.stdout + proc.stderr
 
 
@@ -62,6 +70,12 @@ class EvalTests(unittest.TestCase):
         code.write_text(code.read_text().replace('text.split(" ")', "text.split()"))
         git("commit", "-qam", "fix: split on any whitespace", cwd=tree)
         self.assertEqual(run(JTEK, "check", "B-1", cwd=tree)[0], 0)
+        # Break the fix, show a declared check fails for each Done when item, then restore it.
+        code.write_text(code.read_text().replace("text.split()", 'text.split(" ")'))
+        for item in ("1", "2", "3"):
+            code_b, out_b = run(JTEK, "broke", "B-1", "--item", item, cwd=tree)
+            self.assertEqual(code_b, 0, out_b)
+        git("checkout", "--", "wordcount.py", cwd=tree)
         evidence = self.dest / "evidence.md"
         evidence.write_text("1. seen: mixed file counts 4\n2. seen: empty file counts 0\n3. seen: single spaces count 3\n- clean-up: nothing to remove\n")
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tree, capture_output=True, text=True).stdout.strip()

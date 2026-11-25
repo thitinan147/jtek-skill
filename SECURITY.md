@@ -17,16 +17,18 @@ Please report suspected vulnerabilities privately through GitHub: **Security tab
 
 ## What the script cannot enforce
 
-- It cannot tell who ran a command. An agent that ignores its instructions could commit to the base branch, set a page to Todo with its Notion tool, or record a verdict on its own change. The skills forbid these. Do not put `jtek.py release` or `jtek.py verdict` on an always-allow list in the session that writes code.
-- It trusts what the session passes in: the header lines of the ticket file, `--resume`, `--no-baseline`, and the `JTEK_BASE` and `JTEK_STATE` variables. Its state is plain files under the git directory, and it reads the local base branch, not the remote one.
-- It does not prove the reviewer is a different session, or the model the list names. `verdict --by` is a label, and so are `vendor` and `model` in `agents.json`.
+- It records the session that ran `start`, and every later `start` of that ticket, and `verdict` refuses the same session. The id is `JTEK_SESSION` when it is set, otherwise `CURSOR_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, or `CODEX_THREAD_ID`, and otherwise the process that launched the command. Only a short hash is stored. The value is never printed. An agent that sets a different `JTEK_SESSION` for the verdict can still bypass this. Do not put `jtek.py release` or `jtek.py verdict` on an always-allow list in the session that writes code. An agent can still commit to the base branch or set a page to Todo with its board tool. The skills forbid both.
+- It trusts what the session passes in: the header lines of the ticket file, `--resume`, `--no-baseline`, and the `JTEK_BASE`, `JTEK_STATE`, and `JTEK_SESSION` variables. Its state is plain files under the git directory, and it reads the local base branch, not the remote one.
+- It does not prove the model the reviewer list names. `verdict --by` is a label, and so are `vendor` and `model` in `agents.json`.
 - It does not check that the evidence is true. The evidence is the author's account, written for the human to read first. The checks and the reviewer's own runs are what test the change.
+- `finish` requires a `broke` record for every `Done when` item. The script itself ran a declared check while the worktree was dirty and saw it fail, then the author restored the file. It does not judge whether that edit was the behaviour the item names. A check that still passes is not a record.
 
 ## What the skills do outside the repository
 
 - **Worktrees:** `start` creates `<repo>.jtek/<id>` beside the repository and the branch `jtek/<id>`.
 - **State:** a copy of each ticket, claims, check logs, review notes, and results are under `<git-common-dir>/jtek/` and are not committed. Check logs can contain secrets that a command printed.
-- **Network:** the script calls `gh pr view` (read-only) in `finish` and `sync`, or the `pr_state` command when the project set one. `cursor-agent --list-models`, run by `doctor --agents`, asks that program's own service. Nothing else.
+- **Ticket files:** when there is no board, `ticket --save` writes `.jtek/tickets/<id>.md` inside the repository. Commit that folder on the base branch. Files already in `<repo>.jtek/_tickets` are still read.
+- **Network:** the script calls `gh pr view` (read-only) in `finish` and `sync`, or the `pr_state` command when the project set one. `jtek.py comment` calls `gh pr comment`, and when that is denied, `gh api` to post an issue comment. `show` and `verdict` may `git fetch` `refs/pull/<n>/head` when that ref is not already local. `cursor-agent --list-models`, run by `doctor --agents`, asks that program's own service. Nothing else.
 - **Push:** the `jt-ship` skill tells the agent to push the ticket branch and open a pull request. This sends your code to that remote on purpose.
 - **Merge:** never. There is no command for it.
 - **Notion:** the script does not talk to Notion. The agent reads the ticket page with its Notion tool, and writes Status, Waiting, PR, and one comment per result, as the script's `board:` line says. The comment holds the result block and the evidence text. Diffs and logs are not sent.

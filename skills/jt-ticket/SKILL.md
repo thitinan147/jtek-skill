@@ -30,7 +30,7 @@ Ask at most four questions at a time, the one that changes the most first. Each 
 Write each ticket in the ticket format of `jt-work`'s `references/ticket.md`: a title, `kind:`, `repo:`, `area:`, and the three sections.
 
 - **Goal:** who wants what, and why. For a bug: the steps, the wrong result, and the right one.
-- **Done when:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", or "better" without a number. Put in the edge cases the owner decided.
+- **Done when:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", or "better" without a number. `jtek.py ticket` refuses an item that is only a quality with no number, including feels, faster, better, น่าใช้, and เร็วขึ้น. Fix that before `start`. Put in the edge cases the owner decided.
 - **Out of scope:** behaviour that must stay exactly as it is now, named as behaviour, with the code's facts you found.
 
 ## 5. Size and order
