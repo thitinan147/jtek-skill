@@ -281,26 +281,35 @@ def remember_origin(cwd: Path | None = None) -> None:
 
 
 def repo_identity(url: str) -> tuple[str, str]:
-    """Host and path of a repository URL, ignoring userinfo, a trailing slash, and `.git`.
+    """Host (with non-default port) and path of a repository URL.
 
-    `https://github.com/acme/widget.git` and the same path with a credential are one repository.
-    A local path is its own identity. The credential itself is not part of the result."""
+    `https://github.com/acme/widget.git` and the same path with a credential or default port
+    are one repository. A non-default port is a different repository. Only URLs with a host
+    strip a trailing `.git`; a local or `file://` path keeps its exact normalised path.
+    The credential itself is not part of the result."""
     text = url.strip()
     host = ""
+    port: int | None = None
+    scheme = ""
     path = text
     if "://" in text:
         parsed = urllib.parse.urlparse(text)
+        scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
+        port = parsed.port
         path = urllib.parse.unquote(parsed.path or "")
     else:
         scp = re.fullmatch(r"(?:[^@/\s]+@)?([^:/\s]+):(.+)", text)
-        if scp and not text.startswith("/"):
+        if scp and not text.startswith("/") and not text.startswith("."):
             host = scp.group(1).lower()
             path = scp.group(2)
     path = path.rstrip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
     if host:
+        default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
+        if port and port != default:
+            host = f"{host}:{port}"
+        if path.endswith(".git"):
+            path = path[:-4]
         path = path.lstrip("/")
     else:
         path = os.path.normpath(path)
@@ -516,8 +525,8 @@ def state_dir() -> Path:
     return Path(override).expanduser().resolve() if override else common_dir() / "jtek"
 
 
-def main_root() -> Path:
-    for line in git("worktree", "list", "--porcelain").splitlines():
+def main_root(cwd: Path | None = None) -> Path:
+    for line in git("worktree", "list", "--porcelain", cwd=cwd).splitlines():
         if line.startswith("worktree "):
             return Path(line[len("worktree "):])
     raise Refuse("no main worktree found")
@@ -2876,7 +2885,7 @@ def machine_config_path() -> Path:
     return machine_root() / "config"
 
 
-def repo_storage_id(url: str) -> str:
+def repo_storage_id(url: str, base: Path | None = None) -> str:
     """A repository id safe to use as directories under $HOME/.jtek/repos.
 
     An origin URL contributes its host, a non-default port, and its path. Userinfo is left out.
@@ -2886,7 +2895,8 @@ def repo_storage_id(url: str) -> str:
     https://git.example:8443/acme/widget keeps port 8443. The default ports 443, 80, 22, and 9418
     are left out. A trailing slash and a trailing .git are left out.
     A local path, and a repository with no origin, is path plus that absolute path, such as
-    path/tmp/app. .. is refused so the id cannot step out of $HOME/.jtek/repos.
+    path/tmp/app. A relative local path is resolved against `base` (the checkout) when given.
+    .. is refused so the id cannot step out of $HOME/.jtek/repos.
     """
     text = url.strip()
     host = ""
@@ -2910,6 +2920,9 @@ def repo_storage_id(url: str) -> str:
     if host:
         path = path.lstrip("/")
     else:
+        if base is not None and not os.path.isabs(path):
+            anchor = base if base.is_absolute() else base.resolve()
+            path = os.path.join(anchor.as_posix(), path)
         path = os.path.normpath(path or ".")
     parts = [part for part in path.split("/") if part not in ("", ".")]
     if any(part == ".." for part in parts):
@@ -2932,10 +2945,11 @@ def candidate_homes(cwd: Path | None = None) -> list[Path]:
     The origin id wins when both have a file of the same kind.
     """
     homes: list[Path] = []
+    root = main_root(cwd)
     url = origin_url(cwd)
     if url:
-        homes.append(machine_root() / "repos" / repo_storage_id(url))
-    path_home = machine_root() / "repos" / repo_storage_id(main_root().as_posix())
+        homes.append(machine_root() / "repos" / repo_storage_id(url, base=root))
+    path_home = machine_root() / "repos" / repo_storage_id(root.as_posix())
     if path_home not in homes:
         homes.append(path_home)
     return homes

@@ -4246,6 +4246,51 @@ class RoundFive(Scratch):
         self.git("config", f"url.{evil}/.insteadOf", "https://github.com/acme/widget.git")
         self.assertTrue(mod.insteadof_applies("https://github.com/acme/widget.git", self.repo))
 
+    def test_insteadof_to_a_different_port_refuses_finish_no_pr(self):
+        mod = jtek_module()
+        self.git("config", "url.https://github.com:443/.insteadOf", "https://github.com/")
+        self.assertFalse(mod.insteadof_applies("https://github.com/acme/widget.git", self.repo))
+        self.git("config", "url.ssh://git@github.com:22/.insteadOf", "git@github.com:")
+        self.assertFalse(mod.insteadof_applies("git@github.com:acme/widget.git", self.repo))
+        self.git("config", "url.http://example.invalid:80/.insteadOf", "http://example.invalid/")
+        self.assertFalse(mod.insteadof_applies("http://example.invalid/acme/widget.git", self.repo))
+        self.git("config", "url.git://example.invalid:9418/.insteadOf", "git://example.invalid/")
+        self.assertFalse(mod.insteadof_applies("git://example.invalid/acme/widget.git", self.repo))
+        self.git("config", "url.https://example.invalid:8443/.insteadOf", "https://example.invalid/")
+        self.assertTrue(mod.insteadof_applies("https://example.invalid/acme/widget.git", self.repo))
+        self.git("config", "url.ssh://git@gitlab.example:2222/.insteadOf", "git@gitlab.example:")
+        self.assertTrue(mod.insteadof_applies("git@gitlab.example:acme/widget.git", self.repo))
+
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        self.git("remote", "add", "origin", "https://example.invalid/acme/widget.git")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertIn("insteadOf", out)
+
+    def test_insteadof_stripping_dot_git_on_local_path_refuses_finish_no_pr(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        honest = self._forge_off_remote("origin.git")
+        other = self._forge_off_remote("origin")
+        mod = jtek_module()
+        self.assertNotEqual(mod.repo_identity(f"file://{honest}"), mod.repo_identity(str(other)))
+        self.assertEqual(mod.repo_identity("https://github.com/acme/widget.git"),
+                         mod.repo_identity("https://github.com/acme/widget"))
+        self.git("config", "protocol.file.allow", "always")
+        self.git("remote", "add", "origin", f"file://{honest}")
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.git("config", f"url.{other}/.insteadOf", f"file://{honest}")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertIn("insteadOf", out)
+
 
 class MachineConfig(Scratch):
     """Config and knowledge live on the machine. The work repository stays free of jtek files."""
@@ -4261,6 +4306,59 @@ class MachineConfig(Scratch):
         self.assertEqual(mod.repo_storage_id("https://github.com:443/acme/widget.git"), "github.com/acme/widget")
         self.assertEqual(mod.repo_storage_id("https://git@github.com/acme/widget.git"), "github.com/acme/widget")
         self.assertEqual(mod.repo_storage_id(self.repo.as_posix()), "path" + self.repo.as_posix())
+        with self.assertRaises(mod.Refuse):
+            mod.repo_storage_id("https://github.com/acme/../evil")
+        with self.assertRaises(mod.Refuse):
+            mod.repo_storage_id("../relbase")
+
+    def test_relative_origin_with_dotdot_resolves_against_checkout(self):
+        self.config_file().unlink()
+        relbase = (self.repo.parent / "relbase").resolve()
+        relbase.mkdir()
+        self.git("remote", "add", "origin", "../relbase")
+        code, out = self.jtek("init")
+        self.assertEqual(code, 0, out)
+        expected_id = "path" + relbase.as_posix()
+        self.assertIn(expected_id, out)
+        cfg = self.home / "repos" / expected_id / "jtek.json"
+        self.assertTrue(cfg.is_file())
+        cfg.write_text(json.dumps({"board": "", "checks": {"test": "true"}}) + "\n")
+        draft = Path(self.tmp.name) / "draft.md"
+        draft.write_text("# Relative\nkind: feature\n\n" + CARD)
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.home / "repos" / expected_id / "tickets" / "T-1.md").is_file())
+
+    def test_relative_origin_binds_to_its_checkout_for_two_repos(self):
+        def make_repo(name: str) -> Path:
+            repo = Path(self.tmp.name) / name / "app"
+            repo.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+            (repo / "README.md").write_text("hi\n")
+            subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+            subprocess.run(["git", "remote", "add", "origin", "./widget.git"], cwd=repo, check=True)
+            return repo.resolve()
+
+        repo_a = make_repo("dir-a")
+        repo_b = make_repo("dir-b")
+        env = with_session()
+        env["JTEK_HOME"] = os.environ["JTEK_HOME"]
+        proc_a = subprocess.run([sys.executable, str(SCRIPT), "init"], cwd=repo_a,
+                                capture_output=True, text=True, env=env)
+        out_a = proc_a.stdout + proc_a.stderr
+        self.assertEqual(proc_a.returncode, 0, out_a)
+        proc_b = subprocess.run([sys.executable, str(SCRIPT), "init"], cwd=repo_b,
+                                capture_output=True, text=True, env=env)
+        out_b = proc_b.stdout + proc_b.stderr
+        self.assertEqual(proc_b.returncode, 0, out_b)
+        cfg_a = self.home / "repos" / ("path" + (repo_a / "widget").as_posix()) / "jtek.json"
+        cfg_b = self.home / "repos" / ("path" + (repo_b / "widget").as_posix()) / "jtek.json"
+        self.assertTrue(cfg_a.is_file(), out_a)
+        self.assertTrue(cfg_b.is_file(), out_b)
+        self.assertNotEqual(cfg_a, cfg_b)
 
     def test_no_config_file_means_file_tickets(self):
         self.config_file().unlink()
@@ -4376,6 +4474,49 @@ class MachineConfig(Scratch):
         self.assertFalse((old / "me.md").exists())
         self.assertFalse((self.repo / "jtek.json").exists())
         self.assertIn("commit the removal", out)
+
+    def test_migrate_removes_identical_repo_config_and_migrates_dot_jtek(self):
+        machine_cfg = self.config_file()
+        original = machine_cfg.read_bytes()
+        (self.repo / "jtek.json").write_bytes(original)
+        dot = self.repo / ".jtek"
+        dot.mkdir()
+        (dot / "verify.md").write_text("# guide\n")
+        code, doc_out = self.jtek("doctor")
+        self.assertEqual(code, 1, doc_out)
+        self.assertIn("init: migrate", doc_out)
+        self.assertNotIn("differs from", doc_out)
+        code, out = self.jtek("migrate")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.repo / "jtek.json").exists())
+        self.assertFalse(dot.exists())
+        self.assertEqual(machine_cfg.read_bytes(), original)
+        self.assertEqual((machine_cfg.parent / "verify.md").read_text(), "# guide\n")
+        self.assertIn("commit the removal", out)
+        code, doc_after = self.jtek("doctor")
+        self.assertEqual(code, 0, doc_after)
+        self.assertIn("init: ok", doc_after)
+
+    def test_migrate_and_doctor_explain_differing_repo_and_machine_config(self):
+        machine_cfg = self.config_file()
+        machine_before = machine_cfg.read_text()
+        repo_cfg = self.repo / "jtek.json"
+        repo_cfg.write_text(json.dumps({"board": "", "checks": {"test": "false"}}) + "\n")
+        code, doc_out = self.jtek("doctor")
+        self.assertEqual(code, 1, doc_out)
+        self.assertIn("init: migrate", doc_out)
+        self.assertIn(str(repo_cfg), doc_out)
+        self.assertIn(str(machine_cfg), doc_out)
+        self.assertIn("differs from", doc_out)
+        self.assertIn("will not overwrite", doc_out)
+        code, out = self.jtek("migrate")
+        self.assertEqual(code, 1, out)
+        self.assertIn(str(repo_cfg), out)
+        self.assertIn(str(machine_cfg), out)
+        self.assertIn("differ", out)
+        self.assertIn("not overwriting", out)
+        self.assertEqual(machine_cfg.read_text(), machine_before)
+        self.assertTrue(repo_cfg.is_file())
 
 
 SENTINEL = "SUPER_SECRET_SENTINEL_9f3a"
@@ -4513,6 +4654,45 @@ class EasyStart(Scratch):
         self.assertIn("รอรีวิว\t-", out)
         self.assertIn("รอ merge\t-", out)
         self.assertIn("ถัดไป\t-", out)
+
+    def test_status_shows_every_row_that_next_shows(self):
+        # T-3: parked with outcome: review -> action "board"
+        work_board = self.repo / ".git" / "jtek" / "work" / "T-3"
+        work_board.mkdir(parents=True)
+        tree_board = self.repo.parent / "wt-T-3"
+        tree_board.mkdir()
+        (work_board / "meta.json").write_text(json.dumps({
+            "worktree": str(tree_board), "branch": "jtek/T-3", "base": "main", "author": "0123456789abcdef"}))
+        (work_board / "result.md").write_text("outcome: review\n")
+        # T-4: damaged meta.json -> action "stuck"
+        work_stuck = self.repo / ".git" / "jtek" / "work" / "T-4"
+        work_stuck.mkdir(parents=True)
+        (work_stuck / "meta.json").write_text("{damaged")
+
+        board = Path(self.tmp.name) / "board-all.json"
+        board.write_text(json.dumps([
+            {"id": "T-1", "status": "Todo", "repo": "", "title": "Work item"},
+            {"id": "T-2", "status": "In Progress", "repo": "", "waiting": "API key from ops", "title": "Needs human"},
+            {"id": "T-3", "status": "In Progress", "repo": "", "title": "Board write"},
+            {"id": "T-4", "status": "In Progress", "repo": "", "title": "Damaged claim"},
+            {"id": "T-5", "status": "Backlog", "repo": "", "title": "On hold"},
+            {"id": "T-6", "status": "In Progress", "repo": "", "title": "Elsewhere"},
+        ]))
+        code_n, nxt = self.jtek("next", "--board-file", str(board))
+        self.assertEqual(code_n, 0, nxt)
+        code_s, out = self.jtek("status", "--board-file", str(board))
+        self.assertEqual(code_s, 0, out)
+        next_lines = [line for line in out.splitlines() if line.startswith("ถัดไป\t")]
+        self.assertTrue(next_lines, out)
+        self.assertEqual(next_lines[0], "ถัดไป\twork\tT-1\tnew")
+        self.assertIn("ถัดไป\tboard\tT-3\tthe page does not show the result", out)
+        self.assertIn("ถัดไป\thuman\tT-2\twaiting for API key from ops", out)
+        self.assertIn("ถัดไป\tstuck\tT-4\tthe claim's meta.json is damaged", out)
+        for line in nxt.splitlines():
+            ticket_id = line.split("\t", 1)[0]
+            self.assertIn(f"\t{ticket_id}\t", out, f"{ticket_id} shown by next but missing from status:\n{out}")
+        self.assertEqual((work_stuck / "meta.json").read_text(), "{damaged")
+        self.assertEqual((work_board / "result.md").read_text(), "outcome: review\n")
 
 
 if __name__ == "__main__":
