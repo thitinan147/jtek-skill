@@ -1,5 +1,19 @@
 # Changelog
 
+## 26.41.0 - a green light has to be a real one
+
+A review of 26.40.0 found ways through the new gates. Each one is closed in the script.
+
+- `finish` ships a pull request only when every required check is SUCCESS, or when the project's `pr_state` command prints `none` because the repository has no checks. SKIPPED, NEUTRAL, and a mix of those with SUCCESS stay pending. A null, missing, or empty rollup is `absent`, not `none`: `finish` waits `JTEK_CI_APPEAR_TRIES` (3) looks and `JTEK_CI_APPEAR_WAIT` (2) seconds for the first check, then refuses.
+- `broke` runs every declared check and keeps a log per item. A lint, syntax, format, or import failure does not prove the item. The stored text has to match the current Done when line, so rewriting that line drops the proof.
+- `ticket --save` keeps `kind`, `area`, and `repo` across a blank line, and refuses a saved file whose `repo` was dropped.
+- The next ticket id treats `refs/remotes/*/jtek/<id>` and an id named in commit history as taken.
+- `show` and `verdict --pr` do not trust a local `refs/pull/<n>/head` or `refs/jtek/pull/<n>/head` until a fetch updates it or `gh` reports the same commit. `--at` on a fast-forward of several commits reviews the whole range.
+- `start` and `verdict` require `JTEK_SESSION` (or `CURSOR_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, or `CODEX_THREAD_ID`). The hash is of that text only, so the variable name does not make a second id. The parent process is not a session. The authors list is sealed; a hand edit that does not recompute the seal is refused. The original writer is never dropped when the list is capped at 20. A process that can rewrite both the seal key and `meta.json` can still forge the list.
+- A Done when item needs a measurable comparison or an observable action. A digit anywhere, including a version, a Thai digit, or a fullwidth digit, does not turn off the check. `secure`, `works`, and `quicker` are included. Ordinary Thai such as ไม่ง่าย is not refused.
+- `finish --no-pr` with a remote is allowed only when the published base says `"forge": false`. An unmerged `JTEK_BASE` that sets the flag does not skip the pull request.
+- `comment` treats `addComment` on stdout the same as on stderr, so the `gh api` fallback still runs. A token in a `--pr` link is redacted before it is printed. `doctor` warns when `setup` would create a virtualenv and `ensurepip` is missing.
+
 ## 26.40.0 - finish tells the truth about the pull request, and a check has to be able to fail
 
 A pilot of 26.39.0 shipped work the script could not see, took a verdict from the session that wrote the code, and kept tickets where a fresh machine could not find them. Each hole is closed in the script.

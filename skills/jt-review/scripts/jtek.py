@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import fnmatch
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -44,15 +45,45 @@ DEFAULT_TIMEOUT = 1800
 MAX_RUN_OUTPUT = 20000
 CI_TRIES = 40  # how many times finish looks again while CI is still pending
 CI_WAIT = 15.0  # seconds between those looks. JTEK_CI_TRIES and JTEK_CI_WAIT override them
+CI_APPEAR_TRIES = 3  # how many times finish looks when the rollup is still empty
+CI_APPEAR_WAIT = 2.0  # seconds between those looks. JTEK_CI_APPEAR_TRIES and JTEK_CI_APPEAR_WAIT override them
+AUTHOR_CAP = 20  # later writers can be dropped; the original writer, stored first, is not
 # The first name that is set identifies the session. The raw value is hashed and never printed.
+# There is no parent-process fallback: a second shell would share that id and could record a pass.
 SESSION_KEYS = ("JTEK_SESSION", "CURSOR_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+# A missing id is refused. The same text in any of these names is the same session.
+SESSION_MISSING = (
+    "Set JTEK_SESSION (or CURSOR_SESSION_ID, CLAUDE_CODE_SESSION_ID, or CODEX_THREAD_ID) to an id that stays "
+    "the same for this whole session. jtek does not use the parent process as a session. The same text in any "
+    "of those names is the same session."
+)
 UNOBSERVABLE_WORD = re.compile(
     r"\b(?:fast(?:er|est)?|slow(?:er|est)?|eas(?:y|ier|iest)|delight(?:ful)?|better|nicer|smoother|snappy|"
-    r"feel(?:s|ing|t)?|usable|user-friendly|convenient|intuitive)\b",
+    r"feel(?:s|ing|t)?|usable|user-friendly|convenient|intuitive|secure|works|quicker|pleasant|simple|simpler)\b",
     re.I,
 )
-# Longer phrases first, so "ใช้งานง่าย" is the word that is named, not the "ง่าย" inside it.
-THAI_UNOBSERVABLE = ("รู้สึก", "ใช้งานง่าย", "น่าใช้", "เร็วขึ้น", "ง่ายขึ้น", "เร็ว", "ง่าย")
+# A digit, a version, or a unit-less number does not make a quality word checkable.
+# Longer phrases first. ง่าย and เร็ว do not match inside ไม่ง่าย or ไม่เร็ว.
+THAI_UNOBSERVABLE = re.compile(
+    r"(?<!ไม่)(?:รู้สึก|ใช้งานง่าย|ใช้งานดีขึ้น|น่าใช้|เร็วขึ้น|ง่ายขึ้น|เร็ว|ง่าย)"
+)
+MEASURE = re.compile(
+    r"(?:\d+(?:\.\d+)?)\s*(?:ms|msec|milliseconds?|s|sec|secs|seconds?|min|mins|minutes?|%|px|mb|kb|gb|x)\b",
+    re.I,
+)
+COMPARE = re.compile(r"\b(?:under|at least|at most|no more than|within|fewer than|less than)\b", re.I)
+OBSERVABLE = re.compile(
+    r"`[^`]+`|\"[^\"]+\"|'[^']+'|\b(?:prints?|returns?|raises?|exits?|throws?|shows?|displays?|opens?|writes?|responds?)\b",
+    re.I,
+)
+INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"), None)
+FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
+# A lint, syntax, format, or import check failing does not prove a Done when item.
+META_CHECKS = frozenset({
+    "lint", "syntax", "format", "fmt", "type", "types", "typecheck",
+    "import", "imports", "style", "ruff", "flake8", "mypy", "pyright", "black", "isort",
+})
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
 
 
@@ -101,6 +132,11 @@ def redact(text: str) -> str:
     return text
 
 
+def public_url(url: str) -> str:
+    """A link safe to print. A token in the --pr argument is redacted the same way as gh stderr."""
+    return redact(url or "")
+
+
 def env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -122,45 +158,97 @@ def env_float(name: str, default: float) -> float:
 
 
 def session_identity() -> str:
-    """Who launched this command, as 16 hex characters. The raw id is never stored or printed."""
+    """Who launched this command, as 16 hex characters, or "" when no session id is set.
+
+    The hash is of the value only, so the same text in JTEK_SESSION or CURSOR_SESSION_ID is one session.
+    The raw id is never stored or printed. The parent process is not a session."""
     for key in SESSION_KEYS:
         value = " ".join(os.environ.get(key, "").split())
         if value:
-            return hashlib.sha256(f"{key}\0{value}".encode()).hexdigest()[:16]
-    ppid = os.getppid()
-    stamp = "0"
-    try:
-        stamp = str(int(Path(f"/proc/{ppid}").stat().st_ctime))
-    except OSError:
-        pass
-    return hashlib.sha256(f"ppid\0{ppid}\0{stamp}".encode()).hexdigest()[:16]
+            return hashlib.sha256(value.encode()).hexdigest()[:16]
+    return ""
+
+
+def author_key() -> bytes:
+    """A key that stays on this machine, so a hand edit of meta.json cannot recompute the seal."""
+    key_file = state_dir() / "author.key"
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    if not key_file.is_file():
+        handle = os.open(key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            os.write(handle, os.urandom(32))
+        finally:
+            os.close(handle)
+    return key_file.read_bytes()
+
+
+def authors_seal(authors: list) -> str:
+    body = "\n".join(str(item) for item in authors).encode()
+    return hmac.new(author_key(), body, hashlib.sha256).hexdigest()
+
+
+def authors_intact(meta: dict) -> bool:
+    """False when the authors list was edited without the machine key that sealed it."""
+    authors = meta.get("authors")
+    seal = meta.get("authors_seal")
+    if not isinstance(authors, list) or not isinstance(seal, str) or not seal:
+        return False
+    return hmac.compare_digest(authors_seal(authors), seal)
 
 
 def note_author(meta: dict) -> None:
-    """Remember this session as one that wrote the ticket. A later resume adds itself; it does not erase the earlier ones."""
+    """Remember this session as one that wrote the ticket. A later resume adds itself.
+
+    The first id is the original writer and is never dropped. Later ids stop at AUTHOR_CAP.
+    The list is sealed. A hand edit that does not recompute the seal with the machine key is refused.
+    A process that can rewrite both the key and meta.json can still forge the list. The limit is that
+    key, not a claim that the file is tamper-proof against the user who owns the machine."""
     ident = session_identity()
+    if not ident:
+        raise Refuse(SESSION_MISSING)
+    if meta.get("authors") or meta.get("authors_seal"):
+        if not authors_intact(meta):
+            raise Refuse(
+                "the authors recorded at start were changed in meta.json. The seal no longer matches. "
+                "A hand edit of the authors does not make a verdict count."
+            )
     authors = [a for a in meta.get("authors", []) if isinstance(a, str) and a]
-    if isinstance(meta.get("author"), str) and meta["author"] and meta["author"] not in authors:
-        authors.append(meta["author"])
-    if ident not in authors:
+    if not authors:
+        authors = [ident]
+    elif ident not in authors:
         authors.append(ident)
+    while len(authors) > AUTHOR_CAP:
+        del authors[1]  # index 0 is the original writer
+    meta["authors"] = authors
     meta["author"] = ident
-    meta["authors"] = authors[-20:]
+    meta["authors_seal"] = authors_seal(authors)
+
+
+def fold_item(text: str) -> str:
+    """Drop invisible characters and fold fullwidth and Thai digits, so a hidden letter cannot hide a word."""
+    return text.translate(INVISIBLE).translate(FULLWIDTH_DIGITS).translate(THAI_DIGITS)
 
 
 def unobservable_word(line: str) -> str:
-    """A quality word with no number, or "" when the item names something that can be checked.
-    A number, such as 200 ms, keeps the item: the same word then has a result a person can see."""
-    text = re.sub(r"^-\s*", "", line.strip())
-    if re.search(r"\d", text):
+    """A quality word with nothing a person can measure or watch, or "" when the item can be checked.
+
+    A digit anywhere, including a version or a fullwidth or Thai digit, does not by itself make the item
+    checkable. A comparison with a unit, or an observable action, does."""
+    text = fold_item(re.sub(r"^-\s*", "", line.strip()))
+    measured = MEASURE.search(text) or (COMPARE.search(text) and re.search(r"\d", text))
+    if measured or OBSERVABLE.search(text):
         return ""
     found = UNOBSERVABLE_WORD.search(text)
     if found:
         return found.group(0)
-    for word in THAI_UNOBSERVABLE:
-        if word in text:
-            return word
-    return ""
+    thai = THAI_UNOBSERVABLE.search(text)
+    return thai.group(0) if thai else ""
+
+
+def is_behaviour_check(name: str) -> bool:
+    """True when this declared check can prove a Done when item. Lint, syntax, and import checks cannot."""
+    folded = name.strip().lower()
+    return bool(folded) and folded not in META_CHECKS and not folded.startswith("lint")
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None):
@@ -479,6 +567,24 @@ def diff_spec(repo: Path, base: str, head: str, landed: bool = False) -> str:
         return spec
     if not landed:
         return ""
+    # A fast-forward of several commits is already the tip of the base. The parent of that tip is only
+    # the last commit. The reflog (or the fork point) is the base as it was before those commits landed.
+    tip = git("rev-parse", "--verify", "--quiet", base_ref(base), cwd=repo, check=False)
+    if tip == head:
+        candidates = []
+        prev = git("rev-parse", "--verify", "--quiet", f"{base_ref(base)}@{{1}}", cwd=repo, check=False)
+        if prev:
+            candidates.append(prev)
+        fork = git("merge-base", "--fork-point", base_ref(base), head, cwd=repo, check=False)
+        if fork and fork not in candidates:
+            candidates.append(fork)
+        for older in candidates:
+            if git("merge-base", "--is-ancestor", older, head, cwd=repo, code=True) != 0:
+                continue
+            span = f"{older}..{head}"
+            count = git("rev-list", "--count", span, cwd=repo, check=False)
+            if count.isdigit() and int(count) > 1 and git("diff", "--quiet", span, cwd=repo, code=True) == 1:
+                return span
     if not git("rev-parse", "--verify", "--quiet", f"{head}^", cwd=repo, check=False):
         return ""
     parent_spec = f"{head}^..{head}"
@@ -521,28 +627,48 @@ def parse_github_pull(url: str) -> tuple[str, str, str] | None:
     return match.group(1), repo, match.group(3)
 
 
-def resolve_pull_head(repo: Path, number: str) -> str:
-    """The commit `refs/pull/<n>/head` names. Fetch it when this repository does not have it yet."""
-    for ref in (f"refs/pull/{number}/head", f"refs/remotes/origin/pull/{number}/head", f"refs/jtek/pull/{number}/head"):
+def gh_pull_head(url: str) -> str:
+    """The head commit `gh` reports for this pull request, or "" when gh cannot say."""
+    if not url:
+        return ""
+    try:
+        proc = run_argv(["gh", "pr", "view", url, "--json", "headRefOid", "-q", ".headRefOid"],
+                        cwd=main_root(), timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    sha = proc.stdout.strip() if proc.returncode == 0 else ""
+    return sha if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha) else ""
+
+
+def resolve_pull_head(repo: Path, number: str, url: str = "") -> str:
+    """The commit of pull request `number`, confirmed by a fetch or by gh.
+
+    A local refs/pull/<n>/head or refs/jtek/pull/<n>/head is not the review by itself. Someone can point
+    that ref at any commit. A fetch that updates refs/jtek/pull/<n>/head is trusted. Otherwise gh must
+    report the same commit as the local ref."""
+    stored = f"refs/jtek/pull/{number}/head"
+    fetched = False
+    try:
+        git("fetch", "--quiet", "origin", f"pull/{number}/head:{stored}", cwd=repo, timeout=60)
+        fetched = True
+    except (Refuse, OSError):
+        fetched = False
+    fetched_sha = git("rev-parse", "--verify", "--quiet", stored, cwd=repo, check=False) if fetched else ""
+    if fetched and fetched_sha:
+        return fetched_sha
+    local = ""
+    for ref in (f"refs/pull/{number}/head", f"refs/remotes/origin/pull/{number}/head", stored):
         sha = git("rev-parse", "--verify", "--quiet", ref, cwd=repo, check=False)
         if sha:
-            return sha
-    try:
-        git("fetch", "--quiet", "origin", f"pull/{number}/head:refs/jtek/pull/{number}/head", cwd=repo, timeout=60)
-    except (Refuse, OSError) as err:
-        detail = redact(" ".join(str(err).split())[:200])
-        raise Refuse(
-            f"refs/pull/{number}/head is not in this repository, and fetching it failed: {detail}. "
-            f"Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
-            "--at <the commit that landed on the base>."
-        ) from None
-    sha = git("rev-parse", "--verify", "--quiet", f"refs/jtek/pull/{number}/head", cwd=repo, check=False)
-    if sha:
-        return sha
+            local = sha
+            break
+    confirmed = gh_pull_head(url)
+    if confirmed and local and confirmed == local:
+        return confirmed
     raise Refuse(
-        f"refs/pull/{number}/head is not in this repository after the fetch. "
-        f"Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
-        "--at <the commit that landed on the base>, which is reviewed by that commit's parent range."
+        f"refs/pull/{number}/head is not confirmed. A local ref is not the review until "
+        f"`git fetch origin pull/{number}/head` succeeds, or `gh` reports the same commit as that ref. "
+        "Fetch it, or pass --at <the commit that landed on the base>."
     )
 
 
@@ -571,7 +697,7 @@ def review_target(meta: dict, pr: str = "", at: str = "") -> tuple[Path, str, st
             "to review that commit's parent range. A squash commit compared with the base is an empty diff; "
             "the parent range is the change."
         )
-    head = resolve_pull_head(repo, number)
+    head = resolve_pull_head(repo, number, pr or meta.get("pr") or "")
     spec = diff_spec(repo, meta["base"], head)
     if not spec:
         raise Refuse(
@@ -709,11 +835,11 @@ def attention(meta: dict) -> str:
 def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
     """What the session must now write on the ticket's page with the board's tool. `-` means nothing."""
     if outcome == "review":
-        return "Status=Review; Waiting=; " + (f"PR={pr}; " if pr else "") + "comment=result+evidence"
+        return "Status=Review; Waiting=; " + (f"PR={public_url(pr)}; " if pr else "") + "comment=result+evidence"
     if outcome == "needs-human":
         return f"Waiting={waiting}; comment=result"
     # A pull request that waits for its second look is still worth a link on the page.
-    return f"PR={pr}" if pr else "-"
+    return f"PR={public_url(pr)}" if pr else "-"
 
 
 def write_result(ticket_id: str, outcome: str, status: str, note: str = "", waiting: str = "") -> str:
@@ -755,7 +881,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"waiting: {waiting or '-'}",
         f"checks: {check_line}",
         f"verdict: {verdict_line}",
-        f"pr: {meta.get('pr') or '-'}",
+        f"pr: {public_url(str(meta.get('pr') or '-'))}",
         f"ci: {meta.get('ci') or '-'}",
         f"evidence: {evidence}",
         f"attention: {attention(meta)}",
@@ -897,12 +1023,19 @@ def open_after(value: str) -> list[str]:
 
 
 def next_free(prefix: str) -> str:
-    """The next free id with this prefix. A released ticket keeps its branch, so its number is never given out again."""
+    """The next free id with this prefix. A released ticket keeps its branch, so its number is never given out again.
+
+    A remote-tracking ref refs/remotes/*/jtek/<id> is taken too, and so is an id named in any commit subject or body.
+    Deleting the local branch does not make that id free."""
     taken = [p.name for p in (state_dir() / "work").glob(f"{prefix}-*")]
     for folder in (tickets_dir(), legacy_tickets_dir()):
         if folder.is_dir():
             taken += [p.stem for p in folder.glob(f"{prefix}-*.md")]
-    taken += [b.rsplit("/", 1)[-1] for b in git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", check=False).split()]
+    refs = git("for-each-ref", "--format=%(refname)", "refs/heads/jtek/", "refs/remotes", check=False)
+    for ref in refs.split():
+        if "/jtek/" in ref:
+            taken.append(ref.rsplit("/", 1)[-1])
+    taken += re.findall(rf"\b{prefix}-\d+\b", git("log", "--all", "--format=%s%n%b", check=False))
     numbers = [int(m.group(1)) for m in (re.match(rf"^{prefix}-([0-9]+)$", name) for name in taken) if m]
     return f"{prefix}-{max(numbers, default=0) + 1}"
 
@@ -913,32 +1046,59 @@ def next_local_id() -> str:
 
 def save_ticket(text: str) -> Path:
     """Keep a checked draft as a ticket file. The id is the script's and the status is Backlog, whatever the draft
-    says: only the human releases a ticket, by writing `status: Todo` in the file."""
-    out: list[str] = []
-    titled = header = False
-    for line in text.splitlines():
-        if not titled and line.startswith("# "):
-            titled = header = True
-            out += [line, "id: {id}", "status: Backlog"]
-            continue
-        if header or not titled:
-            if re.match(r"^(id|status)\s*:", line, re.I):
-                continue
-            if titled and not re.match(r"^[A-Za-z][A-Za-z -]*:", line):
-                header = False
-        out.append(line)
-    if not titled:
+    says: only the human releases a ticket, by writing `status: Todo` in the file.
+
+    Header fields are kept across a blank line in the draft. A saved file whose repo was dropped is deleted
+    and refused, so a later start cannot run in the wrong repository."""
+    lines = text.splitlines()
+    title_at = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
+    if title_at is None:
         raise Refuse("the ticket has no `# <title>` line")
+    body_at = next((i for i in range(title_at + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    fields: dict[str, str] = {}
+    extra: list[str] = []
+    for line in lines[title_at + 1:body_at]:
+        match = re.match(r"^([A-Za-z][A-Za-z -]*):\s*(.*)$", line)
+        key = match.group(1).strip().lower() if match else ""
+        if key in ("id", "status"):
+            continue  # the script writes these; a draft cannot choose them
+        if match:
+            fields[key] = match.group(2).strip()
+        elif line.strip() and not line.startswith("#"):
+            extra.append(line)
+    draft_repo = fields.get("repo", "")
+    saved_lines = [lines[title_at], "id: {id}", "status: Backlog"]
+    for key in ("kind", "area", "repo"):
+        if fields.get(key):
+            saved_lines.append(f"{key}: {fields[key]}")
+    for key, value in fields.items():
+        if key not in ("kind", "area", "repo", "id", "status") and value:
+            saved_lines.append(f"{key}: {value}")
+    if extra:
+        saved_lines += ["", *extra]
+    body = lines[body_at:]
+    if body:
+        if saved_lines[-1] != "":
+            saved_lines.append("")
+        saved_lines += body
     folder = tickets_dir()
     folder.mkdir(parents=True, exist_ok=True)
     while True:
         ticket_id = next_free("T")
         path = folder / f"{ticket_id}.md"
+        written = "\n".join(saved_lines).replace("{id}", ticket_id, 1) + "\n"
         try:
             with open(path, "x") as handle:  # two sessions that save at once cannot both get this id
-                handle.write("\n".join(out).replace("{id}", ticket_id, 1) + "\n")
+                handle.write(written)
         except FileExistsError:
             continue
+        saved_repo = parse_ticket(written)["fields"].get("repo", "")
+        if draft_repo and saved_repo != draft_repo:
+            path.unlink(missing_ok=True)
+            raise Refuse(
+                f"the saved ticket dropped repo `{draft_repo}`. A blank line must not split the header. "
+                "The file was not kept."
+            )
         return path
 
 
@@ -987,6 +1147,8 @@ def read_ticket_file(path: str) -> str:
 
 
 def cmd_start(args: argparse.Namespace) -> None:
+    if not session_identity():
+        raise Refuse(SESSION_MISSING)
     text = read_ticket_file(args.from_file) if args.from_file else ""
     if args.local:
         if not args.from_file:
@@ -1244,16 +1406,22 @@ def run_command(command: str, worktree: Path, log: Path) -> bool:
     return run_logged(argv, worktree, ticket_env(worktree.name, worktree), log, stdin=subprocess.DEVNULL) == 0
 
 
-def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path) -> tuple[list[dict], str | None]:
-    """Run checks in order and stop at the first failure. Return the results and the failed name."""
+def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path, *,
+               all_of: bool = False) -> tuple[list[dict], str | None]:
+    """Run checks in order. Stop at the first failure unless `all_of`, which is how `broke` runs them.
+
+    Return the results and the first failed name."""
     results: list[dict] = []
+    failed: str | None = None
     for name in names:
         started = time.time()
         ok = run_command(declared[name], worktree, logs / f"{name}.log")
         results.append({"name": name, "status": "pass" if ok else "fail", "seconds": round(time.time() - started, 1)})
-        if not ok:
+        if not ok and failed is None:
+            failed = name
+        if not ok and not all_of:
             return results, name
-    return results, None
+    return results, failed
 
 
 def log_tail(log: Path) -> str:
@@ -1331,18 +1499,29 @@ def cmd_broke(args: argparse.Namespace) -> None:
     if not shown.strip():
         raise Refuse("the worktree is dirty, but there is no diff to record. Break a tracked file, or add a file a check reads.")
     declared = load_checks(meta["base"])
-    _results, failed = run_checks(worktree, meta["checks"], declared, work / "logs" / "broke")
-    if not failed:
+    # One directory per item, so item 2 does not truncate the log of item 1.
+    results, _failed = run_checks(worktree, meta["checks"], declared, work / "logs" / "broke" / f"item-{number}",
+                                  all_of=True)
+    behaviour = [row["name"] for row in results if row["status"] == "fail" and is_behaviour_check(row["name"])]
+    if not behaviour:
+        if not any(row["status"] == "fail" for row in results):
+            raise Refuse(
+                f"every check still passed while item {number} was broken (`{items[number - 1][:80]}`). "
+                "No declared check covers that behaviour. A proof needs one of them to fail. "
+                "The break is still in the worktree."
+            )
         raise Refuse(
-            f"every check still passed while item {number} was broken (`{items[number - 1][:80]}`). "
-            "No declared check covers that behaviour. A proof needs one of them to fail. "
+            f"item {number} (`{items[number - 1][:80]}`) has no failed behaviour check. "
+            "A lint, syntax, format, or import failure does not prove the item. "
+            "Every declared check was run. The declared behaviour check has to fail. "
             "The break is still in the worktree."
         )
     record = read_json(work / "broke.json")
     got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
-    got[str(number)] = {"item": items[number - 1], "check": failed, "diff": shown[:4000], "sha": sha}
+    got[str(number)] = {"item": items[number - 1], "check": behaviour[0], "fails": behaviour,
+                        "diff": shown[:4000], "sha": sha}
     write_json(work / "broke.json", {"sha": sha, "items": got})
-    print(f"broke: item {number} made `{failed}` fail at {sha[:7]}")
+    print(f"broke: item {number} made `{behaviour[0]}` fail at {sha[:7]}")
     print(f"next: restore the break (`git checkout -- <file>`), then record the next item. "
           f"{len(got)} of {len(items)} recorded")
 
@@ -1354,8 +1533,11 @@ def require_broke(work: Path, sha: str) -> None:
     got = record.get("items") if record.get("sha") == sha and isinstance(record.get("items"), dict) else {}
     missing = []
     for n, item in enumerate(items, 1):
-        entry = got.get(str(n))
-        if not isinstance(entry, dict) or not str(entry.get("check") or "").strip() or not str(entry.get("diff") or "").strip():
+        entry = got.get(str(n)) if isinstance(got, dict) else None
+        # The stored text is the Done when line as it was. Rewriting that line invalidates the proof.
+        same = isinstance(entry, dict) and entry.get("item") == item and entry.get("sha") == sha
+        proved = same and is_behaviour_check(str(entry.get("check") or "")) and str(entry.get("diff") or "").strip()
+        if not proved:
             missing.append(f"{n}. {item}")
     if missing:
         raise Refuse(
@@ -1376,6 +1558,14 @@ def author_sessions(meta: dict) -> list[str]:
 def cmd_verdict(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
+    if not session_identity():
+        raise Refuse(SESSION_MISSING)
+    if not authors_intact(meta):
+        raise Refuse(
+            "the authors recorded at start were changed in meta.json, or this claim has no author seal. "
+            "A hand edit of the authors does not make a verdict count. The seal uses a key in the state directory. "
+            "A process that can rewrite both that key and meta.json can still forge the list."
+        )
     authors = author_sessions(meta)
     if not authors:
         raise Refuse(
@@ -1389,7 +1579,8 @@ def cmd_verdict(args: argparse.Namespace) -> None:
             "this session is one that wrote the code, so its verdict does not count. "
             "Start a session that did not write the change and run verdict there. "
             "`jtek.py reviewer` prints a command when the owner keeps a list. "
-            "A session is the value of JTEK_SESSION, or otherwise the process that launched jtek.py. "
+            "A session is the value of JTEK_SESSION, CURSOR_SESSION_ID, CLAUDE_CODE_SESSION_ID, or CODEX_THREAD_ID. "
+            "The same text in any of those names is the same session. The parent process is not a session. "
             "The writing session must keep the same value the whole time."
         )
     worktree = Path(meta["worktree"])
@@ -1574,6 +1765,39 @@ def pushed(worktree: Path, branch: str, sha: str) -> bool:
     return any(ref.endswith(f"/{branch}") for ref in refs.splitlines())
 
 
+def published_base_ref() -> str:
+    """The branch the remote publishes, such as origin/main. Empty when this repository has no remote."""
+    if not git("remote", check=False).strip():
+        return ""
+    head = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD", check=False)
+    if head.startswith("origin/"):
+        return head
+    for name in ("main", "master"):
+        if git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{name}", check=False):
+            return f"origin/{name}"
+    return ""
+
+
+def published_forge_off() -> bool:
+    """True only when the published base says forge is false. An unmerged local branch does not count."""
+    ref = published_base_ref()
+    if not ref:
+        return False
+    text = git("show", f"{ref}:{CONFIG}", check=False)
+    try:
+        config = json.loads(text) if text else {}
+    except json.JSONDecodeError:
+        return False
+    return isinstance(config, dict) and config.get("forge") is False
+
+
+def no_pr_allowed(worktree: Path) -> bool:
+    """finish --no-pr is allowed with no remote, or when the published base has forge set to false."""
+    if not git("remote", cwd=worktree, check=False).strip():
+        return True
+    return published_forge_off()
+
+
 def cmd_finish(args: argparse.Namespace) -> None:
     meta = load_meta(args.id, tree=True)
     work = work_dir(args.id)
@@ -1589,10 +1813,11 @@ def cmd_finish(args: argparse.Namespace) -> None:
         args.no_pr = True  # an earlier finish already said there is no pull request, so `finish <id>` alone works again
     if args.pr and not re.match(r"^https?://[^\s;]+$", args.pr):
         raise Refuse("--pr takes the link of the pull request, as the forge gave it")
-    config = load_config(meta["base"])
-    if args.no_pr and config.get("forge") is not False and git("remote", cwd=worktree, check=False):
+    if args.no_pr and not no_pr_allowed(worktree):
         raise Refuse("this repository has a remote, so the change needs a pull request: push the branch, open it, and pass "
-                     f"--pr <url>. If the remote is not a forge, the human sets `\"forge\": false` in {CONFIG}")
+                     f"--pr <url>. `finish --no-pr` is allowed only when there is no remote, or when the published "
+                     f"base branch (origin/HEAD, or origin/main) has `\"forge\": false` in {CONFIG}. "
+                     "An unmerged branch that sets forge to false does not skip the pull request.")
     sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
     passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])
@@ -1658,13 +1883,25 @@ def cmd_finish(args: argparse.Namespace) -> None:
                 extra = (f" The pull request could not be read, and the branch is not pushed at {sha[:7]}: "
                          "push the branch, check that the link is the pull request for it, and finish again.")
             raise Refuse(
-                f"cannot read {pr}, so this change is not sent for review. {problem}{extra} "
+                f"cannot read {public_url(pr)}, so this change is not sent for review. {problem}{extra} "
                 "Check the link, then make `gh` able to read the pull request and its checks "
                 "(the GH_TOKEN needs access to pull requests and checks, such as the repo scope) and run finish again."
             )
 
         if state == "unknown" or ci == "unknown":
             refuse_unread()
+        link = public_url(pr)
+        appeared = 0
+        if state == "OPEN" and head == sha and ci == "absent":
+            # An empty rollup is not "no checks". Wait a short bound for the first check, then refuse.
+            looks = max(0, env_int("JTEK_CI_APPEAR_TRIES", CI_APPEAR_TRIES))
+            pause = max(0.0, env_float("JTEK_CI_APPEAR_WAIT", CI_APPEAR_WAIT))
+            while ci == "absent" and state == "OPEN" and head == sha and appeared < looks:
+                time.sleep(pause)
+                state, head, ci, problem = pr_info(pr, meta["base"])
+                appeared += 1
+            if state == "unknown" or ci == "unknown":
+                refuse_unread()
         waited = 0
         if state == "OPEN" and head == sha and ci == "pending":
             # Pending is not a result. Look again, with a bound, and refuse when it is still pending.
@@ -1678,36 +1915,46 @@ def cmd_finish(args: argparse.Namespace) -> None:
             if state == "unknown" or ci == "unknown":
                 refuse_unread()
         if state == "DRAFT":
-            raise Refuse(f"{pr} is a draft. Mark it ready for review, then finish again")
+            raise Refuse(f"{link} is a draft. Mark it ready for review, then finish again")
         if state in ("CLOSED", "MERGED"):
-            raise Refuse(f"{pr} is {state}, so it cannot take this change. Open a new pull request for the branch, or "
+            raise Refuse(f"{link} is {state}, so it cannot take this change. Open a new pull request for the branch, or "
                          "reopen this one, and pass its link")
         if state == "OPEN" and head != sha:
             if pushed(worktree, meta["branch"], sha):
-                raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}. The branch is pushed, so the "
+                raise Refuse(f"{link} is at {head[:7]}, not at the current commit {sha[:7]}. The branch is pushed, so the "
                              "forge may only be late: run `finish` again in a moment")
             ancestry = git("merge-base", "--is-ancestor", head, sha, cwd=worktree, code=True) if head else 0
             if ancestry == 1:
-                raise Refuse(f"{pr} is at {head[:7]}, which this branch has rewritten (a rebase or an amend). Push it "
+                raise Refuse(f"{link} is at {head[:7]}, which this branch has rewritten (a rebase or an amend). Push it "
                              "with `--force-with-lease`, as the `jt-babysit` skill says, and finish again")
             if ancestry != 0:
-                raise Refuse(f"{pr} is at {head[:7]}, which this branch does not have: someone added commits on the forge. "
+                raise Refuse(f"{link} is at {head[:7]}, which this branch does not have: someone added commits on the forge. "
                              f"Bring them in (`git pull --ff-only` or a rebase), check again, push, and finish again")
-            raise Refuse(f"{pr} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
+            raise Refuse(f"{link} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
         if ci == "fail":
-            raise Refuse(f"CI is failing on {pr}; a pull request with red CI is not ready for the human. Fix it first")
+            raise Refuse(f"CI is failing on {link}; a pull request with red CI is not ready for the human. Fix it first")
         if ci == "pending":
             raise Refuse(
-                f"CI is still pending on {pr} after {waited if state == 'OPEN' else 0} look(s). "
+                f"CI is still pending on {link} after {waited if state == 'OPEN' else 0} look(s). "
                 "A pull request whose checks have not finished does not ship. "
-                "Wait until CI is pass, or until there are no checks (none), then finish again. "
+                "SKIPPED and NEUTRAL are not a pass. Wait until every required check is SUCCESS, "
+                "or until the command prints none because this repository has no checks, then finish again. "
                 f"The bound is JTEK_CI_TRIES={max(0, env_int('JTEK_CI_TRIES', CI_TRIES))} and "
                 f"JTEK_CI_WAIT={max(0.0, env_float('JTEK_CI_WAIT', CI_WAIT)):g} seconds between looks."
             )
+        if ci == "absent":
+            raise Refuse(
+                f"no checks have appeared on {link} after {appeared} look(s). "
+                "An empty rollup is not an explicit no-checks result, so this change does not ship. "
+                "Wait for the first check, or set pr_state to a command that prints none when this repository "
+                "really has no checks. "
+                f"The bound is JTEK_CI_APPEAR_TRIES={max(0, env_int('JTEK_CI_APPEAR_TRIES', CI_APPEAR_TRIES))} and "
+                f"JTEK_CI_APPEAR_WAIT={max(0.0, env_float('JTEK_CI_APPEAR_WAIT', CI_APPEAR_WAIT)):g} seconds between looks."
+            )
         if ci not in ("pass", "none"):
-            raise Refuse(f"CI on {pr} is `{ci or 'unknown'}`, not pass or none, so this change is not sent for review.")
+            raise Refuse(f"CI on {link} is `{ci or 'unknown'}`, not pass or none, so this change is not sent for review.")
         if state == "OPEN" and pr_conflicts(pr, meta["base"]):
-            raise Refuse(f"{pr} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
+            raise Refuse(f"{link} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
                          "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
         pr_note = ""
     meta = update_meta(work, pr=pr, ci=ci, no_pr=bool(args.no_pr))
@@ -1786,19 +2033,25 @@ def cmd_show(args: argparse.Namespace) -> None:
         declared = {}
     for name in meta["checks"]:
         print(f"check {name}: {declared.get(name, '(no longer declared)')}")
-    print(f"pr: {meta.get('pr') or '-'}")
+    print(f"pr: {public_url(str(meta.get('pr') or '-'))}")
 
 
+# pass only when every check conclusion is exactly SUCCESS.
+# SKIPPED, NEUTRAL, and an empty, null, or missing rollup are not a pass and not "no checks".
+# absent is the empty rollup. none is only what a pr_state command prints when the repository has no checks.
 CI_QUERY = (
-    '(if .state == "OPEN" and .isDraft then "DRAFT" else .state end) + " " + .headRefOid + " " + ([.statusCheckRollup[]? | (.conclusion // .state // "PENDING")] '
-    '| if length == 0 then "none" '
-    'elif any(.[]; . == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail" '
-    'elif all(.[]; . == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass" else "pending" end)'
+    '(if .state == "OPEN" and .isDraft then "DRAFT" else .state end) + " " + .headRefOid + " " + '
+    '((.statusCheckRollup | if type == "array" then . else null end) as $roll | '
+    'if $roll == null or ($roll | length) == 0 then "absent" '
+    'elif any($roll[]; ((.conclusion // .state // "PENDING") as $c | '
+    '$c == "FAILURE" or $c == "ERROR" or $c == "TIMED_OUT" or $c == "CANCELLED" or $c == "ACTION_REQUIRED" or $c == "STARTUP_FAILURE")) then "fail" '
+    'elif all($roll[]; (.conclusion // .state // "PENDING") == "SUCCESS") then "pass" '
+    'else "pending" end)'
 )
 
 
 PR_STATES = ["OPEN", "DRAFT", "MERGED", "CLOSED"]
-CI_STATES = ["pass", "fail", "pending", "none"]
+CI_STATES = ["pass", "fail", "pending", "none", "absent"]
 
 
 def run_argv(argv: list[str], *, cwd: Path | None = None, input_bytes: bytes | None = None, timeout: float = 60):
@@ -1808,7 +2061,7 @@ def run_argv(argv: list[str], *, cwd: Path | None = None, input_bytes: bytes | N
 
 def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
     """Return (state, head commit, CI state, problem) of a pull request.
-    State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
+    State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, none, or absent.
     GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown", why).
     `why` is a short redacted reason, or "" when the read worked.
     For another forge, `pr_state` in jtek.json names a command that gets the link as its last argument and
@@ -1867,8 +2120,16 @@ def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str
         return False, f"`gh pr comment` did not run ({err})."
     if proc.returncode == 0:
         return True, "gh pr comment"
-    err = redact(" ".join(proc.stderr.split())[:300])
-    if not comment_permission_denied(proc.stderr):
+    heard = []
+    for chunk in (proc.stderr, proc.stdout):
+        if isinstance(chunk, bytes):
+            heard.append(chunk.decode(errors="replace"))
+        elif chunk:
+            heard.append(chunk)
+    blob = "\n".join(heard)
+    err = redact(" ".join(blob.split())[:300])
+    # addComment on stdout is the same denial as on stderr. Other errors still do not call gh api.
+    if not comment_permission_denied(blob):
         return False, f"`gh pr comment` failed: {err}."
     parsed = parse_github_pull(url)
     if not parsed:
@@ -1901,12 +2162,12 @@ def cmd_comment(args: argparse.Namespace) -> None:
     text = body_path.read_text()
     posted, detail = post_review_comment(pr, body_path, text)
     if posted:
-        print(f"posted: {pr} ({detail})")
+        print(f"posted: {public_url(pr)} ({detail})")
         return
     fallback = work / "unposted-comment.md"
     fallback.write_text(text)
     raise Refuse(
-        f"the comment was not posted on {pr}. {detail} "
+        f"the comment was not posted on {public_url(pr)}. {detail} "
         f"The comment is in {fallback}. Post that file on the pull request; nothing was posted."
     )
 

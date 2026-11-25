@@ -30,7 +30,7 @@ Ask at most four questions at a time, the one that changes the most first. Each 
 Write each ticket in the ticket format of `jt-work`'s `references/ticket.md`: a title, `kind:`, `repo:`, `area:`, and the three sections.
 
 - **Goal:** who wants what, and why. For a bug: the steps, the wrong result, and the right one.
-- **Done when:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", or "better" without a number. `jtek.py ticket` refuses an item that is only a quality with no number, including feels, faster, better, น่าใช้, and เร็วขึ้น. Fix that before `start`. Put in the edge cases the owner decided.
+- **Done when:** one outcome per top-level item, each one seen from outside (a command, a request, a screen) with a concrete input and result. No "fast", "works", "secure", or "quicker" unless the item has a measurable comparison (under 200 ms) or an observable action (`prints`, a quoted result). A digit anywhere, including `v2`, a Thai digit, or a fullwidth digit, does not make a quality checkable. Ordinary Thai such as ไม่ง่าย is allowed; รู้สึกเร็วขึ้น and ใช้งานดีขึ้น are not. `jtek.py ticket` refuses the quality. Fix that before `start`. Put in the edge cases the owner decided.
 - **Out of scope:** behaviour that must stay exactly as it is now, named as behaviour, with the code's facts you found.
 
 ## 5. Size and order
@@ -55,7 +55,7 @@ Create each approved ticket on the board with the board's tool, as `jt-work`'s `
 - The title, the kind, the repo and area, and the three sections as the body.
 - Each `after:` as the board's own link: After in Notion, `blocked by` in FLO.
 
-**The repository has no board** (`board` is empty in `jtek.json`): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog, and prints where the file is. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it.
+**The repository has no board** (`board` is empty in `jtek.json`): run `jtek.py ticket <file> --save` for each approved draft, in the order they must be worked. The script gives the id, writes Backlog, and prints where the file is. A blank line in the draft does not drop `kind`, `area`, or `repo`. An id already used by a commit message or by `refs/remotes/*/jtek/<id>` is not given out again. Write an `after:` line with the id the script gave the earlier ticket before you save the later one. Tell the owner each file: they release a ticket by writing `status: Todo` in it.
 
 Every agent you start for this work, to read code in parallel for example, gets as the first line of its prompt `Read <absolute path of jt-work>/worker.md before anything else.`
 

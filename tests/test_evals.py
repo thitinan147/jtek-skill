@@ -22,6 +22,8 @@ def run(*args, cwd=None):
         env["JTEK_SESSION"] = "reviewer-session" if command == "verdict" else "author-session"
         env.setdefault("JTEK_CI_TRIES", "0")
         env.setdefault("JTEK_CI_WAIT", "0")
+        env.setdefault("JTEK_CI_APPEAR_TRIES", "0")
+        env.setdefault("JTEK_CI_APPEAR_WAIT", "0")
     proc = subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True, env=env)
     return proc.returncode, proc.stdout + proc.stderr
 
