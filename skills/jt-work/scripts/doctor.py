@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 
 
@@ -71,6 +72,24 @@ def run(j, args=None) -> None:
             rows.append(("missing", "commands that need a shell: " + ", ".join(shell),
                          "a command runs without a shell, so `&&`, `|`, `>`, `$(...)` and `$VAR` do nothing; "
                          "put the pipeline in a script and name the script"))
+        setup = config.get("setup") if isinstance(config.get("setup"), str) else ""
+        if re.search(r"\bvenv\b|virtualenv|ensurepip", setup):
+            exe = "python3"
+            if not uses_shell(setup):
+                try:
+                    tokens = shlex.split(setup)
+                except ValueError:
+                    tokens = []
+                if tokens and "python" in tokens[0]:
+                    exe = tokens[0]
+            try:
+                probe = j.run_argv([exe, "-c", "import ensurepip"], timeout=30)
+                missing_pip = probe.returncode != 0
+            except (OSError, subprocess.TimeoutExpired):
+                missing_pip = True
+            if missing_pip:
+                rows.append(("missing", "setup cannot create a venv (ensurepip is not available)",
+                             "install the venv package for this Python (for example python3-venv) before the first start"))
         try:
             j.load_settings(base)
         except j.Refuse as err:

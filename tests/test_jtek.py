@@ -18,7 +18,16 @@ PASS_NOTES = ("Findings: none\n\nNotes:\n- broke: the new branch; test passed=fa
 
 SCRIPT = ROOT / "skills" / "jt-work" / "scripts" / "jtek.py"
 
-BODY = "## Goal\nAdd the thing.\n## Done when\n- the thing works\n"
+
+def with_session(extra=None):
+    """A launch environment that names a session. start and verdict refuse without one."""
+    env = os.environ.copy()
+    env.setdefault("JTEK_SESSION", "author-session")
+    if extra:
+        env.update(extra)
+    return env
+
+BODY = "## Goal\nAdd the thing.\n## Done when\n- the command prints `ok`\n"
 NAMES = {"status": "Status", "waiting": "Waiting", "pr": "PR", "repo": "Repo", "kind": "Kind", "area": "Area",
          "review": "Review", "checks": "Checks"}
 
@@ -78,19 +87,27 @@ class Scratch(unittest.TestCase):
             sha = self.git("rev-parse", "HEAD", cwd=tree)
         except subprocess.CalledProcessError:
             return
-        count = 0
+        items = []
         in_done = False
         for line in ticket.read_text().splitlines():
             if line.startswith("## "):
                 in_done = line[3:].strip().lower() == "done when"
                 continue
             if in_done and line.startswith("- ") and line[2:].strip():
-                count += 1
-        if count == 0:
+                items.append(line[2:].strip())
+        if not items:
             return
+        meta_path = work / "meta.json"
+        behaviour = "test"
+        lint = {"lint", "syntax", "format", "fmt", "type", "types", "typecheck", "import", "imports", "style"}
+        if meta_path.is_file():
+            for name in json.loads(meta_path.read_text()).get("checks") or []:
+                if str(name).lower() not in lint and not str(name).lower().startswith("lint"):
+                    behaviour = name
+                    break
         data = {"sha": sha, "items": {
-            str(n): {"item": f"item {n}", "check": "test", "diff": "break the behaviour\n", "sha": sha}
-            for n in range(1, count + 1)}}
+            str(n): {"item": item, "check": behaviour, "diff": "break the behaviour\n", "sha": sha}
+            for n, item in enumerate(items, 1)}}
         (work / "broke.json").write_text(json.dumps(data) + "\n")
 
     def jtek(self, *args, cwd=None, env=None):
@@ -123,6 +140,8 @@ class Scratch(unittest.TestCase):
         env.setdefault("JTEK_SESSION", "reviewer-session" if args[0] == "verdict" else "author-session")
         env.setdefault("JTEK_CI_TRIES", "0")
         env.setdefault("JTEK_CI_WAIT", "0")
+        env.setdefault("JTEK_CI_APPEAR_TRIES", "0")
+        env.setdefault("JTEK_CI_APPEAR_WAIT", "0")
         # A caller that sets PATH chose which `gh` runs, including none. Do not put another one in front.
         if args[0] == "finish" and "--pr" in args and "--no-pr" not in args and "PATH" not in caller_env:
             env = self.readable_pr(args, env)
@@ -626,7 +645,7 @@ class FinishTests(Scratch):
         vague.write_text("Everything works as expected.\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(vague))
         self.assertEqual(code, 1)
-        self.assertIn("1. the thing works", out)
+        self.assertIn("1. the command prints `ok`", out)
         honest = Path(self.tmp.name) / "honest.md"
         honest.write_text("1. not run: the app needs a database I do not have\n- clean-up: nothing to remove\n")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(honest))
@@ -763,23 +782,24 @@ class PageTests(Scratch):
 
     def test_start_needs_the_page_as_a_file(self):
         self.write_config({"test": f"{sys.executable} -c pass"}, board="https://www.notion.so/x")
-        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=self.repo, capture_output=True, text=True)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=self.repo, capture_output=True, text=True,
+                              env=with_session())
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("--from-file", proc.stdout)
 
     def test_done_when_takes_only_top_level_items(self):
-        self.ticket("T-1", body="## Goal\nx\n## Done when\n- it works\nand it is fast\n")
+        self.ticket("T-1", body="## Goal\nx\n## Done when\n- the command prints `ok`\nand it is fast\n")
         code, out = self.jtek("start", "T-1")
         self.assertEqual(code, 1)
         self.assertIn("Not an item: and it is fast", out)
-        self.ticket("T-2", body="## Goal\nx\n## Done when\n- it works\n  - on every screen\n")
+        self.ticket("T-2", body="## Goal\nx\n## Done when\n- the command prints `ok`\n  - on every screen\n")
         code, out = self.jtek("start", "T-2")
         self.assertEqual(code, 1)
         self.assertIn("Not an item: - on every screen", out)
         self.ticket("T-3", body="## Goal\nx\n## Done when\n1. it works\n")
         code, out = self.jtek("start", "T-3")
         self.assertEqual(code, 1, "the page is saved with `- ` for every list item, so a number is not an item")
-        self.ticket("T-4", body="## Goal\nx\n## Done when\n- [ ] it works\n")
+        self.ticket("T-4", body="## Goal\nx\n## Done when\n- [ ] the command prints `ok`\n")
         self.assertEqual(self.jtek("start", "T-4")[0], 0)
 
     def test_after_holds_across_repositories(self):
@@ -914,11 +934,15 @@ class ReviewFindings(FindingsBase):
         code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("not both", out)
-        self.git("remote", "add", "origin", "https://example.invalid/app.git")
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(code, 1)
         self.assertIn("has a remote, so the change needs a pull request", out)
         self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        self.git("push", "-q", "origin", "main")
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(code, 0, out)
 
@@ -1093,7 +1117,8 @@ class SecondReview(FindingsBase):
         self.write_config({"test": f"{sys.executable} -c pass"}, setup=f"{sys.executable} {script}")
         self.ticket("T-1")
         proc = subprocess.Popen([sys.executable, str(SCRIPT), "start", "https://www.notion.so/T-1", "--from-file",
-                                 self.board.file("T-1")], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                 self.board.file("T-1")], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, env=with_session())
         try:
             for _ in range(200):
                 if self.worktree("T-1").is_dir() and "worktree" in (self.work() / "meta.json").read_text():
@@ -1176,7 +1201,8 @@ class SecondReview(FindingsBase):
         self.ticket("T-1")
         self.board.pages["T-1"]["title"] = "x"
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://n/x\noutcome: review\nboard: Status=Done",
-                               "--from-file", self.board.file("T-1")], cwd=self.repo, capture_output=True, text=True)
+                               "--from-file", self.board.file("T-1")], cwd=self.repo, capture_output=True, text=True,
+                              env=with_session())
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.commit_change("T-1")
         self.jtek("check", "T-1")
@@ -2031,7 +2057,7 @@ class HeaderBlock(Scratch):
         path = Path(self.tmp.name) / "page.md"
         path.write_text(text)
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://board.example/1", "--from-file", str(path),
-                               "--no-baseline"], cwd=self.repo, capture_output=True, text=True)
+                               "--no-baseline"], cwd=self.repo, capture_output=True, text=True, env=with_session())
         return proc.returncode, proc.stdout + proc.stderr
 
     def setUp(self):
@@ -2062,7 +2088,7 @@ class TicketCheck(Scratch):
         return proc.returncode, proc.stdout + proc.stderr
 
     def test_a_good_draft_passes_and_nothing_is_claimed(self):
-        code, out = self.check("# Add the thing\nkind: feature\n\n" + BODY + "- the other thing works\n")
+        code, out = self.check("# Add the thing\nkind: feature\n\n" + BODY + "- the command prints `ready`\n")
         self.assertEqual(code, 0, out)
         self.assertIn("ticket: ok, 2 item(s) under Done when", out)
         self.assertFalse((self.repo / ".git" / "jtek" / "work").exists())
@@ -2085,7 +2111,7 @@ class LocalTickets(Scratch):
         path = Path(self.tmp.name) / "local.md"
         path.write_text(text or self.LOCAL)
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path), *extra],
-                              cwd=self.repo, capture_output=True, text=True)
+                              cwd=self.repo, capture_output=True, text=True, env=with_session())
         return proc.returncode, proc.stdout + proc.stderr
 
     def meta(self, ticket_id):
@@ -2113,7 +2139,7 @@ class LocalTickets(Scratch):
         page = Path(self.tmp.name) / "page.md"
         page.write_text("# A page\nid: LOCAL-7\nstatus: Todo\n\n" + BODY)
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "https://example.invalid/p/7", "--from-file", str(page)],
-                              cwd=self.repo, capture_output=True, text=True)
+                              cwd=self.repo, capture_output=True, text=True, env=with_session())
         code, out = proc.returncode, proc.stdout + proc.stderr
         self.assertEqual(code, 1)
         self.assertIn("only `start --local` uses one", out)
@@ -2515,7 +2541,8 @@ class FileBoard(Scratch):
 
     def raw(self, *args):
         """Run jtek.py as typed: no page link, no board file."""
-        proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.repo, capture_output=True, text=True)
+        proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.repo, capture_output=True, text=True,
+                              env=with_session())
         return proc.returncode, proc.stdout + proc.stderr
 
     def folder(self):
@@ -2690,7 +2717,8 @@ class FileBoard(Scratch):
         self.git("commit", "-q", "-m", "tickets")
         cloned = Path(self.tmp.name) / "clone"
         self.git("clone", "-q", str(self.repo), str(cloned))
-        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=cloned, capture_output=True, text=True)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=cloned, capture_output=True, text=True,
+                              env=with_session())
         out = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, out)
         self.assertTrue((cloned.parent / "clone.jtek" / "T-1").is_dir(), out)
@@ -2951,7 +2979,7 @@ class PilotFixes(Scratch):
         text = "# Tidy\nkind: feature\n\n" + BODY
         path.write_text(text)
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path), "--no-baseline"],
-                              cwd=self.repo, capture_output=True, text=True)
+                              cwd=self.repo, capture_output=True, text=True, env=with_session())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         notes = Path(self.tmp.name) / "notes.md"
         notes.write_text("Findings:\n- reproduces: crash\n")
@@ -2962,7 +2990,8 @@ class PilotFixes(Scratch):
             self.assertEqual(self.jtek("verdict", "LOCAL-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))[0], 0)
         path.write_text("id: LOCAL-1\n" + text)
         proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path),
-                               "--no-baseline", "--answered"], cwd=self.repo, capture_output=True, text=True)
+                               "--no-baseline", "--answered"], cwd=self.repo, capture_output=True, text=True,
+                              env=with_session())
         out = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 1, out)
         self.assertIn("--answered", out)
@@ -2988,7 +3017,8 @@ class PilotFixes(Scratch):
         self.assertIn("refs/pull/", out)
         self.git("update-ref", "refs/pull/4/head", branch_sha)
         link = "https://github.com/example/app/pull/4"
-        code, out = self.jtek("show", "T-1", "--pr", link)
+        confirmed = self.confirm_head(branch_sha)
+        code, out = self.jtek("show", "T-1", "--pr", link, env=confirmed)
         self.assertEqual(code, 0, out)
         self.assertIn(branch_sha, out)
         self.assertIn("refs/pull/4/head", out)
@@ -2996,7 +3026,8 @@ class PilotFixes(Scratch):
         spec = next(line for line in out.splitlines() if line.startswith("diff: ")).split(" diff ", 1)[1]
         showed = subprocess.run(["git", "diff", "--quiet", spec], cwd=self.repo)
         self.assertEqual(showed.returncode, 1, out)
-        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer", "--pr", link, "--commit", branch_sha)
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer", "--pr", link, "--commit", branch_sha,
+                              env=confirmed)
         self.assertEqual(code, 0, out)
         self.git("update-ref", "-d", "refs/pull/4/head")
         code, out = self.jtek("show", "T-1", "--at", landed)
@@ -3007,6 +3038,14 @@ class PilotFixes(Scratch):
         self.assertEqual(showed.returncode, 1, out)
         code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer", "--at", landed, "--commit", landed)
         self.assertEqual(code, 0, out)
+
+    def confirm_head(self, sha):
+        """A gh that reports this commit as the pull request head, so a local ref can be confirmed."""
+        bin_dir = Path(self.tmp.name) / "confirm-gh"
+        bin_dir.mkdir(exist_ok=True)
+        (bin_dir / "gh").write_text(f"#!/bin/sh\necho {sha}\n")
+        (bin_dir / "gh").chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
 
     def comment_gh(self, kind):
         log = Path(self.tmp.name) / "comment-log"
@@ -3026,11 +3065,14 @@ class PilotFixes(Scratch):
             "    if kind == 'other':\n"
             "        sys.stderr.write('no such pull request\\n')\n"
             "        sys.exit(1)\n"
+            "    if kind == 'stdout':\n"
+            "        sys.stdout.write('GraphQL: Resource not accessible by integration (addComment)\\n')\n"
+            "        sys.exit(1)\n"
             "    sys.stderr.write('GraphQL: Resource not accessible by integration (addComment)\\n')\n"
             "    sys.exit(1)\n"
             "if sys.argv[1] == 'api':\n"
             "    seen.write_bytes(sys.stdin.buffer.read())\n"
-            "    sys.exit(0 if kind == 'api' else 1)\n"
+            "    sys.exit(0 if kind in ('api', 'stdout') else 1)\n"
             "sys.exit(1)\n"
         )
         (bin_dir / "gh").chmod(0o755)
@@ -3073,6 +3115,15 @@ class PilotFixes(Scratch):
         self.assertNotIn("api", log.read_text())
         self.assertIn(str(fallback), out)
 
+    def test_stdout_only_addcomment_reaches_gh_api(self):
+        link = self.ready_comment()
+        env, log, seen = self.comment_gh("stdout")
+        code, out = self.jtek("comment", "T-1", "--pr", link, env=env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("gh api", out)
+        self.assertIn("api", log.read_text())
+        self.assertIn("verdict:", seen.read_text())
+
     def test_broke_proof_is_required_before_finish(self):
         self.write_config({"test": f"{sys.executable} -c \"import os,sys; sys.exit(1 if os.path.exists('BROKEN') else 0)\""})
         self.ticket("T-1")
@@ -3100,6 +3151,383 @@ class PilotFixes(Scratch):
         code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
         self.assertEqual(code, 0, out)
         self.assertIn("outcome:", out)
+
+
+class RoundTwo(Scratch):
+    """Gaps a reviewer found in 26.40.0. Each test fails on that version and passes after the guard."""
+
+    def ci_query(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("jtek_ci_query", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.CI_QUERY
+
+    def jq_word(self, query, obj):
+        proc = subprocess.run(["jq", "-r", query], input=json.dumps(obj), text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        parts = proc.stdout.split()
+        self.assertEqual(len(parts), 3, proc.stdout)
+        return parts[2]
+
+    def test_ci_query_ships_only_real_success(self):
+        query = self.ci_query()
+        sha = "a" * 40
+
+        def rollup(conclusions):
+            return {"state": "OPEN", "isDraft": False, "headRefOid": sha,
+                    "statusCheckRollup": [{"conclusion": item, "state": "COMPLETED"} for item in conclusions]}
+
+        expect = [
+            (rollup(["SKIPPED"]), "pending"),
+            (rollup(["NEUTRAL"]), "pending"),
+            (rollup(["SUCCESS", "SKIPPED"]), "pending"),
+            (rollup(["SUCCESS", "NEUTRAL"]), "pending"),
+            ({"state": "OPEN", "isDraft": False, "headRefOid": sha, "statusCheckRollup": None}, "absent"),
+            ({"state": "OPEN", "isDraft": False, "headRefOid": sha}, "absent"),
+            (rollup([]), "absent"),
+            (rollup(["SUCCESS", "SUCCESS"]), "pass"),
+            (rollup(["FAILURE"]), "fail"),
+            (rollup(["IN_PROGRESS"]), "pending"),
+        ]
+        for obj, word in expect:
+            self.assertEqual(self.jq_word(query, obj), word, obj)
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        query_path = Path(self.tmp.name) / "ci-query.jq"
+        query_path.write_text(query)
+        roll_path = Path(self.tmp.name) / "rollup.json"
+        bin_dir = Path(self.tmp.name) / "ci-gh"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(
+            "#!/usr/bin/env python3\nimport json, subprocess, sys\n"
+            f"query = open({str(query_path)!r}).read()\n"
+            f"data = json.load(open({str(roll_path)!r}))\n"
+            f"data['headRefOid'] = {head!r}\n"
+            "proc = subprocess.run(['jq', '-r', query], input=json.dumps(data), text=True, capture_output=True)\n"
+            "sys.stdout.write(proc.stdout)\nsys.exit(proc.returncode)\n"
+        )
+        (bin_dir / "gh").chmod(0o755)
+        env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+        blocked = [
+            (rollup(["SKIPPED"]), "CI is still pending"),
+            (rollup(["NEUTRAL"]), "CI is still pending"),
+            (rollup(["SUCCESS", "SKIPPED"]), "CI is still pending"),
+            ({"state": "OPEN", "isDraft": False, "statusCheckRollup": None}, "no checks have appeared"),
+            ({"state": "OPEN", "isDraft": False}, "no checks have appeared"),
+            (rollup([]), "no checks have appeared"),
+        ]
+        for obj, phrase in blocked:
+            roll_path.write_text(json.dumps(obj))
+            code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pull/4",
+                                  "--evidence-file", self.evidence(), env=env)
+            self.assertEqual(code, 1, out)
+            self.assertIn(phrase, out)
+            self.assertNotIn("outcome:", out)
+        roll_path.write_text(json.dumps(rollup(["SUCCESS"])))
+        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pull/4",
+                              "--evidence-file", self.evidence(), env=env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+
+    def test_lint_failure_does_not_prove_an_item_and_a_rewritten_line_drops_the_proof(self):
+        lint = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                "sys.exit(p.is_file() and 'LONG' in p.read_text())\"")
+        test = (f"{sys.executable} -c \"import pathlib,sys; p=pathlib.Path('feature.txt'); "
+                "sys.exit(p.is_file() and 'BEHAV' in p.read_text())\"")
+        self.write_config({"lint": lint, "test": test})
+        body = "## Goal\nAdd.\n## Done when\n- the command prints `one`\n- the command prints `two`\n"
+        self.ticket("T-1", body=body)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "feature.txt").write_text("LONG only\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("behaviour check", out)
+        self.assertNotIn("made `lint` fail", out)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("outcome:", out)
+        (tree / "feature.txt").write_text("LONG BEHAV\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("made `test` fail", out)
+        code, out = self.jtek("broke", "T-1", "--item", "2")
+        self.assertEqual(code, 0, out)
+        logs = self.repo / ".git" / "jtek" / "work" / "T-1" / "logs" / "broke"
+        kept = logs / "item-1" / "test.log"
+        self.assertTrue(kept.is_file())
+        self.assertTrue((logs / "item-1" / "lint.log").is_file())
+        kept.write_text("keep-me\n")
+        code, out = self.jtek("broke", "T-1", "--item", "2")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(kept.read_text(), "keep-me\n", "item 2 must not truncate item 1's log")
+        self.assertTrue((logs / "item-2" / "test.log").is_file())
+        record = json.loads((self.repo / ".git" / "jtek" / "work" / "T-1" / "broke.json").read_text())
+        self.assertEqual(record["items"]["1"]["check"], "test")
+        self.assertEqual(record["items"]["1"]["item"], "the command prints `one`")
+        self.git("checkout", "--", "feature.txt", cwd=tree)
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        ticket = self.repo / ".git" / "jtek" / "work" / "T-1" / "ticket.md"
+        ticket.write_text(ticket.read_text().replace("the command prints `one`", "the command prints `changed`"))
+        both = Path(self.tmp.name) / "both.md"
+        both.write_text("1. seen: ran it, got one\n2. seen: ran it, got two\n\nNotes:\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", str(both), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("the command prints `changed`", out)
+        self.assertNotIn("outcome:", out)
+
+    def test_save_keeps_header_fields_across_a_blank_line(self):
+        item = "- the command prints `ok`\n"
+        draft = "# Count\n\nkind: feature\narea: cli\nrepo: app\n\n## Goal\nAdd.\n## Done when\n" + item
+        path = Path(self.tmp.name) / "draft.md"
+        path.write_text(draft)
+        code, out = self.jtek("ticket", str(path), "--save")
+        self.assertEqual(code, 0, out)
+        saved = self.repo / ".jtek" / "tickets" / "T-1.md"
+        self.assertIn("status: Backlog\nkind: feature\narea: cli\nrepo: app\n", saved.read_text())
+        path.write_text("# Count\nkind: feature\n\nrepo: other-repo\n\n## Goal\nAdd.\n## Done when\n" + item)
+        code, out = self.jtek("ticket", str(path), "--save")
+        self.assertEqual(code, 0, out)
+        text = (self.repo / ".jtek" / "tickets" / "T-2.md").read_text()
+        self.assertIn("repo: other-repo", text)
+        self.assertIn("status: Backlog\nkind: feature\nrepo: other-repo\n", text)
+        released = text.replace("status: Backlog", "status: Todo")
+        (self.repo / ".jtek" / "tickets" / "T-2.md").write_text(released)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-2"], cwd=self.repo,
+                              capture_output=True, text=True, env=with_session())
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn("other-repo", out)
+
+    def test_commit_history_and_remote_refs_take_an_id(self):
+        item = "- the command prints `ok`\n"
+        draft = Path(self.tmp.name) / "draft.md"
+        draft.write_text("# Count\n\n## Goal\nAdd.\n## Done when\n" + item)
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertIn("T-1.md", out)
+        self.assertEqual(code, 0, out)
+        self.git("commit", "--allow-empty", "-q", "-m", "Implement T-12 count")
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("T-12.md", out)
+        self.assertIn("T-13.md", out)
+        self.git("update-ref", "refs/remotes/origin/jtek/T-20", self.git("rev-parse", "HEAD"))
+        code, out = self.jtek("ticket", str(draft), "--save")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("T-20.md", out)
+        self.assertIn("T-21.md", out)
+
+    def confirm_head(self, sha):
+        bin_dir = Path(self.tmp.name) / f"confirm-{sha[:7]}"
+        bin_dir.mkdir(exist_ok=True)
+        (bin_dir / "gh").write_text(f"#!/bin/sh\necho {sha}\n")
+        (bin_dir / "gh").chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    def test_a_local_pull_ref_is_not_the_review_until_it_matches(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        branch = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        self.git("commit", "--allow-empty", "-q", "-m", "someone else")
+        other = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(branch, other)
+        link = "https://github.com/example/app/pull/4"
+        self.git("update-ref", "refs/pull/4/head", other)
+        code, out = self.jtek("show", "T-1", "--pr", link, env=self.confirm_head(branch))
+        self.assertEqual(code, 1, out)
+        self.assertIn("not confirmed", out)
+        self.assertNotIn("reviewing:", out)
+        self.git("update-ref", "-d", "refs/pull/4/head")
+        self.git("update-ref", "refs/jtek/pull/4/head", other)
+        code, out = self.jtek("show", "T-1", "--pr", link, env=self.confirm_head(branch))
+        self.assertEqual(code, 1, out)
+        self.assertIn("not confirmed", out)
+        self.git("update-ref", "refs/pull/4/head", branch)
+        code, out = self.jtek("show", "T-1", "--pr", link, env=self.confirm_head(branch))
+        self.assertEqual(code, 0, out)
+        self.assertIn(branch, out)
+
+    def test_fast_forward_at_covers_every_commit(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        tree = self.worktree("T-1")
+        (tree / "a.txt").write_text("a\n")
+        self.git("add", "a.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add a", cwd=tree)
+        (tree / "b.txt").write_text("b\n")
+        self.git("add", "b.txt", cwd=tree)
+        self.git("commit", "-q", "-m", "add b", cwd=tree)
+        self.git("merge", "--ff-only", "jtek/T-1")
+        tip = self.git("rev-parse", "HEAD")
+        code, out = self.jtek("show", "T-1", "--at", tip)
+        self.assertEqual(code, 0, out)
+        spec = next(line for line in out.splitlines() if line.startswith("diff: ")).split(" diff ", 1)[1]
+        names = subprocess.run(["git", "diff", "--name-only", *spec.split()], cwd=self.repo,
+                               capture_output=True, text=True, check=True).stdout
+        self.assertIn("a.txt", names)
+        self.assertIn("b.txt", names)
+
+    def test_a_second_shell_cannot_record_a_pass_without_its_own_session(self):
+        self.ticket("T-1")
+        page = self.board.file("T-1")
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("JTEK_") and k not in ("CURSOR_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
+        cmd = (f"{sys.executable} {SCRIPT} start https://www.notion.so/T-1 --from-file {page} --no-baseline; echo EXIT:$?")
+        proc = subprocess.run(["bash", "-c", cmd], cwd=self.repo, env=env, capture_output=True, text=True)
+        blob = proc.stdout + proc.stderr
+        self.assertIn("EXIT:1", blob)
+        self.assertIn("JTEK_SESSION", blob)
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        cmd = f"{sys.executable} {SCRIPT} verdict T-1 PASS --by reviewer --commit abcdef1; echo EXIT:$?"
+        proc = subprocess.run(["bash", "-c", cmd], cwd=self.repo, env=env, capture_output=True, text=True)
+        blob = proc.stdout + proc.stderr
+        self.assertIn("EXIT:1", blob)
+        self.assertIn("JTEK_SESSION", blob)
+
+    def test_the_same_session_text_is_the_same_author_whatever_the_variable(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", env={"JTEK_SESSION": "writer"})[0], 0)
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer",
+                              env={"JTEK_SESSION": "", "CURSOR_SESSION_ID": "writer"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("wrote the code", out)
+
+    def test_the_original_author_is_kept_and_a_changed_list_is_refused(self):
+        import importlib.util
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", env={"JTEK_SESSION": "original-writer"})[0], 0)
+        meta_path = self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json"
+        spec = importlib.util.spec_from_file_location("jtek_authors", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        original = json.loads(meta_path.read_text())["authors"][0]
+        cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            for i in range(21):
+                os.environ["JTEK_SESSION"] = f"later-{i}"
+                meta = json.loads(meta_path.read_text())
+                mod.note_author(meta)
+                meta_path.write_text(json.dumps(meta))
+        finally:
+            os.chdir(cwd)
+            os.environ.pop("JTEK_SESSION", None)
+        authors = json.loads(meta_path.read_text())["authors"]
+        self.assertEqual(authors[0], original)
+        self.assertLessEqual(len(authors), 20)
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer", env={"JTEK_SESSION": "original-writer"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("wrote the code", out)
+        meta = json.loads(meta_path.read_text())
+        meta["authors"] = ["b" * 16]
+        meta_path.write_text(json.dumps(meta))
+        code, out = self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")
+        self.assertEqual(code, 1, out)
+        self.assertIn("changed", out)
+
+    def test_a_digit_or_a_thai_word_does_not_hide_or_invent_a_quality(self):
+        refused = [
+            "it feels faster in v2",
+            "รู้สึกเร็วขึ้น 1",
+            "เร็ว ๑",
+            "feels faster ２００",
+            "the thing works",
+            "the page is secure",
+            "the screen is quicker",
+            "the screen is pleasant and simple",
+            "ใช้งานดีขึ้น",
+            "เ" + "ร" + "\u0e47" + "\u200b" + "วขึ้นชัดเจน",
+        ]
+        for number, item in enumerate(refused, 1):
+            self.ticket(f"T-{number}", body=f"## Goal\nAdd.\n## Done when\n- {item}\n")
+            code, out = self.jtek("start", f"T-{number}")
+            self.assertEqual(code, 1, item + "\n" + out)
+            self.assertIn("cannot be checked", out)
+        self.ticket("T-30", body="## Goal\nAdd.\n## Done when\n- ไม่ง่าย\n")
+        code, out = self.jtek("start", "T-30")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("cannot be checked", out)
+        self.ticket("T-31", body="## Goal\nAdd.\n## Done when\n- the command answers in under 200 ms\n")
+        self.assertEqual(self.jtek("start", "T-31")[0], 0)
+
+    def test_forge_false_on_an_unmerged_base_does_not_skip_the_pull_request(self):
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.git("checkout", "-q", "-b", "loose")
+        cfg = json.loads((self.repo / "jtek.json").read_text())
+        cfg["forge"] = False
+        (self.repo / "jtek.json").write_text(json.dumps(cfg))
+        self.git("add", "jtek.json")
+        self.git("commit", "-q", "-m", "forge off on a side branch")
+        self.git("checkout", "-q", "main")
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", "--no-fetch", env={"JTEK_BASE": "loose"})
+        self.assertEqual(code, 0, out)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), env={"JTEK_BASE": "loose"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("pull request", out)
+        self.assertNotIn("outcome:", out)
+
+    def test_forge_false_on_the_published_base_still_allows_no_pr(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+
+    def test_doctor_warns_when_setup_cannot_create_a_venv(self):
+        bin_dir = Path(self.tmp.name) / "pybin"
+        bin_dir.mkdir()
+        (bin_dir / "python3").write_text(
+            "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then echo 'ensurepip is not available' >&2; exit 1; fi\nexit 0\n"
+        )
+        (bin_dir / "python3").chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup="python3 -m venv .venv")
+        code, out = self.jtek("doctor", env={"PATH": path})
+        self.assertEqual(code, 1, out)
+        self.assertIn("setup cannot create a venv", out)
+        self.assertIn("ensurepip is not available", out)
+        self.write_config({"test": f"{sys.executable} -c pass"}, setup=f"{sys.executable} -c pass")
+        code, out = self.jtek("doctor", env={"PATH": path})
+        self.assertNotIn("ensurepip", out)
+        self.assertEqual(code, 0, out)
+
+    def test_a_token_in_the_pr_link_is_not_printed(self):
+        token = "ghp_" + "DummyTokenValue1234567890abcd"
+        url = f"https://example.invalid/pull/4?access={token}"
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        bin_dir = Path(self.tmp.name) / "dead-gh"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text("#!/bin/sh\nexit 1\n")
+        (bin_dir / "gh").chmod(0o755)
+        code, out = self.jtek("finish", "T-1", "--pr", url, "--evidence-file", self.evidence(),
+                              env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("cannot read", out)
+        self.assertIn("[redacted]", out)
+        self.assertFalse(token in out)
 
 
 if __name__ == "__main__":

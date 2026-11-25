@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.40.0-111111?style=flat-square" alt="Version 26.40.0">
+  <img src="https://img.shields.io/badge/version-26.41.0-111111?style=flat-square" alt="Version 26.41.0">
   <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -457,7 +457,7 @@ It can say so. The script wants the checks, the evidence, and a verdict for the 
 Not by editing `jtek.json`: the script reads it from the base branch. What a check runs is read from the worktree, so a ticket can change it. The result names such a file on the `attention:` line when it is a known name or on your `watch` list, and that ticket cannot waive the review. A file the list does not know is not named.
 
 **Can it give the verdict on its own change?**
-`start` records the session, and `verdict` refuses that same session. Set `JTEK_SESSION` to one id for the writing session and a different id for the reviewer. Without it, the script uses the process that launched the command. An agent that changes `JTEK_SESSION` for the verdict can still bypass this. Do not put `verdict` on an always-allow list in the session that writes code. See [SECURITY.md](SECURITY.md).
+`start` records the session, and `verdict` refuses that same session. Set `JTEK_SESSION` to one id for the writing session and a different id for the reviewer. The same text in `CURSOR_SESSION_ID` is the same session. Without one of those ids, `start` and `verdict` refuse. The parent process is not a session. An agent that changes `JTEK_SESSION` for the verdict can still bypass this. Do not put `verdict` on an always-allow list in the session that writes code. See [SECURITY.md](SECURITY.md).
 
 **Why does the script not talk to the board?**
 Your agent already has a Notion or FLO tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.
