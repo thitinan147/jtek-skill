@@ -13,6 +13,7 @@ A pilot of 26.39.0 shipped work the script could not see, took a verdict from th
 - `show` and `verdict` run after a squash, when the worktree and the branch are gone. `--pr <link>` reviews `refs/pull/<n>/head`, fetched when it is not local. `--at <commit>` reviews that commit's parent range, which is the diff a squash commit does not show against the base. An empty ticket branch does not use that parent range.
 - `jtek.py comment <id>` posts the verdict. It tries `gh pr comment`, then `gh api` as an issue comment when the token cannot add a comment, then writes `unposted-comment.md` and exits with a refusal. It does not report a comment as posted when it was not.
 - `jtek.py broke <id> --item <n>` runs the declared checks while one `Done when` item is broken and records the check that failed. `finish` refuses until every item has that record on the current commit. A check that still passes is not a record.
+- A prose apostrophe in a refusal is worded so the script can be read in full, and `gh` is started from one argument list. The skill scan stays at the same caution level as 26.39.0.
 
 ## 26.39.0 - the owner's list of reviewers, and a survey of the agents on the machine
 

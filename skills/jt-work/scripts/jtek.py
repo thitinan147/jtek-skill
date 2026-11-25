@@ -163,9 +163,12 @@ def unobservable_word(line: str) -> str:
     return ""
 
 
-def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False):
+def git(*args: str, cwd: Path | None = None, check: bool = True, code: bool = False, timeout: float | None = None):
     """Run git. Returns its output, or with `code` its exit code (for questions such as `merge-base --is-ancestor`)."""
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as err:
+        raise Refuse(f"git {' '.join(args)}: timed out") from err
     if code:
         return proc.returncode
     if check and proc.returncode != 0:
@@ -525,23 +528,20 @@ def resolve_pull_head(repo: Path, number: str) -> str:
         if sha:
             return sha
     try:
-        fetched = subprocess.run(
-            ["git", "fetch", "--quiet", "origin", f"pull/{number}/head:refs/jtek/pull/{number}/head"],
-            cwd=repo, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as err:
+        git("fetch", "--quiet", "origin", f"pull/{number}/head:refs/jtek/pull/{number}/head", cwd=repo, timeout=60)
+    except (Refuse, OSError) as err:
+        detail = redact(" ".join(str(err).split())[:200])
         raise Refuse(
-            f"refs/pull/{number}/head is not in this repository, and fetching it did not run ({err}). "
+            f"refs/pull/{number}/head is not in this repository, and fetching it failed: {detail}. "
             f"Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
             "--at <the commit that landed on the base>."
         ) from None
     sha = git("rev-parse", "--verify", "--quiet", f"refs/jtek/pull/{number}/head", cwd=repo, check=False)
-    if fetched.returncode == 0 and sha:
+    if sha:
         return sha
-    detail = redact(" ".join((fetched.stderr or fetched.stdout).split())[:200])
     raise Refuse(
-        f"refs/pull/{number}/head is not in this repository"
-        + (f", and fetching it failed: {detail}" if detail else "")
-        + f". Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
+        f"refs/pull/{number}/head is not in this repository after the fetch. "
+        f"Fetch it (`git fetch origin pull/{number}/head:refs/pull/{number}/head`) or pass "
         "--at <the commit that landed on the base>, which is reviewed by that commit's parent range."
     )
 
@@ -1379,7 +1379,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     authors = author_sessions(meta)
     if not authors:
         raise Refuse(
-            "this claim recorded no session at start, so a verdict cannot be told from the author's. "
+            "this claim recorded no session at start, so a verdict cannot be told apart from the writing session. "
             "Run start again in the session that writes the code, then verdict in a different session. "
             "Set JTEK_SESSION to an id that stays the same for the whole writing session, and to a different id "
             "in the session that reviews."
@@ -1801,6 +1801,11 @@ PR_STATES = ["OPEN", "DRAFT", "MERGED", "CLOSED"]
 CI_STATES = ["pass", "fail", "pending", "none"]
 
 
+def run_argv(argv: list[str], *, cwd: Path | None = None, input_bytes: bytes | None = None, timeout: float = 60):
+    """Run one program from an argument list. There is no shell, so the arguments are not a command line."""
+    return subprocess.run(argv, cwd=cwd, capture_output=True, input=input_bytes, text=input_bytes is None, timeout=timeout)
+
+
 def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
     """Return (state, head commit, CI state, problem) of a pull request.
     State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, or none.
@@ -1815,7 +1820,7 @@ def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
     try:
         if custom:
             command = shlex.split(custom) + [url]
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=main_root())
+        proc = run_argv(command, cwd=main_root(), timeout=60)
         parts = proc.stdout.split()
         if proc.returncode != 0:
             problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
@@ -1838,8 +1843,7 @@ def pr_conflicts(url: str, base: str = "") -> bool:
     if load_settings(base or base_branch())["pr_state"]:
         return False
     try:
-        proc = subprocess.run(["gh", "pr", "view", url, "--json", "mergeable", "-q", ".mergeable"],
-                              capture_output=True, text=True, timeout=60, cwd=main_root())
+        proc = run_argv(["gh", "pr", "view", url, "--json", "mergeable", "-q", ".mergeable"], cwd=main_root(), timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0 and proc.stdout.strip() == "CONFLICTING"
@@ -1858,8 +1862,7 @@ def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str
     comment with `gh api`. Anything else is a failure, and the caller writes the file.
     """
     try:
-        proc = subprocess.run(["gh", "pr", "comment", url, "--body-file", str(body_path)],
-                              capture_output=True, text=True, timeout=60)
+        proc = run_argv(["gh", "pr", "comment", url, "--body-file", str(body_path)], timeout=60)
     except (OSError, subprocess.TimeoutExpired) as err:
         return False, f"`gh pr comment` did not run ({err})."
     if proc.returncode == 0:
@@ -1874,9 +1877,9 @@ def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str
     owner, repo, number = parsed
     payload = json.dumps({"body": text}).encode()
     try:
-        api = subprocess.run(
+        api = run_argv(
             ["gh", "api", "--method", "POST", "--input", "-", f"repos/{owner}/{repo}/issues/{number}/comments"],
-            input=payload, capture_output=True, timeout=60)
+            input_bytes=payload, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as err_api:
         return False, f"`gh pr comment` failed: {err}. `gh api` did not run ({err_api})."
     if api.returncode == 0:
