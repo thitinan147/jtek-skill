@@ -256,7 +256,9 @@ def origin_seal_due() -> bool:
             meta = json.loads(meta_path.read_text())
         except (OSError, ValueError):
             continue
-        if isinstance(meta, dict) and meta.get("authors_seal") and not meta.get("starting"):
+        if isinstance(meta, dict) and (
+            meta.get("authors_seal") or meta.get("authors") or meta.get("author") or not meta.get("starting")
+        ):
             return True
     return False
 
@@ -691,13 +693,23 @@ def outcome_lines(sections: dict) -> tuple[str, list[str]]:
 
 
 CARD_SLOTS = ("Goal", "Done check", "Proof", "Context", "Constraints")
-SKILL_STEP = re.compile(r"(?i)\b(jt-[a-z]+|playbook)\b")
-GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^(caused by|fix:)\b")
+SKILL_STEP = re.compile(
+    r"(?i)\bjt-[a-z]+\b"
+    r"|\b(?:follow|run|use|execute|complete|finish|apply|check|read)\s+(?:the\s+|this\s+|our\s+|a\s+)?(?:skill\s+)?playbook\b"
+    r"|\bplaybook\s+steps?\b"
+)
+GUESSED_LINE = re.compile(r"(?i)^(the )?(cause|fix) is\b|^caused by\b|^fix:")
 
 
 def guessed_line(line: str) -> bool:
-    """A guessed cause or fix. A list bullet in front of the sentence does not hide it."""
-    return bool(GUESSED_LINE.match(re.sub(r"^[-*]\s+", "", line.strip())))
+    """A guessed cause or fix. List markers, checkboxes, and emphasis in front of the sentence do not hide it."""
+    text = line.strip()
+    while True:
+        updated = re.sub(r"^(?:[-*+]\s+|\[\s*[xX ]?\s*\]\s*|>\s*|[`*_~]+(?=\S))", "", text)
+        if updated == text:
+            break
+        text = updated.lstrip()
+    return bool(GUESSED_LINE.match(text))
 
 
 def require_card(ticket: dict) -> None:
@@ -917,7 +929,7 @@ def remote_tip(repo: Path, base: str) -> str:
     wanted = f"refs/heads/{base}"
     for line in text.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[1] == wanted and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+        if len(parts) >= 2 and parts[1] == wanted and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):
             return parts[0]
     return ""
 
@@ -1128,8 +1140,22 @@ def done_when_items(work: Path) -> list[str]:
     return items
 
 
+TEST_DIRS = frozenset({"test", "tests", "spec", "specs", "__tests__", "__specs__"})
+TEST_TOKENS = frozenset({"test", "tests", "spec", "specs"})
+
+
 def is_test_path(path: str) -> bool:
-    return "test" in path.lower() or "spec" in path.lower()
+    parts = [p for p in re.split(r"[/\\]+", path.strip()) if p]
+    if not parts:
+        return False
+    if any(part.lower() in TEST_DIRS for part in parts[:-1]):
+        return True
+    name = parts[-1]
+    tokens = [tok for tok in re.split(r"[._-]+", name.lower()) if tok]
+    if any(tok in TEST_TOKENS for tok in tokens):
+        return True
+    stem = name.split(".", 1)[0]
+    return bool(re.search(r"(?:^Test[A-Z]|[a-z0-9](?:Tests?|Specs?)$)", stem))
 
 
 def stale_seen(work: Path, worktree: Path, text: str) -> list[str]:
@@ -1521,8 +1547,7 @@ def existing_test_file(token: str) -> bool:
         return False
     if not path.is_file():
         return False
-    folded = path.name.lower()
-    return "test" in folded or "spec" in folded
+    return is_test_path(path.relative_to(root).as_posix())
 
 
 def lesson_kind(enforced_by: str) -> str:
@@ -1617,7 +1642,7 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     print(f"ticket: ok, {items} item(s) under {label}, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
-        print(f"saved: {path}  (Backlog, inside the repository. Commit it on the base branch so another machine can see it. "
+        print(f"saved: {path}  (Backlog, on this machine in {tickets_dir()}. "
               "The human releases it by writing `status: Todo` in that file)")
 
 
@@ -1955,6 +1980,14 @@ def read_file(path: str, what: str) -> str:
         raise Refuse(f"cannot read the {what} file: {err}") from None
 
 
+def uncommitted_test_files(worktree: Path) -> list[str]:
+    """Test files with uncommitted changes (tracked or untracked) in the worktree."""
+    tracked = git("diff", "--name-only", "HEAD", cwd=worktree, check=False).splitlines()
+    untracked = git("ls-files", "--others", "--exclude-standard", cwd=worktree, check=False).splitlines()
+    paths = [p.strip() for p in tracked + untracked if p.strip()]
+    return sorted({p for p in paths if is_test_path(p) or Path(p).name.lower() == "conftest.py"})
+
+
 def cmd_broke(args: argparse.Namespace) -> None:
     """Record that breaking one Done when item made a declared check fail. The edit stays uncommitted;
     the author restores it afterwards. finish refuses until every item has such a record for this commit."""
@@ -1973,6 +2006,13 @@ def cmd_broke(args: argparse.Namespace) -> None:
         raise Refuse(
             "nothing is broken in the worktree. Change the behaviour this item names, leave the change uncommitted, "
             f"and run `jtek.py broke {args.id} --item {number}` again. Then restore the file (`git checkout -- <file>`)."
+        )
+    uncommitted_tests = uncommitted_test_files(worktree)
+    if uncommitted_tests:
+        raise Refuse(
+            "a broke proof must fail against already-committed tests, not uncommitted test files: "
+            + ", ".join(uncommitted_tests)
+            + ". Commit the tests first, then leave only the behaviour break uncommitted and run broke again."
         )
     diff_text = git("diff", "HEAD", cwd=worktree, check=False)
     untracked = [line[3:] for line in dirty.splitlines() if line.startswith("??")]
@@ -2045,6 +2085,8 @@ def author_sessions(meta: dict) -> list[str]:
 
 NIT_WORD = re.compile(
     r"\b(nit|nits|nitpick|style|rename|typo|wording|preference|formatting|whitespace|comment)\b", re.I)
+STRICT_NIT_WORD = re.compile(
+    r"\b(nit|nits|nitpick|typo|wording|preference|formatting|whitespace|for\s+style|code\s+style|style\s+only)\b", re.I)
 BUG_WORD = re.compile(
     r"\b(crash|fail|fails|failed|error|wrong|regression|bug|exception|broken|incorrect|loses|drops|rejects|"
     r"500|404|timeout|corrupt|uncommitted)\b", re.I)
@@ -2070,6 +2112,7 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
     """Real findings, and the problems in the rest (nit, thin). Dropped lines are ignored."""
     counted = review_regions(text)
     blocks: list[list[str]] = []
+    outside_lines: list[str] = []
     open_block = False
     for line in counted.splitlines():
         if re.match(r"^\s*[-*]\s*reproduces:", line):
@@ -2079,6 +2122,7 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
             blocks[-1].append(line)
         else:
             open_block = False
+            outside_lines.append(line)
     real: list[str] = []
     problems: list[str] = []
     for block in blocks:
@@ -2087,18 +2131,23 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
         body = "\n".join(block)
         repro = re.search(r"reproduces:\s*(.*)", body, re.I)
         shown = repro.group(1) if repro else ""
-        if NIT_WORD.search(shown) and not BUG_WORD.search(body):
-            problems.append("nit")
-            continue
         has_steps = re.search(r"(?im)^\s*(steps|scenario):\s*\S", body)
         has_expected = re.search(r"(?im)^\s*expected:\s*\S", body)
+        if not BUG_WORD.search(body):
+            if NIT_WORD.search(shown) and not (has_steps and has_expected):
+                problems.append("nit")
+                continue
+            if STRICT_NIT_WORD.search(shown):
+                problems.append("nit")
+                continue
         if has_steps and has_expected:
             real.append(body)
         else:
             problems.append("thin")
-    # A nit anywhere in the notes that count blocks a pass. Dropped and Nits were removed above,
-    # and a nit that only appeared on a reproduces line is already recorded.
-    if "nit" not in problems and re.search(r"(?i)\bnit(?:s|pick)?\b", counted):
+    # A nit anywhere outside real findings in the notes that count blocks a pass.
+    # Dropped and Nits were removed above, and a nit that only appeared on a reproduces line is already recorded.
+    outside = "\n".join(outside_lines)
+    if "nit" not in problems and re.search(r"(?i)\bnit(?:s|pick)?\b", outside):
         problems.append("nit")
     return real, problems
 
@@ -2161,8 +2210,9 @@ def cmd_verdict(args: argparse.Namespace) -> None:
     if not args.notes_file:
         raise Refuse(f"{args.verdict} needs --notes-file with your notes, in the form of the review notes")
     notes_text = read_file(args.notes_file, "notes")
+    counted_notes = review_regions(notes_text)
     real, problems = review_findings(notes_text)
-    weigh = re.search(r"^\s*[-*]\s*to weigh:", notes_text, re.M)
+    weigh = re.search(r"^\s*[-*]\s*to weigh:", counted_notes, re.M)
     # The word of the verdict and the notes must say the same thing, because the human reads the word first.
     if "nit" in problems:
         raise Refuse(
@@ -2186,7 +2236,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         # The two steps a quick review skips: testing the tests, and naming why the change is safe.
         lacking = [form for form, key in (("- broke: <the line you broke, and which checks failed or still passed>", "broke"),
                                           ("- safe because: <the one fact the change is safe because of> (run <n>)", "safe because"))
-                   if not re.search(rf"^\s*[-*]\s*{key}:", notes_text, re.M)]
+                   if not re.search(rf"^\s*[-*]\s*{key}:", counted_notes, re.M)]
         if lacking:
             raise Refuse("the notes of a pass say what you broke to test the tests, and why the change is safe, "
                          "as the `jt-review` skill says. Add:\n" + "\n".join(lacking))
@@ -2339,7 +2389,7 @@ def remote_default(cwd: Path | None = None) -> tuple[str, str]:
         parts = line.split()
         if len(parts) >= 2 and parts[0] == "ref:" and parts[1].startswith("refs/heads/"):
             branch = parts[1].split("/", 2)[-1]
-        elif parts and re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+        elif parts and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):
             sha = parts[0]
     if not sha or not branch:
         raise Refuse("the remote did not name a default branch tip, so this change is not sent without a pull request.")
@@ -2885,6 +2935,28 @@ def machine_config_path() -> Path:
     return machine_root() / "config"
 
 
+def same_content(src: Path, dest: Path) -> bool:
+    """True when src and dest are both regular files with identical bytes, or both directories with identical trees.
+    Symlinks are never considered equal."""
+    if src.is_symlink() or dest.is_symlink():
+        return False
+    if src.is_file() and dest.is_file():
+        try:
+            return src.read_bytes() == dest.read_bytes()
+        except OSError:
+            return False
+    if src.is_dir() and dest.is_dir():
+        try:
+            src_entries = {p.name: p for p in src.iterdir()}
+            dest_entries = {p.name: p for p in dest.iterdir()}
+        except OSError:
+            return False
+        if set(src_entries) != set(dest_entries):
+            return False
+        return all(same_content(src_entries[name], dest_entries[name]) for name in src_entries)
+    return False
+
+
 def repo_storage_id(url: str, base: Path | None = None) -> str:
     """A repository id safe to use as directories under $HOME/.jtek/repos.
 
@@ -2893,10 +2965,10 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
     git@github.com:acme/widget.git are github.com/acme/widget.
     ssh://git@gitlab.example:2222/acme/widget.git is gitlab.example:2222/acme/widget.
     https://git.example:8443/acme/widget keeps port 8443. The default ports 443, 80, 22, and 9418
-    are left out. A trailing slash and a trailing .git are left out.
+    are left out. A trailing slash is left out; a trailing .git is left out only for URLs with a host.
     A local path, and a repository with no origin, is path plus that absolute path, such as
-    path/tmp/app. A relative local path is resolved against `base` (the checkout) when given.
-    .. is refused so the id cannot step out of $HOME/.jtek/repos.
+    path/tmp/app (or path/tmp/app.git). A relative local path is resolved against `base` (the checkout) when given.
+    .. in host or path is refused so the id cannot step out of $HOME/.jtek/repos.
     """
     text = url.strip()
     host = ""
@@ -2915,15 +2987,19 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
             host = scp.group(1).lower()
             path = scp.group(2)
     path = path.rstrip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
     if host:
+        if host in (".", "..") or "/" in host or "\\" in host:
+            raise Refuse(f"the repository id for {url} is not usable: host {host!r} is not safe")
+        if path.endswith(".git"):
+            path = path[:-4]
         path = path.lstrip("/")
     else:
         if base is not None and not os.path.isabs(path):
             anchor = base if base.is_absolute() else base.resolve()
             path = os.path.join(anchor.as_posix(), path)
         path = os.path.normpath(path or ".")
+    if "\\" in path:
+        raise Refuse(f"the repository id for {url} is not usable: it contains a backslash")
     parts = [part for part in path.split("/") if part not in ("", ".")]
     if any(part == ".." for part in parts):
         raise Refuse(f"the repository id for {url} is not usable: it contains '..'")
@@ -2932,26 +3008,59 @@ def repo_storage_id(url: str, base: Path | None = None) -> str:
         default = {"https": 443, "http": 80, "ssh": 22, "git": 9418}.get(scheme)
         if port and port != default:
             host = f"{host}:{port}"
-        return f"{host}/{path}" if path else host
-    if path.startswith("/"):
-        return "path" + path
-    return "path/" + path
+        result = f"{host}/{path}" if path else host
+    elif path.startswith("/"):
+        result = "path" + path
+    else:
+        result = "path/" + path
+    anchor_repos = Path("/repos")
+    resolved = (anchor_repos / result).resolve()
+    try:
+        resolved.relative_to(anchor_repos)
+    except ValueError:
+        raise Refuse(f"the repository id for {url} is not usable: it steps outside repos/") from None
+    if resolved == anchor_repos:
+        raise Refuse(f"the repository id for {url} is not usable: it is empty")
+    return result
+
+
+def _legacy_local_home(home: Path) -> Path | None:
+    """For a local/file:// storage home ending in `.git`, return the pre-27.3 stripped folder if it exists."""
+    repos_path = machine_root() / "repos" / "path"
+    try:
+        home.relative_to(repos_path)
+    except ValueError:
+        return None
+    if home.name.endswith(".git") and len(home.name) > 4:
+        legacy = home.with_name(home.name[:-4])
+        if legacy.exists():
+            return legacy
+    return None
 
 
 def candidate_homes(cwd: Path | None = None) -> list[Path]:
     """Per-repository folders, the origin id first and the checkout path second.
 
     A config written before this clone had an origin still lives under the path id.
+    A pre-existing folder under the legacy stripped local id (without `.git`) is also
+    checked as a fallback when the new unstripped id does not have the file yet.
     The origin id wins when both have a file of the same kind.
     """
     homes: list[Path] = []
     root = main_root(cwd)
     url = origin_url(cwd)
     if url:
-        homes.append(machine_root() / "repos" / repo_storage_id(url, base=root))
+        origin_home = machine_root() / "repos" / repo_storage_id(url, base=root)
+        homes.append(origin_home)
+        legacy = _legacy_local_home(origin_home)
+        if legacy is not None and legacy not in homes:
+            homes.append(legacy)
     path_home = machine_root() / "repos" / repo_storage_id(root.as_posix())
     if path_home not in homes:
         homes.append(path_home)
+    legacy_path = _legacy_local_home(path_home)
+    if legacy_path is not None and legacy_path not in homes:
+        homes.append(legacy_path)
     return homes
 
 

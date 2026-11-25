@@ -56,22 +56,51 @@ def setup_uses_venv(setup: str, root: Path) -> bool:
     return False
 
 
+KNOWLEDGE_NAMES = ("verify.md", "features", "rules.md", "tickets")
+
+
 def legacy_names(j) -> list[str]:
-    """jtek.json or .jtek/ still in the repository. Empty when git cannot name the checkout."""
+    """jtek.json or a .jtek/ that still holds jtek knowledge (or is empty). Empty when git cannot name the checkout."""
     try:
         root = j.main_root()
     except j.Refuse:
         return []
     found = []
-    if (root / j.CONFIG).exists():
+    if (root / j.CONFIG).exists() or (root / j.CONFIG).is_symlink():
         found.append(j.CONFIG)
-    if (root / ".jtek").exists():
+    dot = root / ".jtek"
+    if dot.is_symlink() or (dot.exists() and not dot.is_dir()):
         found.append(".jtek/")
+    elif dot.is_dir():
+        try:
+            entries = [p.name for p in dot.iterdir()]
+        except OSError:
+            entries = []
+        if not entries or any(name in KNOWLEDGE_NAMES for name in entries):
+            found.append(".jtek/")
     return found
 
 
+def leftover_dot_jtek(j) -> list[str]:
+    """Non-knowledge files left in .jtek/ after migration (not a migrate trigger)."""
+    try:
+        root = j.main_root()
+    except j.Refuse:
+        return []
+    dot = root / ".jtek"
+    if not dot.is_dir() or dot.is_symlink():
+        return []
+    try:
+        entries = sorted(p.name for p in dot.iterdir())
+    except OSError:
+        return []
+    if not entries or any(name in KNOWLEDGE_NAMES for name in entries):
+        return []
+    return entries
+
+
 def legacy_conflicts(j) -> list[tuple[Path, Path]]:
-    """Legacy repo files that already exist on the machine with different contents."""
+    """Legacy repo files or directories that already exist on the machine with different contents."""
     try:
         root = j.main_root()
         home = j.repo_home()
@@ -80,7 +109,7 @@ def legacy_conflicts(j) -> list[tuple[Path, Path]]:
     candidates: list[tuple[Path, Path]] = [(root / j.CONFIG, home / j.CONFIG)]
     dot = root / ".jtek"
     if dot.is_dir() and not dot.is_symlink():
-        for name in ("verify.md", "features", "rules.md", "tickets"):
+        for name in KNOWLEDGE_NAMES:
             candidates.append((dot / name, home / name))
     conflicts: list[tuple[Path, Path]] = []
     for src, dest in candidates:
@@ -88,12 +117,8 @@ def legacy_conflicts(j) -> list[tuple[Path, Path]]:
             continue
         if not dest.exists() and not dest.is_symlink():
             continue
-        if src.is_file() and dest.is_file() and not dest.is_symlink():
-            try:
-                if src.read_bytes() == dest.read_bytes():
-                    continue
-            except OSError:
-                pass
+        if j.same_content(src, dest):
+            continue
         conflicts.append((src, dest))
     return conflicts
 
@@ -130,8 +155,11 @@ def run(j, args=None) -> None:
         rows.append(("ok", "`board`: the Notion database or FLO product link" if board
                      else f"no board: the tickets are files in {j.tickets_dir()}", ""))
         if source is None:
-            rows.append(("missing", "checks", "run `jtek.py init` or `/jt-init` and give at least one check a command. "
-                         "With no config file the board is empty and tickets are files on this machine"))
+            if legacy:
+                rows.append(("missing", "checks", "run `jtek.py migrate` to move the repository config onto this machine"))
+            else:
+                rows.append(("missing", "checks", "run `jtek.py init` or `/jt-init` and give at least one check a command. "
+                             "With no config file the board is empty and tickets are files on this machine"))
         else:
             rows.append(("ok", f"config {source}", ""))
         checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
@@ -186,11 +214,16 @@ def run(j, args=None) -> None:
         if conflicts:
             pairs = "; ".join(f"{src} differs from {dest}" for src, dest in conflicts)
             todo = (f"{pairs}; `jtek.py migrate` will not overwrite the machine file. "
-                    "Compare them, then either move the machine file aside and run `/jt-init` or `jtek.py migrate`, "
+                    "Compare them, then either move the machine file aside and run `jtek.py migrate`, "
                     "or delete the repo copy yourself and commit the removal")
         else:
-            todo = "run `/jt-init` or `jtek.py migrate`, then commit the removal"
+            todo = "run `jtek.py migrate`, then commit the removal"
         rows.append(("missing", "old files in the repository: " + ", ".join(legacy), todo))
+    else:
+        leftover = leftover_dot_jtek(j)
+        if leftover:
+            rows.append(("optional", "left in .jtek/: " + ", ".join(leftover),
+                         "those names are not jtek knowledge; delete them yourself if you want .jtek gone"))
     rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
                  "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())

@@ -37,25 +37,28 @@ SHAPES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("audit", re.compile(r"^make audit$")),
     ("types", re.compile(r"^(?:npm|pnpm|bun) run (?:typecheck|type-check|types|tsc|mypy|pyright)$")),
     ("types", re.compile(r"^yarn (?:typecheck|type-check|types|tsc|mypy|pyright)$")),
-    ("types", re.compile(r"^uv run mypy \.$")),
-    ("types", re.compile(r"^mypy \.$")),
+    ("types", re.compile(r"^(?:uv run )?mypy(?: [A-Za-z0-9_./-]{1,80}){1,6}$")),
+    ("types", re.compile(r"^(?:uv run )?pyright(?: [A-Za-z0-9_./-]{1,80}){0,6}$")),
     ("types", re.compile(r"^make (?:typecheck|types|mypy)$")),
     ("verify", re.compile(r"^(?:npm|pnpm|bun) run (?:verify|e2e|acceptance)$")),
     ("verify", re.compile(r"^yarn (?:verify|e2e|acceptance)$")),
-    ("verify", re.compile(r"^make (?:verify|e2e)$")),
-    ("verify", re.compile(r"^node scripts/[A-Za-z0-9_./-]{1,80}$")),
+    ("verify", re.compile(r"^make (?:verify|e2e|acceptance)$")),
+    ("verify", re.compile(r"^(?:node|python3?|uv run python3?|bash|sh) scripts/[A-Za-z0-9_./-]{1,80}$")),
+    ("verify", re.compile(r"^\./scripts/[A-Za-z0-9_./-]{1,80}$")),
+    ("verify", re.compile(r"^(?:npx |pnpm exec |yarn )?playwright test(?: [A-Za-z0-9_./-]{1,80}){0,4}$")),
+    ("verify", re.compile(r"^(?:uv run )?pytest (?:[A-Za-z0-9_./-]*?(?:verify|e2e|acceptance)[A-Za-z0-9_./-]*|-m (?:verify|e2e|acceptance))(?: [A-Za-z0-9_./-]{1,80}){0,4}$")),
     ("test", re.compile(r"^(?:npm|pnpm|yarn) test$")),
     ("test", re.compile(r"^(?:npm|pnpm|bun) run tests?$")),
     ("test", re.compile(r"^bun run test$")),
-    ("test", re.compile(r"^uv run pytest -q$")),
-    ("test", re.compile(r"^pytest -q$")),
+    ("test", re.compile(r"^(?:uv run )?pytest(?: [A-Za-z0-9_./-]{1,80}){0,6}$")),
+    ("test", re.compile(r"^(?:uv run )?python3? -m pytest(?: [A-Za-z0-9_./-]{1,80}){0,6}$")),
+    ("test", re.compile(r"^(?:uv run )?python3? -m unittest(?: [A-Za-z0-9_./-]{1,80}){0,6}$")),
     ("test", re.compile(r"^go test \./\.\.\.$")),
     ("test", re.compile(r"^cargo test$")),
     ("test", re.compile(r"^make test$")),
     ("lint", re.compile(r"^(?:npm|pnpm|bun) run (?:lint|eslint|stylelint)$")),
     ("lint", re.compile(r"^yarn (?:lint|eslint|stylelint)$")),
-    ("lint", re.compile(r"^uv run ruff check \.$")),
-    ("lint", re.compile(r"^ruff check \.$")),
+    ("lint", re.compile(r"^(?:uv run )?ruff check(?: [A-Za-z0-9_./-]{1,80}){1,6}$")),
     ("lint", re.compile(r"^go vet \./\.\.\.$")),
     ("lint", re.compile(r"^cargo clippy$")),
     ("lint", re.compile(r"^make (?:lint|eslint)$")),
@@ -285,8 +288,8 @@ def collect(root: Path) -> dict[str, tuple[str, str]]:
         add(found, "setup", setup[0], setup[1])
     from_package(root, found)
     from_make(root, found)
-    from_pyproject(root, found)
     from_workflows(root, found)
+    from_pyproject(root, found)
     return found
 
 
