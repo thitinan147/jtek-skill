@@ -32,7 +32,7 @@ With nothing to report, the first line is `Findings: none`.
 ```markdown
 Findings:
 - reproduces: PATCH /me with an empty phone returns 500, not 422
-  steps: start the server as `.jtek/verify.md` says, then PATCH /me with phone ""
+  steps: start the server as the verify guide says, then PATCH /me with phone ""
   expected: 422, by Done when item 2
 
 Notes:

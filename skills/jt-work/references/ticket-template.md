@@ -29,7 +29,7 @@ Copy the body below into a new page on the board. To get it on every new page, m
 |---|---|
 | Name | What changes, in a few words: `Add a phone number to the profile` |
 | Status | `Backlog` while you write. `Todo` releases it |
-| Repo | The `name` in that repository's `jtek.json` |
+| Repo | The `name` in that repository's machine config |
 | Kind | `feature`, `bug`, or `refactor`. It picks the playbook |
 | Area | The part of the codebase, in a word or two |
 | After | A ticket that must be merged first |
@@ -65,7 +65,7 @@ A user can add a phone number on the profile page, so that sales can call back.
 - **`Constraints` names behaviour, not a topic.** "Titles with non-ASCII letters give the same slug as today" protects something. "Non-ASCII letters" does not.
 - **Small enough for one pull request.** If the items fall into two groups that could ship apart, write two tickets and link them with After.
 - **A bug says how to see it.** Put the steps and the wrong result in `Goal`. The first `Done check` item is the right result for those steps.
-- **The headings are named exactly** `Goal`, `Done check`, `Proof`, `Context`, and `Constraints`, or the words your project set as `headings` in `jtek.json`. The rest of the page can be in any language. `Done when` and `Out of scope` are not slots on a draft.
+- **The headings are named exactly** `Goal`, `Done check`, `Proof`, `Context`, and `Constraints`, or the words your project set as `headings` in the machine config. The rest of the page can be in any language. `Done when` and `Out of scope` are not slots on a draft.
 - **No guessed fix, and no steps the skills already run.** Do not add a cause, a fix, a plan, or a list of skills. The playbook already has the steps. A bug's steps and the wrong result go in `Goal`, as facts, not as a theory of the line that is wrong.
 
 ## Spec handoff

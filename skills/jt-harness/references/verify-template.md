@@ -1,8 +1,8 @@
-# Templates for `.jtek/`
+# Templates for `~/.jtek/repos/<repo id>/`
 
 Starting points for the two kinds of file this skill writes. Replace every line with what is true for the repository. A line you could not confirm by running it does not go in.
 
-## `.jtek/verify.md`
+## `verify.md`
 
 ```markdown
 # How to run and check this app
@@ -33,7 +33,7 @@ Starting points for the two kinds of file this skill writes. Replace every line 
 - `npm run db:reset` removes the rows the run created.
 ```
 
-## `.jtek/features/<name>.md`
+## `features/<name>.md`
 
 ```markdown
 # Profile

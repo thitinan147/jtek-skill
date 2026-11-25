@@ -44,6 +44,15 @@ class EvalTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dest = Path(self.tmp.name).resolve() / "run"
+        self._old_home = os.environ.get("JTEK_HOME")
+        os.environ["JTEK_HOME"] = str(Path(self.tmp.name).resolve() / "jtek-home")
+        self.addCleanup(self._restore_home)
+
+    def _restore_home(self):
+        if self._old_home is None:
+            os.environ.pop("JTEK_HOME", None)
+        else:
+            os.environ["JTEK_HOME"] = self._old_home
 
     def start(self):
         return run(JTEK, "start", "https://www.notion.so/eval", "--from-file", self.dest / "ticket.md", cwd=self.dest / "app")
@@ -54,6 +63,8 @@ class EvalTests(unittest.TestCase):
             code, out = run(RUN, "build", scenario, dest)
             self.assertEqual(code, 0, out)
             self.assertIn("prompt for a fresh agent session", out)
+            self.assertFalse((dest / "app" / "jtek.json").exists(), scenario)
+            self.assertFalse((dest / "app" / ".jtek").exists(), scenario)
             code, out = run(RUN, "grade", scenario, dest)
             self.assertEqual(code, 1, out)
             self.assertIn("FAIL  result outcome", out)

@@ -7,7 +7,7 @@ description: Builds a repository's way to run and observe the real app (a verify
 
 Do this once per repository, before agents work tickets in it. Everything else rests on it: without a way to run the real thing, a passing check only means the code compiles.
 
-This skill writes files under `.jtek/` and one script. It never edits product code.
+This skill writes files under `~/.jtek/repos/<repo id>/` and one script in the repository. It never edits product code. The id is what `jtek.py init` prints.
 
 ## 1. Interview the repository, not the human
 
@@ -20,7 +20,7 @@ Read the code, scripts, and CI config to answer six questions. Ask the human onl
 - **Isolate:** what must differ between two worktrees running at once? Ports, data folders, databases, accounts.
 - **Depend:** what does the app need that lives elsewhere, such as a service in another repository? Where does it come from, which version, and how is it started at another version?
 
-## 2. Write `.jtek/verify.md`
+## 2. Write `~/.jtek/repos/<repo id>/verify.md`
 
 A starting point for this file and for a feature file is in [references/verify-template.md](references/verify-template.md).
 
@@ -34,7 +34,7 @@ Short, with these sections, and exact commands in each:
 
 ## 3. Write the feature map
 
-One file per main feature in `.jtek/features/<name>.md`. Start with three to five. Each has:
+One file per main feature in `~/.jtek/repos/<repo id>/features/<name>.md`. Start with three to five. Each has:
 
 - **How a user gets to it**
 - **How to drive it:** the exact commands or steps
@@ -43,12 +43,12 @@ One file per main feature in `.jtek/features/<name>.md`. Start with three to fiv
 
 ## 4. Add the check
 
-Write one script that launches the app, drives the main path of each mapped feature, and exits non-zero on a wrong result. Propose it as `verify` in `jtek.json`.
+Write one script that launches the app, drives the main path of each mapped feature, and exits non-zero on a wrong result. Propose it as `verify` in `~/.jtek/repos/<repo id>/jtek.json`.
 
 ## 5. Prove it
 
 1. Run the whole thing once and see it pass on the working app.
-2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing. Make the break in a copy of the working tree, with your new `.jtek/` and script in it, that you remove afterwards, and never commit it. This is the one time this skill touches product code.
+2. Break one feature on purpose, run it again, and see it fail. Then undo the break. A check you have never seen fail proves nothing. Make the break in a copy of the working tree, with the script in it, that you remove afterwards, and never commit it. The guide stays in `~/.jtek`. This is the one time this skill touches product code.
 3. Run it from a second copy at the same time, when you can, to confirm the isolation.
 
 A harness that was never run is a draft. Do not hand it over as done.
@@ -57,10 +57,10 @@ While you test it: remove only what you made, by the exact path you created, and
 
 ## 6. Hand over
 
-List what you wrote and what you could not cover. The human reviews `.jtek/` and `jtek.json` and commits them on the base branch.
+List what you wrote and what you could not cover. The human reviews the files under `~/.jtek/repos/<repo id>/`. Nothing there is committed.
 
 ## Keeping it true
 
-Run this skill again when the harness stops matching the app: a renamed screen, a new start command, a feature with no file. The fault may also be one the check cannot see: the guide lacks something sessions needed. Then read the guide as a newcomer would, find where it leaves them guessing, and run every line you add, as written. Run the `verify` check, fix `.jtek/` and the script only, and do step 5 again when the script changed. End with one word and the reason: `clean` (nothing to change), `changed` (list the files), or `blocked` (the app itself is broken; say where).
+Run this skill again when the harness stops matching the app: a renamed screen, a new start command, a feature with no file. The fault may also be one the check cannot see: the guide lacks something sessions needed. Then read the guide as a newcomer would, find where it leaves them guessing, and run every line you add, as written. Run the `verify` check, fix the guide and the script only, and do step 5 again when the script changed. End with one word and the reason: `clean` (nothing to change), `changed` (list the files), or `blocked` (the app itself is broken; say where).
 
 If the app cannot be run at all, stop and report exactly what is missing. Do not write a harness around a different path and call the feature covered.

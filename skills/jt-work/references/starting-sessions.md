@@ -4,7 +4,7 @@ A session works the tickets it is given. Something else decides which ticket run
 
 ## Ask what each ticket needs
 
-1. Read the board (the database named as `board` in `jtek.json`) with the board's tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`:
+1. Read the board (the database named as `board` in the machine config) with the board's tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`:
 
    ```json
    [{"id": "T-12", "title": "...", "status": "Todo", "repo": "api", "waiting": "", "pr": "", "after": ["T-10"]}]

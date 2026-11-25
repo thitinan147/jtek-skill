@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-26.46.0-111111?style=flat-square" alt="Version 26.46.0">
+  <img src="https://img.shields.io/badge/version-27.0.0-111111?style=flat-square" alt="Version 27.0.0">
   <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -61,14 +61,14 @@ comment file: .git/jtek/work/T-12/board-comment.md
 board: Status=Review; Waiting=; PR=https://github.com/you/app/pull/41; comment=result+evidence
 ```
 
-Read `evidence` first, then `attention`, then the diff. `attention` names files that decide whether checks pass: a changed check script, CI config, a lockfile, `Makefile` or `package.json`, a deleted test, or an existing test that lost lines. It works from a list of known names. Add your project's own with `watch` in `jtek.json`.
+Read `evidence` first, then `attention`, then the diff. `attention` names files that decide whether checks pass: a changed check script, CI config, a lockfile, `Makefile` or `package.json`, a deleted test, or an existing test that lost lines. It works from a list of known names. Add your project's own with `watch` in the machine config.
 
 ## How it works
 
 1. **You write a ticket** as a page on the board (a Notion database, a FLO product, or a file when there is no board), with `Goal` and `Done when`, and set it to Todo.
 2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
-4. **The project's checks run.** They come from `jtek.json` on the base branch. An edit in the worktree cannot weaken them.
+4. **The project's checks run.** They come from the machine config, not from the worktree. An edit in the worktree cannot weaken them.
 5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
 6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the page.
 7. **You merge.** There is no merge command.
@@ -119,20 +119,20 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in `jtek.json`.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in the machine config.
 
 ## Set up
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/setup-dark.svg">
-    <img src="assets/setup.svg" width="880" alt="Set up once, in three steps and one check. One: the board, which is a Notion database, a FLO product, or none, with tickets as files. Two: the checks; jtek.py init writes jtek.json, you give each check one command and commit it on the base branch. Three: the harness; the jt-harness skill writes how to run the real app and proposes the verify check. Then jtek.py doctor says what is still missing, and prints ready.">
+    <img src="assets/setup.svg" width="880" alt="Set up once, in three steps and one check. One: the board, which is a Notion database, a FLO product, or none, with tickets as files on this machine. Two: the checks; jtek.py init writes ~/.jtek/repos/&lt;repo id&gt;/jtek.json, you give each check one command, and nothing is committed. Three: the harness; the jt-harness skill writes how to run the real app under ~/.jtek and proposes the verify check. Then jtek.py doctor says what is still missing, and prints ready.">
   </picture>
 </p>
 
 Three things, once. Every step, with what you should see after it, is in **[GETTING-STARTED.md](GETTING-STARTED.md)**.
 
-**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, and the tickets are files in `.jtek/tickets` inside the repository ([files.md](skills/jt-work/references/files.md)).
+**1. The board.** A Notion database ([notion.md](skills/jt-work/references/notion.md)), a FLO product ([flo.md](skills/jt-work/references/flo.md)), or none: leave `board` empty, or skip the config file, and the tickets are files in `~/.jtek/repos/<repo id>/tickets` ([files.md](skills/jt-work/references/files.md)).
 
 **2. The checks.** In each repository, ask the agent:
 
@@ -140,7 +140,7 @@ Three things, once. Every step, with what you should see after it, is in **[GETT
 Run jtek.py init in this repository.
 ```
 
-It writes `jtek.json`. Give each check one command, set `board` and `name`, and commit the file on the base branch:
+It writes `~/.jtek/repos/<repo id>/jtek.json` on this machine. Give each check one command, and set `board` and `name`. Nothing is committed:
 
 ```json
 {"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
@@ -148,9 +148,9 @@ It writes `jtek.json`. Give each check one command, set `board` and `name`, and 
 
 A command is one program with arguments, so a pipeline goes into a script. `jtek.py doctor` says what is still missing.
 
-**3. The harness.** Run the `jt-harness` skill once per repository. It writes `.jtek/`, which says how to run the real app, and proposes the `verify` check. Without it, a passing check only means the code compiles.
+**3. The harness.** Run the `jt-harness` skill once per repository. It writes `~/.jtek/repos/<repo id>/`, which says how to run the real app, and proposes the `verify` check. Without it, a passing check only means the code compiles. A machine that has no guide, such as a fresh cloud agent, reads the README and the code and says so.
 
-`jtek.json` and `.jtek/` are all jtek adds to a repository. Ticket files in `.jtek/tickets` are committed, so a fresh clone has them. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+jtek adds no file to a repository. Config, the verify guide, the feature map, the rule table, and ticket files live under `~/.jtek`. The repository id is the origin's host, non-default port, and path (`github.com/acme/widget`, or `gitlab.example:2222/acme/widget`). With no origin it is `path` plus the checkout path. No `~/.jtek/config` and no per-repository file means the defaults: an empty board, so tickets are files. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into that folder and tells you to commit the removal. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
 
 ## Commands
 
@@ -158,7 +158,7 @@ A command is one program with arguments, so a pipeline goes into a script. `jtek
 |---|---|
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
-| Work with no board at all | Leave `board` empty in `jtek.json`. `/jt <what to do>` works as before, and tickets are files in `.jtek/tickets`: `/jt-ticket` saves them, you commit that folder, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
+| Work with no board at all | Leave `board` empty, or have no config file. `/jt <what to do>` works as before, and tickets are files in `~/.jtek/repos/<repo id>/tickets`: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
 | Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
@@ -289,7 +289,7 @@ A finding has steps that fail when anyone runs them:
 ```markdown
 Findings:
 - reproduces: PATCH /me with an empty phone returns 500, not 422
-  steps: start the server as `.jtek/verify.md` says, then PATCH /me with phone ""
+  steps: start the server as the verify guide says, then PATCH /me with phone ""
   expected: 422, by Done when item 2
 
 Notes:
@@ -302,15 +302,15 @@ Notes:
 </details>
 
 <details>
-<summary><strong>The repository's own files:</strong> <code>jtek.json</code>, <code>.jtek/verify.md</code>, a feature file, and <code>.jtek/rules.md</code></summary>
+<summary><strong>This machine's files:</strong> <code>~/.jtek/repos/&lt;repo id&gt;/jtek.json</code>, <code>verify.md</code>, a feature file, and <code>rules.md</code></summary>
 
-`jtek.json`, on the base branch. One command per check, read from there and never from a ticket's worktree:
+`jtek.json`, under `~/.jtek/repos/<repo id>/`. One command per check, read from there and never from a ticket's worktree:
 
 ```json
 {"board": "https://www.notion.so/...", "name": "web", "setup": "npm ci", "checks": {"lint": "npm run lint", "types": "npm run typecheck", "test": "npm test", "verify": "node scripts/verify.mjs"}}
 ```
 
-`.jtek/verify.md`, written by `jt-harness`. How an agent starts the real app and checks it:
+`~/.jtek/repos/<repo id>/verify.md`, written by `jt-harness`. How an agent starts the real app and checks it:
 
 ```markdown
 ## Launch
@@ -335,7 +335,7 @@ Notes:
 - Stop the server you started. `npm run db:reset` removes the rows the run created.
 ```
 
-`.jtek/features/profile.md`, one file per main feature:
+`~/.jtek/repos/<repo id>/features/profile.md`, one file per main feature:
 
 ```markdown
 ## How a user gets to it
@@ -352,7 +352,7 @@ Log in, then the avatar menu, then "Profile". Direct link: `/profile`.
 - The page caches `/me` for 30 seconds. Reload with the cache off.
 ```
 
-`.jtek/rules.md`, kept by `jt-learn`. A rule goes in after a mistake happened twice, and each row names what enforces it:
+`~/.jtek/repos/<repo id>/rules.md`, kept by `jt-learn`. A rule goes in after a mistake happened twice, and each row names what enforces it:
 
 ```markdown
 | Rule | Enforced by | Since | Why |
@@ -362,7 +362,7 @@ Log in, then the avatar menu, then "Profile". Direct link: `/profile`.
 | Do not mock the database in integration tests | prose | 2026-06-01 | To replace: a lint rule on `jest.mock('db')` |
 ```
 
-These two `.jtek/` forms are starting points, used so far on demo repositories only.
+These forms are starting points, used so far on demo repositories only. They live on the machine, not in the repository.
 
 </details>
 
@@ -472,7 +472,7 @@ Two tickets, joined by a contract file and a check on each side. [two-repos.md](
 The rules check results, not method. The one number that could, the limit on failed check runs, is yours to set. See [Fit it to your project](#fit-it-to-your-project).
 
 **GitLab? A ticket in Thai?**
-Yes to both: `pr_state` and `headings` in `jtek.json`.
+Yes to both: `pr_state` and `headings` in the machine config.
 
 **Is this a software factory?**
 It is the part inside one session. What picks the next ticket is up to you.
@@ -484,7 +484,7 @@ It is the part inside one session. What picks the next ticket is up to you.
 
 - **Gone:** `jt-board`, `jt-add-task`, `jt-setup`, `jt-help`, the three `jt-spec-*` skills, `gate.py`, and `/jt-work --loop`. Choosing the next ticket and writing specs are no longer part of this set.
 - **Not read any more:** `jt-queue/` and `.git/jt-queue/`. Open tasks there do not carry over. Rewrite the ones you still want as tickets on the board.
-- **New in the repository:** `jtek.json` and `.jtek/`. You can delete `jt-queue/` when nothing in it is needed.
+- **New in version 26:** `jtek.json` and `.jtek/`. Version 27 moved both out of the repository, onto `~/.jtek`. You can delete `jt-queue/` when nothing in it is needed.
 - **The old set** is at commit `4c9d0f1` in the git history.
 
 </details>

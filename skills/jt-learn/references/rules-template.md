@@ -1,4 +1,4 @@
-# Template for `.jtek/rules.md`
+# Template for `~/.jtek/repos/<repo id>/rules.md`
 
 A short table of what this project has learned the hard way. Each row names what enforces the rule. A rule that nothing enforces is a wish, and it is the first to replace.
 

@@ -13,13 +13,13 @@ What keeps the two sides in agreement is a contract file and checks that read it
 
 **In the repository that calls it (the consumer):**
 
-1. Keep a copy of the contract file, and a pin file `.jtek/contract.pin` holding the provider commit the copy came from. A worktree sits at `<repo>.jtek/<id>`, so a path like `../provider` points at the wrong place. The copy lets checks run anywhere.
+1. Keep a copy of the contract file, and a pin file `contract.pin` holding the provider commit the copy came from. A worktree sits at `<repo>.jtek/<id>`, so a path like `../provider` points at the wrong place. The copy lets checks run anywhere. Add `contract.pin` to `watch` in the machine config.
 2. Declare a check that fails when the code uses something the copy does not have. With generated types, this is the type check.
 3. Make the `verify` check do three things, in this order:
    - Refuse a pin that is not on the provider's base branch.
    - Refuse a copy that differs from the provider's contract at the pin.
    - Start the provider at the pin, and drive the consumer against it. Do not use a mock here.
-4. Say in `.jtek/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it.
+4. Say in `~/.jtek/repos/<repo id>/verify.md`, under Launch, where the provider comes from: an environment variable holding the path of a clone, a remote to fetch, or a container image. A check receives the environment of the session that runs it.
 
 A check command is one program with arguments, so each of these is a script.
 
@@ -32,11 +32,11 @@ A check command is one program with arguments, so each of these is a script.
 
 ## Working the consumer's ticket
 
-1. Move the pin to the newest commit on the provider's base branch, and copy the contract file from that commit. Commit both. Read that commit from the provider's remote: a fresh clone or fetch in a temporary folder outside the worktree, from the place `.jtek/verify.md` names. When it names a variable that is not set, clone the remote it names. A folder of the provider that happens to sit on this machine may be old, and is not yours to change.
+1. Move the pin to the newest commit on the provider's base branch, and copy the contract file from that commit. Commit both. Read that commit from the provider's remote: a fresh clone or fetch in a temporary folder outside the worktree, from the place the verify guide names. When it names a variable that is not set, clone the remote it names. A folder of the provider that happens to sit on this machine may be old, and is not yours to change.
 2. Build against the copy. Never edit the copy by hand.
 3. If the copy lacks what the ticket needs, the provider's change is not merged. Stop: `jtek.py stop <id> --waiting input --note "<what the contract lacks>"`. Do not pin an unmerged commit, and do not add the field yourself.
 
-The pin is under `.jtek/`, so the result names it on the `attention:` line, and `review: human` is ignored for that ticket. This is intended: the pin decides which provider the proof ran against.
+`watch` names the pin on the `attention:` line, and `review: human` is ignored for that ticket. This is intended: the pin decides which provider the proof ran against.
 
 ## What each check catches
 

@@ -1,14 +1,14 @@
 # The board as files
 
-A repository needs no board. When `board` in `jtek.json` is empty, each ticket is a file, and the folder of those files is the board. Everything [notion.md](notion.md) says about the `board:` line, the Todo signal, and the limits holds here too. This file says only where each part lives in a ticket file.
+A repository needs no board. When `board` is empty, or there is no config file, each ticket is a file, and the folder of those files is the board. Everything [notion.md](notion.md) says about the `board:` line, the Todo signal, and the limits holds here too. This file says only where each part lives in a ticket file.
 
 ## Where the files are
 
-`.jtek/tickets/<id>.md`, inside the repository. A fresh clone has the tickets, because the folder is committed on the base branch. `ticket --save` writes there and says so. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`. Every command reads the main checkout's copy, so a ticket worktree and a second machine see the same file once it is committed.
+`~/.jtek/repos/<repo id>/tickets/<id>.md`, on this machine. The repository id is the origin URL's host, non-default port, and path, or `path` plus the checkout path when there is no origin. See [setup.md](setup.md). `ticket --save` writes there and says so. `jtek.py doctor` prints the folder, and `start` prints the file as `page:`. A second checkout of the same origin on this machine reads the same file. A new machine, such as a cloud agent, does not have the folder until you copy it or run `jtek.py migrate` there.
 
-An older checkout may still have tickets beside the repository, at `<repository>.jtek/_tickets/<id>.md`. Those files are still read. A new ticket is not written there. When both folders have the same id, the file inside the repository wins, and an id used in either folder is not given out again.
+An older checkout may still have tickets beside the repository, at `<repository>.jtek/_tickets/<id>.md`. Those files are still read. A new ticket is not written there. When both places have the same id, the file under `~/.jtek` wins, and an id used in either place is not given out again.
 
-Nothing is set up. The folder appears with the first ticket. Commit it on the base branch. The script does not commit it.
+Nothing is set up. The folder appears with the first ticket. It is not committed. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into this folder and tells you to commit the removal.
 
 ## Where each part of a ticket lives
 

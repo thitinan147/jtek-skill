@@ -1,14 +1,16 @@
 # Setup for a repository
 
-The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, and its tickets are files in `.jtek/tickets`, as [files.md](files.md) says. Then two things go into each repository: `jtek.json`, and the `.jtek/` folder (how to run and drive the app and a feature map, written by the `jt-harness` skill, a rule table kept by the `jt-learn` skill, and the ticket files when there is no board). Claims, logs, and results stay under the git directory and are never committed. Ticket files are committed.
+The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) for FLO. A repository needs no board: leave `board` empty, or have no config file at all, and its tickets are files under `~/.jtek/repos/<repo id>/tickets`, as [files.md](files.md) says. Nothing of jtek is written into the repository. Config is `~/.jtek/repos/<repo id>/jtek.json`. The verify guide, feature map, rule table, and ticket files live beside that file. `~/.jtek/config`, when it exists, is the default for a repository that has no file of its own. No file at either place means the defaults: an empty board, so tickets are files. Claims, logs, and results stay under the git directory and are never committed.
 
-1. Run `jtek.py init`. It writes a template:
+The repository id is the origin URL's host, a non-default port, and its path. `https://github.com/acme/widget.git`, `ssh://git@github.com/acme/widget.git`, and `git@github.com:acme/widget.git` are `github.com/acme/widget`. `ssh://git@gitlab.example:2222/acme/widget.git` is `gitlab.example:2222/acme/widget`. Userinfo, a trailing `.git`, and the default ports 443, 80, 22, and 9418 are left out. With no origin, the id is `path` plus the main checkout's absolute path, such as `path/tmp/app`. `JTEK_HOME` overrides `~/.jtek`.
+
+1. Run `jtek.py init`. It writes a template on this machine, not in the repository:
 
    ```json
    {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
    ```
 
-   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `.jtek/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository is still read.
+   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `~/.jtek/repos/<repo id>/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository, `<name>.jtek/_tickets`, is still read.
 
    **`setup`** installs dependencies in a new worktree, for example `npm ci` or `uv sync`. A new worktree has none, so without it the checks fail before any edit. Leave it empty when nothing is needed.
 
@@ -31,11 +33,11 @@ The board is set up once, as [notion.md](notion.md) says, or [flo.md](flo.md) fo
 3. A command is one program with arguments. It runs in the ticket's worktree with `JTEK_TICKET` and `JTEK_WORKTREE` set, so a command can pick its own port or data folder when several tickets run at once. Shell operators such as `&&` and `|` do not work. Put a pipeline in a script and call the script.
 4. **`verify`** should run the real thing: start the app and drive it, call the running API, or run the command-line tool on real input. If the project has no such command, build it with the `jt-harness` skill first. This check is the one that matters most. A check named `eslint`, `ruff`, `ruff-format`, `prettier`, `tsc`, `mypy`, or another lint, format, or type tool does not prove a Done when item. Name the behaviour check `test` or `verify`. Prefix `behaviour-` when the command is a linter but the check is the behaviour (`behaviour-eslint`).
 5. Run `jtek.py doctor`. It reads only, and lists what is set up and what is missing, in the order to fix it. It cannot see the board. With no board, it prints the folder of the ticket files. When `setup` creates a virtualenv, including when that call is inside a script the command names and doctor can read, doctor checks that `ensurepip` imports, and says so when the venv package is missing.
-6. The human reviews `jtek.json` and commits it on the base branch. `check` reads the file from the base branch, so an edit in a ticket's worktree changes nothing until the human merges it.
+6. The human reviews the file `init` wrote. `check` reads that file, never a `jtek.json` in the worktree, so a ticket cannot weaken a check by committing one.
 
 The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. Set `JTEK_BASE` to override it.
 
-**`name`** is how tickets refer to this repository in their `repo:` line. Set it. Without it, the folder name is used, and a clone under another folder name refuses its own tickets.
+**`name`** is how tickets refer to this repository in their `repo:` line. Set it in the machine config. Without it, the folder name is used, and a clone under another folder name refuses its own tickets.
 
 **`max_failed_runs`** is optional, and 3 when it is left out. After that many failed `check` runs in a row, the script refuses another and the session stops to ask. A passing run starts the count again, and so does the human setting the ticket to Todo. A session that takes a ticket over does not. Raise it when your agent finds the cause on a later try more often than it wastes the run.
 
@@ -43,7 +45,7 @@ The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. S
 
 **`headings`** is optional. Tickets may use your own words for the three headings: `{"Goal": "เป้าหมาย", "Done when": "เสร็จเมื่อ", "Out of scope": "นอกขอบเขต"}`. The copy the session works from has the English ones.
 
-**`forge`** is optional. Set it to `false` when the repository has a remote that is not a forge, so that tickets may end with `finish --no-pr`.
+**`forge`** is optional. Set it to `false` in this machine's config for this repository when the remote is not a forge, so that tickets may end with `finish --no-pr`. A commit cannot set it. `~/.jtek/config` can set it as the default for every repository that has no file of its own.
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 

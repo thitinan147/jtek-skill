@@ -69,27 +69,36 @@ def run(j, args=None) -> None:
     rows.append(("ok" if sys.version_info >= (3, 10) else "missing",
                  f"Python {sys.version_info[0]}.{sys.version_info[1]}", "run this script with Python 3.10 or later"))
     config: dict | None = None
+    base = ""
     try:
         base = j.base_branch()
         rows.append(("ok", f"base branch `{base}`", ""))
-        config = j.load_config(base)
-        rows.append(("ok", f"{j.CONFIG} is committed on {base}", ""))
     except j.Refuse as err:
-        base = ""
         hint = "; if this repository has no commit yet, make the first commit" if "base branch" in str(err) else ""
-        rows.append(("missing", f"{j.CONFIG} on the base branch", str(err) + hint))
+        rows.append(("missing", "a base branch", str(err) + hint))
+    if base:
+        try:
+            config = j.load_config(base)
+        except j.Refuse as err:
+            rows.append(("missing", "config", str(err)))
     if config is not None:
+        source = j.find_config()
         board = str(config.get("board") or "").strip()
         rows.append(("ok", "`board`: the Notion database or FLO product link" if board
                      else f"no board: the tickets are files in {j.tickets_dir()}", ""))
+        if source is None:
+            rows.append(("missing", "checks", "run `jtek.py init` and give at least one check a command. "
+                         "With no config file the board is empty and tickets are files on this machine"))
+        else:
+            rows.append(("ok", f"config {source}", ""))
         checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
         empty = [name for name, command in checks.items() if not isinstance(command, str) or not command.strip()]
-        if not checks:
-            rows.append(("missing", "checks", f"declare at least one check in {j.CONFIG}"))
+        if source is not None and not checks:
+            rows.append(("missing", "checks", f"declare at least one check in {source}"))
         elif empty:
             rows.append(("missing", "checks without a command: " + ", ".join(empty),
-                         f"fill them in or delete them in {j.CONFIG}, and commit it on {base}"))
-        else:
+                         f"fill them in or delete them in {source}"))
+        elif source is not None:
             rows.append(("ok", "checks: " + ", ".join(checks), ""))
         commands = {name: command for name, command in checks.items() if isinstance(command, str)}
         for key in ("setup", "pr_state"):
@@ -121,12 +130,14 @@ def run(j, args=None) -> None:
         try:
             j.load_settings(base)
         except j.Refuse as err:
-            rows.append(("missing", "the optional settings", f"{err}; fix it in {j.CONFIG}, and commit it on {base}"))
+            rows.append(("missing", "the optional settings", f"{err}; fix it in {j.find_config() or j.repo_home() / j.CONFIG}"))
         rows.append(("ok" if str(checks.get("verify") or "").strip() else "optional", "a `verify` check that runs the real app",
                      "run the jt-harness skill once; without it a passing check only means the code compiles"))
-        guide = bool(j.git("rev-parse", "--verify", "--quiet", f"{base}:.jtek/verify.md", check=False))
-        rows.append(("ok" if guide else "optional", f".jtek/verify.md on {base}",
-                     "run the jt-harness skill once, review what it wrote, and commit it"))
+        guide = j.knowledge_path("verify.md")
+        shown = guide or (j.repo_home() / "verify.md")
+        rows.append(("ok" if guide else "optional", f"verify guide {shown}",
+                     "run the jt-harness skill once. It writes the guide on this machine. "
+                     "When that file is missing, jt-verify reads the README and the code and says no guide was found"))
     rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
                  "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())
@@ -134,7 +145,7 @@ def run(j, args=None) -> None:
         rows.append(("ok", "`pr_state`: this repository reads pull requests with its own command", ""))
     else:
         rows.append(("ok" if shutil.which("gh") else "optional", "`gh` is installed",
-                     "install the GitHub CLI, or for another forge set `pr_state` in jtek.json; "
+                     "install the GitHub CLI, or for another forge set `pr_state` in the machine config; "
                      "it is needed to read a pull request's state"))
     for state, what, todo in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))

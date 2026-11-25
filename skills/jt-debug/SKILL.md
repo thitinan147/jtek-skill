@@ -33,7 +33,7 @@ When you start from a bug you reproduced, and no check has failed, your reproduc
 ## 4. Fix
 
 1. Fix the cause, not the place where the symptom shows. Before you add a guard, a retry, a default, or a caught error where the symptom shows, ask whether the state that reached it should exist; if not, the guard hides the bug (P9).
-2. Never weaken a check, skip or delete a test, loosen an assertion, or edit `jtek.json` to get a pass. The script reads checks from the base branch, so that would not work.
+2. Never weaken a check, skip or delete a test, loosen an assertion, or edit the machine config to get a pass. The script does not read `jtek.json` from the worktree.
 3. Remove the prints you added. Commit, and run `jtek.py check <id>` again.
 
 ## 5. Stop at three

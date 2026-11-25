@@ -6,23 +6,77 @@ Run them as `jtek.py <command>`. They live here to keep jtek.py small. `j` is th
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
 
+TEMPLATE = {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
+
+
 def init(j, args) -> None:
-    path = Path(j.git("rev-parse", "--show-toplevel")) / j.CONFIG
+    existing = j.find_config()
+    path = j.repo_home() / j.CONFIG
+    if existing is not None and existing != j.machine_config_path():
+        raise j.Refuse(f"{existing} already exists")
     if path.exists():
         raise j.Refuse(f"{path} already exists")
-    j.write_json(path, {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    j.write_json(path, TEMPLATE)
     print(f"wrote {path}")
+    print("This file is on this machine. It is not in the repository, and it is not committed.")
     print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
-    print("Leave it empty to keep the tickets as files in `.jtek/tickets`, inside the repository; no board is needed then.")
+    print(f"Leave it empty to keep the tickets as files in {j.tickets_dir()}; no board is needed then.")
+    print("With no config file at all, that empty board is already the default.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
-    print("Delete a check the project does not have. The human commits this file on the base branch.")
+    print("Delete a check the project does not have.")
+    print(f"The repository id is `{j.repo_home().relative_to(j.machine_root() / 'repos')}` "
+          "(host, non-default port, and path of the origin URL, or the checkout path when there is no origin).")
     j.remember_origin()
+
+
+def migrate(j, args) -> None:
+    """Move jtek.json and .jtek/ out of the repository and onto this machine.
+
+    The repository is left with those paths missing. The human commits the removal. This command does not commit.
+    """
+    root = Path(j.git("rev-parse", "--show-toplevel"))
+    home = j.repo_home()
+    home.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+
+    def take(src: Path, dest: Path) -> None:
+        if not src.exists() and not src.is_symlink():
+            return
+        if src.is_symlink():
+            raise j.Refuse(f"{src} is a symlink; not moving it")
+        if dest.exists():
+            raise j.Refuse(f"{dest} already exists; not overwriting it. Move that file aside and run migrate again")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dest))
+        moved.append(f"{src.relative_to(root)} -> {dest}")
+
+    take(root / j.CONFIG, home / j.CONFIG)
+    dot = root / ".jtek"
+    if dot.is_symlink():
+        raise j.Refuse(f"{dot} is a symlink; not moving it")
+    if dot.is_dir():
+        for name in ("verify.md", "features", "rules.md", "tickets"):
+            take(dot / name, home / name)
+        try:
+            dot.rmdir()
+        except OSError:
+            left = sorted(p.name for p in dot.iterdir())
+            print(f"left in {dot}: {', '.join(left)}. Those names are not jtek knowledge; delete them yourself if you want .jtek gone.")
+    if not moved:
+        raise j.Refuse(f"nothing to migrate: no {j.CONFIG} and no .jtek/verify.md, features, rules.md, or tickets in {root}")
+    print(f"repository id: {home.relative_to(j.machine_root() / 'repos')}")
+    for line in moved:
+        print(f"moved: {line}")
+    print("These paths are gone from the work tree. Review `git status` and commit the removal.")
+    print("jtek does not commit it. A checkout on another machine does not have this folder until you copy it or migrate there.")
 
 
 def file_rows(j) -> list[dict]:
@@ -264,4 +318,4 @@ def reviewer(j, args) -> None:
     agents.reviewer(j, args)
 
 
-COMMANDS = {"init": init, "next": next_, "sync": sync, "release": release, "doctor": doctor, "reviewer": reviewer}
+COMMANDS = {"init": init, "migrate": migrate, "next": next_, "sync": sync, "release": release, "doctor": doctor, "reviewer": reviewer}
