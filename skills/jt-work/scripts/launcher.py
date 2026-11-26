@@ -189,7 +189,7 @@ def claim_rows(j, known: set[str]) -> list[dict]:
     return rows
 
 
-def file_rows(j, *, include_claims: bool = False) -> list[dict]:
+def file_rows(j, *, include_claims: bool = False, announce_empty: bool = True) -> list[dict]:
     """The rows of a repository with no board: one for each ticket file, read from its header.
 
     With `include_claims`, a claim that has no ticket file is a row too. `sync` leaves that out:
@@ -207,19 +207,19 @@ def file_rows(j, *, include_claims: bool = False) -> list[dict]:
                      "after": j.open_after(fields.get("after", ""))})
     if include_claims:
         rows.extend(claim_rows(j, {row["id"] for row in rows}))
-    if not rows:
+    if not rows and announce_empty:
         print(f"no ticket files in {j.tickets_dir()}")
     return rows
 
 
-def load_board(j, path: str | None, *, include_claims: bool = False) -> list[dict]:
+def load_board(j, path: str | None, *, include_claims: bool = False, announce_empty: bool = True) -> list[dict]:
     """Rows that the launcher read from the board with its own tool, or the ticket files when there is no board.
     Every row is checked before any is used."""
     if not path:
         if j.has_board(j.base_branch()):
             raise j.Refuse("pass --board-file: the open tickets, read from the board and saved as JSON; "
                            "see references/starting-sessions.md")
-        rows = file_rows(j, include_claims=include_claims)
+        rows = file_rows(j, include_claims=include_claims, announce_empty=announce_empty)
     else:
         try:
             rows = json.loads(Path(path).read_text())
@@ -434,17 +434,34 @@ def session_label(meta: dict) -> str:
 
 
 def status(j, args) -> None:
-    """Read-only table: in progress, waiting for review, waiting for merge, and the next actions.
+    """Read-only readiness line and Thai table: in progress, waiting for review, waiting for merge, and next actions.
 
-    The words are Thai. Every row that `next` prints appears either in a group or under `ถัดไป`.
+    First line reports machine and repository readiness derived from `doctor.assess(j)`.
+    Every row that `next` prints appears either in a group or under `ถัดไป`.
     Nothing is written: no claim, no release, no board change.
     """
-    repo = this_repo(j)
+    import doctor as doctor_mod
+
+    report = doctor_mod.assess(j)
+    readiness = doctor_mod.readiness_line(report)
+    try:
+        repo = this_repo(j)
+    except j.Refuse:
+        try:
+            repo = j.main_root().name
+        except j.Refuse:
+            repo = ""
+    if args.board_file:
+        board_rows = load_board(j, args.board_file, include_claims=True, announce_empty=False)
+    elif report["config"] is not None:
+        board_rows = load_board(j, None, include_claims=True, announce_empty=False)
+    else:
+        board_rows = []
     doing: list[str] = []
     review: list[str] = []
     merge: list[str] = []
     ranked: list[tuple[int, str, str, str, bool]] = []
-    for row in load_board(j, args.board_file, include_claims=True):
+    for row in board_rows:
         action, reason = next_step(j, row, repo)
         if action == "other":
             continue
@@ -475,6 +492,7 @@ def status(j, args) -> None:
             ranked.append((7, ticket_id, action, detail, False))
         else:
             ranked.append((8, ticket_id, action, detail, False))
+    print(readiness)
     for lines, empty in ((doing, "กำลังทำ\t-"), (review, "รอรีวิว\t-"), (merge, "รอ merge\t-")):
         for line in lines or [empty]:
             print(line)

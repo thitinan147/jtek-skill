@@ -123,63 +123,84 @@ def legacy_conflicts(j) -> list[tuple[Path, Path]]:
     return conflicts
 
 
-def run(j, args=None) -> None:
-    """`j` is the jtek module, for its git helper and its config reader."""
-    rows: list[tuple[str, str, str]] = []  # (ok | missing | optional, what, what to do)
+def assess(j) -> dict:
+    """Collect doctor rows and readiness decision without printing or refusing.
+
+    Read-only. Shared by `jtek.py doctor` and `jtek.py status` so they cannot drift.
+    Each row is `(scope, state, what, todo, fix)` where `scope` is `"machine"` or `"repo"`,
+    `state` is `"ok"`, `"missing"`, or `"optional"`, `todo` is the full doctor advice, and
+    `fix` is the short command or action for one-line summaries.
+    """
+    rows: list[tuple[str, str, str, str, str]] = []
     legacy = legacy_names(j)
 
+    git_missing = False
     try:
         found = re.search(r"(\d+)\.(\d+)", j.git("--version", check=False))
     except OSError:
-        raise j.Refuse("git is not installed; install git 2.31 or later") from None
-    version = (int(found.group(1)), int(found.group(2))) if found else (0, 0)
-    rows.append(("ok" if version >= (2, 31) else "missing", f"git {version[0]}.{version[1]}", "install git 2.31 or later"))
-    rows.append(("ok" if sys.version_info >= (3, 10) else "missing",
-                 f"Python {sys.version_info[0]}.{sys.version_info[1]}", "run this script with Python 3.10 or later"))
+        git_missing = True
+        rows.append(("machine", "missing", "git", "install git 2.31 or later", "install git 2.31 or later"))
+    else:
+        version = (int(found.group(1)), int(found.group(2))) if found else (0, 0)
+        rows.append(("machine", "ok" if version >= (2, 31) else "missing",
+                     f"git {version[0]}.{version[1]}", "install git 2.31 or later", "install git 2.31 or later"))
+    rows.append(("machine", "ok" if sys.version_info >= (3, 10) else "missing",
+                 f"Python {sys.version_info[0]}.{sys.version_info[1]}",
+                 "run this script with Python 3.10 or later", "run with Python 3.10 or later"))
     config: dict | None = None
     base = ""
-    try:
-        base = j.base_branch()
-        rows.append(("ok", f"base branch `{base}`", ""))
-    except j.Refuse as err:
-        hint = "; if this repository has no commit yet, make the first commit" if "base branch" in str(err) else ""
-        rows.append(("missing", "a base branch", str(err) + hint))
+    if not git_missing:
+        try:
+            base = j.base_branch()
+            rows.append(("repo", "ok", f"base branch `{base}`", "", ""))
+        except j.Refuse as err:
+            hint = "; if this repository has no commit yet, make the first commit" if "base branch" in str(err) else ""
+            fix = "set JTEK_BASE or make the first commit" if "base branch" in str(err) else str(err)
+            rows.append(("repo", "missing", "a base branch", str(err) + hint, fix))
     if base:
         try:
             config = j.load_config(base)
         except j.Refuse as err:
-            rows.append(("missing", "config", str(err)))
+            cfg = j.find_config() or (j.repo_home() / j.CONFIG)
+            rows.append(("repo", "missing", "config", str(err), f"fix {cfg}"))
     if config is not None:
         source = j.find_config()
         board = str(config.get("board") or "").strip()
-        rows.append(("ok", "`board`: the Notion database or FLO product link" if board
-                     else f"no board: the tickets are files in {j.tickets_dir()}", ""))
+        rows.append(("repo", "ok", "`board`: the Notion database or FLO product link" if board
+                     else f"no board: the tickets are files in {j.tickets_dir()}", "", ""))
         if source is None:
             if legacy:
-                rows.append(("missing", "checks", "run `jtek.py migrate` to move the repository config onto this machine"))
+                rows.append(("repo", "missing", "checks",
+                             "run `jtek.py migrate` to move the repository config onto this machine",
+                             "jtek.py migrate"))
             else:
-                rows.append(("missing", "checks", "run `jtek.py init` or `/jt-init` and give at least one check a command. "
-                             "With no config file the board is empty and tickets are files on this machine"))
+                rows.append(("repo", "missing", "checks",
+                             "run `jtek.py init` or `/jt-init` and give at least one check a command. "
+                             "With no config file the board is empty and tickets are files on this machine",
+                             "/jt-init or jtek.py init"))
         else:
-            rows.append(("ok", f"config {source}", ""))
+            rows.append(("repo", "ok", f"config {source}", "", ""))
         checks = config.get("checks") if isinstance(config.get("checks"), dict) else {}
         empty = [name for name, command in checks.items() if not isinstance(command, str) or not command.strip()]
         if source is not None and not checks:
-            rows.append(("missing", "checks", f"declare at least one check in {source}"))
+            rows.append(("repo", "missing", "checks", f"declare at least one check in {source}",
+                         f"/jt-init or declare a check in {source}"))
         elif empty:
-            rows.append(("missing", "checks without a command: " + ", ".join(empty),
-                         f"fill them in or delete them in {source}"))
+            rows.append(("repo", "missing", "checks without a command: " + ", ".join(empty),
+                         f"fill them in or delete them in {source}",
+                         f"fill in or delete them in {source}"))
         elif source is not None:
-            rows.append(("ok", "checks: " + ", ".join(checks), ""))
+            rows.append(("repo", "ok", "checks: " + ", ".join(checks), "", ""))
         commands = {name: command for name, command in checks.items() if isinstance(command, str)}
         for key in ("setup", "pr_state"):
             if isinstance(config.get(key), str) and config[key].strip():
                 commands[key] = config[key]
         shell = [name for name, command in commands.items() if uses_shell(command)]
         if shell:
-            rows.append(("missing", "commands that need a shell: " + ", ".join(shell),
+            rows.append(("repo", "missing", "commands that need a shell: " + ", ".join(shell),
                          "a command runs without a shell, so `&&`, `|`, `>`, `$(...)` and `$VAR` do nothing; "
-                         "put the pipeline in a script and name the script"))
+                         "put the pipeline in a script and name the script",
+                         "put the pipeline in a script"))
         setup = config.get("setup") if isinstance(config.get("setup"), str) else ""
         if setup_uses_venv(setup, Path.cwd()):
             exe = "python3"
@@ -196,19 +217,23 @@ def run(j, args=None) -> None:
             except (OSError, subprocess.TimeoutExpired):
                 missing_pip = True
             if missing_pip:
-                rows.append(("missing", "setup cannot create a venv (ensurepip is not available)",
-                             "install the venv package for this Python (for example python3-venv) before the first start"))
+                rows.append(("machine", "missing", "setup cannot create a venv (ensurepip is not available)",
+                             "install the venv package for this Python (for example python3-venv) before the first start",
+                             "install python3-venv"))
         try:
             j.load_settings(base)
         except j.Refuse as err:
-            rows.append(("missing", "the optional settings", f"{err}; fix it in {j.find_config() or j.repo_home() / j.CONFIG}"))
-        rows.append(("ok" if str(checks.get("verify") or "").strip() else "optional", "a `verify` check that runs the real app",
-                     "run the jt-harness skill once; without it a passing check only means the code compiles"))
+            cfg = j.find_config() or (j.repo_home() / j.CONFIG)
+            rows.append(("repo", "missing", "the optional settings",
+                         f"{err}; fix it in {cfg}", f"fix {cfg}"))
+        rows.append(("repo", "ok" if str(checks.get("verify") or "").strip() else "optional",
+                     "a `verify` check that runs the real app",
+                     "run the jt-harness skill once; without it a passing check only means the code compiles", ""))
         guide = j.knowledge_path("verify.md")
         shown = guide or (j.repo_home() / "verify.md")
-        rows.append(("ok" if guide else "optional", f"verify guide {shown}",
+        rows.append(("repo", "ok" if guide else "optional", f"verify guide {shown}",
                      "run the jt-harness skill once. It writes the guide on this machine. "
-                     "When that file is missing, jt-verify reads the README and the code and says no guide was found"))
+                     "When that file is missing, jt-verify reads the README and the code and says no guide was found", ""))
     if legacy:
         conflicts = legacy_conflicts(j)
         if conflicts:
@@ -216,28 +241,75 @@ def run(j, args=None) -> None:
             todo = (f"{pairs}; `jtek.py migrate` will not overwrite the machine file. "
                     "Compare them, then either move the machine file aside and run `jtek.py migrate`, "
                     "or delete the repo copy yourself and commit the removal")
+            fix = "compare conflicting files, then run jtek.py migrate or delete the repo copy"
         else:
             todo = "run `jtek.py migrate`, then commit the removal"
-        rows.append(("missing", "old files in the repository: " + ", ".join(legacy), todo))
-    else:
+            fix = "jtek.py migrate"
+        rows.append(("repo", "missing", "old files in the repository: " + ", ".join(legacy), todo, fix))
+    elif not git_missing:
         leftover = leftover_dot_jtek(j)
         if leftover:
-            rows.append(("optional", "left in .jtek/: " + ", ".join(leftover),
-                         "those names are not jtek knowledge; delete them yourself if you want .jtek gone"))
-    rows.append(("ok" if j.git("remote", check=False) else "optional", "a remote",
-                 "without a remote, tickets end with `finish --no-pr` and the human sets Done"))
+            rows.append(("repo", "optional", "left in .jtek/: " + ", ".join(leftover),
+                         "those names are not jtek knowledge; delete them yourself if you want .jtek gone", ""))
+    if not git_missing:
+        rows.append(("repo", "ok" if j.git("remote", check=False) else "optional", "a remote",
+                     "without a remote, tickets end with `finish --no-pr` and the human sets Done", ""))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())
     if own_forge:
-        rows.append(("ok", "`pr_state`: this repository reads pull requests with its own command", ""))
+        rows.append(("repo", "ok", "`pr_state`: this repository reads pull requests with its own command", "", ""))
     else:
-        rows.append(("ok" if shutil.which("gh") else "optional", "`gh` is installed",
+        rows.append(("machine", "ok" if shutil.which("gh") else "optional", "`gh` is installed",
                      "install the GitHub CLI, or for another forge set `pr_state` in the machine config; "
-                     "it is needed to read a pull request's state"))
-    for state, what, todo in rows:
+                     "it is needed to read a pull request's state", ""))
+    has_board = bool(config and str(config.get("board") or "").strip())
+    missing = [row for row in rows if row[1] == "missing"]
+    return {
+        "rows": rows,
+        "missing": missing,
+        "ready": not missing,
+        "config": config,
+        "legacy": legacy,
+        "own_forge": own_forge,
+        "has_board": has_board,
+        "git_missing": git_missing,
+    }
+
+
+def _one_line(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def readiness_line(report: dict) -> str:
+    """One tab-separated Thai line summarizing machine and repository readiness for `jtek.py status`."""
+    missing = report["missing"]
+    if not missing:
+        return "พร้อมใช้\tเครื่อง: พร้อม\trepo: พร้อม"
+    machine_missing = [_one_line(what) for scope, _state, what, _todo, _fix in missing if scope == "machine"]
+    repo_missing = [_one_line(what) for scope, _state, what, _todo, _fix in missing if scope == "repo"]
+    fixes: list[str] = []
+    for _scope, _state, _what, todo, fix in missing:
+        item = _one_line(fix or todo)
+        if item and item not in fixes:
+            fixes.append(item)
+    machine_part = f"เครื่อง: ขาด {', '.join(machine_missing)}" if machine_missing else "เครื่อง: พร้อม"
+    repo_part = f"repo: ขาด {', '.join(repo_missing)}" if repo_missing else "repo: พร้อม"
+    fix_part = f"แก้: {'; '.join(fixes)}" if fixes else "แก้: jtek.py doctor"
+    return f"ยังไม่พร้อม\t{machine_part}\t{repo_part}\t{fix_part}"
+
+
+def run(j, args=None) -> None:
+    """`j` is the jtek module, for its git helper and its config reader."""
+    report = assess(j)
+    if report["git_missing"]:
+        raise j.Refuse("git is not installed; install git 2.31 or later")
+    rows = report["rows"]
+    legacy = report["legacy"]
+    own_forge = report["own_forge"]
+    has_board = report["has_board"]
+    for _scope, state, what, todo, _fix in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
     if shutil.which("gh") and not own_forge:
         print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
-    has_board = bool(config and str(config.get("board") or "").strip())
     if has_board:
         print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
               "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
@@ -248,7 +320,7 @@ def run(j, args=None) -> None:
     else:
         trigger = "ok"
     print(f"init: {trigger}")
-    if any(state == "missing" for state, _, _ in rows):
+    if not report["ready"]:
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
     if has_board:
         print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")

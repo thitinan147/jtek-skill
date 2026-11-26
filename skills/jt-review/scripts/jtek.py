@@ -2800,7 +2800,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
     sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek, and move the owner files").set_defaults(func=cmd_other)
     sub.add_parser("guess", help="print guessed check commands for this repository; reads only").set_defaults(func=cmd_other)
-    status = sub.add_parser("status", help="read-only table of claims, reviews, and the one next action")
+    status = sub.add_parser("status", help="read-only readiness line and table of claims, reviews, and the one next action")
     status.add_argument("--board-file", help="the open tickets, read from the board and saved as JSON; not needed when the tickets are files")
     status.set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
