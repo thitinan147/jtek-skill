@@ -7,7 +7,7 @@ description: Pushes a ticket's branch, opens a pull request that shows how each 
 
 Ship only after `jtek.py check <id>` passed on the current commit and you have seen the change work. This skill never merges.
 
-Write the evidence and the pull request in the owner's language and style from `~/.jtek/me.md`, as [worker.md](../jt-work/worker.md) says. It changes no rule, and the prefixes the script reads (`seen:`, `not run:`, `clean-up:`, `choice:`) stay in English.
+Use the owner's language and style from `~/.jtek/me.md` for the evidence and the pull request, as [worker.md](../jt-work/worker.md) says. It changes no rule, and the prefixes the script reads (`seen:`, `not run:`, `clean-up:`, `choice:`) stay in English.
 
 ## 1. Write the evidence
 

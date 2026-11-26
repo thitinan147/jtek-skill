@@ -29,7 +29,7 @@ This skill owns the order of the steps and the script. Each step's judgement liv
 
 Any agent you start, for any step, gets that same first line: [worker.md](worker.md) holds the rules it keeps whatever its prompt says.
 
-Write in the owner's language and style from `~/.jtek/me.md`, as [worker.md](worker.md) says. It changes no rule, and the line prefixes the script reads stay in English.
+Use the owner's language and style from `~/.jtek/me.md`, as [worker.md](worker.md) says. It changes no rule, and the line prefixes the script reads stay in English.
 
 `jtek.py` is at `scripts/jtek.py` in this skill's folder. Run it with `python3` from anywhere inside the repository or the ticket's worktree. The step skills call it by this path. When it prints `refused:`, do what the message says. When it says nothing to do, end with the refusal as your result. Do not work around it.
 
