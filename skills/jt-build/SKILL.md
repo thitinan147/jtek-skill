@@ -33,7 +33,7 @@ A new dependency, a migration file, or a change to CI is part of the change: mak
 - The checks install from `setup` in the machine config, and read their commands from there. A dependency that `setup` does not install, or a new check, does not take effect in this ticket: stop with `jtek.py stop <id> --waiting approval --note "<what to add to the machine config, and why>"`.
 - Anything that acts outside the pull request, such as running a migration against a shared database or a deploy, waits for the human (P16).
 
-Stop with `--waiting input` when the change grows past the ticket. A second ticket is cheaper than a wide diff.
+When the change grows past the ticket, do not stop. Keep this ticket inside its scope, open a new card for the rest (`jtek.py ticket --save`, or on the board), name it in the evidence, and go on with this ticket. A second ticket is still cheaper than a wide diff.
 
 ## Done when
 

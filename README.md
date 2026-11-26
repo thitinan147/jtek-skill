@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0--pre.1-111111?style=flat-square" alt="Version 28.0.0-pre.1">
+  <img src="https://img.shields.io/badge/version-28.0.0--pre.2-111111?style=flat-square" alt="Version 28.0.0-pre.2">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -77,7 +77,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the page.
 7. **You merge.** There is no merge command.
 
-Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck or has a question that the code cannot answer. Then it puts the question on the page. You answer and set the ticket back to Todo.
+Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck. A decision that belongs in the pull request is not a stop: the agent chooses, writes it as a `choice:` line in the evidence, and goes on, so you see it and can change it at review. When it does stop, it puts the question on the page. You answer and set the ticket back to Todo, or comment on the pull request.
 
 `jtek.py` never talks to the board. The agent reads and writes it with its own Notion or FLO tool, and the script says what to write.
 
@@ -220,7 +220,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 
 Every agent a session starts reads [worker.md](skills/jt-work/worker.md) first: the rules it keeps whatever its prompt says. The principles the steps apply have ids, in [principles.md](skills/jt-work/references/principles.md), and the evidence and the report name the id behind each decision.
 
-Your own style lives outside this repository, in `~/.jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists. An old `~/.config/jtek/me.md` is still read, with a one-line notice, until `jtek.py migrate` moves it. `/jt-me` proposes changes from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
+Your own style lives outside this repository, in `~/.jtek/me.md`: the language of the report, how short, and anything else that is yours. `/jt` reads it when it exists, and so do `jt-work`, `jt-ship`, `jt-review`, and every helper they start; the line prefixes the script reads, such as `seen:` and `choice:`, stay in English. An old `~/.config/jtek/me.md` is still read, with a one-line notice, until `jtek.py migrate` moves it. `/jt-me` proposes changes from how you have really worked, which you accept or not. It sets style only; it cannot change a rule of jtek. For example:
 
 ```markdown
 - Report in Thai. Short, with tables. The result first, then what I must decide.

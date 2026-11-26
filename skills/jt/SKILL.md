@@ -39,9 +39,10 @@ Push the branch and open the pull request as for a ticket. Never merge.
 
 ## Choices
 
-- **Easy to undo, and the ticket or the user does not decide it:** choose the one that changes least of what users see today, and write it in the evidence as a `choice:` line.
-- **It acts outside the pull request, or it changes what the work is for:** stop and ask one question, as the step skills say. A deploy, deleting or changing real data, work that grows past the ticket, and two `Done when` items that cannot both hold are all this case (P16). A new dependency, a migration file, or a change to CI inside the pull request is not: do it, and say it in the evidence.
-- **A question a run can settle:** run it before you ask.
+- **Easy to undo, and the ticket or the user does not decide it:** choose the one that changes least of what users see today, and write it in the evidence as a `choice:` line (P17).
+- **A decision inside the pull request, or about the ticket's scope:** do not stop. Choose, write `choice: <question> → <picked> (other options: …)` in the evidence, and go on (P19). Work that grows past the ticket goes on a new card. Two `Done when` items that cannot both hold get a `choice:` line for the reading you follow, and a new card for the other one. A new dependency, a migration file, or a change to CI inside the pull request is this case too: do it, and say it in the evidence.
+- **It acts outside the pull request:** a deploy, deleting or changing real or shared data, a migration run against a shared database, a message to someone outside the run. Stop with `--waiting approval` and ask one question (P16).
+- **A question a run can settle:** run it. Do not ask (P19).
 
 ## Principles
 

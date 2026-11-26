@@ -14,7 +14,7 @@ The human reads this file before the diff, and it is the body of the pull reques
 Notes:
 - clean-up: <what the clean-up step removed, or nothing to remove> (run <n>, the recorded diff)
 - out of scope: <how you compared it with the base, and that it is the same>
-- choice: <what you chose where the ticket was open> because <why> (P<n>)
+- choice: <question> → <picked> (other options: <the others>) (P<n>)
 - <something the reviewer should look at first>
 ```
 
@@ -30,7 +30,7 @@ The profile now stores a phone number. PATCH /me validates it with the existing 
 Notes:
 - clean-up: removed a console.log left in the handler
 - reused the validator in lib/validate.ts
-- the number is stored as text, because a leading 0 is lost in a number
+- choice: store the phone as text or as a number? → text, since a leading 0 is lost in a number (other options: number) (P17)
 - attached: profile-api.txt (the full output of items 1 and 2)
 ```
 
@@ -43,6 +43,7 @@ Notes:
 - **An item you saw only in part is `seen:` for that part,** and the same line says which part you did not see for real and why, for example a value the real service never sends.
 - **Never write `seen:` for something you only read in the code.** The one exception is an item about the code itself, such as "the commands live in one table": record the read with `jtek.py run` (a `grep` or `git diff`), cite it, and say in the line that it is a read of the code.
 - **At most 40 lines that are not blank.** Put long output in a file and pass it with `--attach`.
-- **Notes are short.** A choice you made, a workaround you did not copy, a file the reviewer should open first. A `choice:` line ends with the id of the principle behind it, from the principles of the router skill, such as `(P17)`.
+- **Notes are short.** A choice you made, a workaround you did not copy, a file the reviewer should open first.
+- **A decision the ticket left open is a `choice:` line, not a stop.** Its form is `choice: <question> → <picked> (other options: …)`, and it ends with the id of the principle behind it, from the principles of the router skill, such as `(P17)` or `(P19)`. The session chose and went on; the human sees the line in the pull request and can change it at review.
 - **A `clean-up:` line is required.** It says the diff was read once more before shipping, as `jt-cleanup` says.
 - **Write it again when the code changes.** The script refuses evidence that was saved for an older change.

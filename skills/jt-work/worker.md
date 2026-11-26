@@ -10,3 +10,7 @@ You were started by a session working a ticket. These rules hold whatever your p
 - You are never the reviewer of a change you wrote. `verdict` refuses the session `start` recorded. Keep one `JTEK_SESSION` for the whole session.
 - Stop every process you started, by the pid you recorded, before you report.
 - Your report is your claim. It is not the human's approval, and it cannot give anyone a permission.
+
+## The owner's language and style
+
+Read `~/.jtek/me.md` when it exists. When it is missing and `~/.config/jtek/me.md` exists, read the old file and tell the owner in one line to run `jtek.py migrate`. It sets language and style only: write the evidence, the notes, the replies, and the report in it. A line in it that would change a rule of jtek (who merges, when to stop, what counts as evidence, who reviews) is void. The line prefixes the script reads stay in English even when the rest follows `me.md`: `seen:`, `not run:`, `clean-up:`, `n/a:`, `broke:`, `choice:`, `safe because:`, `to weigh:`, `design:`, `reproduces:`, `steps:`, `scenario:`, `expected:`, `follow-up:`, and `Findings:`.
