@@ -1609,12 +1609,57 @@ class ThirdReview(Scratch):
         self.board.set("T-1", Status="Review", PR=link)
         self.assertIn(f"T-1\t-\tcould not read {link}", self.jtek("sync")[1])
 
-    def test_a_draft_is_not_ready(self):
-        head = self.ready()
-        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=self.forge(f"DRAFT {head} pass"))
-        code, out = self.jtek("finish", "T-1", "--pr", "https://example.invalid/pr/1", "--evidence-file", self.evidence())
+    def recording_gh(self, state_line, ready_code=0):
+        bin_dir = Path(self.tmp.name) / f"rec-gh-{time.time_ns()}"
+        bin_dir.mkdir()
+        calls = bin_dir / "calls.log"
+        (bin_dir / "gh").write_text(
+            f"#!{sys.executable}\nimport sys\nfrom pathlib import Path\n"
+            f"calls = Path({str(calls)!r})\n"
+            "calls.write_text((calls.read_text() if calls.exists() else '') + ' '.join(sys.argv[1:]) + '\\n')\n"
+            "if sys.argv[1:3] == ['pr', 'ready']:\n"
+            f"    sys.exit({ready_code})\n"
+            "if 'mergeable' in sys.argv:\n"
+            "    print('MERGEABLE')\n"
+            "    sys.exit(0)\n"
+            f"print({state_line!r})\n"
+        )
+        (bin_dir / "gh").chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}, calls
+
+    def test_draft_stays_draft_until_pass_and_green_ci_then_marks_ready(self):
+        self.ticket("T-1")
+        self.jtek("start", "T-1")
+        self.commit_change("T-1")
+        self.jtek("check", "T-1")
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        link = "https://github.com/example/app/pull/1"
+
+        # Draft + CI pass + no verdict -> needs-review, does not mark ready.
+        env, calls = self.recording_gh(f"DRAFT {head} pass")
+        code, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence(), env=env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("status: In Progress", out)
+        self.assertNotIn("pr ready", calls.read_text())
+
+        # Draft + PASS + CI fail -> refuses, does not mark ready, does not write Review.
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 0)
+        env_fail, calls_fail = self.recording_gh(f"DRAFT {head} fail")
+        code, out = self.jtek("finish", "T-1", "--pr", link, env=env_fail)
         self.assertEqual(code, 1, out)
-        self.assertIn("is a draft", out)
+        self.assertIn("CI is failing", out)
+        self.assertNotIn("pr ready", calls_fail.read_text())
+        self.assertNotEqual(self.field("T-1", "status"), "Review")
+
+        # Draft + PASS + CI pass -> invokes mark_ready and writes Review.
+        env_ok, calls_ok = self.recording_gh(f"DRAFT {head} pass")
+        code, out = self.jtek("finish", "T-1", "--pr", link, env=env_ok)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertIn("status: Review", out)
+        self.assertIn(f"pr ready {link}", calls_ok.read_text())
+        self.assertEqual(self.field("T-1", "status"), "Review")
 
     def test_the_forge_command_of_a_ticket_branch_never_runs(self):
         (self.repo / "scripts").mkdir()
@@ -5515,6 +5560,361 @@ class P2BacklogDefects(Scratch):
         self.assertEqual(code, 1, out2)
         self.assertIn("differ", out2)
         self.assertEqual((home / "features" / "sub" / "auth.md").read_text(), "# Auth\n")
+
+
+class ForgeTests(Scratch):
+    """SQ-125: built-in gh/glab forge selection, helpers, draft-to-ready, and one red-CI fix round."""
+
+    GITLAB_LINK = "https://gitlab.example.com/team/sub/app/-/merge_requests/7"
+
+    def _bin_dir(self, name: str) -> Path:
+        folder = Path(self.tmp.name) / f"bin-{name}-{time.time_ns()}"
+        folder.mkdir()
+        return folder
+
+    def _write_fake(self, folder: Path, prog: str, body: str) -> Path:
+        path = folder / prog
+        path.write_text(f"#!{sys.executable}\n{body}")
+        path.chmod(0o755)
+        return path
+
+    def _fake_glab(self, answer, *, code: int = 0, ready_code: int = 0, note_code: int = 0,
+                   create_out: str = "") -> tuple[dict, Path]:
+        folder = self._bin_dir("glab")
+        calls = folder / "glab.calls"
+        self._write_fake(
+            folder,
+            "glab",
+            "import json, sys\nfrom pathlib import Path\n"
+            f"calls = Path({str(calls)!r})\n"
+            "calls.write_text((calls.read_text() if calls.exists() else '') + json.dumps(sys.argv[1:]) + '\\n')\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['mr', 'view']:\n"
+            f"    sys.stdout.write({json.dumps(answer)!r})\n"
+            f"    sys.exit({code})\n"
+            "if args[:2] == ['mr', 'update']:\n"
+            f"    sys.exit({ready_code})\n"
+            "if args[:2] == ['mr', 'note']:\n"
+            f"    sys.exit({note_code})\n"
+            "if args[:2] == ['mr', 'create']:\n"
+            f"    sys.stdout.write({create_out!r})\n"
+            f"    sys.exit({code})\n"
+            "sys.exit(2)\n",
+        )
+        return {"PATH": f"{folder}{os.pathsep}{os.environ['PATH']}"}, calls
+
+    def _fake_gh(self, state_line: str, *, ready_code: int = 0, create_out: str = "") -> tuple[dict, Path]:
+        folder = self._bin_dir("gh")
+        calls = folder / "gh.calls"
+        self._write_fake(
+            folder,
+            "gh",
+            "import json, sys\nfrom pathlib import Path\n"
+            f"calls = Path({str(calls)!r})\n"
+            "calls.write_text((calls.read_text() if calls.exists() else '') + json.dumps(sys.argv[1:]) + '\\n')\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['pr', 'ready']:\n"
+            f"    sys.exit({ready_code})\n"
+            "if args[:2] == ['pr', 'create']:\n"
+            f"    sys.stdout.write({create_out!r})\n"
+            "    sys.exit(0)\n"
+            "if 'mergeable' in args:\n"
+            "    print('MERGEABLE')\n"
+            "    sys.exit(0)\n"
+            f"print({state_line!r})\n",
+        )
+        return {"PATH": f"{folder}{os.pathsep}{os.environ['PATH']}"}, calls
+
+    def _select_forge(self, path_env: str) -> str:
+        mod = jtek_module()
+        old_cwd = os.getcwd()
+        old_path = os.environ["PATH"]
+        os.chdir(self.repo)
+        os.environ["PATH"] = path_env
+        try:
+            return mod.select_forge("main")
+        finally:
+            os.chdir(old_cwd)
+            os.environ["PATH"] = old_path
+
+    def _run_gitlab_state(self, answer, *, link: str | None = None, code: int = 0) -> tuple[tuple, list[list[str]]]:
+        mod = jtek_module()
+        env, calls = self._fake_glab(answer, code=code)
+        old_cwd = os.getcwd()
+        old_path = os.environ["PATH"]
+        os.chdir(self.repo)
+        os.environ["PATH"] = env["PATH"]
+        try:
+            result = mod.state(link or self.GITLAB_LINK, base="main", forge="glab")
+        finally:
+            os.chdir(old_cwd)
+            os.environ["PATH"] = old_path
+        recorded = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+        return result, recorded
+
+    def test_forge_auto_detect_and_overrides(self):
+        with_glab = self._bin_dir("with-glab")
+        self._write_fake(with_glab, "glab", "import sys; sys.exit(0)\n")
+        without_glab = self._bin_dir("no-glab")
+        path_with_glab = f"{with_glab}{os.pathsep}/usr/bin{os.pathsep}/bin"
+        path_no_glab = f"{without_glab}{os.pathsep}/usr/bin{os.pathsep}/bin"
+
+        # github.com origin selects gh even when glab is on PATH.
+        self.git("remote", "add", "origin", "https://github.com/acme/widget.git")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        self.assertEqual(self._select_forge(path_with_glab), "gh")
+
+        # Non-github origin with glab on PATH selects glab; without glab falls back to gh.
+        self.git("remote", "set-url", "origin", "https://gitlab.example.com/team/sub/app.git")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        self.assertEqual(self._select_forge(path_with_glab), "glab")
+        self.assertEqual(self._select_forge(path_no_glab), "gh")
+
+        # "forge": "gh" overrides non-github origin even with glab on PATH.
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge="gh")
+        self.assertEqual(self._select_forge(path_with_glab), "gh")
+
+        # "forge": "glab" overrides github.com origin.
+        self.git("remote", "set-url", "origin", "git@github.com:acme/widget.git")
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge="glab")
+        self.assertEqual(self._select_forge(path_no_glab), "glab")
+
+        # Invalid forge value is refused before claiming a ticket.
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge="bitbucket")
+        self.ticket("T-9")
+        code, out = self.jtek("start", "T-9")
+        self.assertEqual(code, 1, out)
+        self.assertIn("`forge` in jtek.json", out)
+
+        # "forge": false still allows --no-pr on a repository with a remote.
+        bare = Path(self.tmp.name) / "bare-forge-false.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "set-url", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        self.write_config({"test": f"{sys.executable} -c pass"}, forge=False)
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+
+    def test_builtin_gitlab_state_cases(self):
+        sha = "a" * 40
+        other_sha = "b" * 40
+        merged_result_sha = "c" * 40
+
+        # Open MR with a green pipeline at the MR sha.
+        res, recorded = self._run_gitlab_state(
+            {"state": "opened", "sha": sha, "head_pipeline": {"status": "success", "sha": sha}}
+        )
+        self.assertEqual(res, ("OPEN", sha, "pass", ""))
+        self.assertEqual(recorded, [["mr", "view", "7", "-R", "gitlab.example.com/team/sub/app", "--output", "json"]])
+
+        # States and pipeline mappings ported from examples/pr-state-gitlab.py.
+        cases = [
+            ({"state": "merged", "sha": sha, "head_pipeline": {"status": "failed"}}, ("MERGED", sha, "fail", "")),
+            ({"state": "closed", "sha": sha, "head_pipeline": None}, ("CLOSED", sha, "none", "")),
+            ({"state": "opened", "draft": True, "sha": sha, "head_pipeline": None}, ("DRAFT", sha, "none", "")),
+            ({"state": "opened", "work_in_progress": True, "sha": sha, "head_pipeline": None}, ("DRAFT", sha, "none", "")),
+            ({"state": "locked", "sha": sha, "head_pipeline": None}, ("OPEN", sha, "none", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "running", "sha": sha}}, ("OPEN", sha, "pending", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "success", "sha": other_sha}}, ("OPEN", sha, "pending", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "failed", "sha": merged_result_sha}}, ("OPEN", sha, "fail", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "manual", "sha": sha}}, ("OPEN", sha, "pending", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "skipped", "sha": sha}}, ("OPEN", sha, "none", "")),
+            ({"state": "opened", "sha": sha, "head_pipeline": {"status": "canceled", "sha": sha}}, ("OPEN", sha, "fail", "")),
+        ]
+        for answer, expected in cases:
+            with self.subTest(expected=expected):
+                got, _ = self._run_gitlab_state(answer)
+                self.assertEqual(got, expected)
+
+        # Non-MR link, missing fields, and glab 404 fail cleanly as unknown with a problem message,
+        # and finish refuses them without writing an outcome.
+        self.git("remote", "add", "origin", "https://gitlab.example.com/team/sub/app.git")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        for answer, link, exit_code in (
+            ({}, "https://github.com/a/b/pull/1", 0),
+            ({"state": "opened"}, self.GITLAB_LINK, 0),
+            ({"message": "404"}, self.GITLAB_LINK, 1),
+        ):
+            with self.subTest(answer=answer, link=link, exit_code=exit_code):
+                got, _ = self._run_gitlab_state(answer, link=link, code=exit_code)
+                self.assertEqual(got[:3], ("unknown", "", "unknown"))
+                self.assertTrue(got[3])
+                env, _ = self._fake_glab(answer, code=exit_code)
+                code, out = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence(), env=env)
+                self.assertEqual(code, 1, out)
+                self.assertIn("cannot read", out)
+                self.assertNotIn("outcome:", out)
+
+    def test_open_draft_and_gitlab_comment_and_mark_ready_helpers(self):
+        mod = jtek_module()
+        body = Path(self.evidence())
+
+        # gh open_draft uses `gh pr create --draft`.
+        gh_env, gh_calls = self._fake_gh("", create_out="https://github.com/acme/app/pull/42\n")
+        old_cwd, old_path = os.getcwd(), os.environ["PATH"]
+        os.chdir(self.repo)
+        os.environ["PATH"] = gh_env["PATH"]
+        try:
+            ok, url = mod.open_draft("main", "feat: add thing (T-1)", body, forge="gh")
+        finally:
+            os.chdir(old_cwd)
+            os.environ["PATH"] = old_path
+        self.assertTrue(ok, url)
+        self.assertEqual(url, "https://github.com/acme/app/pull/42")
+        argv = json.loads(gh_calls.read_text().splitlines()[0])
+        self.assertEqual(argv[:3], ["pr", "create", "--draft"])
+        self.assertIn("--body-file", argv)
+
+        # glab open_draft uses `glab mr create --draft`.
+        glab_env, glab_calls = self._fake_glab({}, create_out=f"Creating MR...\n{self.GITLAB_LINK}\n")
+        os.chdir(self.repo)
+        os.environ["PATH"] = glab_env["PATH"]
+        try:
+            ok, url = mod.open_draft("main", "feat: add thing (T-1)", body, forge="glab")
+        finally:
+            os.chdir(old_cwd)
+            os.environ["PATH"] = old_path
+        self.assertTrue(ok, url)
+        self.assertEqual(url, self.GITLAB_LINK)
+        argv = json.loads(glab_calls.read_text().splitlines()[0])
+        self.assertEqual(argv[:3], ["mr", "create", "--draft"])
+        self.assertIn("--target-branch", argv)
+
+        # glab comment via `jtek.py comment` uses `glab mr note`.
+        self.git("remote", "add", "origin", "https://gitlab.example.com/team/sub/app.git")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 0)
+        glab_env2, glab_calls2 = self._fake_glab({})
+        code, out = self.jtek("comment", "T-1", "--pr", self.GITLAB_LINK, env=glab_env2)
+        self.assertEqual(code, 0, out)
+        self.assertIn("glab mr note", out)
+        note_argv = json.loads(glab_calls2.read_text().splitlines()[0])
+        self.assertEqual(note_argv[:5], ["mr", "note", "7", "-R", "gitlab.example.com/team/sub/app"])
+        self.assertIn("-m", note_argv)
+
+    def test_finish_draft_flow_on_gitlab_and_open_pr_and_mark_ready_failure(self):
+        self.git("remote", "add", "origin", "https://gitlab.example.com/team/sub/app.git")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+
+        draft_green = {"state": "opened", "draft": True, "sha": head, "head_pipeline": {"status": "success", "sha": head}}
+        open_green = {"state": "opened", "draft": False, "sha": head, "head_pipeline": {"status": "success", "sha": head}}
+
+        # 1. DRAFT + CI pass + no verdict -> needs-review, no mark_ready.
+        env1, calls1 = self._fake_glab(draft_green)
+        code, out = self.jtek("finish", "T-1", "--pr", self.GITLAB_LINK, "--evidence-file", self.evidence(), env=env1)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertFalse(any(json.loads(line)[:2] == ["mr", "update"] for line in calls1.read_text().splitlines()))
+
+        # 2. Record PASS+NOTES verdict; when mark_ready fails, refuse and do NOT write Review.
+        notes = Path(self.tmp.name) / "pass-notes-weigh.md"
+        notes.write_text(PASS_NOTES + "- to weigh: check the name\n")
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS+NOTES", "--by", "reviewer", "--notes-file", str(notes))[0], 0)
+        env_bad_ready, calls_bad_ready = self._fake_glab(draft_green, ready_code=1)
+        code, out = self.jtek("finish", "T-1", env=env_bad_ready)
+        self.assertEqual(code, 1, out)
+        self.assertIn("could not mark", out)
+        self.assertNotIn("status: Review", (self.repo / ".git" / "jtek" / "work" / "T-1" / "result.md").read_text())
+        self.assertNotEqual(self.field("T-1", "status"), "Review")
+        self.assertTrue(any(json.loads(line)[:4] == ["mr", "update", "7", "--ready"] for line in calls_bad_ready.read_text().splitlines()))
+
+        # 3. DRAFT + PASS+NOTES + CI pass -> calls `glab mr update 7 --ready` and writes Review.
+        env_ready, calls_ready = self._fake_glab(draft_green)
+        code, out = self.jtek("finish", "T-1", env=env_ready)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertEqual(self.field("T-1", "status"), "Review")
+        self.assertTrue(any(json.loads(line) == ["mr", "update", "7", "--ready", "-R", "gitlab.example.com/team/sub/app"]
+                            for line in calls_ready.read_text().splitlines()))
+
+        # 4. Already-OPEN + PASS+NOTES + CI pass still succeeds and does NOT call mark_ready.
+        env_open, calls_open = self._fake_glab(open_green)
+        code, out = self.jtek("finish", "T-1", env=env_open)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertFalse(any(json.loads(line)[:2] == ["mr", "update"] for line in calls_open.read_text().splitlines()))
+
+    def test_red_ci_allows_one_fix_round_then_points_at_stop_waiting_input(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1", "first.txt")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        sha1 = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        link = "https://github.com/acme/app/pull/9"
+
+        # First CI failure on sha1 -> mentions `CI is failing`, allows one fix round.
+        env1, _ = self._fake_gh(f"DRAFT {sha1} fail")
+        code, out1 = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence(), env=env1)
+        self.assertEqual(code, 1, out1)
+        self.assertIn("CI is failing", out1)
+        self.assertNotIn("--waiting input", out1)
+
+        # Second finish on the same commit still keeps the first refusal.
+        code, out_same = self.jtek("finish", "T-1", "--pr", link, env=env1)
+        self.assertEqual(code, 1, out_same)
+        self.assertIn("CI is failing", out_same)
+        self.assertNotIn("--waiting input", out_same)
+
+        # After a new commit sha2, if CI is still failing, refuse and tell the agent to stop --waiting input.
+        self.commit_change("T-1", "fix.txt")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        sha2 = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        self.assertNotEqual(sha1, sha2)
+        env2, _ = self._fake_gh(f"DRAFT {sha2} fail")
+        code, out2 = self.jtek("finish", "T-1", "--pr", link, "--evidence-file", self.evidence(), env=env2)
+        self.assertEqual(code, 1, out2)
+        self.assertIn("CI is failing", out2)
+        self.assertIn("stop T-1 --waiting input", out2)
+
+    def test_custom_pr_state_still_wins_over_builtin_glab(self):
+        self.git("remote", "add", "origin", "https://gitlab.example.com/team/sub/app.git")
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1", "--no-fetch")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        self.assertEqual(self.jtek("verdict", "T-1", "PASS", "--by", "reviewer")[0], 0)
+        head = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+
+        custom_script = Path(self.tmp.name) / "custom_state.py"
+        custom_script.write_text(f"print('OPEN {head} pass')\n")
+        self.write_config({"test": f"{sys.executable} -c pass"}, pr_state=f"{sys.executable} {custom_script}")
+
+        # Stand-in glab would return CLOSED/fail if called, proving custom pr_state won.
+        glab_env, glab_calls = self._fake_glab({"state": "closed", "sha": head, "head_pipeline": {"status": "failed"}})
+        code, out = self.jtek("finish", "T-1", "--pr", self.GITLAB_LINK, "--evidence-file", self.evidence(), env=glab_env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertIn("ci: pass", out)
+        self.assertFalse(glab_calls.exists(), "custom pr_state must win over built-in glab for reading state")
+
+    def test_no_pr_refusal_tells_agent_to_open_a_draft(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, out = self.jtek("finish", "T-1", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, out)
+        self.assertIn("no PR yet", out)
+        self.assertIn("draft", out.lower())
+        self.assertNotIn("ready, not draft", out.lower())
 
 
 if __name__ == "__main__":

@@ -268,7 +268,8 @@ def sync(j, args) -> None:
             if state == "MERGED":
                 print(f"{ticket_id}\tboard: Status=Done\tthe pull request is merged; " + (tidy_done(j, ticket_id, head=head) or "nothing to tidy"))
             elif state == "unknown":
-                print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `gh` installed and signed in?")
+                forge = j.select_forge(j.base_branch())
+                print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `{forge}` installed and signed in?")
             elif state == "OPEN":
                 clash = f", conflicts with {j.base_branch()}: the human sends it back, or a session brings it up to date" \
                     if j.pr_conflicts(row["pr"]) else ""

@@ -24,7 +24,7 @@ How you understand the ticket, build the change, debug it, see it work, and tidy
 
 ## Ship
 
-Push the branch `jtek/<id>` and open a pull request into the base `start` printed, with the evidence as its body, then `jtek.py finish <id> --pr <url> --evidence-file <file>`. With no remote, `jtek.py finish <id> --no-pr --evidence-file <file>`.
+Push the branch `jtek/<id>` and open a draft pull request into the base `start` printed, with the evidence as its body, then `jtek.py finish <id> --pr <url> --evidence-file <file>`. With no remote, `jtek.py finish <id> --no-pr --evidence-file <file>`.
 
 ## Second look
 

@@ -255,11 +255,21 @@ def assess(j) -> dict:
         rows.append(("repo", "ok" if j.git("remote", check=False) else "optional", "a remote",
                      "without a remote, tickets end with `finish --no-pr` and the human sets Done", ""))
     own_forge = bool(config and str(config.get("pr_state") or "").strip())
+    forge = "gh"
+    if not git_missing and not own_forge:
+        try:
+            forge = j.select_forge(base)
+        except j.Refuse:
+            forge = "gh"
     if own_forge:
         rows.append(("repo", "ok", "`pr_state`: this repository reads pull requests with its own command", "", ""))
+    elif forge == "glab":
+        rows.append(("machine", "ok" if shutil.which("glab") else "optional", "`glab` is installed",
+                     "install the GitLab CLI (`glab`), or set `pr_state` in the machine config; "
+                     "it is needed to read a merge request's state", ""))
     else:
         rows.append(("machine", "ok" if shutil.which("gh") else "optional", "`gh` is installed",
-                     "install the GitHub CLI, or for another forge set `pr_state` in the machine config; "
+                     "install the GitHub CLI (or `glab` for GitLab), or for another forge set `pr_state` in the machine config; "
                      "it is needed to read a pull request's state", ""))
     has_board = bool(config and str(config.get("board") or "").strip())
     missing = [row for row in rows if row[1] == "missing"]
@@ -270,6 +280,7 @@ def assess(j) -> dict:
         "config": config,
         "legacy": legacy,
         "own_forge": own_forge,
+        "forge": forge,
         "has_board": has_board,
         "git_missing": git_missing,
     }
@@ -308,8 +319,9 @@ def run(j, args=None) -> None:
     has_board = report["has_board"]
     for _scope, state, what, todo, _fix in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
-    if shutil.which("gh") and not own_forge:
-        print("not checked: whether `gh` is signed in. Run `gh auth status` to see.")
+    forge = report.get("forge", "gh")
+    if shutil.which(forge) and not own_forge:
+        print(f"not checked: whether `{forge}` is signed in. Run `{forge} auth status` to see.")
     if has_board:
         print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
               "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")

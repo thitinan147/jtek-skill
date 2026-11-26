@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0--pre.3-111111?style=flat-square" alt="Version 28.0.0-pre.3">
+  <img src="https://img.shields.io/badge/version-28.0.0--pre.4-111111?style=flat-square" alt="Version 28.0.0-pre.4">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -123,7 +123,7 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it. After that, day to day is `/jt`, `/jt-review`, and `/jt-status`. The first repository is `/jt-init`, or nothing if you want the defaults.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub, you also need `gh`, signed in: the agent opens the pull request with it, and the script reads the pull request's state and CI result with it. With another forge, you name your own command for that in the machine config.
+Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub you also need `gh`, signed in; with GitLab, `glab`, signed in: the agent opens a draft pull or merge request with it, and the script reads state, posts comments, and marks it ready once both PASS and green CI hold. With another forge, you can override state reading with `pr_state` in the machine config.
 
 ## Set up
 
@@ -397,10 +397,10 @@ The rules are fixed. The numbers and names around them are yours, in `jtek.json`
 |---|---|---|
 | `checks`, `setup` | The commands that decide "passing", in any language or build system | none: you declare them |
 | `max_failed_runs` | How many failed check runs end a session. Raise it for a model that often finds the cause on a later try | 3 |
-| `pr_state` | The command that reads a pull request, for GitLab, Bitbucket, or another forge. [An example for GitLab](examples/pr-state-gitlab.py) | `gh`, for GitHub |
+| `pr_state` | Optional override command that reads a pull request's state, for another forge or a custom reader (`gh` for GitHub and `glab` for GitLab are built in) | built-in `gh` / `glab` |
 | `headings` | The names of the three ticket headings, in your team's language | `Goal`, `Done when`, `Out of scope` |
 | `watch` | More files that the `attention:` line should name | a list of common names |
-| `forge` | `false` when the remote is not a forge, so tickets end without a pull request | `true` |
+| `forge` | `"gh"` or `"glab"` to override auto-detection, or `false` when the remote is not a forge so tickets end without a pull request | auto (`gh` / `glab`) |
 | `name` | What tickets call this repository | the folder name |
 
 Details: [setup.md](skills/jt-work/references/setup.md).
@@ -484,7 +484,7 @@ Two tickets, joined by a contract file and a check on each side. [two-repos.md](
 The rules check results, not method. The one number that could, the limit on failed check runs, is yours to set. See [Fit it to your project](#fit-it-to-your-project).
 
 **GitLab? A ticket in Thai?**
-Yes to both: `pr_state` and `headings` in the machine config.
+Yes to both: `glab` is built in for GitLab (with `forge` or `pr_state` as overrides), and `headings` in the machine config sets the ticket headings.
 
 **Is this a software factory?**
 It is the part inside one session. What picks the next ticket is up to you.
