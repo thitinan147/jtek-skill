@@ -73,7 +73,7 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(run(RUN, "build", "bug-wordcount", self.dest)[0], 0)
         repo = self.dest / "app"
         self.assertEqual(self.start()[0], 0)
-        tree = self.dest / "app.jtek" / "B-1"
+        tree = self.dest / "app" / ".claude" / "worktrees" / "B-1"
         test = tree / "test_wordcount.py"
         test.write_text(test.read_text().replace(
             "if __name__", "class More(unittest.TestCase):\n    def test_tabs(self):\n"
@@ -107,7 +107,7 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(run(RUN, "build", "bug-wordcount", self.dest)[0], 0)
         repo = self.dest / "app"
         self.start()
-        tree = self.dest / "app.jtek" / "B-1"
+        tree = self.dest / "app" / ".claude" / "worktrees" / "B-1"
         code = tree / "wordcount.py"
         code.write_text(code.read_text().replace('text.split(" ")', "text.split()"))
         git("commit", "-qam", "fix", cwd=tree)

@@ -101,7 +101,7 @@ def grade(name: str, dest: Path) -> int:
     print(f"variant: {variant.read_text().strip() if variant.exists() else 'full'}")
     repo = dest / "app"
     work = repo / ".git" / "jtek" / "work" / ticket
-    worktree = dest / "app.jtek" / ticket
+    worktree = repo / ".claude" / "worktrees" / ticket
     rows: list[tuple[bool, str]] = []
 
     def row(ok: bool, text: str) -> bool:

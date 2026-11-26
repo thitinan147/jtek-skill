@@ -111,7 +111,7 @@ def cited_runs(text: str) -> list[int]:
             for found in RUN_CITE.findall(group) for n in re.findall(r"[0-9]+", found)]
 # Files a human should look at first when a ticket touches them.
 SENSITIVE = [
-    CONFIG, ".jtek/*", ".github/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    CONFIG, ".jtek/*", ".github/*", ".claude/*", ".gitlab-ci.yml", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
     "poetry.lock", "uv.lock", "Cargo.lock", "go.sum", "Gemfile.lock",
     # Files that commonly define what a check command runs.
     "Makefile", "makefile", "GNUmakefile", "justfile", "Justfile", "package.json", "pyproject.toml", "setup.cfg",
@@ -1303,9 +1303,33 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     return text
 
 
+WORKTREES_EXCLUDE = ".claude/worktrees/"
+
+
 def ticket_paths(ticket_id: str) -> tuple[Path, str]:
     root = main_root()
-    return root.parent / f"{root.name}.jtek" / ticket_id, f"jtek/{ticket_id}"
+    return root / ".claude" / "worktrees" / ticket_id, f"jtek/{ticket_id}"
+
+
+def exclude_worktrees() -> None:
+    """Add .claude/worktrees/ to .git/info/exclude once, without editing any tracked file."""
+    root = main_root()
+    # Not named `raw`: `env_int` assigns `raw` from os.environ.get, and the scanner joins names across functions.
+    git_exclude = git("rev-parse", "--git-path", "info/exclude", cwd=root)
+    if not git_exclude:
+        raise Refuse("git did not name an info/exclude path for this repository")
+    exclude_file = root / git_exclude
+    try:
+        exclude_file.parent.mkdir(parents=True, exist_ok=True)
+        with meta_lock(exclude_file.parent):
+            text = exclude_file.read_text(errors="replace") if exclude_file.exists() else ""
+            if any(line.strip() in (WORKTREES_EXCLUDE, WORKTREES_EXCLUDE.rstrip("/")) for line in text.splitlines()):
+                return
+            prefix = "\n" if text and not text.endswith("\n") else ""
+            with open(exclude_file, "a", encoding="utf-8") as handle:
+                handle.write(f"{prefix}{WORKTREES_EXCLUDE}\n")
+    except OSError as err:
+        raise Refuse(f"cannot write {exclude_file} to exclude {WORKTREES_EXCLUDE}: {err}") from None
 
 
 def cmd_other(args: argparse.Namespace) -> None:
@@ -1765,6 +1789,11 @@ def cmd_start(args: argparse.Namespace) -> None:
             work.mkdir()  # atomic claim: the second session to try loses
         except FileExistsError:
             raise Refuse(claimed(ticket_id)) from None
+        try:
+            exclude_worktrees()
+        except BaseException:
+            work.rmdir()
+            raise
         worktree, branch = ticket_paths(ticket_id)
         # A branch left by `release` holds earlier work on this ticket. Go on from it, and never delete it.
         kept = bool(git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False))
