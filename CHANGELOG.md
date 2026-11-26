@@ -1,5 +1,16 @@
 # Changelog
 
+## 28.0.0-pre.3 - worktrees under `.claude/worktrees`
+
+The third v28 pre-release. New ticket worktrees now live inside the repository at `.claude/worktrees/<id>` instead of a sibling `<repo>.jtek/<id>` folder, so Claude Code sessions work in them without an `EnterWorktree` permission prompt or workaround hooks.
+
+- **New worktrees live at `<root>/.claude/worktrees/<id>`.** `ticket_paths` in both copies of `jtek.py` now returns `<root>/.claude/worktrees/<id>` with the same `jtek/<id>` branch name. The legacy ticket-file folder (`<name>.jtek/_tickets`) is unchanged.
+- **`start` excludes `.claude/worktrees/` via `.git/info/exclude` once.** On a new claim, `start` resolves `info/exclude` with `git rev-parse --git-path info/exclude`, creates `info/` if needed, and appends `.claude/worktrees/` once without touching `.gitignore` or any tracked file. If `info/exclude` cannot be written, `start` refuses cleanly and removes the partial claim.
+- **In-flight claims keep working in place.** Commands continue to follow `meta["worktree"]` as recorded: existing claims at the old sibling path are not migrated, moved, or rewritten.
+- **`.claude/*` is flagged on `attention:`.** `SENSITIVE` adds `.claude/*` beside `.github/*` so any committed change under `.claude/` is surfaced to the human reviewer and blocks the `review: human` waiver.
+
+Where it cuts time across the whole flow: worktrees outside the repository triggered Claude Code permission prompts or required a `PermissionRequest` hook to keep autonomous runs moving. Placing new worktrees under `.claude/worktrees/<id>` removes that pause from every ticket start and allows removing the `EnterWorktree` hook once this lands.
+
 ## 28.0.0-pre.2 - never block on a question that belongs in the pull request
 
 The second v28 pre-release. A session no longer stops mid-ticket to wait for the human on a decision that belongs in the pull request. It changes documentation only: `jtek.py` is unchanged, and every gate it holds stays.

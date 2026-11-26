@@ -13,7 +13,7 @@ What keeps the two sides in agreement is a contract file and checks that read it
 
 **In the repository that calls it (the consumer):**
 
-1. Keep a copy of the contract file, and a pin file `contract.pin` holding the provider commit the copy came from. A worktree sits at `<repo>.jtek/<id>`, so a path like `../provider` points at the wrong place. The copy lets checks run anywhere. Add `contract.pin` to `watch` in the machine config.
+1. Keep a copy of the contract file, and a pin file `contract.pin` holding the provider commit the copy came from. A worktree sits at `.claude/worktrees/<id>` (existing claims keep the path stored in meta), so a path like `../provider` points at the wrong place. The copy lets checks run anywhere. Add `contract.pin` to `watch` in the machine config.
 2. Declare a check that fails when the code uses something the copy does not have. With generated types, this is the type check.
 3. Make the `verify` check do three things, in this order:
    - Refuse a pin that is not on the provider's base branch.

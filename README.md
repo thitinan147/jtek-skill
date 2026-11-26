@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0--pre.2-111111?style=flat-square" alt="Version 28.0.0-pre.2">
+  <img src="https://img.shields.io/badge/version-28.0.0--pre.3-111111?style=flat-square" alt="Version 28.0.0-pre.3">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -65,7 +65,7 @@ comment file: .git/jtek/work/T-12/board-comment.md
 board: Status=Review; Waiting=; PR=https://github.com/you/app/pull/41; comment=result+evidence
 ```
 
-Read `evidence` first, then `attention`, then the diff. `attention` names files that decide whether checks pass: a changed check script, CI config, a lockfile, `Makefile` or `package.json`, a deleted test, or an existing test that lost lines. It works from a list of known names. Add your project's own with `watch` in the machine config.
+Read `evidence` first, then `attention`, then the diff. `attention` names files that decide whether checks pass: a changed check script, CI config, `.claude/`, a lockfile, `Makefile` or `package.json`, a deleted test, or an existing test that lost lines. It works from a list of known names. Add your project's own with `watch` in the machine config.
 
 ## How it works
 

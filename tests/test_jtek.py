@@ -173,7 +173,7 @@ class Scratch(unittest.TestCase):
         elif args[0] == "verdict":
             if "--commit" not in args:
                 # A reviewer names the commit it read; here that is whatever the worktree is at now.
-                tree = self.repo.parent / f"{self.repo.name}.jtek" / args[1]
+                tree = self.worktree(args[1])
                 if tree.is_dir():
                     args += ["--commit", self.git("rev-parse", "HEAD", cwd=tree)]
             if "--bare" in args:
@@ -221,7 +221,7 @@ class Scratch(unittest.TestCase):
         return ticket_id
 
     def worktree(self, ticket_id):
-        return self.repo.parent / "app.jtek" / ticket_id
+        return self.repo / ".claude" / "worktrees" / ticket_id
 
     def commit_change(self, ticket_id, name="feature.txt"):
         tree = self.worktree(ticket_id)
@@ -246,6 +246,151 @@ class StartTests(Scratch):
         self.assertTrue(self.worktree("T-1").is_dir())
         self.assertEqual(self.git("branch", "--show-current", cwd=self.worktree("T-1")), "jtek/T-1")
         self.assertEqual(self.field(path, "status"), "In Progress")
+
+    def test_start_creates_worktree_under_claude_worktrees_not_sibling(self):
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        expected = self.repo / ".claude" / "worktrees" / "T-1"
+        legacy_sibling = self.repo.parent / f"{self.repo.name}.jtek" / "T-1"
+        self.assertTrue(expected.is_dir())
+        self.assertFalse(legacy_sibling.exists())
+        self.assertIn(f"worktree: {expected}", out)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_start_adds_worktrees_exclude_once_without_editing_gitignore(self):
+        gitignore = self.repo / ".gitignore"
+        original = b"*.log\n# keep tracked gitignore exact\n"
+        gitignore.write_bytes(original)
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "add gitignore")
+
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        exclude = self.repo / ".git" / "info" / "exclude"
+        text = exclude.read_text()
+        self.assertTrue(text.endswith("\n"))
+        self.assertEqual([line.strip() for line in text.splitlines()].count(".claude/worktrees/"), 1)
+        self.assertEqual(gitignore.read_bytes(), original)
+
+        self.ticket("T-2")
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 0, out)
+        text2 = exclude.read_text()
+        self.assertTrue(text2.endswith("\n"))
+        self.assertEqual([line.strip() for line in text2.splitlines()].count(".claude/worktrees/"), 1)
+        self.assertEqual(gitignore.read_bytes(), original)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_start_exclude_creates_info_dir_handles_newline_and_existing_variant(self):
+        info_dir = self.repo / ".git" / "info"
+        exclude = info_dir / "exclude"
+        if info_dir.exists():
+            shutil.rmtree(info_dir)
+
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(exclude.read_text(), ".claude/worktrees/\n")
+
+        exclude.write_text("*.tmp")
+        self.ticket("T-2")
+        code, out = self.jtek("start", "T-2")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(exclude.read_text(), "*.tmp\n.claude/worktrees/\n")
+
+        exclude.write_text("  .claude/worktrees  \n")
+        self.ticket("T-3")
+        code, out = self.jtek("start", "T-3")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(exclude.read_text(), "  .claude/worktrees  \n")
+
+    def test_start_refuses_cleanly_when_exclude_cannot_be_written(self):
+        exclude = self.repo / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text("# existing\n")
+        exclude.chmod(0o444)
+        self.addCleanup(lambda: exclude.exists() and exclude.chmod(0o644))
+
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("refused:", out)
+        self.assertIn(".claude/worktrees/", out)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work" / "T-1").exists())
+        self.assertFalse((self.repo / ".claude" / "worktrees" / "T-1").exists())
+        self.assertEqual(
+            subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/jtek/T-1"],
+                           cwd=self.repo, capture_output=True).returncode,
+            1,
+        )
+
+        exclude.chmod(0o644)
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+
+    def test_existing_claim_at_old_sibling_worktree_path_keeps_working(self):
+        old_tree = self.repo.parent / f"{self.repo.name}.jtek" / "T-9"
+        old_tree.parent.mkdir(parents=True, exist_ok=True)
+        self.git("worktree", "add", "-b", "jtek/T-9", str(old_tree), "main")
+        (old_tree / "legacy.txt").write_text("from old path\n")
+        self.git("add", "legacy.txt", cwd=old_tree)
+        self.git("commit", "-q", "-m", "legacy work", cwd=old_tree)
+        old_sha = self.git("rev-parse", "HEAD", cwd=old_tree)
+
+        work = self.repo / ".git" / "jtek" / "work" / "T-9"
+        work.mkdir(parents=True)
+        self.ticket("T-9", status="In Progress")
+        (work / "ticket.md").write_text("# Ticket T-9\nid: T-9\nstatus: In Progress\n\n" + BODY)
+        meta = {
+            "id": "T-9",
+            "source": "https://www.notion.so/T-9",
+            "local": False,
+            "base": "main",
+            "worktree": str(old_tree),
+            "branch": "jtek/T-9",
+            "pr": "",
+            "checks": ["test"],
+            "review": True,
+        }
+        mod = jtek_module()
+        previous = os.getcwd()
+        old_session = os.environ.get("JTEK_SESSION")
+        os.chdir(self.repo)
+        os.environ["JTEK_SESSION"] = "author-session"
+        try:
+            mod.note_author(meta)
+        finally:
+            os.chdir(previous)
+            if old_session is None:
+                os.environ.pop("JTEK_SESSION", None)
+            else:
+                os.environ["JTEK_SESSION"] = old_session
+        (work / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+
+        code, out = self.jtek("check", "T-9")
+        self.assertEqual(code, 0, out)
+        checks = json.loads((work / "checks.json").read_text())
+        self.assertEqual(checks["sha"], old_sha)
+
+        code, out = self.jtek("show", "T-9")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"worktree: {old_tree}", out)
+
+        code, out = self.jtek("status", "--board-file", self.board.rows_file())
+        self.assertEqual(code, 0, out)
+        self.assertIn("กำลังทำ\tT-9\t", out)
+
+        code, out = self.jtek("stop", "T-9", "--waiting", "input", "--note", "check path")
+        self.assertEqual(code, 0, out)
+        self.board.set("T-9", Status="Todo")
+        code, out = self.jtek("start", "T-9")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"worktree: {old_tree}", out)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["worktree"], str(old_tree))
+        self.assertTrue(old_tree.is_dir())
+        self.assertFalse((self.repo / ".claude" / "worktrees" / "T-9").exists())
 
     def test_same_id_cannot_be_claimed_twice(self):
         self.ticket("T-1")
@@ -635,6 +780,13 @@ class FinishTests(Scratch):
         out = self.result_after(change)
         self.assertIn("jtek.json", out.split("attention:")[1].splitlines()[0])
         self.assertIn(".github/ci.yml", out.split("attention:")[1].splitlines()[0])
+
+    def test_attention_names_claude_files(self):
+        def change(tree):
+            (tree / ".claude").mkdir()
+            (tree / ".claude" / "settings.json").write_text("{}\n")
+        line = self.result_after(change).split("attention:")[1].splitlines()[0]
+        self.assertIn(".claude/settings.json", line)
 
     def test_attention_names_a_new_dependency_and_a_migration(self):
         def change(tree):
@@ -2935,7 +3087,7 @@ class FileBoard(Scratch):
                               env=env)
         out = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, out)
-        self.assertTrue((cloned.parent / "clone.jtek" / "T-1").is_dir(), out)
+        self.assertTrue((cloned / ".claude" / "worktrees" / "T-1").is_dir(), out)
         self.assertEqual(self.git("status", "--porcelain", cwd=cloned), "")
         self.assertFalse((cloned / "jtek.json").exists())
         self.assertFalse((cloned / ".jtek").exists())
