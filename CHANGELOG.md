@@ -1,5 +1,15 @@
 # Changelog
 
+## 28.0.0-pre.1 - light review by default
+
+The first v28 pre-release. It makes the light review the default in `jt-review`, so the review step no longer repeats work the author already proved. It changes documentation only: `jtek.py` is unchanged, and `verdict` keeps its gates.
+
+- **Light review is the default.** The reviewer reads the diff in the order design, functionality, complexity, tests, and writes one `- design:` line on whether the shape of the change fits the ticket. It checks that the author's sealed `broke.json` covers every `Done when` item at the commit under review and that the seal is intact (`broke_intact`), and does not break every item again. It runs only the declared checks that the files in the diff affect, since `show` already says every declared check passed on this commit, and runs the app, the API, or the command-line tool only for work the user can see or to confirm a finding. A light review should be finished in about 10 minutes, not the 20–45 minutes a full re-break and rerun of every check took.
+- **Deep review means more real runs, not a second reviewer.** When the diff touches files a human should look at first (config, CI, lockfiles, migrations, files a declared check runs, tests that lost lines), or changes a database, permissions, or an API, the same reviewer adds real runs on top of the light review: a migration applied to a database of that worktree, never a shared one, a real API call, or a break of only the risky line to confirm a finding.
+- **FAIL is narrower.** FAIL is only for a P0 or P1 bug the reviewer can reproduce: a `Done when` item that is false, a regression, a security issue, or data loss. The reviewer compares the change with the ticket and skips style. A coverage gap, where no declared check would notice a `Done when` behaviour stop being true but the behaviour is right, is a `- to weigh:` line and a `- follow-up:` card (`jtek.py ticket --save`, or on the board) instead of a FAIL that bounces the ticket back to the author. A behaviour that is actually wrong is still a FAIL.
+- **`broke:` cites the sealed proof.** `verdict` still refuses a pass without a `- broke:` line and a `- safe because:` line. After checking coverage and the seal, the reviewer writes, for example, `- broke: sealed broke.json covers items 1–3 at this commit; seal intact; did not re-break`. `references/notes.md` adds `design:` and `follow-up:` to the form and the filled example. The script does not parse them yet, and `PASS+NOTES` is still triggered only by `- to weigh:`.
+- **`--by` names the reviewer that `jtek.py reviewer` printed** on its `by:` line, or the model that answered instead. With no reviewer list, it is the model that actually reviewed.
+
 ## 27.4.0 - one-page Quickstart and readiness line in /jt-status
 
 Makes setup followable from one page and makes `/jt-status` answer whether the machine and repository are ready to use.
