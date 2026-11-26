@@ -1,5 +1,16 @@
 # Changelog
 
+## 28.0.0-pre.4 - built-in `gh`/`glab` forge, draft-to-ready on PASS+CI, and one red-CI fix round
+
+The fourth v28 pre-release. GitHub (`gh`) and GitLab (`glab`) forge actions are now built into `jtek.py`, `jt-ship` opens a draft pull or merge request, `finish` marks the draft ready itself only once both a passing verdict and green CI hold, and red CI gets one fix round before handing to a human.
+
+- **Built-in `gh` and `glab` forge helpers.** Both copies of `jtek.py` now provide `open_draft`, `mark_ready`, `comment`, and `state` before `pr_info` and `post_review_comment`, which delegate to them (`gh`: `pr create --draft`, `pr ready`, `pr comment` with `gh api` fallback, `pr view`; `glab`: `mr create --draft`, `mr update --ready`, `mr note`, `mr view`). GitLab state reading ports the draft/`work_in_progress` and `head_pipeline` rules (green on another sha counts as pending, red still counts, skipped or missing pipeline is `none`, canceled is `fail`).
+- **Auto-detect forge, with `forge` and `pr_state` overrides.** `github.com` origins select `gh`; any other origin host with `glab` on PATH selects `glab`. `"forge": "gh"` or `"forge": "glab"` in machine `jtek.json` overrides selection; `"forge": false` keeps its meaning (`finish --no-pr` allowed; commits still cannot set it). Custom `pr_state` remains an override for reading state. `examples/pr-state-gitlab.py` is removed now that `glab` is built in.
+- **Draft to ready on PASS + CI.** `jt-ship` opens a **draft** pull or merge request. `finish` accepts `DRAFT`, keeps it draft on the first `needs-review` finish (still gating on head sha, CI `pass`/`none`, and conflicts), and calls `mark_ready` itself only when the current verdict is `PASS` or `PASS+NOTES` and CI is `pass` or `none`. Already-`OPEN` pull requests still work without calling `mark_ready`. If `mark_ready` fails, `finish` refuses without writing `Review`.
+- **Red CI gets one fix round.** `finish` records failing commit shas in `meta.json`. The first red-CI refusal still reports `CI is failing` and allows one fix-and-push round; a red-CI refusal after a new commit tells the agent to run `jtek.py stop <id> --waiting input` and not keep looping. `jt-ship` documents the same rule.
+
+Where it cuts time across the whole flow: humans no longer inspect half-reviewed or red pull requests because every ticket starts as a draft and becomes ready automatically only when both non-author review and CI pass, GitLab repositories work out of the box without maintaining a custom `pr_state` script, and a stubborn red CI stops after one fix round instead of burning session loops.
+
 ## 28.0.0-pre.3 - worktrees under `.claude/worktrees`
 
 The third v28 pre-release. New ticket worktrees now live inside the repository at `.claude/worktrees/<id>` instead of a sibling `<repo>.jtek/<id>` folder, so Claude Code sessions work in them without an `EnterWorktree` permission prompt or workaround hooks.

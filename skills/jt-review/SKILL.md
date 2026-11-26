@@ -56,6 +56,6 @@ If you could not run the change, stop and say why. That is not a FAIL. Passing c
 
 ## 6. Stop
 
-Do not fix the code, push, or merge. If `show` printed a pull request, post the verdict line and the notes with `jtek.py comment <id>`. It runs `gh pr comment`. When that fails because the token cannot add a comment (`addComment` or `Resource not accessible`), it posts with `gh api` as an issue comment. When both fail, it writes the comment to the file it names and exits with a refusal. It does not report the comment as posted. End with the verdict line the script printed.
+Do not fix the code, push, or merge. If `show` printed a pull request, post the verdict line and the notes with `jtek.py comment <id>`. On GitHub it runs `gh pr comment`, and when the token cannot add a comment (`addComment` or `Resource not accessible`), it posts with `gh api` as an issue comment; on GitLab it runs `glab mr note`. When posting fails, it writes the comment to the file it names and exits with a refusal. It does not report the comment as posted. End with the verdict line the script printed.
 
 A verdict belongs to one change. When the author changes the code again, the verdict is stale and a new review is needed, even when only whitespace changed. A rebase keeps it, unless the base changed a file that the change also touches.

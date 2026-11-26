@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "28.0.0-pre.3"
+VERSION = "28.0.0-pre.4"
 STEPS = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
 # Modes sit above the router: the human types them, and they hand ticket work to jt-work.
 MODES = ["jt", "jt-agents", "jt-init", "jt-me", "jt-status", "jt-ticket"]

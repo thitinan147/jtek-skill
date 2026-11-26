@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -131,7 +132,7 @@ class Refuse(Exception):
 
 def redact(text: str) -> str:
     """Drop values that can be a token. The name of a variable, such as GH_TOKEN, stays."""
-    text = re.sub(r"(?i)(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+", "[redacted]", text)
+    text = re.sub(r"(?i)(?:(?:ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+|(?:glpat-|gloas-|gldt-)[A-Za-z0-9_-]+)", "[redacted]", text)
     text = re.sub(r"(?i)\b(token|authorization|bearer)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
     text = re.sub(r"//[^/\s:@]+:[^@\s/]+@", "//", text)
     return text
@@ -553,14 +554,14 @@ def base_ref(base: str) -> str:
     return full if git("rev-parse", "--verify", "--quiet", full, check=False) else base
 
 
-def load_config(base: str) -> dict:
+def load_config(base: str, cwd: Path | None = None) -> dict:
     """Config from this machine, never from the worktree or from a commit.
 
     No per-repository file and no $HOME/.jtek/config means the defaults: an empty board and no checks.
     `base` is unused. Callers still pass the branch they are on.
     """
     del base
-    path = find_config()
+    path = find_config(cwd)
     if path is None:
         return {"board": "", "setup": "", "checks": {}}
     try:
@@ -588,11 +589,11 @@ def load_checks(base: str) -> dict[str, str]:
 HEADINGS = ["Goal", "Done when", "Out of scope", "Done check", "Proof", "Context", "Constraints"]
 
 
-def load_settings(base: str) -> dict:
+def load_settings(base: str = "", cwd: Path | None = None) -> dict:
     """The optional settings, checked in one place so `doctor` and `start` find a bad value,
     and not the first `check` after the ticket is claimed."""
-    config = load_config(base)
-    name = config_name()
+    config = load_config(base, cwd)
+    name = config_name(cwd)
     limit = config.get("max_failed_runs", MAX_FAILED_RUNS)
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
         raise Refuse(f"`max_failed_runs` in {name} must be a whole number of at least 1")
@@ -601,6 +602,13 @@ def load_settings(base: str) -> dict:
         shlex.split(pr_state)
     except (ValueError, AttributeError):
         raise Refuse(f'`pr_state` in {name} must be one command as text, such as "python3 scripts/pr-state.py"') from None
+    forge_val = config.get("forge")
+    if forge_val is None or isinstance(forge_val, bool):
+        forge_name = ""
+    elif isinstance(forge_val, str) and forge_val.strip().lower() in FORGES:
+        forge_name = forge_val.strip().lower()
+    else:
+        raise Refuse(f'`forge` in {name} must be "gh", "glab", true, or false')
     names = {} if config.get("headings") is None else config["headings"]
     form = '{"Goal": "...", "Done check": "...", "Proof": "...", "Context": "...", "Constraints": "..."}'
     if not isinstance(names, dict) or any(not isinstance(v, str) or not v.strip() for v in names.values()):
@@ -614,7 +622,7 @@ def load_settings(base: str) -> dict:
     clash = [key for key, value in own.items() if any(value == other.lower() and other != key for other in HEADINGS)]
     if clash:
         raise Refuse(f"`headings` in {name} names `{clash[0]}` with the English name of another heading")
-    return {"max_failed_runs": limit, "pr_state": pr_state.strip(), "headings": own}
+    return {"max_failed_runs": limit, "pr_state": pr_state.strip(), "forge": forge_name, "headings": own}
 
 
 # ---- ticket text -----------------------------------------------------------
@@ -1773,7 +1781,7 @@ def cmd_start(args: argparse.Namespace) -> None:
             write_json(checks_path, {**read_json(checks_path), "failed_runs": 0})
         if status == "Todo" and asked and not args.local:
             # The human answered a question and released the ticket again: the FAIL rounds start over.
-            meta = {**meta, "fails": 0, "failed_commits": []}
+            meta = {**meta, "fails": 0, "failed_commits": [], "ci_fail_shas": []}
         resumed = True
     else:
         resumed = False
@@ -2510,66 +2518,70 @@ def cmd_finish(args: argparse.Namespace) -> None:
         (work / "evidence" / source.name).write_bytes(source.read_bytes())
     pr = args.pr or meta.get("pr", "")
     ci = ""
+    pr_status = ""
     if args.no_pr:
         pr = ""
         pr_note = f" No pull request: the branch {meta['branch']} is local."
     elif not pr:
         raise Refuse(
-            "no PR yet; open it (ready, not draft) and pass --pr <url>. "
+            "no PR yet; open a draft pull request and pass --pr <url>. "
             "Only when this repository has no forge to open one on, pass --no-pr"
         )
     else:
-        state, head, ci, problem = pr_info(pr, meta["base"])
+        pr_status, head, ci, problem = pr_info(pr, meta["base"])
         for _ in range(PR_HEAD_TRIES):
             # A forge needs a moment after a push before the pull request shows the new commit.
-            if state != "OPEN" or head == sha or not pushed(worktree, meta["branch"], sha):
+            if pr_status not in ACTIVE_PR_STATES or head == sha or not pushed(worktree, meta["branch"], sha):
                 break
             time.sleep(PR_HEAD_WAIT)
-            state, head, ci, problem = pr_info(pr, meta["base"])
+            pr_status, head, ci, problem = pr_info(pr, meta["base"])
 
         def refuse_unread() -> None:
             extra = ""
             if git("remote", cwd=worktree, check=False) and not pushed(worktree, meta["branch"], sha):
                 extra = (f" The pull request could not be read, and the branch is not pushed at {sha[:7]}: "
                          "push the branch, check that the link is the pull request for it, and finish again.")
+            chosen = select_forge(meta["base"])
+            if chosen == "glab":
+                hint = ("Check the link, then make `glab` able to read the merge request and its pipeline "
+                        "(run `glab auth status`) and run finish again.")
+            else:
+                hint = ("Check the link, then make `gh` able to read the pull request and its checks "
+                        "(the GH_TOKEN needs access to pull requests and checks, such as the repo scope) and run finish again.")
             raise Refuse(
-                f"cannot read {public_url(pr)}, so this change is not sent for review. {problem}{extra} "
-                "Check the link, then make `gh` able to read the pull request and its checks "
-                "(the GH_TOKEN needs access to pull requests and checks, such as the repo scope) and run finish again."
+                f"cannot read {public_url(pr)}, so this change is not sent for review. {problem}{extra} {hint}"
             )
 
-        if state == "unknown" or ci == "unknown":
+        if pr_status == "unknown" or ci == "unknown":
             refuse_unread()
         link = public_url(pr)
         appeared = 0
-        if state == "OPEN" and head == sha and ci == "absent":
+        if pr_status in ACTIVE_PR_STATES and head == sha and ci == "absent":
             # An empty rollup is not "no checks". Wait a short bound for the first check, then refuse.
             looks = max(0, env_int("JTEK_CI_APPEAR_TRIES", CI_APPEAR_TRIES))
             pause = max(0.0, env_float("JTEK_CI_APPEAR_WAIT", CI_APPEAR_WAIT))
-            while ci == "absent" and state == "OPEN" and head == sha and appeared < looks:
+            while ci == "absent" and pr_status in ACTIVE_PR_STATES and head == sha and appeared < looks:
                 time.sleep(pause)
-                state, head, ci, problem = pr_info(pr, meta["base"])
+                pr_status, head, ci, problem = pr_info(pr, meta["base"])
                 appeared += 1
-            if state == "unknown" or ci == "unknown":
+            if pr_status == "unknown" or ci == "unknown":
                 refuse_unread()
         waited = 0
-        if state == "OPEN" and head == sha and ci == "pending":
+        if pr_status in ACTIVE_PR_STATES and head == sha and ci == "pending":
             # Pending is not a result. Look again, with a bound, and refuse when it is still pending.
             looks = max(0, env_int("JTEK_CI_TRIES", CI_TRIES))
             pause = max(0.0, env_float("JTEK_CI_WAIT", CI_WAIT))
             waited = 0
-            while ci == "pending" and state == "OPEN" and waited < looks:
+            while ci == "pending" and pr_status in ACTIVE_PR_STATES and waited < looks:
                 time.sleep(pause)
-                state, head, ci, problem = pr_info(pr, meta["base"])
+                pr_status, head, ci, problem = pr_info(pr, meta["base"])
                 waited += 1
-            if state == "unknown" or ci == "unknown":
+            if pr_status == "unknown" or ci == "unknown":
                 refuse_unread()
-        if state == "DRAFT":
-            raise Refuse(f"{link} is a draft. Mark it ready for review, then finish again")
-        if state in ("CLOSED", "MERGED"):
-            raise Refuse(f"{link} is {state}, so it cannot take this change. Open a new pull request for the branch, or "
+        if pr_status in ("CLOSED", "MERGED"):
+            raise Refuse(f"{link} is {pr_status}, so it cannot take this change. Open a new pull request for the branch, or "
                          "reopen this one, and pass its link")
-        if state == "OPEN" and head != sha:
+        if pr_status in ACTIVE_PR_STATES and head != sha:
             if pushed(worktree, meta["branch"], sha):
                 raise Refuse(f"{link} is at {head[:7]}, not at the current commit {sha[:7]}. The branch is pushed, so the "
                              "forge may only be late: run `finish` again in a moment")
@@ -2582,10 +2594,24 @@ def cmd_finish(args: argparse.Namespace) -> None:
                              f"Bring them in (`git pull --ff-only` or a rebase), check again, push, and finish again")
             raise Refuse(f"{link} is at {head[:7]}, not at the current commit {sha[:7]}; push the branch")
         if ci == "fail":
-            raise Refuse(f"CI is failing on {link}; a pull request with red CI is not ready for the human. Fix it first")
+            with meta_lock(work):
+                fresh = read_json(work / "meta.json")
+                prior = [s for s in fresh.get("ci_fail_shas", []) if isinstance(s, str) and s]
+                if sha not in prior:
+                    prior.append(sha)
+                write_json(work / "meta.json", {**fresh, "ci_fail_shas": prior})
+            if len(prior) >= 2:
+                raise Refuse(
+                    f"CI is failing again on {link} after a fix round ({sha[:7]}); do not keep looping. "
+                    f"Run `jtek.py stop {args.id} --waiting input --note \"CI still fails\"` and hand it to the human"
+                )
+            raise Refuse(
+                f"CI is failing on {link}; a pull request with red CI is not ready for the human. "
+                "Fix it once, push, and run finish again"
+            )
         if ci == "pending":
             raise Refuse(
-                f"CI is still pending on {link} after {waited if state == 'OPEN' else 0} look(s). "
+                f"CI is still pending on {link} after {waited if pr_status in ACTIVE_PR_STATES else 0} look(s). "
                 "A pull request whose checks have not finished does not ship. "
                 "SKIPPED and NEUTRAL are not a pass. Wait until every required check is SUCCESS, "
                 "or until the command prints none because this repository has no checks, then finish again. "
@@ -2603,11 +2629,11 @@ def cmd_finish(args: argparse.Namespace) -> None:
             )
         if ci not in ("pass", "none"):
             raise Refuse(f"CI on {link} is `{ci or 'unknown'}`, not pass or none, so this change is not sent for review.")
-        if state == "OPEN" and pr_conflicts(pr, meta["base"]):
+        if pr_status in ACTIVE_PR_STATES and pr_conflicts(pr, meta["base"]):
             raise Refuse(f"{link} conflicts with {meta['base']}; a pull request that cannot merge is not ready for the human. "
                          "Bring the branch up to date as the `jt-babysit` skill says, then check and finish again")
         pr_note = ""
-    meta = update_meta(work, pr=pr, ci=ci, no_pr=bool(args.no_pr))
+    meta = update_meta(work, pr=pr, ci=ci, no_pr=bool(args.no_pr), ci_fail_shas=[])
     verdict = current_verdict(args.id, meta)
     if not meta.get("review") and needs_verdict(meta):
         pr_note += " `review: human` is ignored because the change touches the files on the attention line."
@@ -2627,6 +2653,11 @@ def cmd_finish(args: argparse.Namespace) -> None:
                          "--waiting input`, because the ticket or the reviewer's standard needs the human")
         raise Refuse(f"verdict is FAIL ({fails} so far on this ticket); read {work / 'review.md'}, fix what reproduces, "
                      "commit, check, and get a new verdict")
+    if pr and pr_status == "DRAFT" and verdict.get("verdict") in ("PASS", "PASS+NOTES") and ci in ("pass", "none"):
+        ready_ok, ready_detail = mark_ready(pr, base=meta["base"])
+        if not ready_ok:
+            raise Refuse(f"could not mark {public_url(pr)} ready for review. {ready_detail} "
+                         "Fix the forge error and run finish again.")
     print(write_result(args.id, "review", "Review",
                        note="the human reviews and merges; jtek never merges." + pr_note), end="")
 
@@ -2702,6 +2733,10 @@ CI_QUERY = (
 
 PR_STATES = ["OPEN", "DRAFT", "MERGED", "CLOSED"]
 CI_STATES = ["pass", "fail", "pending", "none", "absent"]
+ACTIVE_PR_STATES = ("OPEN", "DRAFT")
+FORGES = ("gh", "glab")
+GITLAB_STATES = {"opened": "OPEN", "locked": "OPEN", "merged": "MERGED", "closed": "CLOSED"}
+GITLAB_CI = {"success": "pass", "failed": "fail", "canceled": "fail", "skipped": "none"}
 
 
 def run_argv(argv: list[str], *, cwd: Path | None = None, input_bytes: bytes | None = None, timeout: float = 60):
@@ -2709,47 +2744,49 @@ def run_argv(argv: list[str], *, cwd: Path | None = None, input_bytes: bytes | N
     return subprocess.run(argv, cwd=cwd, capture_output=True, input=input_bytes, text=input_bytes is None, timeout=timeout)
 
 
-def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
-    """Return (state, head commit, CI state, problem) of a pull request.
-    State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, none, or absent.
-    GitHub is read with `gh`; when it cannot answer, the result is ("unknown", "", "unknown", why).
-    `why` is a short redacted reason, or "" when the read worked.
-    For another forge, `pr_state` in the machine config names a command that gets the link as its last argument and
-    prints those three words. It runs in the main checkout, so a ticket's branch cannot change what runs.
-    A project that names its own command gets a refusal, and not "unknown", when that command does not answer."""
-    custom = load_settings(base or base_branch())["pr_state"]
-    command = ["gh", "pr", "view", url, "--json", "state,isDraft,headRefOid,statusCheckRollup", "-q", CI_QUERY]
-    problem = ""
-    try:
-        if custom:
-            command = shlex.split(custom) + [url]
-        proc = run_argv(command, cwd=main_root(), timeout=60)
-        parts = proc.stdout.split()
-        if proc.returncode != 0:
-            problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
-        elif (len(parts) != 3 or parts[0] not in PR_STATES or parts[2] not in CI_STATES
-              or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[1])):
-            problem = (f"printed `{' '.join(parts)[:120]}`. It must print three words: {', '.join(PR_STATES[:-1])} or "
-                       f"{PR_STATES[-1]}; the full head commit; and {', '.join(CI_STATES[:-1])} or {CI_STATES[-1]}")
-    except (OSError, ValueError, subprocess.TimeoutExpired) as err:
-        problem = f"did not run: {type(err).__name__}: {err}"
-    if problem and custom:
-        raise Refuse(f"the `pr_state` command of {config_name()} {problem}")
-    if problem:
-        return ("unknown", "", "unknown", redact(problem))
-    return (parts[0], parts[1], parts[2], "")
+def origin_host(cwd: Path | None = None) -> str:
+    """Hostname of remote.origin.url (lowercased, without port), or "" when there is no remote host."""
+    url = origin_url(cwd)
+    if not url:
+        return ""
+    host, _ = repo_identity(url)
+    if not host:
+        return ""
+    if host.startswith("["):
+        return host.partition("]")[0].lstrip("[")
+    return host.split(":", 1)[0]
 
 
-def pr_conflicts(url: str, base: str = "") -> bool:
-    """Whether GitHub says the pull request cannot merge into its base as it is. Unknown counts as no:
-    another forge, a `gh` that cannot answer, or a forge that has not worked it out yet."""
-    if load_settings(base or base_branch())["pr_state"]:
-        return False
+def select_forge(base: str = "", cwd: Path | None = None) -> str:
+    """Choose the forge CLI (`gh` or `glab`) from machine config, else origin host and PATH."""
+    configured = load_settings(base, cwd)["forge"]
+    if configured in FORGES:
+        return configured
+    host = origin_host(cwd)
+    if host and host != "github.com" and shutil.which("glab"):
+        return "glab"
+    return "gh"
+
+
+def parse_gitlab_mr(url: str) -> tuple[str, str, str] | None:
+    """Return (hostname, project path, merge request number) for a GitLab link, or None."""
+    link = urllib.parse.urlparse(url)
+    project, mark, number = link.path.strip("/").partition("/-/merge_requests/")
+    number = number.split("/", 1)[0]
+    if link.scheme not in ("http", "https") or not link.hostname or link.hostname.startswith("-"):
+        return None
+    if not project or not mark or not number.isdigit():
+        return None
+    return link.hostname, project, number
+
+
+def forge_cwd(cwd: Path | None = None) -> Path | None:
+    if cwd is not None:
+        return cwd
     try:
-        proc = run_argv(["gh", "pr", "view", url, "--json", "mergeable", "-q", ".mergeable"], cwd=main_root(), timeout=60)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0 and proc.stdout.strip() == "CONFLICTING"
+        return main_root()
+    except Refuse:
+        return None
 
 
 def comment_permission_denied(text: str) -> bool:
@@ -2758,25 +2795,102 @@ def comment_permission_denied(text: str) -> bool:
     return "addcomment" in folded or "resourcenotaccessible" in folded
 
 
-def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str]:
-    """Post `text` on a pull request. Returns (posted, how or why).
-
-    `gh pr comment` first. When that answer is addComment or Resource not accessible, post an issue
-    comment with `gh api`. Anything else is a failure, and the caller writes the file.
-    """
-    try:
-        proc = run_argv(["gh", "pr", "comment", url, "--body-file", str(body_path)], timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as err:
-        return False, f"`gh pr comment` did not run ({err})."
-    if proc.returncode == 0:
-        return True, "gh pr comment"
+def proc_text(proc: subprocess.CompletedProcess) -> str:
     heard = []
     for chunk in (proc.stderr, proc.stdout):
         if isinstance(chunk, bytes):
             heard.append(chunk.decode(errors="replace"))
         elif chunk:
             heard.append(chunk)
-    blob = "\n".join(heard)
+    return "\n".join(heard)
+
+
+def open_draft(base: str, title: str, body_path: Path, *, head: str = "", forge: str = "",
+               cwd: Path | None = None) -> tuple[bool, str]:
+    """Open a draft pull or merge request on the chosen forge. Returns (ok, url or error)."""
+    chosen = forge or select_forge(base, cwd)
+    run_dir = forge_cwd(cwd)
+    if chosen == "glab":
+        try:
+            body_text = body_path.read_text()
+        except (OSError, ValueError) as err:
+            return False, f"cannot read {body_path}: {err}."
+        argv = ["glab", "mr", "create", "--draft", "--target-branch", base, "--title", title,
+                "--description", body_text, "--yes"]
+        if head:
+            argv += ["--source-branch", head]
+        label = "glab mr create --draft"
+    else:
+        argv = ["gh", "pr", "create", "--draft", "--base", base, "--title", title, "--body-file", str(body_path)]
+        if head:
+            argv += ["--head", head]
+        label = "gh pr create --draft"
+    try:
+        proc = run_argv(argv, cwd=run_dir, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return False, f"`{label}` did not run ({err})."
+    if proc.returncode != 0:
+        err = redact(" ".join(proc_text(proc).split())[:300])
+        return False, f"`{label}` failed: {err or f'ended with {proc.returncode}'}."
+    links = re.findall(r"https?://\S+", proc.stdout or "")
+    if not links:
+        return False, f"`{label}` printed no link."
+    return True, links[-1]
+
+
+def mark_ready(url: str, *, base: str = "", forge: str = "", cwd: Path | None = None) -> tuple[bool, str]:
+    """Mark a draft pull or merge request ready for review. Returns (ok, command or error)."""
+    chosen = forge or select_forge(base, cwd)
+    run_dir = forge_cwd(cwd)
+    if chosen == "glab":
+        parsed = parse_gitlab_mr(url)
+        if not parsed:
+            return False, f"not a GitLab merge request link: {public_url(url)}."
+        host, project, number = parsed
+        argv = ["glab", "mr", "update", number, "--ready", "-R", f"{host}/{project}"]
+        label = "glab mr update --ready"
+    else:
+        argv = ["gh", "pr", "ready", url]
+        label = "gh pr ready"
+    try:
+        proc = run_argv(argv, cwd=run_dir, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return False, f"`{label}` did not run ({err})."
+    if proc.returncode == 0:
+        return True, label
+    err = redact(" ".join(proc_text(proc).split())[:300])
+    return False, f"`{label}` failed: {err or f'ended with {proc.returncode}'}."
+
+
+def comment(url: str, body_path: Path, text: str, *, base: str = "", forge: str = "",
+            cwd: Path | None = None) -> tuple[bool, str]:
+    """Post a review comment on the pull or merge request. Returns (posted, how or why).
+
+    On GitHub, tries `gh pr comment` first and falls back to an issue comment via `gh api` when
+    addComment or Resource not accessible is returned. On GitLab, uses `glab mr note`.
+    """
+    chosen = forge or select_forge(base, cwd)
+    if chosen == "glab":
+        parsed = parse_gitlab_mr(url)
+        if not parsed:
+            return False, f"not a GitLab merge request link: {public_url(url)}."
+        host, project, number = parsed
+        try:
+            proc = run_argv(["glab", "mr", "note", number, "-R", f"{host}/{project}", "-m", text],
+                            cwd=forge_cwd(cwd), timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as err:
+            return False, f"`glab mr note` did not run ({err})."
+        if proc.returncode == 0:
+            return True, "glab mr note"
+        err = redact(" ".join(proc_text(proc).split())[:300])
+        return False, f"`glab mr note` failed: {err or f'ended with {proc.returncode}'}."
+    try:
+        proc = run_argv(["gh", "pr", "comment", url, "--body-file", str(body_path)], timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return False, f"`gh pr comment` did not run ({err})."
+    if proc.returncode == 0:
+        return True, "gh pr comment"
+    blob = proc_text(proc)
     err = redact(" ".join(blob.split())[:300])
     # addComment on stdout is the same denial as on stderr. Other errors still do not call gh api.
     if not comment_permission_denied(blob):
@@ -2799,6 +2913,124 @@ def post_review_comment(url: str, body_path: Path, text: str) -> tuple[bool, str
     return False, f"`gh pr comment` failed ({err}). `gh api` issue comment failed: {api_err}."
 
 
+def state(url: str, *, base: str = "", forge: str = "", cwd: Path | None = None) -> tuple[str, str, str, str]:
+    """Read (state, head commit, CI state, problem) from the built-in forge (`gh` or `glab`)."""
+    chosen = forge or select_forge(base, cwd)
+    run_dir = forge_cwd(cwd)
+    if chosen == "glab":
+        parsed = parse_gitlab_mr(url)
+        if not parsed:
+            return ("unknown", "", "unknown", redact(f"not a GitLab merge request link: {url}"))
+        host, project, number = parsed
+        try:
+            proc = run_argv(["glab", "mr", "view", number, "-R", f"{host}/{project}", "--output", "json"],
+                            cwd=run_dir, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as err:
+            return ("unknown", "", "unknown", redact(f"did not run: {type(err).__name__}: {err}"))
+        if proc.returncode != 0:
+            problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
+            return ("unknown", "", "unknown", redact(problem))
+        try:
+            mr_data = json.loads(proc.stdout)
+        except ValueError as err:
+            return ("unknown", "", "unknown", redact(f"printed invalid JSON: {err}"))
+        if not isinstance(mr_data, dict):
+            return ("unknown", "", "unknown", "the GitLab answer is not a JSON object")
+        mr_state = GITLAB_STATES.get(str(mr_data.get("state") or ""))
+        if mr_state == "OPEN" and (mr_data.get("draft") or mr_data.get("work_in_progress")):
+            mr_state = "DRAFT"
+        head = str(mr_data.get("sha") or "")
+        if not head and isinstance(mr_data.get("diff_refs"), dict):
+            head = str(mr_data["diff_refs"].get("head_sha") or "")
+        if not mr_state or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head):
+            return ("unknown", "", "unknown", "the GitLab answer has no state or full head commit")
+        pipeline = mr_data.get("head_pipeline")
+        if not isinstance(pipeline, dict) or not pipeline:
+            ci = "none"
+        else:
+            ci = GITLAB_CI.get(str(pipeline.get("status") or ""), "pending")
+            if ci == "pass" and pipeline.get("sha") not in (None, head):
+                ci = "pending"  # green for another commit proves nothing; red still counts
+        return (mr_state, head, ci, "")
+    command = ["gh", "pr", "view", url, "--json", "state,isDraft,headRefOid,statusCheckRollup", "-q", CI_QUERY]
+    problem = ""
+    parts: list[str] = []
+    try:
+        proc = run_argv(command, cwd=run_dir, timeout=60)
+        parts = proc.stdout.split()
+        if proc.returncode != 0:
+            problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
+        elif (len(parts) != 3 or parts[0] not in PR_STATES or parts[2] not in CI_STATES
+              or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[1])):
+            problem = (f"printed `{' '.join(parts)[:120]}`. It must print three words: {', '.join(PR_STATES[:-1])} or "
+                       f"{PR_STATES[-1]}; the full head commit; and {', '.join(CI_STATES[:-1])} or {CI_STATES[-1]}")
+    except (OSError, ValueError, subprocess.TimeoutExpired) as err:
+        problem = f"did not run: {type(err).__name__}: {err}"
+    if problem:
+        return ("unknown", "", "unknown", redact(problem))
+    return (parts[0], parts[1], parts[2], "")
+
+
+def pr_info(url: str, base: str = "") -> tuple[str, str, str, str]:
+    """Return (state, head commit, CI state, problem) of a pull request.
+    State is OPEN, DRAFT, MERGED, or CLOSED. CI state is pass, fail, pending, none, or absent.
+    Uses built-in `gh` or `glab` via `state`, unless `pr_state` in the machine config overrides it.
+    A project that names its own `pr_state` command gets a refusal, and not "unknown", when that command does not answer."""
+    custom = load_settings(base or base_branch())["pr_state"]
+    if not custom:
+        return state(url, base=base)
+    problem = ""
+    parts: list[str] = []
+    try:
+        command = shlex.split(custom) + [url]
+        proc = run_argv(command, cwd=main_root(), timeout=60)
+        parts = proc.stdout.split()
+        if proc.returncode != 0:
+            problem = f"ended with {proc.returncode}: {' '.join(proc.stderr.split())[:200]}"
+        elif (len(parts) != 3 or parts[0] not in PR_STATES or parts[2] not in CI_STATES
+              or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[1])):
+            problem = (f"printed `{' '.join(parts)[:120]}`. It must print three words: {', '.join(PR_STATES[:-1])} or "
+                       f"{PR_STATES[-1]}; the full head commit; and {', '.join(CI_STATES[:-1])} or {CI_STATES[-1]}")
+    except (OSError, ValueError, subprocess.TimeoutExpired) as err:
+        problem = f"did not run: {type(err).__name__}: {err}"
+    if problem:
+        raise Refuse(f"the `pr_state` command of {config_name()} {problem}")
+    return (parts[0], parts[1], parts[2], "")
+
+
+def pr_conflicts(url: str, base: str = "") -> bool:
+    """Whether the forge says the pull request cannot merge into its base as it is. Unknown counts as no."""
+    if load_settings(base or base_branch())["pr_state"]:
+        return False
+    if select_forge(base) == "glab":
+        parsed = parse_gitlab_mr(url)
+        if not parsed:
+            return False
+        host, project, number = parsed
+        try:
+            proc = run_argv(["glab", "mr", "view", number, "-R", f"{host}/{project}", "--output", "json"],
+                            cwd=main_root(), timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if proc.returncode != 0:
+            return False
+        try:
+            mr_data = json.loads(proc.stdout)
+        except ValueError:
+            return False
+        return isinstance(mr_data, dict) and bool(mr_data.get("has_conflicts"))
+    try:
+        proc = run_argv(["gh", "pr", "view", url, "--json", "mergeable", "-q", ".mergeable"], cwd=main_root(), timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "CONFLICTING"
+
+
+def post_review_comment(url: str, body_path: Path, text: str, base: str = "") -> tuple[bool, str]:
+    """Post `text` on a pull or merge request using the selected forge."""
+    return comment(url, body_path, text, base=base)
+
+
 def cmd_comment(args: argparse.Namespace) -> None:
     """Post the verdict comment. A failure names the file that holds it and does not exit 0."""
     meta = load_meta(args.id)
@@ -2810,7 +3042,7 @@ def cmd_comment(args: argparse.Namespace) -> None:
     if not body_path.is_file():
         raise Refuse(f"no comment to post. Run verdict first; it writes {body_path}")
     text = body_path.read_text()
-    posted, detail = post_review_comment(pr, body_path, text)
+    posted, detail = post_review_comment(pr, body_path, text, meta.get("base", ""))
     if posted:
         print(f"posted: {public_url(pr)} ({detail})")
         return
@@ -3109,9 +3341,9 @@ def find_config(cwd: Path | None = None) -> Path | None:
     return None
 
 
-def config_name() -> str:
+def config_name(cwd: Path | None = None) -> str:
     """The name error text uses. A per-repository file is still called jtek.json."""
-    path = find_config()
+    path = find_config(cwd)
     if path is None or path.name == CONFIG:
         return CONFIG
     return str(path)
