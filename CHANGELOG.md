@@ -1,5 +1,12 @@
 # Changelog
 
+## 27.4.0 - one-page Quickstart and readiness line in /jt-status
+
+Makes setup followable from one page and makes `/jt-status` answer whether the machine and repository are ready to use.
+
+- **One-page Quickstart in `GETTING-STARTED.md`, linked from the top of `README.md`.** Condenses `GETTING-STARTED.md` into four ordered steps from a blank machine — first install, machine-wide init, first repo, and board — with what you should see after each step, and replaces the repeated walkthrough with short pointers to `README.md` and the board references (`files.md`, `notion.md`, `flo.md`).
+- **`/jt-status` (`jtek.py status`) starts with a machine and repository readiness line from doctor.** Extracts `doctor.assess()` and `doctor.readiness_line()` so `doctor` and `status` share the same required-versus-optional rules. The first line prints `พร้อมใช้` when both machine and repository are ready, or `ยังไม่พร้อม` naming any missing required items and the command that fixes them (such as `/jt-init` or `jtek.py migrate`), followed by the existing Thai table. Optional doctor rows do not make the repository not ready, `status` stays read-only and exits 0 when only setup is missing, and `skills/jt-status/SKILL.md` tells the agent to show that readiness line first.
+
 ## 27.3.0 - tighter review and broke gates, safer repo ids, and cleaner migrate/doctor/guess
 
 Eighteen backlog defects across repository ids, `doctor`, `migrate`, `guess`, `broke`, `ticket`, `lesson`, and `verdict` are fixed.

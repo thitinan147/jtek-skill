@@ -1,217 +1,82 @@
-# Getting started
+# Quickstart
 
-From nothing connected to your first ticket merged. Do the steps in order. Each one ends with what you should see.
+From a blank machine to a ready repository, on one page. Do the four steps in order. Each step ends with what you should see.
 
-> **Walked on demo repositories.** These steps, Notion and real pull requests included, were walked on three demo repositories with Claude Code, Cursor, and Antigravity. A large real codebase has not been tried. If a step does not behave as written, that is a bug in this guide: please open an issue.
+Prerequisites: `git` 2.31 or later, Python 3.10 or later, and a coding agent that loads skills. jtek stores nothing outside your machine and your repository; there is no jtek account or token.
 
-Most steps are things you say to your agent. Text in a `text` block is a prompt. Text in a `bash` block is a command you run yourself.
+## Step 1. First install
 
-## What you connect
+**Claude Code**, as two separate prompts:
 
-| You connect | Why | Needed |
-|---|---|---|
-| A coding agent that loads skills (Claude Code, Cursor, Antigravity, Codex, ...) | It does the work | Yes |
-| `git` 2.31 or later, and Python 3.10 or later | The script uses both | Yes |
-| Notion, as a tool in the agent | The board lives there | No. FLO works too, and with no board at all the tickets are files: leave `board` empty, or skip the config file, skip step 3, and read [files.md](skills/jt-work/references/files.md) |
-| GitHub, through the `gh` command, signed in | The agent opens pull requests with it, and the script reads their state and CI | With GitHub: yes. Another forge: set `pr_state` in the machine config instead |
-| Your project's own commands for lint, types, and tests | They are the checks | At least one |
-| A way to run your real app from the command line | So the agent can see a change work | Strongly advised |
+```text
+/plugin marketplace add thitinan147/jtek-skill
+```
 
-jtek stores nothing outside your machine and your repository. There is no jtek account and no token.
+```text
+/plugin install jtek@jtek-skill
+```
 
-## 1. Install the skills
+**Other agents** (Cursor, Antigravity, Codex, ...):
 
 ```bash
 npx skills add thitinan147/jtek-skill
 ```
 
-Or in Claude Code, as two separate prompts:
+Install the whole set, not one skill at a time. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it.
 
-```
-/plugin marketplace add thitinan147/jtek-skill
-```
-```
-/plugin install jtek@jtek-skill
-```
+> **On this box:** `agy` and `grok` load jtek through a symlink to `/workspace/tools/jtek-skill` instead of installing through `/plugin` or `npx`. Other machines follow the commands above.
 
-**You should see:** seventeen skills, `jt` and sixteen whose names start with `jt-`. In Claude Code, type `/jt-` and they are listed; other agents list skills in their own way. Day to day you type `/jt`, `/jt-review`, and `/jt-status`.
+**You should see:** seventeen skills — `jt` and sixteen whose names start with `jt-` (for example, type `/jt-` in Claude Code to see the list).
 
-## 2. Connect GitHub
+## Step 2. Machine-wide init
+
+There is **no single machine-level init command** today. These are the real machine-level pieces that exist:
+
+- **Storage:** jtek stores machine and repository data under `~/.jtek`. There is no required `~/.jtek/config` file; when both `~/.jtek/config` and a per-repository file are absent, the defaults apply (empty board, tickets as files).
+- **Reviewer list (optional):** `/jt-agents` runs `jtek.py doctor --agents` and proposes `~/.jtek/agents.json`. The owner must say yes before it is written. Skip until you want a second-vendor reviewer.
+- **Style file (optional):** `/jt-me` proposes `~/.jtek/me.md`. The owner must say yes before it is written.
+- **GitHub (when using GitHub remotes):** sign in and check status:
 
 ```bash
 gh auth login
 gh auth status
 ```
 
-**You should see:** `Logged in to github.com`.
+  To push CI workflow YAML under `.github/workflows/`, also add the `workflow` scope:
 
-A repository with no remote at all needs none of this: its tickets end without a pull request, and you set Done by hand.
-
-## 3. Connect Notion and create the board
-
-1. In Notion, create one database. Give it the eleven properties in [notion.md](skills/jt-work/references/notion.md#the-database). The names and types must match exactly.
-2. Connect the Notion tool in your agent, and give it access to that database. Notion's MCP server is set up in your agent's MCP settings; in Claude Code that is `/mcp`, then Notion.
-3. Copy the database's link. You need it in step 4.
-4. Ask the agent to check your work:
-
-```text
-Read the Notion database at <link>. Compare its properties with the table in
-the notion.md reference of the jt-work skill. List every property that is
-missing, misnamed, or has another type, and every Status option that is missing
-or spelled differently. Change nothing.
+```bash
+gh auth refresh -s workflow
 ```
 
-**You should see:** an empty list. Fix what it names and ask again.
+  A repository with no remote needs none of this.
+- **Migrating older machine files:** if `~/.config/jtek/agents.json` or `~/.config/jtek/me.md` already exist, `jtek.py migrate` moves them into `~/.jtek` and refuses to overwrite.
 
-## 4. Set up the repository
+**You should see:** `gh auth status` prints `Logged in to github.com` (when using GitHub). Optional files (`~/.jtek/agents.json`, `~/.jtek/me.md`) appear only after you accept `/jt-agents` or `/jt-me`.
 
-Do this in each repository. You can also skip it: with no config file the board is empty and there are no checks until you add them.
+## Step 3. First repo
+
+Open your agent inside the repository and type:
 
 ```text
 /jt-init
 ```
 
-It guesses the checks from package.json scripts, the Makefile, pyproject, and CI, and asks once. The question includes the board:
+It guesses checks from `package.json`, `Makefile`, `pyproject.toml`, and CI workflows, asks once (including the board question), writes `~/.jtek/repos/<repo id>/jtek.json`, runs the `jt-harness` skill, and then runs `jtek.py doctor`. Nothing is written into the repository.
 
-```text
-board? none (tickets as files) / Notion database link / FLO product link
-```
+If the repository still has an old `jtek.json` or `.jtek/`, `/jt-init` runs `jtek.py migrate` instead and tells you to commit the removal. If doctor says it cannot find the base branch, make the first commit first.
 
-Answer `none` to keep tickets as files, or paste the Notion database link or the FLO product link. Edit any guessed command in that same answer. It records `~/.jtek/repos/<repo id>/jtek.json` on this machine, runs the harness, and then doctor. Nothing is written into the repository. A command is one program with arguments: a pipeline goes into a script.
+**You should see:** `jtek.py doctor` prints no `missing` line and ends with `ready:` (lines marked `optional` can wait). Running `/jt-status` shows `พร้อมใช้` on its first line, followed by the work table; if anything required is still missing, the first line starts with `ยังไม่พร้อม`, names what is missing, and names the command to fix it.
 
-If the repository still has `jtek.json` or `.jtek/`, `/jt-init` runs `jtek.py migrate` instead and tells you to commit the removal.
+## Step 4. Board
 
-**You should see:** no `missing` line, and `ready:` at the end. A line that is only `optional` can wait.
+You choose the board when `/jt-init` asks `board? none (tickets as files) / Notion database link / FLO product link`:
 
-If it says it cannot find the base branch, the repository has no commit yet: make the first commit.
-
-## 5. The harness, which /jt-init already ran
-
-`/jt-init` follows the `jt-harness` skill. It records `~/.jtek/repos/<repo id>/verify.md`, a feature map beside it, and one script, and it proposes a `verify` check. It must show you the check passing on the working app and failing when a feature is broken on purpose. Neither the guide nor the machine config is committed.
-
-**You should see:** `jtek.py doctor` with no `optional` line for `verify`.
-
-You can tell it to skip the harness for a first try. Then a passing check only means the code compiles and the tests pass, and nothing has run the real app. Run `/jt-init` again later, or ask for the `jt-harness` skill, when you want it.
-
-## 6. Write the first ticket
-
-Pick something small and safe. Create a page on the board. The blank form and the rules behind it are in [ticket-template.md](skills/jt-work/references/ticket-template.md): set it as the database's default template, and every new page starts with the three headings.
-
-- **Name:** `Add a --version flag to the command-line tool`
-- **Kind:** `feature`
-- **Repo:** the `name` in this repository's machine config
-- **Body:**
-
-```markdown
-## Goal
-Running the tool with --version prints its version, so a user can report it in a bug.
-
-## Done when
-- `mytool --version` prints the version from the package file and exits with 0
-- `mytool --help` lists the flag
-
-## Out of scope
-- the output of every other flag stays exactly as it is now
-```
-
-The three headings must be named exactly like this, or with the words that `headings` in the machine config gives them. A heading appears once. `Done when` holds only top-level list items, one outcome each. Each one must be something that can be seen working.
-
-Notion gives the page an id, such as `T-1`. If you made other pages while testing, yours has another number: use that one below.
-
-Set **Status** to **Todo**. Nothing happens until you start a session.
-
-## 7. Work it
-
-Open a session in the repository:
-
-```text
-/jt-work T-1
-```
-
-**You should see, in this order:**
-
-1. The agent reads the page and runs `jtek.py start`. The page changes to **In Progress**.
-2. It works in a new folder beside your repository, `<repo>.jtek/T-1`. Your own checkout is not touched.
-3. It runs `jtek.py check` until every check passes.
-4. It opens a pull request, and ends with a `jtek-result` block that says `outcome: needs-review`.
-
-That outcome is correct. A change needs a verdict from a session that did not write it.
-
-An agent that can start a separate session by itself may do steps 8 and 9 on its own, and end with `outcome: review`. Then go to step 10.
-
-## 8. Get the verdict
-
-Open a **new** session in the repository. It must not be the one from step 7.
-
-```text
-/jt-review T-1
-```
-
-**You should see:** `verdict: PASS by ...`, or `FAIL` with findings. On `FAIL`, run `/jt-work T-1` again: the agent reproduces each finding, fixes what reproduces, and you repeat this step.
-
-## 9. Finish
-
-```text
-/jt-work T-1
-```
-
-**You should see:** `outcome: review`. The page is now **Review**, with the pull request link and a comment that holds the result and the evidence.
-
-## 10. Review and merge
-
-1. Read the evidence comment. It has one line per `Done when` item: what was run, and what was seen.
-2. Read the `attention:` line of the result. It names the files that decide whether checks pass.
-3. Read the diff, and merge the pull request yourself. jtek never merges.
-
-Then set the page to **Done**, or ask an agent:
-
-```text
-Read the board and run jtek.py sync, as the starting-sessions.md reference of the jt-work skill says.
-```
-
-**You should see:** the page is **Done**, and the folder `<repo>.jtek/T-1` is gone. The branch is deleted too when the forge says the pull request merged at the branch's last commit.
-
-That is the whole flow.
-
-## When a session stops with a question
-
-The result says `outcome: needs-human`, and the page has **Waiting** set and a comment with the question.
-
-1. Answer on the page.
-2. Set **Status** to **Todo**. This is the only signal that restarts the ticket.
-3. Run `/jt-work T-1` again.
-
-The same three steps ask for a fix on a ticket that is in Review.
-
-## When the script refuses
-
-`jtek.py` prints `refused:` and what to do. The agent must do that, and must not work around it.
-
-| It says | What it means | What you do |
-|---|---|---|
-| `no jtek config for this repository` | There is no machine config yet, so there are no checks | Type `/jt-init`, or run `jtek.py init` and fill in one check. The file stays on this machine |
-| `old files in the repository` | `jtek.json` or `.jtek/` is still in the checkout | Type `/jt-init`, or run `jtek.py migrate`, then commit the removal |
-| `is ..., not Todo` | Only a Todo ticket can start | Set Status to Todo |
-| `comes after ..., which is not Done` | A ticket in After is not merged yet | Merge that one first |
-| `is for the repository ...` | The ticket's Repo is another repository | Start the session there |
-| `fails on <base> before any change` | Your base branch is red | Fix the base branch first |
-| `` `Done when` may hold only top-level list items `` | The page has other text or nested items there | Fix the page |
-| `is already claimed` | Another session has the ticket | Wait for it, or tell a new session that the earlier one died |
-| `an earlier start ... was interrupted` | A `start` was killed half way | Ask the agent to run `jtek.py release <id>`, then start again |
-| `the worktree ... is gone` | The ticket's folder was deleted | The same: `jtek.py release <id>`, set the page to Todo, and start again. The commits are on the branch |
-| `the ticket changed after the evidence was saved` | You edited the ticket | The agent reads it again, does what it now asks, and passes new evidence. A new verdict is needed too |
-| `has no change against` | The branch is empty | Nothing to review. If the ticket needs no change, the agent stops and says so |
-| `has a remote, so the change needs a pull request` | `--no-pr` is only for a repository without a forge | The agent opens a pull request |
-| `the code changed after the evidence was saved` | The evidence describes an older change | The agent sees it work again and passes new evidence |
-| `check runs have failed` | Three runs failed, or the number in `max_failed_runs` | The agent stops and asks you |
-| `checks have not passed on the current commit` | A commit came after the last check | The agent runs `check` again |
-| ``the `pr_state` command of jtek.json ...`` | Your own forge command failed, or did not print the three words | Fix the command. See [setup.md](skills/jt-work/references/setup.md) |
-| `is a draft` | The pull request is not marked ready | The agent marks it ready |
-| `CI is failing` | The pull request is red on the forge | The agent fixes it before it reaches you |
-| `stopped with a question` | The ticket waits for you | Answer, then set Todo |
+- **`none` (tickets as files):** records `"board": ""` and keeps tickets in `~/.jtek/repos/<repo id>/tickets/`. **You should see:** `no board: the tickets are files in ...` in `jtek.py doctor`. Format and rules: [files.md](skills/jt-work/references/files.md).
+- **Notion:** connect the Notion tool in your agent, give it access to your database, and paste the database link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the database against the schema in [notion.md](skills/jt-work/references/notion.md).
+- **FLO:** connect the FLO tool in your agent and paste the FLO product link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the product against the schema in [flo.md](skills/jt-work/references/flo.md).
 
 ## Next
 
-- **Several repositories, one feature:** [two-repos.md](skills/jt-work/references/two-repos.md)
-- **Let something else start the sessions:** [starting-sessions.md](skills/jt-work/references/starting-sessions.md). Work three tickets by hand first.
-- **A mistake that happened twice:** the `jt-learn` skill turns it into a check, so it cannot happen a third time.
+- **Day-to-day flow** (writing the first ticket, `/jt` and `/jt-work`, `/jt-review` in a fresh session, `/jt-status`, and merging yourself — jtek never merges): [README.md](README.md).
+- **Ticket format:** [ticket-template.md](skills/jt-work/references/ticket-template.md).
+- **Multi-repo features & outer-loop automation:** [two-repos.md](skills/jt-work/references/two-repos.md) and [starting-sessions.md](skills/jt-work/references/starting-sessions.md).

@@ -4695,6 +4695,120 @@ class EasyStart(Scratch):
         self.assertEqual((work_stuck / "meta.json").read_text(), "{damaged")
         self.assertEqual((work_board / "result.md").read_text(), "outcome: review\n")
 
+    def test_status_first_line_reports_ready_when_doctor_is_ready(self):
+        """SQ-117: ready repo starts with พร้อมใช้ (even when optional items like verify/remote are absent) and stays read-only."""
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        work.mkdir(parents=True)
+        tree = self.repo.parent / "wt-ready-T-1"
+        tree.mkdir()
+        (work / "meta.json").write_text(json.dumps({
+            "worktree": str(tree), "branch": "jtek/T-1", "base": "main", "author": "0123456789abcdef"}))
+        stamp = (work / "meta.json").read_text()
+        home_before = sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*"))
+
+        code, out = self.jtek("status")
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        self.assertTrue(lines, out)
+        self.assertTrue(lines[0].startswith("พร้อมใช้"), lines[0])
+        self.assertIn("เครื่อง: พร้อม", lines[0])
+        self.assertIn("repo: พร้อม", lines[0])
+        self.assertIn("กำลังทำ\tT-1\tsession 0123456789abcdef", out)
+        self.assertIn("รอรีวิว\t-", out)
+        self.assertIn("รอ merge\t-", out)
+        self.assertIn("ถัดไป\trunning\tT-1\t", out)
+        self.assertNotIn("no ticket files", out)
+        self.assertEqual((work / "meta.json").read_text(), stamp)
+        self.assertFalse((work / "result.md").exists())
+        self.assertEqual(sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*")), home_before)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_status_first_line_reports_missing_checks_and_init_fix_without_writing(self):
+        """SQ-117: missing config/checks prints ยังไม่พร้อม with /jt-init fix, still prints table, exits 0, writes nothing."""
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        work.mkdir(parents=True)
+        tree = self.repo.parent / "wt-uninit-T-1"
+        tree.mkdir()
+        (work / "meta.json").write_text(json.dumps({
+            "worktree": str(tree), "branch": "jtek/T-1", "base": "main", "author": "0123456789abcdef"}))
+        stamp = (work / "meta.json").read_text()
+        cfg = self.config_file()
+        cfg.unlink()
+        home_before = sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*"))
+
+        code, out = self.jtek("status")
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        self.assertTrue(lines, out)
+        self.assertTrue(lines[0].startswith("ยังไม่พร้อม"), lines[0])
+        self.assertIn("checks", lines[0])
+        self.assertTrue("/jt-init" in lines[0] or "jtek.py init" in lines[0], lines[0])
+        self.assertNotIn("jtek.py migrate", lines[0])
+        self.assertIn("กำลังทำ\tT-1\tsession 0123456789abcdef", out)
+        self.assertIn("รอรีวิว\t-", out)
+        self.assertIn("รอ merge\t-", out)
+        self.assertIn("ถัดไป\t", out)
+        self.assertFalse(cfg.exists())
+        self.assertEqual((work / "meta.json").read_text(), stamp)
+        self.assertFalse((work / "result.md").exists())
+        self.assertEqual(sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*")), home_before)
+
+        # Config exists with no checks declared: still ยังไม่พร้อม and prints table with exit 0.
+        self.write_config({})
+        code2, out2 = self.jtek("status")
+        self.assertEqual(code2, 0, out2)
+        first2 = out2.splitlines()[0]
+        self.assertTrue(first2.startswith("ยังไม่พร้อม"), first2)
+        self.assertIn("checks", first2)
+        self.assertIn("/jt-init", first2)
+        self.assertIn("กำลังทำ\tT-1\tsession 0123456789abcdef", out2)
+
+        # Genuine status error (malformed --board-file) still refuses.
+        bad = Path(self.tmp.name) / "bad-board.json"
+        bad.write_text("{not json")
+        code3, out3 = self.jtek("status", "--board-file", str(bad))
+        self.assertEqual(code3, 1, out3)
+        self.assertIn("refused:", out3)
+
+    def test_status_first_line_points_at_migrate_for_legacy_leftovers(self):
+        """SQ-117: legacy jtek.json or .jtek/ in repo makes status point at jtek.py migrate, not init, and writes nothing."""
+        # Case 1: machine config exists and leftover jtek.json is in repo.
+        repo_cfg = self.repo / "jtek.json"
+        repo_cfg.write_text("{}\n")
+        code, out = self.jtek("status")
+        self.assertEqual(code, 0, out)
+        first = out.splitlines()[0]
+        self.assertTrue(first.startswith("ยังไม่พร้อม"), first)
+        self.assertIn("jtek.json", first)
+        self.assertIn("jtek.py migrate", first)
+        self.assertNotIn("/jt-init", first)
+        self.assertNotIn("jtek.py init", first)
+        self.assertIn("กำลังทำ\t-", out)
+        self.assertIn("ถัดไป\t-", out)
+        self.assertTrue(repo_cfg.is_file())
+
+        # Case 2: no machine config yet and leftover jtek.json + .jtek/ are in repo.
+        self.config_file().unlink()
+        (self.repo / ".jtek").mkdir()
+        code2, out2 = self.jtek("status")
+        self.assertEqual(code2, 0, out2)
+        first2 = out2.splitlines()[0]
+        self.assertTrue(first2.startswith("ยังไม่พร้อม"), first2)
+        self.assertIn("jtek.py migrate", first2)
+        self.assertNotIn("/jt-init", first2)
+        self.assertNotIn("jtek.py init", first2)
+        self.assertIn("กำลังทำ\t-", out2)
+        self.assertFalse(self.config_file().exists())
+        self.assertTrue(repo_cfg.is_file())
+
+        # Case 3: optional non-knowledge file in .jtek/ does NOT make status not ready once migrated.
+        repo_cfg.unlink()
+        (self.repo / ".jtek" / "notes.txt").write_text("personal\n")
+        self.write_config({"test": f"{sys.executable} -c pass"})
+        code3, out3 = self.jtek("status")
+        self.assertEqual(code3, 0, out3)
+        self.assertTrue(out3.splitlines()[0].startswith("พร้อมใช้"), out3)
+
 
 class P2BacklogDefects(Scratch):
     """Regression tests for P2 backlog defects SQ-88 through SQ-95."""
