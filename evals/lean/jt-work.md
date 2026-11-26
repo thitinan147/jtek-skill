@@ -32,7 +32,7 @@ The first `finish` prints `outcome: needs-review`. Start a fresh session that ca
 
 ## Stop and wait
 
-Commit what you have (`wip: <what is unfinished>`), then `jtek.py stop <id> --waiting input --note "<one question, the options, and your pick>"`, or `--waiting approval`. End the session.
+A decision inside the pull request is not a stop: choose, write `choice: <question> → <picked> (other options: …) (P19)` in the evidence, and go on. Stop to ask only for an act outside the pull request (P16), or after the third FAIL verdict: commit what you have (`wip: <what is unfinished>`), then `jtek.py stop <id> --waiting approval --note "<one question, the options, and your pick>"`, or `--waiting input` after the third FAIL verdict. End the session.
 
 ## End
 

@@ -7,13 +7,15 @@ description: Pushes a ticket's branch, opens a pull request that shows how each 
 
 Ship only after `jtek.py check <id>` passed on the current commit and you have seen the change work. This skill never merges.
 
+Use the owner's language and style from `~/.jtek/me.md` for the evidence and the pull request, as [worker.md](../jt-work/worker.md) says. It changes no rule, and the prefixes the script reads (`seen:`, `not run:`, `clean-up:`, `choice:`) stay in English.
+
 ## 1. Write the evidence
 
 Write it for a person who has not seen the session, in at most 40 lines, not counting blank ones. The script refuses a longer one. The human reviews the evidence first and the diff second:
    The form, with a filled example, is in [references/evidence.md](references/evidence.md).
    - What changed and why, in two or three sentences.
    - One line per `Done when` item, in the ticket's order, starting with its number and a status word: `1. seen: <command or steps> -> <what you saw> (run <n>)`, or `2. not run: <reason>`. The script refuses evidence that skips an item, or that has no `clean-up:` line from the Clean-up step. `not run` is an honest answer. `seen` for something you did not see is not.
-   - Choices you made where the ticket was open.
+   - Choices you made where the ticket was open, each as `choice: <question> → <picked> (other options: …)` with its principle id.
    - What you could not run, and anything the reviewer should look at first. If you changed a file that a check runs, CI config, a lockfile, or deleted a test, say so and say why.
 
 ## 2. Open the pull request, or not

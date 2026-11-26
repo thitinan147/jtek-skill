@@ -30,6 +30,14 @@ After a session ends, read the board and run `next` again. The action for that t
 
 A session may end with `needs-review` while a reviewer it started is still at work, when the project's checks are slow. Run `next` before you start another reviewer: `review` means no verdict is recorded yet, and one may be on its way.
 
+## When a session stops, and how the human answers
+
+A session does not stop to ask about a decision that belongs in the pull request. It chooses, writes `choice: <question> → <picked> (other options: …)` with the principle id in the evidence, which becomes the pull request body or a `## Log` line, and goes on to the pull request (P19). The human sees each choice at review and changes it there. So ticket to pull request can finish in one session, with no new session after an answer.
+
+A session still stops and waits in two cases: before an act outside the pull request (`--waiting approval`, P16), and with `--waiting input` where a step or the script says so, such as after the third FAIL verdict or three failed checks.
+
+The human answers on the page or in the ticket file and sets Todo, as before. That is no longer the only way: they may also comment on the pull request, or leave a note under `## Log`. Submit a review as a whole (GitHub or GitLab "Submit review", with several notes), not one comment at a time: a session acts on the whole review, so the human is interrupted by a review they chose to send, not by every comment. When `next` says `work` for that ticket, the new session reads every comment since the latest verdict with `gh` or the forge, and answers them in one round with `jt-babysit`. Nobody moves the card to another status to have the comments picked up.
+
 Now and then, run `jtek.py sync --board-file <file>`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled. When the forge reports a pull request as merged, the line has `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets, and says when it kept one. It deletes a ticket's branch only when every commit is on the base, or the forge says the pull request merged at the branch's last commit.
 
 ## Rules for whoever starts sessions
@@ -37,7 +45,7 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 - Start a session only for `work` and `review`. Never set Todo or Cancelled, never record a verdict, and never merge.
 - One session per ticket at a time. Before you start one, check that none is running for that id.
 - Give each session only the line in the table. Do not pass on what another session said.
-- Limit how many run at once. Three is a reasonable start.
+- Run one ticket at a time. Run tickets in parallel only when they do not share a database, a port, an e2e stack, or shared files. You decide this when you release the cards; no command checks it.
 - A session needs the board's tool (Notion or FLO; none when the tickets are files), and permission to run git, the project's checks, and `gh`.
 - Which tickets may share one session is in [several-tickets.md](several-tickets.md).
 
@@ -52,3 +60,5 @@ When you do not know which model wrote the change, name your own vendor. Another
 Any agent that can start a separate session that does not share this one's conversation will do. In Cursor: `cursor-agent -p "<the line>"`, run from the repository. In Antigravity: `agy -p "<the line>"`. In Claude Code:
 
 `claude --bg -n "jtek <id> work" "<the line from the table>"`, run from the repository, starts a separate background session and returns at once. `claude agents --json` lists the sessions and their state, `claude attach <id>` opens one, and `claude logs <id>` prints its recent output. A session whose state is `blocked` waits for a person.
+
+A background session does not close itself. After it prints its `result` (the `jtek-result` block), run `claude stop <id>`. Do not ask the human anything on its behalf while it runs: a decision inside the pull request is its `choice:` line, for the human to change at review.

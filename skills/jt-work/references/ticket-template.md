@@ -60,7 +60,7 @@ A user can add a phone number on the profile page, so that sales can call back.
 
 ## Rules the template stands for
 
-- **Every `Done check` item can be seen working.** Name an input and a result. A quality with no number, such as "fast" or "secure", cannot be checked, and the agent will stop and ask.
+- **Every `Done check` item can be seen working.** Name an input and a result. A quality with no number, such as "fast" or "secure", cannot be checked: the agent will pick a measurable reading as a `choice:` line, or open a new card for the gap.
 - **One outcome per item, at the top level.** `start` refuses other text or nested items there, because each item gets one line in the evidence.
 - **`Constraints` names behaviour, not a topic.** "Titles with non-ASCII letters give the same slug as today" protects something. "Non-ASCII letters" does not.
 - **Small enough for one pull request.** If the items fall into two groups that could ship apart, write two tickets and link them with After.

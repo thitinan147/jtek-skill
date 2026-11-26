@@ -33,7 +33,7 @@ Grouping is decided before a session starts, by the human or the launcher. The f
 
 - **Put together:** up to three small tickets with the same `area:` that do not depend on each other.
 - **Give its own session:** a ticket in another area, a large ticket, a `refactor`, a bug you expect to be hard, and any ticket with `after:`.
-- **Run in parallel sessions instead:** tickets you want done sooner. One session works one ticket at a time.
+- **Run in parallel sessions instead:** tickets you want done sooner, but only when they share no database, port, e2e stack, or shared files. Tickets that share one run one at a time. One session works one ticket at a time.
 - The board shows each Todo ticket's Area, Kind, and After.
 
 ## How the session ends
