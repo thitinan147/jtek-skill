@@ -6341,6 +6341,237 @@ class VerifyOverrideAndKnownRedTests(Scratch):
         self.assertIn("test: fail", cout)
         self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], 1)
 
+    def test_broke_refuses_when_only_known_red_base_check_fails(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red_base'))\""})
+        (self.repo / "red_base").write_text("")
+        self.git("add", "red_base")
+        self.git("commit", "-q", "-m", "red base on only check")
+
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: test", out)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        (tree / "feature.txt").write_text("unrelated no-op edit\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("known-red", out)
+        self.assertIn("test", out)
+        self.assertIn("still in the worktree", out)
+        self.assertFalse((work / "broke.json").exists(), "known-red failure must not write or seal broke.json")
+        self.assertEqual((tree / "feature.txt").read_text(), "unrelated no-op edit\n")
+
+        # Restoring leaves no broke proof, so finish --no-pr must refuse.
+        self.git("checkout", "--", ".", cwd=tree)
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 1, fout)
+        self.assertIn("broke", fout)
+        self.assertNotIn("outcome:", fout)
+
+    def test_broke_on_mixed_known_red_refuses_unrelated_edit_and_accepts_green_test_break(self):
+        self.write_config({
+            "test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('BROKEN_APP'))\"",
+            "verify": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red_verify'))\"",
+        })
+        (self.repo / "red_verify").write_text("")
+        self.git("add", "red_verify")
+        self.git("commit", "-q", "-m", "red verify on base")
+
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: verify", out)
+        self.assertNotIn("known-red: test", out)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertIn("verify: known-red", cout)
+
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+
+        # Unrelated edit: green `test` still passes, only known-red `verify` fails -> broke must refuse.
+        (tree / "feature.txt").write_text("unrelated edit\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("known-red", out)
+        self.assertIn("verify", out)
+        self.assertIn("still in the worktree", out)
+        self.assertFalse((work / "broke.json").exists(), "known-red verify must not be accepted as proof")
+        self.assertEqual((tree / "feature.txt").read_text(), "unrelated edit\n")
+
+        # Real break of the green `test` check -> broke succeeds and records sealed proof citing `test`.
+        (tree / "BROKEN_APP").write_text("1\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("broke: item 1 made `test` fail", out)
+        proof = json.loads((work / "broke.json").read_text())
+        old_cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            self.assertTrue(jtek_module().broke_intact(proof))
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(proof["items"]["1"]["check"], "test")
+        self.assertEqual(proof["items"]["1"]["fails"], ["test"])
+
+        # Restore and confirm finish accepts the real proof.
+        self.git("checkout", "--", ".", cwd=tree)
+        (tree / "BROKEN_APP").unlink()
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 0, fout)
+        self.assertIn("outcome: review", fout)
+
+    def _remote(self):
+        """Give the repository a bare origin and return a second clone that can push to it."""
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        other = Path(self.tmp.name) / "other"
+        self.git("clone", "-q", str(bare), str(other))
+        self.git("config", "user.email", "t@example.invalid", cwd=other)
+        self.git("config", "user.name", "t", cwd=other)
+        return other
+
+    def test_known_red_waiver_drops_after_rebase_onto_newer_origin_base(self):
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        old_sha = self.git("rev-parse", "main")
+
+        other = self._remote()
+        self.write_config(
+            {"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""},
+            forge=False,
+        )
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: test", out)
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_base"], old_sha)
+
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # A forge merge fixes `origin/main` while local `refs/heads/main` stays at old_sha.
+        self.git("rm", "-q", "red", cwd=other)
+        self.git("commit", "-q", "-m", "fix origin main", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+
+        tree = self.worktree("T-1")
+        self.git("fetch", "-q", "origin", cwd=tree)
+        self.git("rebase", "-q", "origin/main", cwd=tree)
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), old_sha)
+        self.assertNotEqual(self.git("rev-parse", "refs/remotes/origin/main", cwd=tree), old_sha)
+
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+
+        # Ticket introduces a regression (`red` returns): old waiver must not apply.
+        (tree / "red").write_text("")
+        self.git("add", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "ticket breaks test", cwd=tree)
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertNotIn("test: known-red", cout)
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
+    def test_known_red_waiver_drops_after_rebase_onto_still_red_origin_base(self):
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        old_sha = self.git("rev-parse", "main")
+
+        other = self._remote()
+        self.write_config(
+            {"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""},
+            forge=False,
+        )
+        self.ticket("T-1", extra="review: human\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # `origin/main` advances to a new sha that is still red, so `known_red_passed` stays unset.
+        (other / "other.txt").write_text("move origin\n")
+        self.git("add", "other.txt", cwd=other)
+        self.git("commit", "-q", "-m", "advance origin main", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+
+        tree = self.worktree("T-1")
+        self.git("fetch", "-q", "origin", cwd=tree)
+        self.git("rebase", "-q", "origin/main", cwd=tree)
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), old_sha)
+
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.assertNotIn("known_red_passed", json.loads((work / "meta.json").read_text()))
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertNotIn("test: known-red", cout)
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
+    def test_known_red_passed_check_is_not_waived_again_when_base_unchanged(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""})
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        base_sha = self.git("rev-parse", "main")
+
+        self.ticket("T-1", extra="review: human\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # Ticket makes `test` green while local `main` stays at base_sha.
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.git("rm", "-q", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "fix test in ticket", cwd=tree)
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), base_sha)
+
+        # Later commit breaks `test` again; must fail and stay unwaived across repeated checks.
+        (tree / "red").write_text("")
+        self.git("add", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "break test again", cwd=tree)
+        for expected_runs in (1, 2):
+            code, cout = self.jtek("check", "T-1")
+            self.assertEqual(code, 1, cout)
+            self.assertIn("test: fail", cout)
+            self.assertNotIn("test: known-red", cout)
+            self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], expected_runs)
+            self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
 
 if __name__ == "__main__":
     unittest.main()

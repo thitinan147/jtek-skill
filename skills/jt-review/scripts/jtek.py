@@ -1887,8 +1887,9 @@ def cmd_start(args: argparse.Namespace) -> None:
                     green.write_text(base_sha + "\n")
                     baseline = f"{', '.join(selected)} passed on {base} at {base_sha[:7]} before any change"
 
-    if resumed and active_known_red(meta, Path(meta["worktree"])) and (work / "known-red.md").is_file():
-        known_red_lines = [line.strip() for line in (work / "known-red.md").read_text().splitlines() if line.strip()]
+    known_red_file = work / "known-red.md"
+    if resumed and active_known_red(meta, Path(meta["worktree"])) and known_red_file.is_file():
+        known_red_lines = [line.strip() for line in known_red_file.read_text().splitlines() if line.strip()]
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
     meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
@@ -1946,17 +1947,25 @@ def cmd_start(args: argparse.Namespace) -> None:
 
 
 def active_known_red(meta: dict, worktree: Path) -> list[str]:
-    """Checks recorded red on the base, still waived only while the base is at that same commit."""
-    red = [str(name) for name in (meta.get("known_red") or []) if isinstance(name, str) and name]
+    """Checks recorded red on the base, still waived only while the base is at that same commit and they have not passed."""
+    passed = {str(name) for name in (meta.get("known_red_passed") or []) if isinstance(name, str) and name}
+    red = [str(name) for name in (meta.get("known_red") or []) if isinstance(name, str) and name and name not in passed]
     recorded_base = str(meta.get("known_red_base") or "")
     if not red or not recorded_base:
         return []
-    now_base = git("rev-parse", base_ref(meta["base"]), cwd=worktree, check=False)
+    base = meta["base"]
+    local = base_ref(base)
+    now_base = git("rev-parse", local, cwd=worktree, check=False)
     if now_base != recorded_base:
         return []
-    common = git("merge-base", base_ref(meta["base"]), "HEAD", cwd=worktree, check=False)
+    common = git("merge-base", local, "HEAD", cwd=worktree, check=False)
     if common != recorded_base:
         return []
+    remote = f"refs/remotes/origin/{base}"
+    if git("rev-parse", "--verify", "--quiet", remote, cwd=worktree, check=False):
+        remote_common = git("merge-base", remote, "HEAD", cwd=worktree, check=False)
+        if remote_common != recorded_base:
+            return []
     return red
 
 
@@ -2009,7 +2018,8 @@ def record_known_red_followup(work: Path, base: str, base_sha: str, red_checks: 
 
 
 def ticket_env(ticket_id: str, worktree: Path, *, use_verify_override: bool = True) -> dict:
-    """The session's own environment, plus the ticket id, the worktree, and JTEK_VERIFY_DIR when a ticket override exists."""
+    """The session's own environment, plus the ticket id, the worktree, and JTEK_VERIFY_DIR when a ticket
+    override exists. Nothing is read from it here."""
     env = {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
     env.pop("JTEK_VERIFY_DIR", None)
     if use_verify_override and ticket_id and ID_RE.match(ticket_id):
@@ -2096,10 +2106,14 @@ def cmd_check(args: argparse.Namespace) -> None:
     if waived:
         record["known_red_base"] = meta["known_red_base"]
     write_json(work / "checks.json", record)
-    recorded_red = set(meta.get("known_red") or [])
-    passed_known_red = [row["name"] for row in results if row["name"] in recorded_red and row["status"] == "pass"]
-    if meta.get("known_red") and (passed_known_red or meta.get("known_red_passed")):
-        meta = update_meta(work, known_red_passed=passed_known_red)
+    recorded_red = [str(name) for name in (meta.get("known_red") or []) if isinstance(name, str) and name]
+    recorded_red_set = set(recorded_red)
+    passed_known_red = [row["name"] for row in results if row["name"] in recorded_red_set and row["status"] == "pass"]
+    prior_passed = {str(name) for name in (meta.get("known_red_passed") or []) if isinstance(name, str) and name}
+    if recorded_red and passed_known_red:
+        all_passed = [name for name in recorded_red if name in prior_passed or name in passed_known_red]
+        if all_passed != list(meta.get("known_red_passed") or []):
+            meta = update_meta(work, known_red_passed=all_passed)
     for result in results:
         print(f"{result['name']}: {result['status']} ({result['seconds']}s)")
     still_red = [row["name"] for row in results if row["status"] == "known-red"]
@@ -2176,11 +2190,23 @@ def cmd_broke(args: argparse.Namespace) -> None:
     if not shown.strip():
         raise Refuse("the worktree is dirty, but there is no diff to record. Break a tracked file, or add a file a check reads.")
     declared = load_checks(meta["base"])
+    waived = set(active_known_red(meta, worktree))
     # One directory per item, so item 2 does not truncate the log of item 1.
     results, _failed = run_checks(worktree, meta["checks"], declared, work / "logs" / "broke" / f"item-{number}",
-                                  all_of=True, ticket_id=args.id, use_verify_override=True)
+                                  all_of=True, ticket_id=args.id, use_verify_override=True, known_red=waived)
     behaviour = [row["name"] for row in results if row["status"] == "fail" and is_behaviour_check(row["name"])]
     if not behaviour:
+        known_red_behaviour = [
+            row["name"] for row in results if row["status"] == "known-red" and is_behaviour_check(row["name"])
+        ]
+        if known_red_behaviour:
+            names = ", ".join(known_red_behaviour)
+            raise Refuse(
+                f"only known-red behaviour check(s) failed while item {number} was broken (`{items[number - 1][:80]}`): {names}. "
+                f"A check that was already red on {meta['base']} is not proof that this edit broke the item. "
+                "A non-waived behaviour check has to fail. "
+                "The break is still in the worktree."
+            )
         if not any(row["status"] == "fail" for row in results):
             raise Refuse(
                 f"every check still passed while item {number} was broken (`{items[number - 1][:80]}`). "
@@ -2465,7 +2491,7 @@ def check_evidence(work: Path, text: str) -> None:
         # The step that reads the diff once more is the easiest to skip at the end of a long session.
         raise Refuse(
             "the evidence has no `clean-up:` line. Read the diff as the `jt-cleanup` skill says, then add one line "
-            "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to remove`"
+            "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to clean up`"
         )
 
 
