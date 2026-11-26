@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0--pre.4-111111?style=flat-square" alt="Version 28.0.0-pre.4">
+  <img src="https://img.shields.io/badge/version-28.0.0--pre.5-111111?style=flat-square" alt="Version 28.0.0-pre.5">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -70,7 +70,7 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 ## How it works
 
 1. **You write a ticket** as a page on the board (a Notion database, a FLO product, or a file when there is no board), with `Goal` and `Done when`, and set it to Todo.
-2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. A base that is already red is refused.
+2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. If a check is already red on the base, `start` records it as `known-red`, opens one follow-up ticket, and continues.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from the machine config, not from the worktree. An edit in the worktree cannot weaken them.
 5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
@@ -156,7 +156,7 @@ You can edit any guessed command in that same answer. `none` records `"board": "
 
 A command is one program with arguments, so a pipeline goes into a script. Without the harness, a passing check only means the code compiles. A machine that has no guide, such as a fresh cloud agent, reads the README and the code and says so. `/jt` and `/jt-work` run this same flow themselves when the repository has no machine config yet, ask once, and then continue what you asked.
 
-jtek adds no file to a repository. Config, the verify guide, the feature map, the rule table, and ticket files live under `~/.jtek`. The repository id is the origin's host, non-default port, and path (`github.com/acme/widget`, or `gitlab.example:2222/acme/widget`). With no origin it is `path` plus the checkout path. No `~/.jtek/config` and no per-repository file means the defaults: an empty board, so tickets are files. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into that folder and tells you to commit the removal. The same command moves `~/.config/jtek/agents.json` and `~/.config/jtek/me.md` to `~/.jtek` and refuses to overwrite. The old path is still read, with a one-line notice, until then. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
+jtek adds no file to a repository. Config, the verify guide, the feature map, the rule table, and ticket files live under `~/.jtek`. A ticket that needs to update `verify.md`, `features/`, or `rules.md` writes whole-file overrides under `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` (exposed via `JTEK_VERIFY_DIR` for that ticket's `check`, `broke`, and `run`, without affecting other tickets or approval stops), and `jtek.py sync` promotes them after merge or holds on a conflict. The repository id is the origin's host, non-default port, and path (`github.com/acme/widget`, or `gitlab.example:2222/acme/widget`). With no origin it is `path` plus the checkout path. No `~/.jtek/config` and no per-repository file means the defaults: an empty board, so tickets are files. `jtek.py migrate` moves a repository that still has `jtek.json` or `.jtek/` into that folder and tells you to commit the removal. The same command moves `~/.config/jtek/agents.json` and `~/.config/jtek/me.md` to `~/.jtek` and refuses to overwrite. The old path is still read, with a one-line notice, until then. Claims, logs, and results live under the git directory and are never committed. Details: [setup.md](skills/jt-work/references/setup.md).
 
 ## Commands
 

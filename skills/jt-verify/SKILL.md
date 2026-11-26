@@ -11,7 +11,7 @@ Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> -
 
 ## 1. Run the real thing
 
-If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. The verify guide is `verify.md` in `~/.jtek/repos/<repo id>/` (the same id `jtek.py init` prints: host, non-default port, and path of the origin, or the checkout path when there is no origin). Follow it, and read `features/<name>.md` beside it for the feature you changed. When that folder is missing, do not stop and do not build one: read the README and the code, use the list below, and say in the evidence that no verify guide was found.
+If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. The verify guide is `verify.md` in `~/.jtek/repos/<repo id>/` (the same id `jtek.py init` prints: host, non-default port, and path of the origin, or the checkout path when there is no origin). Check `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` first: when an override file is present there (`verify.md`, `features/<name>.md`, or `rules.md`), follow the override instead of the main file, and read `features/<name>.md` beside it for the feature you changed. When no guide exists in either place, do not stop and do not build one: read the README and the code, use the list below, and say in the evidence that no verify guide was found.
 
 For each `Done when` item, do what you named before you built it:
 
@@ -59,4 +59,4 @@ First rule out the way you looked: a stale build or cache, the wrong worktree, p
 
 If the project has no way to run the real thing, say so in the evidence and say that the repository needs a verification harness.
 
-If you found a new way to drive a feature, or a gotcha, add it to that feature's file in `~/.jtek/repos/<repo id>/features/`. That edit is not in the pull request. Say in the evidence which file you changed.
+If this ticket needs to change the verify guide, a feature file, or `rules.md` (including a new way to drive a feature or a gotcha), write the **complete** new file (not a patch) under `~/.jtek/repos/<repo id>/verify.d/<ticket id>/`, using the same layout as the main files (`verify.md`, `features/<name>.md`, `rules.md`). Do not edit the main `verify.md`, `features/`, or `rules.md` directly: `jtek.py sync` promotes the override after merge (or prints `hold` if another ticket's override differs). A ticket-scoped override under `verify.d/<ticket id>/` is not an act outside the pull request (P16): do not stop for approval. `check`, `broke`, and `run` set `JTEK_VERIFY_DIR` to that folder when it exists. Say in the evidence which override files were written so the reviewer inspects them with the diff.

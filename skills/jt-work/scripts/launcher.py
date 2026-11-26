@@ -6,6 +6,7 @@ Run them as `jtek.py <command>`. They live here to keep jtek.py small. `j` is th
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -243,6 +244,57 @@ def this_repo(j) -> str:
     return str(j.load_config(j.base_branch()).get("name") or j.main_root().name)
 
 
+def promote_verify_overrides(j, ticket_id: str) -> str:
+    """Promote known knowledge files from verify.d/<ticket_id>/ into repo_home() on merge.
+
+    If another ticket's verify.d tree has different bytes at the same relative path, hold without
+    changing main files or removing any override tree. Identical bytes are not a conflict.
+    """
+    override = j.active_verify_dir(ticket_id)
+    if override is None:
+        return ""
+    files = j.verify_override_files(override)
+    if not files:
+        return ""
+    main_home = j.repo_home()
+    siblings: list[Path] = []
+    seen: set[Path] = set()
+    for home in j.candidate_homes():
+        vroot = home / j.VERIFY_OVERRIDE_DIR
+        if not vroot.is_dir() or vroot.is_symlink():
+            continue
+        for entry in sorted(vroot.iterdir(), key=lambda p: p.name):
+            if entry.name == ticket_id or not entry.is_dir() or entry.is_symlink():
+                continue
+            resolved = entry.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                siblings.append(entry)
+    conflicts: list[str] = []
+    for rel in files:
+        src = override / rel
+        clashing: list[str] = []
+        for other in siblings:
+            other_file = other / rel
+            if not other_file.exists() and not other_file.is_symlink():
+                continue
+            if not j.same_content(src, other_file):
+                clashing.append(other.name)
+        if clashing:
+            conflicts.append(f"{rel} conflicts with {', '.join(clashing)}")
+    if conflicts:
+        return f"hold: verify.d/{ticket_id} not promoted ({'; '.join(conflicts)})"
+    for rel in files:
+        src = override / rel
+        dest = main_home / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(src.read_bytes())
+        os.replace(tmp, dest)
+    shutil.rmtree(override)
+    return f"promoted verify.d/{ticket_id}: {', '.join(files)}"
+
+
 def sync(j, args) -> None:
     """Done is read back from the forge, never assumed. Print what to write on the board, and tidy worktrees.
     Every ticket of this repository in Review, Done, or Cancelled gets a line, so silence never means success."""
@@ -266,7 +318,10 @@ def sync(j, args) -> None:
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}: {err}")
                 continue
             if state == "MERGED":
-                print(f"{ticket_id}\tboard: Status=Done\tthe pull request is merged; " + (tidy_done(j, ticket_id, head=head) or "nothing to tidy"))
+                tidy = tidy_done(j, ticket_id, head=head) or "nothing to tidy"
+                promo = promote_verify_overrides(j, ticket_id)
+                detail = f"the pull request is merged; {tidy}" + (f"; {promo}" if promo else "")
+                print(f"{ticket_id}\tboard: Status=Done\t{detail}")
             elif state == "unknown":
                 forge = j.select_forge(j.base_branch())
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `{forge}` installed and signed in?")
