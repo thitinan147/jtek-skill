@@ -48,7 +48,7 @@ Write the findings first, then the notes, as a short Markdown list in a file out
 - `jtek.py verdict <id> PASS+NOTES --by <name> --commit <commit> --notes-file <file>`: the same, with at least one `to weigh:` line, for something the human should decide before merging, such as a coverage gap with its `follow-up:`. Lines that only say what you saw, broke, or did not check do not make it `PASS+NOTES`.
 - `jtek.py verdict <id> FAIL --by <name> --commit <commit> --notes-file <file>`: a P0 or P1 bug you reproduced. A nit is not a FAIL.
 
-`--by` is the name `jtek.py reviewer` printed on its `by:` line; if another model answered, name that one. When the owner keeps no reviewer list, name the model that actually reviewed.
+`--by` is the name `jtek.py reviewer` printed on its `by:` line (or another entry from `agents.json` if that model answered); when the owner's reviewer list exists, `verdict` refuses any name not on it. When the owner keeps no reviewer list, name the model that actually reviewed.
 
 `<commit>` is the one `show` printed when you began. If the author committed since, `verdict` refuses: review the new commit.
 

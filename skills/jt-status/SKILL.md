@@ -1,6 +1,6 @@
 ---
 name: jt-status
-description: Shows machine and repository readiness from doctor followed by a Thai table of tickets in progress, waiting for review, waiting for merge, and the one next action. Read-only. Use when the user types /jt-status, and only then.
+description: Shows machine and repository readiness from doctor followed by a Thai table of tickets in progress, waiting for review, waiting for merge, choices to confirm, and the one next action. Read-only. Use when the user types /jt-status, and only then.
 disable-model-invocation: true
 ---
 
@@ -15,11 +15,12 @@ Read-only. Show whether the machine and repository are ready and where the work 
 - `พร้อมใช้`, both the machine and this repository are ready (optional items do not block readiness)
 - `ยังไม่พร้อม`, what required machine or repository item is missing and the command that fixes it
 
-After that first line, it prints four groups, in Thai:
+After that first line, it prints five groups, in Thai:
 
 - `กำลังทำ`, tickets a session holds, with the stored session hash (never a raw session id)
 - `รอรีวิว`, tickets waiting for a verdict
 - `รอ merge`, tickets waiting for the human to merge
+- `choice รอยืนยัน`, `choice:` lines from ticket evidence for the human to confirm
 - `ถัดไป`, the one next action
 
 A `-` in a group means none.

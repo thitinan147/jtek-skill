@@ -5930,7 +5930,7 @@ class ForgeTests(Scratch):
 
 
 class VerifyOverrideAndKnownRedTests(Scratch):
-    """SQ-127: per-ticket verify.d overrides, sync promote/hold, and known-red baseline (v28.0.0-pre.5)."""
+    """SQ-127: per-ticket verify.d overrides, sync promote/hold, and known-red baseline (v28)."""
 
     def _repo_home(self) -> Path:
         return self.config_file().parent
@@ -6571,6 +6571,284 @@ class VerifyOverrideAndKnownRedTests(Scratch):
         code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
         self.assertEqual(code, 1, fout)
         self.assertIn("checks have not passed", fout)
+
+
+class LauncherSmallAndVerdictByTests(Scratch):
+    """v28.0.0: multi-repo visibility in next/status, choice รอยืนยัน in status, and verdict --by check."""
+
+    def test_next_and_status_surface_multi_repo_tickets_and_keep_single_repo_rules(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, name="api")
+        board = Path(self.tmp.name) / "multi-repo-board.json"
+        board.write_text(json.dumps([
+            {"id": "T-1", "status": "Todo", "repo": "api, web", "title": "Both repos"},
+            {"id": "T-2", "status": "Todo", "repo": "web, mobile", "title": "Two other repos"},
+            {"id": "T-3", "status": "Todo", "repo": "web", "title": "Single foreign"},
+            {"id": "T-4", "status": "Todo", "repo": "api", "title": "Single match"},
+            {"id": "T-5", "status": "Todo", "repo": " , api , ", "title": "Trimmed single match"},
+            {"id": "T-6", "status": "Done", "repo": "api, web", "title": "Finished multi"},
+        ]))
+
+        proc_n = subprocess.run(
+            [sys.executable, str(SCRIPT), "next", "--board-file", str(board)],
+            cwd=self.repo, capture_output=True, text=True, env=with_session({"JTEK_HOME": str(self.home)}),
+        )
+        nxt = proc_n.stdout + proc_n.stderr
+        self.assertEqual(proc_n.returncode, 0, nxt)
+        rows = {line.split("\t")[0]: line.split("\t")[1:] for line in nxt.splitlines()}
+        self.assertEqual(rows["T-1"][0], "board")
+        self.assertIn("api, web", rows["T-1"][1])
+        self.assertIn("split", rows["T-1"][1])
+        self.assertEqual(rows["T-2"][0], "board")
+        self.assertIn("web, mobile", rows["T-2"][1])
+        self.assertNotIn("T-3", rows, "single foreign repo must stay hidden")
+        self.assertEqual(rows["T-4"], ["work", "new"])
+        self.assertEqual(rows["T-5"], ["work", "new"])
+        self.assertEqual(rows["T-6"], ["hold", "finished"])
+
+        # Also verify via Scratch's Board harness (`self.ticket` + `self.jtek("next")`).
+        self.ticket("T-10", extra="repo: api, web\n")
+        self.ticket("T-11", extra="repo: web\n")
+        self.ticket("T-12", extra="repo: api\n")
+        code_b, nxt_b = self.jtek("next")
+        self.assertEqual(code_b, 0, nxt_b)
+        brows = {line.split("\t")[0]: line.split("\t")[1:] for line in nxt_b.splitlines()}
+        self.assertEqual(brows["T-10"], ["board", "several repositories (api, web); split it into one ticket per repo"])
+        self.assertNotIn("T-11", brows)
+        self.assertEqual(brows["T-12"], ["work", "new"])
+
+        code_s, out = self.jtek("status", "--board-file", str(board))
+        self.assertEqual(code_s, 0, out)
+        self.assertIn("ถัดไป\tboard\tT-1\tseveral repositories (api, web); split it into one ticket per repo", out)
+        self.assertIn("ถัดไป\tboard\tT-2\tseveral repositories (web, mobile); split it into one ticket per repo", out)
+        self.assertNotIn("\tT-3\t", out)
+        self.assertIn("ถัดไป\twork\tT-4\tnew", out)
+
+    def test_status_shows_choice_group_in_order_with_cap_skips_finished_and_writes_nothing(self):
+        self.write_config({"test": f"{sys.executable} -c pass"}, name="api")
+
+        def make_claim(ticket_id, evidence=None, symlink_evidence=False):
+            work = self.repo / ".git" / "jtek" / "work" / ticket_id
+            work.mkdir(parents=True, exist_ok=True)
+            tree = self.repo.parent / f"wt-choice-{ticket_id}"
+            tree.mkdir(exist_ok=True)
+            (work / "meta.json").write_text(json.dumps({
+                "worktree": str(tree), "branch": f"jtek/{ticket_id}", "base": "main", "author": "0123456789abcdef"}))
+            if evidence is not None:
+                (work / "evidence.md").write_text(evidence)
+            elif symlink_evidence:
+                target = Path(self.tmp.name) / f"sym-{ticket_id}.md"
+                target.write_text("- choice: symlink must not be read\n")
+                (work / "evidence.md").symlink_to(target)
+            return work
+
+        w1 = make_claim(
+            "T-1",
+            "1. seen: ran command -> ok\n\nNotes:\n"
+            "- clean-up: nothing\n"
+            "choice: first decision -> A (P19)\n"
+            "- choice: second decision -> B (P17)\n"
+            "  *  choice:   third\tdecision   with spaces -> C\n"
+            "- choice: fourth decision -> D\n"
+            "* choice: fifth decision -> E\n"
+            "- choice:   \n",
+        )
+        make_claim("T-2", "- choice: done choice must be skipped\n")
+        make_claim("T-3", "- choice: cancelled choice must be skipped\n")
+        make_claim("T-4", "- choice: foreign choice must be skipped\n")
+        make_claim("T-5")  # missing evidence.md
+        make_claim("T-6", symlink_evidence=True)
+
+        board = Path(self.tmp.name) / "choice-board.json"
+        board.write_text(json.dumps([
+            {"id": "T-1", "status": "Review", "repo": "api", "pr": "https://example.invalid/pr/1", "title": "Merge me"},
+            {"id": "T-2", "status": "Done", "repo": "api", "title": "Done"},
+            {"id": "T-3", "status": "Cancelled", "repo": "api", "title": "Cancelled"},
+            {"id": "T-4", "status": "Todo", "repo": "web", "title": "Other repo"},
+            {"id": "T-5", "status": "In Progress", "repo": "api", "title": "No evidence"},
+            {"id": "T-6", "status": "In Progress", "repo": "api", "title": "Symlink evidence"},
+            {"id": "T-7", "status": "Todo", "repo": "api", "title": "Next work"},
+        ]))
+
+        meta_before = (w1 / "meta.json").read_bytes()
+        ev_before = (w1 / "evidence.md").read_bytes()
+        home_before = sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*"))
+
+        code, out = self.jtek("status", "--board-file", str(board))
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+
+        self.assertIn("choice รอยืนยัน\tT-1\tfirst decision -> A (P19)", lines)
+        self.assertIn("choice รอยืนยัน\tT-1\tsecond decision -> B (P17)", lines)
+        self.assertIn("choice รอยืนยัน\tT-1\tthird decision with spaces -> C", lines)
+        self.assertIn("choice รอยืนยัน\tT-1\t… +2", lines)
+        self.assertNotIn("fourth decision", out)
+        self.assertNotIn("fifth decision", out)
+        self.assertNotIn("done choice must be skipped", out)
+        self.assertNotIn("cancelled choice must be skipped", out)
+        self.assertNotIn("foreign choice must be skipped", out)
+        self.assertNotIn("symlink must not be read", out)
+
+        # Group order: กำลังทำ -> รอรีวิว -> รอ merge -> choice รอยืนยัน -> ถัดไป.
+        idx_doing = next(i for i, l in enumerate(lines) if l.startswith("กำลังทำ\t"))
+        idx_review = next(i for i, l in enumerate(lines) if l.startswith("รอรีวิว\t"))
+        idx_merge = next(i for i, l in enumerate(lines) if l.startswith("รอ merge\t"))
+        idx_choice = next(i for i, l in enumerate(lines) if l.startswith("choice รอยืนยัน\t"))
+        idx_next = next(i for i, l in enumerate(lines) if l.startswith("ถัดไป\t"))
+        self.assertLess(idx_doing, idx_review)
+        self.assertLess(idx_review, idx_merge)
+        self.assertLess(idx_merge, idx_choice)
+        self.assertLess(idx_choice, idx_next)
+
+        # Read-only check.
+        self.assertEqual((w1 / "meta.json").read_bytes(), meta_before)
+        self.assertEqual((w1 / "evidence.md").read_bytes(), ev_before)
+        self.assertEqual(sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*")), home_before)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+        # Empty choices -> `choice รอยืนยัน\t-` between รอ merge and ถัดไป.
+        empty_board = Path(self.tmp.name) / "no-choice-board.json"
+        empty_board.write_text(json.dumps([{"id": "T-5", "status": "In Progress", "repo": "api", "title": "No ev"}]))
+        code2, out2 = self.jtek("status", "--board-file", str(empty_board))
+        self.assertEqual(code2, 0, out2)
+        lines2 = out2.splitlines()
+        self.assertIn("choice รอยืนยัน\t-", lines2)
+        self.assertLess(lines2.index("รอ merge\t-"), lines2.index("choice รอยืนยัน\t-"))
+        idx_next2 = next(i for i, l in enumerate(lines2) if l.startswith("ถัดไป\t"))
+        self.assertLess(lines2.index("choice รอยืนยัน\t-"), idx_next2)
+
+        # Without a board, a claim with no ticket file (LOCAL-1) still surfaces its choices.
+        make_claim("LOCAL-1", "- choice: local option -> kept\n")
+        code3, out3 = self.jtek("status")
+        self.assertEqual(code3, 0, out3)
+        self.assertIn("choice รอยืนยัน\tLOCAL-1\tlocal option -> kept", out3)
+
+    def test_verdict_by_validates_against_agents_json_in_both_copies(self):
+        self.ticket("T-1")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        sha = self.git("rev-parse", "HEAD", cwd=self.worktree("T-1"))
+        pass_notes = Path(self.tmp.name) / "v-pass.md"
+        pass_notes.write_text(PASS_NOTES)
+        fail_notes = Path(self.tmp.name) / "v-fail.md"
+        fail_notes.write_text(FAIL_NOTES)
+
+        unix_home = Path(self.tmp.name) / "unix-home"
+        unix_home.mkdir()
+        review_script = ROOT / "skills" / "jt-review" / "scripts" / "jtek.py"
+
+        def run_verdict(script_path, verdict_word, by_val, notes_path, extra_env=None):
+            env = {
+                **{k: v for k, v in os.environ.items() if not k.startswith("JTEK_")},
+                "HOME": str(unix_home),
+                "JTEK_HOME": str(self.home),
+                "JTEK_SESSION": "reviewer-session",
+                **(extra_env or {}),
+            }
+            proc = subprocess.run(
+                [sys.executable, str(script_path), "verdict", "T-1", verdict_word,
+                 "--by", by_val, "--commit", sha, "--notes-file", str(notes_path)],
+                cwd=self.repo, capture_output=True, text=True, env=env,
+            )
+            return proc.returncode, proc.stdout + proc.stderr
+
+        def clear_verdict_files():
+            for name in ("verdict.json", "review.md", "review-comment.md"):
+                path = work / name
+                if path.exists():
+                    path.unlink()
+
+        # 1. Without agents.json, any non-empty --by is accepted.
+        code, out = run_verdict(SCRIPT, "PASS", "any-custom-reviewer", pass_notes)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(json.loads((work / "verdict.json").read_text())["by"], "any-custom-reviewer")
+        clear_verdict_files()
+
+        # 2. With JTEK_HOME/agents.json, unlisted --by is refused and nothing is recorded (PASS and FAIL).
+        agents_path = self.home / "agents.json"
+        agents_path.write_text(json.dumps({"reviewers": [
+            {"command": "codex exec -m gpt-9", "vendor": "openai", "model": "gpt-9"},
+            {"command": "cursor-agent -p --model gem-3", "vendor": "google", "model": "gem-3"},
+        ]}))
+        meta_before = (work / "meta.json").read_bytes()
+
+        code, out = run_verdict(SCRIPT, "PASS", "not-in-list", pass_notes)
+        self.assertEqual(code, 1, out)
+        self.assertIn("refused:", out)
+        self.assertIn("gpt-9", out)
+        self.assertIn("codex", out)
+        self.assertIn("gem-3", out)
+        self.assertIn("jtek.py reviewer", out)
+        self.assertFalse((work / "verdict.json").exists())
+        self.assertFalse((work / "review.md").exists())
+        self.assertFalse((work / "review-comment.md").exists())
+        self.assertEqual((work / "meta.json").read_bytes(), meta_before)
+
+        code, out = run_verdict(SCRIPT, "FAIL", "not-in-list", fail_notes)
+        self.assertEqual(code, 1, out)
+        self.assertFalse((work / "verdict.json").exists())
+        self.assertEqual((work / "meta.json").read_bytes(), meta_before, "refused FAIL must not bump fail count")
+
+        # 3. Listed model (any case, padded whitespace), program name, and full command are accepted.
+        for candidate, expected in (("  GPT-9  ", "GPT-9"), ("CODEX", "CODEX"), ("codex exec -m gpt-9", "codex exec -m gpt-9")):
+            clear_verdict_files()
+            code, out = run_verdict(SCRIPT, "PASS", candidate, pass_notes)
+            self.assertEqual(code, 0, f"{candidate}: {out}")
+            self.assertEqual(json.loads((work / "verdict.json").read_text())["by"], expected)
+
+        # 4. The jt-review copy of jtek.py (which has no agents.py beside it) enforces the exact same rule.
+        clear_verdict_files()
+        code, out = run_verdict(review_script, "PASS", "bogus-model", pass_notes)
+        self.assertEqual(code, 1, out)
+        self.assertIn("refused:", out)
+        self.assertIn("gpt-9", out)
+        self.assertIn("jtek.py reviewer", out)
+        self.assertFalse((work / "verdict.json").exists())
+
+        code, out = run_verdict(review_script, "PASS", "Gem-3", pass_notes)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(json.loads((work / "verdict.json").read_text())["by"], "Gem-3")
+
+        # 5. Legacy ~/.config/jtek/agents.json is honoured with the migration notice.
+        clear_verdict_files()
+        agents_path.unlink()
+        legacy = unix_home / ".config" / "jtek" / "agents.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({"reviewers": [
+            {"command": "gemini -p", "vendor": "google", "model": "legacy-model"},
+        ]}))
+        code, out = run_verdict(review_script, "PASS", "wrong", pass_notes)
+        self.assertEqual(code, 1, out)
+        self.assertIn("notice: reading ", out)
+        self.assertIn("refused:", out)
+        self.assertIn("legacy-model", out)
+        self.assertFalse((work / "verdict.json").exists())
+
+        code, out = run_verdict(review_script, "PASS", "LEGACY-MODEL", pass_notes)
+        self.assertEqual(code, 0, out)
+        self.assertIn("notice: reading ", out)
+        self.assertEqual(json.loads((work / "verdict.json").read_text())["by"], "LEGACY-MODEL")
+
+        # 6. Malformed agents.json refuses with the load_reviewers message (no crash) and records nothing.
+        clear_verdict_files()
+        agents_path.write_text("{not json")
+        for script_path in (SCRIPT, review_script):
+            code, out = run_verdict(script_path, "PASS", "gpt-9", pass_notes)
+            self.assertEqual(code, 1, out)
+            self.assertIn("refused:", out)
+            self.assertIn("cannot read", out)
+            self.assertIn("agents.json", out)
+            self.assertFalse((work / "verdict.json").exists())
+
+        # Empty reviewers list refuses cleanly and records nothing.
+        agents_path.write_text('{"reviewers": []}')
+        code, out = run_verdict(review_script, "PASS", "gpt-9", pass_notes)
+        self.assertEqual(code, 1, out)
+        self.assertIn("refused:", out)
+        self.assertIn("empty", out)
+        self.assertFalse((work / "verdict.json").exists())
 
 
 if __name__ == "__main__":
