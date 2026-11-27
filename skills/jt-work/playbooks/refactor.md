@@ -7,7 +7,7 @@ A refactor changes the shape of the code and nothing a caller can observe.
 3. **Build** with `jt-build`, in this order:
    - Remove before you add. Delete dead code and merge duplicate helpers first, in their own commit.
    - Move in small steps. The tests pass after each one. Commit each one.
-   - Move every caller. Do not leave the old and the new way side by side. If you cannot move them all in this ticket, move what fits and open a new card for the rest (`jtek.py ticket --save`, or on the board), or write a `choice:` line that says which callers stay and why. Do not stop and wait.
+   - Move every caller. Do not leave the old and the new way side by side. If you cannot move them all in this ticket, move what fits and save a new local ticket file for the rest (`jtek.py ticket <file> --save`), or write a `choice:` line that says which callers stay and why. Do not stop and wait.
    - Before deleting a line that looks useless, read its history (`git log -S`, `git blame`). It may guard against something.
 4. **Do not change behaviour.** If you find a bug, leave it and put it in the evidence as a new ticket. A test you had to change is a sign that behaviour changed.
 5. **Check** with `jtek.py check <id>`. On a failure use `jt-debug`.

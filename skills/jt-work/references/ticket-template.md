@@ -1,6 +1,6 @@
 # Ticket template
 
-Copy the body below into a new page on the board. To get it on every new page, make it a template of the database in Notion: open the database, choose **New**, then **New template**, paste the body, and set it as the default.
+Use this form when writing a local ticket file (`jtek.py ticket <file> --save`) or drafting a local ticket from a chat goal (`jtek.py start --local --from-file <file>`).
 
 ## The body
 
@@ -23,22 +23,29 @@ Copy the body below into a new page on the board. To get it on every new page, m
 - <What this ticket does not do yet.>
 ```
 
-## The properties
+## The header fields
 
-| Property | Set it to |
+Put header fields right under the `# Title` line, with no blank line between them:
+
+| Field | Set it to |
 |---|---|
-| Name | What changes, in a few words: `Add a phone number to the profile` |
-| Status | `Backlog` while you write. `Todo` releases it |
-| Repo | The `name` in that repository's machine config |
-| Kind | `feature`, `bug`, or `refactor`. It picks the playbook |
-| Area | The part of the codebase, in a word or two |
-| After | A ticket that must be merged first |
-| Review | Leave empty. `human` waives the second session for a small ticket |
-| Checks | Leave empty to run every check |
+| `# <title>` | What changes, in a few words: `# Add a phone number to the profile` |
+| `id:` | Set by `jtek.py ticket --save` (`T-<n>`) or `start --local` (`LOCAL-<n>`) |
+| `status:` | `Backlog` while drafting; `Todo` releases a saved ticket file |
+| `repo:` | The `name` in that repository's machine config |
+| `kind:` | `feature`, `bug`, or `refactor`. It picks the playbook |
+| `area:` | The part of the codebase, in a word or two |
+| `after:` | A ticket id that must be Done (merged) first |
+| `review:` | Leave empty. `human` waives the second session for a small ticket file (ignored on `--local` or sensitive changes) |
+| `checks:` | Leave empty to run every declared check |
 
 ## A filled example
 
 ```markdown
+# Add a phone number to the profile
+kind: feature
+area: profile
+
 ## Goal
 A user can add a phone number on the profile page, so that sales can call back.
 
@@ -60,14 +67,14 @@ A user can add a phone number on the profile page, so that sales can call back.
 
 ## Rules the template stands for
 
-- **Every `Done check` item can be seen working.** Name an input and a result. A quality with no number, such as "fast" or "secure", cannot be checked: the agent will pick a measurable reading as a `choice:` line, or open a new card for the gap.
+- **Every `Done check` item can be seen working.** Name an input and a result. A quality with no number, such as "fast" or "secure", cannot be checked: `jtek.py ticket` refuses it before `start`, and during work the agent picks a measurable reading as a `choice:` line or saves a follow-up ticket file for the gap.
 - **One outcome per item, at the top level.** `start` refuses other text or nested items there, because each item gets one line in the evidence.
 - **`Constraints` names behaviour, not a topic.** "Titles with non-ASCII letters give the same slug as today" protects something. "Non-ASCII letters" does not.
-- **Small enough for one pull request.** If the items fall into two groups that could ship apart, write two tickets and link them with After.
+- **Small enough for one pull request.** If the items fall into two groups that could ship apart, save two ticket files and link them with `after:`.
 - **A bug says how to see it.** Put the steps and the wrong result in `Goal`. The first `Done check` item is the right result for those steps.
-- **The headings are named exactly** `Goal`, `Done check`, `Proof`, `Context`, and `Constraints`, or the words your project set as `headings` in the machine config. The rest of the page can be in any language. `Done when` and `Out of scope` are not slots on a draft.
+- **The headings are named exactly** `Goal`, `Done check`, `Proof`, `Context`, and `Constraints`, or the words your project set as `headings` in the machine config. The rest of the file can be in any language. `Done when` and `Out of scope` are still accepted by `start`, but not by `jtek.py ticket`.
 - **No guessed fix, and no steps the skills already run.** Do not add a cause, a fix, a plan, or a list of skills. The playbook already has the steps. A bug's steps and the wrong result go in `Goal`, as facts, not as a theory of the line that is wrong.
 
 ## Spec handoff
 
-The handoff a session receives is this same card. Copy the five slots. Do not add a section for the cause, the fix, or the order of skills. `jtek.py ticket <file>` refuses a draft that is missing a slot, that has any other heading, that puts a skill step under `Done check`, or that states a guessed cause or fix.
+The handoff a session receives is this same file. Copy the five slots. Do not add a section for the cause, the fix, or the order of skills. `jtek.py ticket <file>` refuses a draft that is missing a slot, that has any other heading, that puts a skill step under `Done check`, or that states a guessed cause or fix.

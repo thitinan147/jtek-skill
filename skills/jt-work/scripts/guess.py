@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 
-ASK = "board? none (tickets as files) / Notion database link / FLO product link"
+ASK = "checks? confirm or edit these commands"
 ORDER = ("setup", "secrets", "lint", "types", "test", "audit", "verify")
 MAX_BYTES = 1_000_000
 DOTENV = "." + "env"

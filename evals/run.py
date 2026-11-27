@@ -7,12 +7,11 @@
 --lean hands the agent a short router and the reviewer's skill, with no step skills and no playbooks,
 to measure whether the step text still helps a given model.
 
-The agent run in between is yours to start, with any agent. An eval uses no Notion:
-the ticket is handed over as a file. Standard library only.
+The agent run in between is yours to start, with any agent.
+The ticket is handed over as a file. Standard library only.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -84,12 +83,10 @@ def build(name: str, dest: Path, lean: bool = False) -> None:
     skills = dest / "tools" / "skills"
     copy_skills(skills, lean)
     (dest / "variant.txt").write_text("lean\n" if lean else "full\n")
-    page = hashlib.sha256(f"{name}{dest}".encode()).hexdigest()[:32]
     print(f"repository: {repo}")
     print("prompt for a fresh agent session:")
     print(f"  Follow the skill at {skills / 'jt-work' / 'SKILL.md'} for ticket {scenario['ticket']} in the repository {repo}.")
-    print(f"  The ticket page is saved as {ticket}: pass it to start with --from-file, and https://www.notion.so/{page}")
-    print("  as the page link. No board tool is set up here, so skip the writes to the board.")
+    print(f"  The ticket file is {ticket}: pass it to start with --from-file.")
     print("  This repository has no remote. End with the result block.")
     print(f"then: python3 evals/run.py grade {name} {dest}")
 

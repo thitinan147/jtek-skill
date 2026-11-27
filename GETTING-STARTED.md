@@ -26,13 +26,13 @@ Install the whole set, not one skill at a time. The script lives in `jt-work` an
 
 > **On this box:** `agy` and `grok` load jtek through a symlink to `/workspace/tools/jtek-skill` instead of installing through `/plugin` or `npx`. Other machines follow the commands above.
 
-**You should see:** seventeen skills — `jt` and sixteen whose names start with `jt-` (for example, type `/jt-` in Claude Code to see the list).
+**You should see:** fifteen skills — `jt` and fourteen whose names start with `jt-` (for example, type `/jt-` in Claude Code to see the list).
 
 ## Step 2. Machine-wide init
 
 There is **no single machine-level init command** today. These are the real machine-level pieces that exist:
 
-- **Storage:** jtek stores machine and repository data under `~/.jtek`. There is no required `~/.jtek/config` file; when both `~/.jtek/config` and a per-repository file are absent, the defaults apply (empty board, tickets as files).
+- **Storage:** jtek stores machine and repository data under `~/.jtek`. There is no required `~/.jtek/config` file; tickets are always local files on this machine.
 - **Reviewer list (optional):** `/jt-agents` runs `jtek.py doctor --agents` and proposes `~/.jtek/agents.json`. The owner must say yes before it is written. Skip until you want a second-vendor reviewer.
 - **Style file (optional):** `/jt-me` proposes `~/.jtek/me.md`. The owner must say yes before it is written.
 - **GitHub (when using GitHub remotes):** sign in and check status:
@@ -61,22 +61,21 @@ Open your agent inside the repository and type:
 /jt-init
 ```
 
-It guesses checks from `package.json`, `Makefile`, `pyproject.toml`, and CI workflows, asks once (including the board question), writes `~/.jtek/repos/<repo id>/jtek.json`, runs the `jt-harness` skill, and then runs `jtek.py doctor`. Nothing is written into the repository.
+It guesses checks from `package.json`, `Makefile`, `pyproject.toml`, and CI workflows, asks once to confirm or edit them, writes `~/.jtek/repos/<repo id>/jtek.json`, runs the `jt-harness` skill, and then runs `jtek.py doctor`. Nothing is written into the repository.
 
 If the repository still has an old `jtek.json` or `.jtek/`, `/jt-init` runs `jtek.py migrate` instead and tells you to commit the removal. If doctor says it cannot find the base branch, make the first commit first.
 
-**You should see:** `jtek.py doctor` prints no `missing` line and ends with `ready:` (lines marked `optional` can wait). Running `/jt-status` shows `พร้อมใช้` on its first line, followed by the work table; if anything required is still missing, the first line starts with `ยังไม่พร้อม`, names what is missing, and names the command to fix it.
+**You should see:** `jtek.py doctor` prints no `missing` line and ends with `ready:` (lines marked `optional` can wait). Running `jtek.py status` shows `พร้อมใช้` on its first line, followed by the work table; if anything required is still missing, the first line starts with `ยังไม่พร้อม`, names what is missing, and names the command to fix it.
 
-## Step 4. Board
+## Step 4. First task
 
-You choose the board when `/jt-init` asks `board? none (tickets as files) / Notion database link / FLO product link`:
+Start from a goal typed in chat or an existing ticket file:
 
-- **`none` (tickets as files):** records `"board": ""` and keeps tickets in `~/.jtek/repos/<repo id>/tickets/`. **You should see:** `no board: the tickets are files in ...` in `jtek.py doctor`. Format and rules: [files.md](skills/jt-work/references/files.md).
-- **Notion:** connect the Notion tool in your agent, give it access to your database, and paste the database link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the database against the schema in [notion.md](skills/jt-work/references/notion.md).
-- **FLO:** connect the FLO tool in your agent and paste the FLO product link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the product against the schema in [flo.md](skills/jt-work/references/flo.md).
+- **Goal in chat:** type `/jt <what you want built or fixed>`. The agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` into a local ticket file (`LOCAL-<n>`), runs `jt-work` in a fresh worktree, gets a second-session review, and opens a pull request with evidence per `Done when`.
+- **Existing ticket file:** save a draft with `jtek.py ticket <file> --save` (into `~/.jtek/repos/<repo id>/tickets/T-<n>.md`), set `status: Todo` in that file, and run `/jt-work T-<n>` (or `/jt-work <path-to-file.md>`). Format and rules: [files.md](skills/jt-work/references/files.md).
 
 ## Next
 
-- **Day-to-day flow** (writing the first ticket, `/jt` and `/jt-work`, `/jt-review` in a fresh session, `/jt-status`, and merging yourself — jtek never merges): [README.md](README.md).
+- **Day-to-day flow** (`/jt` and `/jt-work`, `/jt-review` in a fresh session, `jtek.py status` / `next` / `sync`, and merging yourself — jtek never merges): [README.md](README.md).
 - **Ticket format:** [ticket-template.md](skills/jt-work/references/ticket-template.md).
-- **Multi-repo features & outer-loop automation:** [two-repos.md](skills/jt-work/references/two-repos.md) and [starting-sessions.md](skills/jt-work/references/starting-sessions.md).
+- **Multi-repo features & starting sessions:** [two-repos.md](skills/jt-work/references/two-repos.md) and [starting-sessions.md](skills/jt-work/references/starting-sessions.md).

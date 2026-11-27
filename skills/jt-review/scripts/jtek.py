@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """jtek inner loop: one ticket, one session, one worktree.
 
-The board is a Notion database or a FLO product, which the agent reads and writes
-with its own tool. This script never talks to the board: it takes the ticket as a file
-and prints what to write back. Config and per-repository knowledge live on this machine,
-under $HOME/.jtek (or JTEK_HOME). No file there means the defaults: an empty board, so tickets
-are files. Nothing is read from jtek.json or .jtek/ inside the repository.
+Tickets are local files on this machine, under $HOME/.jtek/repos/<repo id>/tickets (or
+passed via --from-file / --local). Config and per-repository knowledge live under
+$HOME/.jtek (or JTEK_HOME). Nothing is read from jtek.json or .jtek/ inside the repository.
 Claims, logs, and results live under the repository's common git directory, so every
 worktree sees the same claims and no tracked file is shared between sessions.
 Standard library only. Python 3.10+.
@@ -557,13 +555,13 @@ def base_ref(base: str) -> str:
 def load_config(base: str, cwd: Path | None = None) -> dict:
     """Config from this machine, never from the worktree or from a commit.
 
-    No per-repository file and no $HOME/.jtek/config means the defaults: an empty board and no checks.
+    No per-repository file and no $HOME/.jtek/config means the defaults: no setup and no checks.
     `base` is unused. Callers still pass the branch they are on.
     """
     del base
     path = find_config(cwd)
     if path is None:
-        return {"board": "", "setup": "", "checks": {}}
+        return {"setup": "", "checks": {}}
     try:
         config = json.loads(path.read_text())
     except json.JSONDecodeError as err:
@@ -577,8 +575,7 @@ def load_checks(base: str) -> dict[str, str]:
     checks = load_config(base).get("checks", {})
     if not isinstance(checks, dict) or not checks:
         if find_config() is None:
-            raise Refuse("no jtek config for this repository; run `jtek.py init` or `/jt-init`, fill it in, and give at least one check "
-                         "a command. With no config file the board is empty and tickets are files on this machine")
+            raise Refuse("no jtek config for this repository; run `jtek.py init` or `/jt-init`, fill it in, and give at least one check a command")
         raise Refuse(f"{config_name()} declares no checks; a ticket needs at least one real check")
     for name, cmd in checks.items():
         if not isinstance(cmd, str) or not cmd.strip():
@@ -679,11 +676,10 @@ def squash(text: str) -> str:
 
 
 def canon_status(value: str) -> str:
-    """Notion's own spelling is `In progress`. Accept any case, and refuse a status this board does not have."""
-    # FLO's column is `To do`, so spaces are ignored too.
+    """Accept any case or spacing, and refuse an unknown ticket status."""
     found = next((s for s in STATUSES if squash(s) == squash(value)), None)
     if value and not found:
-        raise Refuse(f"`{value}` is not a status of the board; it has: {', '.join(STATUSES)}")
+        raise Refuse(f"`{value}` is not a valid ticket status; valid statuses: {', '.join(STATUSES)}")
     return found or ""
 
 
@@ -841,8 +837,7 @@ def load_meta(ticket_id: str, tree: bool = False) -> dict:
         if work_dir(ticket_id).exists():
             raise Refuse(claimed(ticket_id))
         raise Refuse(f"{ticket_id} is not started in this repository ({main_root()}). If the ticket belongs to another "
-                     "repository, run the command from there or from the ticket's worktree. Otherwise read its page and "
-                     "run `jtek.py start`")
+                     "repository, run the command from there or from the ticket's worktree. Otherwise run `jtek.py start`")
     if tree and not Path(meta["worktree"]).is_dir():
         raise Refuse(f"the worktree of {ticket_id} is gone: {meta['worktree']}. Run `jtek.py release {ticket_id}`; "
                      f"the commits are on the branch {meta['branch']}")
@@ -1242,14 +1237,88 @@ def attention(meta: dict) -> str:
     return ", ".join(notes) or "-"
 
 
-def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
-    """What the session must now write on the ticket's page with the board's tool. `-` means nothing."""
-    if outcome == "review":
-        return "Status=Review; Waiting=; " + (f"PR={public_url(pr)}; " if pr else "") + "comment=result+evidence"
-    if outcome == "needs-human":
-        return f"Waiting={waiting}; comment=result"
-    # A pull request that waits for its second look is still worth a link on the page.
-    return f"PR={public_url(pr)}" if pr else "-"
+def update_ticket_header(path: Path | None, **changes: str) -> bool:
+    """Update header fields (`status`, `waiting`, `pr`) in a regular ticket file, leaving the body intact.
+    An empty string removes that header line. Writes atomically. Symlinks are not modified."""
+    if path is None or path.is_symlink() or not path.is_file():
+        return False
+    try:
+        text = path.read_text()
+    except OSError:
+        return False
+    lines = text.splitlines()
+    title_at = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
+    if title_at is None:
+        return False
+    end = title_at + 1
+    seen_field = False
+    while end < len(lines):
+        line = lines[end]
+        if line.startswith("## "):
+            break
+        if re.match(r"^([A-Za-z][A-Za-z -]*):\s*(.*)$", line):
+            seen_field = True
+            end += 1
+        elif not line.strip() and not seen_field:
+            end += 1
+        else:
+            break
+    header_lines = lines[title_at + 1:end]
+    rest = lines[end:]
+    lower_changes = {k.lower(): v for k, v in changes.items()}
+    updated: list[str] = []
+    seen_keys: set[str] = set()
+    for line in header_lines:
+        match = re.match(r"^([A-Za-z][A-Za-z -]*):\s*(.*)$", line)
+        if match:
+            key = match.group(1).strip().lower()
+            if key in lower_changes:
+                seen_keys.add(key)
+                val = lower_changes[key]
+                if val:
+                    updated.append(f"{key}: {val}")
+                continue
+        updated.append(line)
+    for key, val in lower_changes.items():
+        if key not in seen_keys and val:
+            updated.append(f"{key}: {val}")
+    new_lines = lines[:title_at + 1] + updated + rest
+    new_text = "\n".join(new_lines) + ("\n" if text.endswith("\n") or new_lines else "")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(new_text)
+    os.replace(tmp, path)
+    return True
+
+
+def ticket_file_of(ticket_id: str, meta: dict) -> Path | None:
+    """The backing ticket file for a non-local ticket, or None when it is local or absent."""
+    if meta.get("local"):
+        return None
+    recorded = meta.get("ticket_file")
+    if isinstance(recorded, str) and recorded:
+        path = Path(recorded)
+        if path.is_file() and not path.is_symlink():
+            return path
+    found = ticket_file(ticket_id)
+    if found.is_file() and not found.is_symlink():
+        return found
+    return None
+
+
+def mark_ticket_done(ticket_id: str) -> None:
+    """Set a ticket file's status to Done, or update a local claim's result.md status when there is no ticket file."""
+    meta = read_json(work_dir(ticket_id) / "meta.json")
+    path = ticket_file_of(ticket_id, meta)
+    if path is not None:
+        update_ticket_header(path, status="Done", waiting="")
+        return
+    result_path = work_dir(ticket_id) / "result.md"
+    if result_path.is_file() and not result_path.is_symlink():
+        lines = result_path.read_text().splitlines()
+        new_lines = ["status: Done" if line.startswith("status:") else line for line in lines]
+        tmp = result_path.with_name(f"{result_path.name}.{os.getpid()}.tmp")
+        tmp.write_text("\n".join(new_lines) + "\n")
+        os.replace(tmp, result_path)
 
 
 def write_result(ticket_id: str, outcome: str, status: str, note: str = "", waiting: str = "") -> str:
@@ -1283,6 +1352,7 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         if local_one_file(meta) else "waived by the ticket"
     if verdict:
         verdict_line = f"{verdict['verdict']} by {verdict['by']} @{verdict['sha'][:7]}"
+    pr_shown = public_url(str(meta.get("pr") or ""))
     lines = [
         "jtek-result",
         f"id: {ticket_id}",
@@ -1291,23 +1361,27 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
         f"waiting: {waiting or '-'}",
         f"checks: {check_line}",
         f"verdict: {verdict_line}",
-        f"pr: {public_url(str(meta.get('pr') or '-'))}",
+        f"pr: {pr_shown or '-'}",
         f"ci: {meta.get('ci') or '-'}",
         f"evidence: {evidence}",
         f"attention: {attention(meta)}",
         f"branch: {meta['branch']}",
         f"source: {meta['source']}",
         f"note: {' '.join(note.split()) or '-'}",
-        f"board: {'-' if meta.get('local') else board_line(outcome, waiting, meta.get('pr', ''))}",
     ]
-    if "comment=" in lines[-1]:
-        # The comment the board line asks for, ready to paste as it is, so nobody has to put it together or cut it.
-        lines.insert(-1, f"comment file: {work / 'board-comment.md'}")
     text = "\n".join(lines) + "\n"
     (work / "result.md").write_text(text)
-    if "comment=" in lines[-1]:
-        evidence_text = (work / "evidence.md").read_text() if (work / "evidence.md").exists() else ""
-        (work / "board-comment.md").write_text(text + ("\n" + evidence_text if "comment=result+evidence" in lines[-1] else ""))
+    target = ticket_file_of(ticket_id, meta)
+    if target is not None:
+        if outcome == "review":
+            changes = {"status": "Review", "waiting": ""}
+            if pr_shown:
+                changes["pr"] = pr_shown
+            update_ticket_header(target, **changes)
+        elif outcome == "needs-human":
+            update_ticket_header(target, status="In Progress", waiting=waiting)
+        elif pr_shown:
+            update_ticket_header(target, pr=pr_shown)
     return text
 
 
@@ -1412,9 +1486,9 @@ def ticket_folders() -> list[Path]:
 
 
 def tickets_dir() -> Path:
-    """Where new ticket files are written, when the config names no board.
+    """Where new ticket files are written on this machine.
 
-    On this machine, at $HOME/.jtek/repos/<repo id>/tickets. The repository is not touched.
+    At $HOME/.jtek/repos/<repo id>/tickets. The repository is not touched.
     A second checkout of the same origin on this machine sees the same files. A new machine does not,
     until someone copies that folder or runs `jtek.py migrate` there.
     """
@@ -1448,10 +1522,6 @@ def iter_ticket_files() -> list[Path]:
     return [found[key] for key in sorted(found)]
 
 
-def has_board(base: str) -> bool:
-    return bool(str(load_config(base).get("board") or "").strip())
-
-
 def file_status(ticket_id: str) -> str:
     """The status a ticket file shows, or an empty string when there is no such file or it cannot be read."""
     if not ID_RE.match(ticket_id):
@@ -1466,8 +1536,7 @@ def file_status(ticket_id: str) -> str:
 
 
 def open_after(value: str) -> list[str]:
-    """The ids of an `after:` line that are not Done. A board hands over only those; a ticket file keeps the line
-    as it was written, so each id is looked up."""
+    """The ids of an `after:` line whose ticket file is not Done."""
     return [dep for dep in (part.strip() for part in value.split(",")) if dep and file_status(dep) != "Done"]
 
 
@@ -1669,8 +1738,6 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     require_card(ticket)
     label, lines = outcome_lines(ticket["sections"])
     items = sum(1 for line in lines if re.match(r"^-\s*\S", line))
-    if args.save and has_board(base):
-        raise Refuse(f"this repository has a board (`board` in {CONFIG}); create the ticket there with the board's tool")
     print(f"ticket: ok, {items} item(s) under {label}, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
@@ -1688,30 +1755,36 @@ def read_ticket_file(path: str) -> str:
 def cmd_start(args: argparse.Namespace) -> None:
     if not session_identity():
         raise Refuse(SESSION_MISSING)
-    text = read_ticket_file(args.from_file) if args.from_file else ""
+    from_file = args.from_file
+    if not args.local and not from_file and args.ref:
+        candidate = Path(args.ref).expanduser()
+        if ("/" in args.ref or os.sep in args.ref or args.ref.endswith(".md")) and candidate.is_file():
+            from_file = str(candidate)
+    text = read_ticket_file(from_file) if from_file else ""
     if args.local:
-        if not args.from_file:
+        if not from_file:
             raise Refuse("--local needs --from-file: the ticket file the session wrote")
         text = local_ticket(text)
-    elif not args.ref:
-        raise Refuse("name the ticket's page link, or pass --local for work that has no ticket")
+    elif not args.ref and not from_file:
+        raise Refuse("name a ticket id, pass --from-file <file>, or pass --local --from-file <file> for work started from chat")
     base = base_branch()
     # Before anything is read from the base: the checks and the settings come from it too.
     base_note = "" if args.no_fetch else refresh_base(base)
-    page = None
-    if not args.from_file:
-        # Without a board the tickets are files, and the id alone names one.
-        if has_board(base):
-            raise Refuse("pass --from-file: the page, read just now from the board and saved in the ticket format")
+    page: Path | None = None
+    id_lookup = False
+    if not from_file:
         page = ticket_file(check_id(args.ref))
         if not page.is_file():
-            raise Refuse(f"there is no ticket file {page}. This repository has no board, so its tickets are files in "
-                         f"{tickets_dir()} (older ones are still read from {legacy_tickets_dir()}). "
-                         "For work that has no ticket, pass --local")
+            raise Refuse(f"there is no ticket file {page}. Ticket files live in {tickets_dir()} "
+                         f"(older ones are still read from {legacy_tickets_dir()}). "
+                         "Pass --from-file <file> for a ticket file elsewhere, or --local --from-file <file> for work started from chat")
         text = read_ticket_file(str(page))
+        id_lookup = True
+    elif not args.local:
+        page = Path(from_file).expanduser().resolve()
     english = {own: name for name, own in load_settings(base)["headings"].items()}
     if english:
-        # The copy the session works from always has the three English headings, whatever the page calls them.
+        # The copy the session works from always has the three English headings, whatever the file calls them.
         lines = [f"## {english[' '.join(line[2:].split()).lower()]}"
                  if re.match(r"^##[ \t]", line) and not inside and " ".join(line[2:].split()).lower() in english else line
                  for line, inside in fenced(text.splitlines())]
@@ -1719,7 +1792,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     ticket = parse_ticket(text)
     fields = ticket["fields"]
     ticket_id = check_id(fields.get("id", ""))
-    if page and ticket_id != args.ref:
+    if id_lookup and ticket_id != args.ref:
         raise Refuse(f"{page} says `id: {ticket_id}`, not `{args.ref}`; the file's name and its id must be the same")
     if LOCAL_RE.match(ticket_id) and not args.local:
         raise Refuse(f"`{ticket_id}` is a local id; only `start --local` uses one")
@@ -1741,7 +1814,7 @@ def cmd_start(args: argparse.Namespace) -> None:
 
     baseline = asked = ""
     known_red_lines: list[str] = []
-    followup_id = followup_path = followup_board = ""
+    followup_id = followup_path = ""
     if args.resume or parked:
         meta = load_meta(ticket_id, tree=True)
         if status not in ("Todo", "In Progress"):
@@ -1751,20 +1824,20 @@ def cmd_start(args: argparse.Namespace) -> None:
         except FileNotFoundError:  # another session picked it up between the two lines
             raise Refuse(CLAIMED.format(id=ticket_id)) from None
         if args.local and asked and not args.answered:
-            # A local ticket has no board, so its `status: Todo` is the script's own and says nothing about the human.
+            # A local ticket has no ticket file on disk, so its `status: Todo` is the script's own and says nothing about the human.
             raise Refuse(f"{ticket_id} stopped with a question. When the human has answered it in the chat, start again "
                          "with --answered. A session never adds it on its own")
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
-            raise Refuse(f"{ticket_id} stopped with a question. The human answers on the page and sets Status to Todo")
+            raise Refuse(f"{ticket_id} stopped with a question. The human answers in the ticket file and sets status: Todo")
         fails_now = int(meta.get("fails") or 0)
-        # A question the human released, on a board, is the only thing that starts the FAIL count again.
+        # A question the human released in a ticket file is the only thing that starts the FAIL count again.
         # `--answered` does not: it only says the human replied in the chat, and it must not open a fourth round.
         if fails_now >= 3 and not (status == "Todo" and asked and not args.local):
             raise Refuse(
                 f"{ticket_id} has had {fails_now} FAIL verdicts. Stop with `jtek.py stop {ticket_id} --waiting input`: "
                 "the ticket or the reviewer's standard needs the human. `--answered` does not start another round. "
-                "On a board, the human answers on the page and sets Status to Todo; that is the only reset. "
+                "For a ticket file, the human answers in the file and sets status: Todo; that is the only reset. "
                 "A local ticket has no reset: start a new one."
             )
         if parked:
@@ -1790,8 +1863,8 @@ def cmd_start(args: argparse.Namespace) -> None:
         if work.exists():
             raise Refuse(claimed(ticket_id))
         if status != "Todo":
-            raise Refuse(f"{ticket_id} is `{status or 'unset'}`, not Todo; the human releases a ticket by setting Status to Todo")
-        after = ", ".join(open_after(fields.get("after", ""))) if page else fields.get("after")
+            raise Refuse(f"{ticket_id} is `{status or 'unset'}`, not Todo; the human releases a ticket by setting status: Todo in the ticket file")
+        after = ", ".join(open_after(fields.get("after", "")))
         if after:
             raise Refuse(f"{ticket_id} comes after {after}, which is not Done")
         work.parent.mkdir(parents=True, exist_ok=True)
@@ -1833,8 +1906,10 @@ def cmd_start(args: argparse.Namespace) -> None:
                 (work / "meta.json").unlink()
                 work.rmdir()
                 raise
-        source = "local, written by the session" if args.local else str(page) if page else " ".join(args.ref.split())
+        source = "local, written by the session" if args.local else " ".join(str(page).split())
         meta = {"id": ticket_id, "source": source, "local": bool(args.local), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
+        if page is not None and not args.local:
+            meta["ticket_file"] = str(page)
         write_json(work / "meta.json", {**meta, "starting": True, "pid": os.getpid(), "kept": kept})
         logs = state_dir() / "baseline" / ticket_id
 
@@ -1870,8 +1945,8 @@ def cmd_start(args: argparse.Namespace) -> None:
                     red_checks = [row["name"] for row in base_results if row["status"] == "fail"]
                     meta["known_red"] = red_checks
                     meta["known_red_base"] = base_sha
-                    followup_id, followup_path, followup_board = record_known_red_followup(
-                        work, base, base_sha, red_checks, ticket_id, logs, this_repo
+                    followup_id, followup_path = record_known_red_followup(
+                        base, base_sha, red_checks, ticket_id, logs, this_repo
                     )
                     if followup_id:
                         meta["known_red_followup"] = followup_id
@@ -1891,21 +1966,24 @@ def cmd_start(args: argparse.Namespace) -> None:
     if resumed and active_known_red(meta, Path(meta["worktree"])) and known_red_file.is_file():
         known_red_lines = [line.strip() for line in known_red_file.read_text().splitlines() if line.strip()]
     meta["checks"] = selected
+    if page is not None and not args.local:
+        meta["ticket_file"] = str(page)
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
     meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
     note_author(meta)
     remember_origin()
     write_json(work / "meta.json", meta)
     (work / "ticket.md").write_text(text)
+    if page is not None and not args.local:
+        update_ticket_header(page, status="In Progress", waiting="")
     print("jtek start: resumed" if resumed else "jtek start: allowed")
     if base_note:
         print(base_note)
     if not resumed and kept:
         print(f"note: the branch {branch} already existed, so the work goes on from its commits")
-    print("board: -" if args.local else "board: Status=In Progress; Waiting=")
     print(f"id: {ticket_id}")
-    if page:
-        print(f"page: {page}  (the ticket file; write there what a `board:` line says)")
+    if page is not None and not args.local:
+        print(f"ticket file: {page}")
     print(f"worktree: {meta['worktree']}")
     print(f"branch: {meta['branch']}")
     print(f"base: {meta['base']}")
@@ -1919,12 +1997,9 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(f"known-red file: {work / 'known-red.md'}  (included in evidence automatically, or copy into your evidence)")
         if followup_id:
             print(f"follow-up: {followup_id} ({followup_path}, Backlog)")
-        elif followup_path:
-            print(f"follow-up draft: {followup_path}")
-            print(f"board: {followup_board}")
     if asked:
         print(f"asked: {asked}")
-        print("answer: in the chat" if args.local else "answer: on the page, so in the ticket file above")
+        print("answer: in the chat" if args.local else "answer: in the ticket file above")
     print(f"review: {'a verdict from a session that did not write the code is required' if meta['review'] else 'human only (the ticket says `review: human`)'}")
     if resumed and meta.get("pr"):
         # The human may have said why the ticket is back on the pull request, and nowhere else.
@@ -1999,22 +2074,15 @@ def known_red_draft(base: str, base_sha: str, red_checks: list[str], source_id: 
     return "\n".join(header) + "\n\n" + "\n".join(sections) + "\n"
 
 
-def record_known_red_followup(work: Path, base: str, base_sha: str, red_checks: list[str], source_id: str,
-                              logs: Path, repo_name: str) -> tuple[str, str, str]:
-    """Open one Backlog ticket for a red base (saved file without a board, or draft path with a board)."""
+def record_known_red_followup(base: str, base_sha: str, red_checks: list[str], source_id: str,
+                              logs: Path, repo_name: str) -> tuple[str, str]:
+    """Save one local Backlog follow-up ticket file for a red base."""
     draft = known_red_draft(base, base_sha, red_checks, source_id, logs, repo_name)
-    if has_board(base):
-        draft_path = work / "known-red-followup.md"
-        try:
-            draft_path.write_text(draft)
-        except OSError:
-            return "", "", ""
-        return "", str(draft_path), f"create Backlog follow-up card from {draft_path}"
     try:
         saved_path = save_ticket(draft)
     except (OSError, Refuse):
-        return "", "", ""
-    return saved_path.stem, str(saved_path), ""
+        return "", ""
+    return saved_path.stem, str(saved_path)
 
 
 def ticket_env(ticket_id: str, worktree: Path, *, use_verify_override: bool = True) -> dict:
@@ -2660,7 +2728,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
     if last.exists() and "outcome: needs-human" in last.read_text():
         if meta.get("local"):
             raise Refuse(f"{args.id} stopped with a question. The human answers in the chat; then start again with --local --answered")
-        raise Refuse(f"{args.id} stopped with a question. The human answers on the page and sets Status to Todo; then start again")
+        raise Refuse(f"{args.id} stopped with a question. The human answers in the ticket file and sets status: Todo; then start again")
     if args.pr and args.no_pr:
         raise Refuse("pass --pr <url> or --no-pr, not both")
     if not args.pr and not args.no_pr and meta.get("no_pr"):
@@ -3265,9 +3333,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
     sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek, and move the owner files").set_defaults(func=cmd_other)
     sub.add_parser("guess", help="print guessed check commands for this repository; reads only").set_defaults(func=cmd_other)
-    status = sub.add_parser("status", help="read-only readiness line and table of claims, reviews, choices to confirm, and the one next action")
-    status.add_argument("--board-file", help="the open tickets, read from the board and saved as JSON; not needed when the tickets are files")
-    status.set_defaults(func=cmd_other)
+    sub.add_parser("status", help="read-only readiness line and table of claims, reviews, choices to confirm, and the one next action").set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
     doctor.add_argument("--agents", action="store_true", help="instead: the coding agents on this machine, their models, and the owner's list of reviewers")
     doctor.set_defaults(func=cmd_other)
@@ -3282,13 +3348,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     ticket = sub.add_parser("ticket", help="check a drafted ticket file the way start will, without claiming it")
     ticket.add_argument("file")
-    ticket.add_argument("--save", action="store_true", help="only without a board: keep the checked draft as a ticket file, with the next id and Status Backlog")
+    ticket.add_argument("--save", action="store_true", help="keep the checked draft as a ticket file on this machine, with the next id and status Backlog")
     ticket.set_defaults(func=cmd_ticket)
 
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
-    start.add_argument("ref", nargs="?", default="", help="the link of the ticket's page on the board; it becomes the `source:` of the result. Without a board: the ticket's id")
-    start.add_argument("--local", action="store_true", help="work with no ticket: the file has no id, and the script gives it a LOCAL-<n> one")
-    start.add_argument("--from-file", help="the page, read just now and saved in the ticket format; not needed when the tickets are files")
+    start.add_argument("ref", nargs="?", default="", help="ticket id (in the tickets folder) or path to a ticket file")
+    start.add_argument("--local", action="store_true", help="work started from a chat goal: the file has no id, and the script gives it a LOCAL-<n> one")
+    start.add_argument("--from-file", help="path to a ticket file (required with --local)")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--answered", action="store_true", help="only with --local: the human answered the question the ticket stopped with")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
@@ -3361,9 +3427,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("next", cmd_other, "for whoever starts sessions: what each open ticket of this repository needs now"),
         ("sync", cmd_other, "read the pull request of each Review ticket from the forge, and remove the worktrees of finished tickets"),
     ):
-        item = sub.add_parser(name, help=text)
-        item.add_argument("--board-file", help="the open tickets, read from the board and saved as JSON; not needed when the tickets are files")
-        item.set_defaults(func=func)
+        sub.add_parser(name, help=text).set_defaults(func=func)
     return parser
 
 
@@ -3396,7 +3460,7 @@ def machine_root() -> Path:
 
 
 def machine_config_path() -> Path:
-    """Machine-wide defaults. Absent, and with no per-repository file either, the board is empty."""
+    """Machine-wide defaults. Absent, and with no per-repository file either, no setup or checks are declared."""
     return machine_root() / "config"
 
 

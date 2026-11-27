@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 268" width="880" height="268" role="img" aria-label="jtek flow: you set a ticket to Todo on the board, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge. jtek.py refuses a red base, a failing check, evidence that skips an item, a verdict for older code, red CI, and a second claim.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 268" width="880" height="268" role="img" aria-label="jtek flow: you give a goal in chat or a ticket file, one session builds it in its own worktree and passes the checks, a second session that did not write it gives a verdict, a pull request opens with evidence, and you merge. jtek.py refuses a red base, a failing check, evidence that skips an item, a verdict for older code, red CI, and a second claim.">
 <rect width="880" height="268" fill="#0d1117"/>
 <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
-<text x="22" y="36" font-size="15" font-weight="600" fill="#e6edf3">One ticket in. One pull request out. You merge.</text>
+<text x="22" y="36" font-size="15" font-weight="600" fill="#e6edf3">One goal or ticket in. One pull request out. You merge.</text>
 <rect x="22" y="64" width="148" height="86" rx="8" fill="#e6edf3" stroke="#e6edf3" stroke-width="1.5"/>
 <text x="96.0" y="94" font-size="15" font-weight="600" text-anchor="middle" fill="#0d1117">You</text>
-<text x="96.0" y="116" font-size="12" text-anchor="middle" fill="#0d1117">write the ticket,</text>
-<text x="96.0" y="132" font-size="12" text-anchor="middle" fill="#0d1117">set it to Todo</text>
+<text x="96.0" y="116" font-size="12" text-anchor="middle" fill="#0d1117">give a goal or</text>
+<text x="96.0" y="132" font-size="12" text-anchor="middle" fill="#0d1117">ticket file</text>
 <path d="M174 107.0H188" stroke="#e6edf3" stroke-width="1.5"/>
 <path d="M187 102.0L194 107.0L187 112.0z" fill="#e6edf3"/>
 <rect x="196" y="64" width="148" height="86" rx="8" fill="#0d1117" stroke="#3d444d" stroke-width="1.5"/>
