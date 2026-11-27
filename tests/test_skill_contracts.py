@@ -118,6 +118,13 @@ class SkillContracts(unittest.TestCase):
         inner_docs = [SKILLS / name / "SKILL.md" for name in INNER_LOOP_SKILLS]
         inner_docs += sorted((SKILLS / "jt-work" / "playbooks").glob("*.md"))
         inner_docs.append(SKILLS / "jt-work" / "worker.md")
+        inner_docs += [
+            SKILLS / "jt-work" / "references" / "several-tickets.md",
+            SKILLS / "jt-work" / "references" / "two-repos.md",
+            SKILLS / "jt-work" / "references" / "ticket.md",
+            SKILLS / "jt-ship" / "references" / "evidence.md",
+            SKILLS / "jt-review" / "references" / "notes.md",
+        ]
         for path in inner_docs:
             text = path.read_text()
             targets = re.findall(r"\]\(([^)#]+)\)", text)
@@ -147,6 +154,18 @@ class SkillContracts(unittest.TestCase):
         script_text = (SKILLS / "jt-work" / "scripts" / "jtek.py").read_text()
         self.assertNotIn("create the ticket there with the board's tool", script_text)
         self.assertNotIn("Otherwise read its page and", script_text)
+
+    def test_outer_loop_docs_clear_waiting_and_mark_in_progress(self):
+        refs = SKILLS / "jt-work" / "references"
+        for name in ("starting-sessions.md", "notion.md", "flo.md"):
+            text = (refs / name).read_text()
+            self.assertIn("Status=In Progress; Waiting=", text, f"{name} must state the Status=In Progress; Waiting= write")
+            self.assertIn("running", text, f"{name} must tie the In Progress write to `running`")
+            self.assertIn("waiting: -", text, f"{name} must state the after-session Waiting= write")
+        starting = (refs / "starting-sessions.md").read_text()
+        self.assertNotIn("If you want the board to show `In Progress`", starting)
+        self.assertIn("several repositories", starting)
+        self.assertIn("one card per repo", starting)
 
     def test_statuses_match_the_script(self):
         script = (SKILLS / "jt-work" / "scripts" / "jtek.py").read_text()

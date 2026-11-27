@@ -22,7 +22,7 @@ A FLO product can be the board instead of a Notion database. Each item is a tick
 | `area:` | the tag `area:<name>` | human |
 | `after:` | the items listed as `blocked by` in its related items. An item listed as `blocks` waits for this one, and is not on the line | human |
 | `review: human` | the tag `review:human` | human |
-| `waiting:` | the tag `Open questions` is `input`, and the tag `Waiting approval` is `approval`. Write it also when the item is back in To do: `start` then prints `Waiting=` and the outer loop removes the tag | the outer loop sets it from `board:`, and clears it at the next start |
+| `waiting:` | the tag `Open questions` is `input`, and the tag `Waiting approval` is `approval`. Keep it in the ticket file when the item is back in To do; removing the tags is what `Waiting=` does | the outer loop sets it from `board:`, and writes `Status=In Progress; Waiting=` once `next` (or `status`) reports `running` and together with any `status: In Progress`, `waiting: -` result |
 | `checks:` | the tags `checks:<name>`, one per check, joined with commas | human |
 | the body | the item's description | human |
 

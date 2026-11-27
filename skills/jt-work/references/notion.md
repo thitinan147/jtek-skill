@@ -23,7 +23,7 @@ One Notion database is the board, and each page is a ticket. The outer loop read
 | Area | Select | the part of the codebase | human |
 | After | Relation to this database | tickets that must be Done first | human |
 | Review | Select | agent, human | human; empty means agent |
-| Waiting | Select | input, approval | the outer loop sets it from `board:`, and clears it at the next start |
+| Waiting | Select | input, approval | the outer loop sets it from `board:`, and writes `Status=In Progress; Waiting=` once `next` (or `status`) reports `running` and together with any `status: In Progress`, `waiting: -` result |
 | PR | URL | the pull request | the outer loop, from `board:` |
 | Checks | Text | names from the machine config; empty means all | human |
 
@@ -57,7 +57,7 @@ Then hand `<file>` and `<page link>` to the inner-loop session so it can run `jt
 
 ## Write what the `board:` line says
 
-`start` prints a `board:` line, and `finish` and `stop` print it as the last line of the `jtek-result` block (`jtek.py result <id>` prints it again). The outer loop writes exactly that on the page, and nothing else. If the card is still in `Todo` when a session ends with `status: In Progress` (`outcome: needs-review` or `outcome: needs-human`), set `Status=In Progress` on the page as well.
+Once `jtek.py next` (or `status`) reports a started ticket as `running` (the claim exists), the outer loop writes `Status=In Progress; Waiting=` on the page. When the session ends, `finish` and `stop` print a `board:` line as the last line of the `jtek-result` block (`jtek.py result <id>` prints it again): write exactly that on the page, and nothing else — except when the result says `status: In Progress` and `waiting: -`, write `Status=In Progress; Waiting=` together with it (so `Waiting` is always cleared even if the earlier write was missed), and if `status: In Progress` while the card is still `Todo`, also set `Status=In Progress`.
 
 | On the line | Write |
 |---|---|

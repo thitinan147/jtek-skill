@@ -2,7 +2,7 @@
 
 ## Ticket format
 
-A ticket is a page on the board (a Notion page or a FLO item), or a local file when there is no board. Only the outer loop reads the board with its tool and saves a ticket file in this format, as [starting-sessions.md](starting-sessions.md), [notion.md](notion.md), and [flo.md](flo.md) say, then hands the file and page link to the inner-loop session. The header lines come from the page's properties, and the sections from its body. The header lines sit right under the title: the first blank line after one, or the first line of other text, ends them, and `start` reads no header line below that. `jtek.py start` keeps a copy, and that copy is the file to work from.
+A ticket is a page on the board, or a local file when there is no board. Only the outer loop reads the board and saves a ticket file in this format, as [starting-sessions.md](starting-sessions.md) says, then hands the file and page link to the inner-loop session. The header lines come from the page's properties, and the sections from its body. The header lines sit right under the title: the first blank line after one, or the first line of other text, ends them, and `start` reads no header line below that. `jtek.py start` keeps a copy, and that copy is the file to work from.
 
 ```markdown
 # Short title
@@ -49,7 +49,7 @@ Work without a ticket is started with `jtek.py start --local --from-file <file>`
 
 ## Where tickets live
 
-The page on the board is the source of truth. The layout of the board (for the outer loop) is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. A repository with no board keeps each ticket as a file, and that file is the page: [files.md](files.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
+The page on the board is the source of truth; the outer loop's board references are linked from [starting-sessions.md](starting-sessions.md). A repository with no board keeps each ticket as a file, and that file is the page: [files.md](files.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
 
 ## Statuses
 
@@ -104,7 +104,7 @@ comment file: <path> (when the board line asks for a comment)
 board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | PR=<url> | -
 ```
 
-- **`board`:** what the outer loop must write on the ticket's page (or what the session writes to the local ticket file when there is no board). The meaning of each part is in [notion.md](notion.md), and where each lives in FLO in [flo.md](flo.md). `-` means nothing.
+- **`board`:** what the outer loop applies to the ticket's page (or what the session writes to the local ticket file when there is no board); see [starting-sessions.md](starting-sessions.md) for the outer loop's board rules. `-` means nothing.
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh` or `glab`, or with the project's `pr_state` command. `finish` refuses while it is `fail`. `none` right after a push usually means the forge has not started the run yet.
 - **`verdict`:** only a verdict for the change and the ticket as they are now is shown. `none` means one is still needed. A verdict stops counting when the code changes, even by whitespace or by moving the same edit to another place, and when the human changes the ticket's `Goal`, `Done when`, or `Out of scope`.
 - **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones (more only for a ticket with over 30 items), with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.

@@ -21,7 +21,7 @@ A session works the tickets it is given. Something else decides which ticket run
 |---|---|
 | `work` | With a board: read the ticket fresh from the board with its tool ([notion.md](notion.md) or [flo.md](flo.md)), save a ticket file outside the repository and its worktrees, and start a fresh session in this repository: `"Read <jt-work folder>/worker.md before anything else. Follow the jt-work skill for ticket <id> using ticket file <file> and page link <page link>."` Without a board: start a fresh session with `"Read <jt-work folder>/worker.md before anything else. Follow the jt-work skill for ticket <id>."` |
 | `review` | Start a fresh session in this repository: `"Read <jt-work folder>/worker.md before anything else. Follow the jt-review skill for ticket <id>."` It must not be the session that wrote the change. |
-| `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md), [flo.md](flo.md), or [files.md](files.md) says. Do not start a session. |
+| `board` | If the reason says `several repositories (…); split it`, no claim exists: split the card into one card per repo on the board. Otherwise the page does not show the saved result or question: write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md), [flo.md](flo.md), or [files.md](files.md) says. Do not start a session. |
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
 | `running` | Nothing, while a session for this ticket is running. If none is, tell the human: that session died. |
@@ -31,10 +31,10 @@ A session works the tickets it is given. Something else decides which ticket run
 ## How the outer loop runs one ticket with a board
 
 1. **Read the ticket from the board** with its tool ([notion.md](notion.md) or [flo.md](flo.md)), including any human comments after the latest `jtek-result` comment, and save a ticket file outside the repository and its worktrees. Keep its page link.
-2. **Start the session with the file and link.** The session runs `jtek.py start <page link> --from-file <ticket file>` and works without touching the board. (If you want the board to show `In Progress` while the session runs, write `Status=In Progress; Waiting=` only after `start` allows the claim.)
+2. **Start the session with the file and link, then mark the card `In Progress`.** The session runs `jtek.py start <page link> --from-file <ticket file>` and works without touching the board. After starting the session, once `jtek.py next` (or `status`) reports the ticket as `running` (the claim exists), write `Status=In Progress; Waiting=` on the page.
 3. **Wait for `jtek-result`.** When the session ends, read its `jtek-result` block (or run `jtek.py result <id>`). For a background Claude Code session, stop it with `claude stop <id>`.
 4. **Write back to the board in one batch:**
-   - Apply the `jtek-result` `board:` line on the page ([notion.md](notion.md) or [flo.md](flo.md)). If the card is still in `Todo` and the result says `status: In Progress` (`outcome: needs-review` or `outcome: needs-human`), set `Status=In Progress` on the page as well so `next` does not treat `Todo` as a new human release.
+   - Apply the `jtek-result` `board:` line on the page ([notion.md](notion.md) or [flo.md](flo.md)). When the result says `status: In Progress` and `waiting: -`, write `Status=In Progress; Waiting=` together with the result's `board:` line (so `Waiting` is always cleared even if the earlier write was missed); if `status: In Progress` and the card is still in `Todo`, also set `Status=In Progress`.
    - If the session output (`follow-up draft:`), evidence, or review notes (`follow-up:`) name a draft ticket file, create a Backlog card on the board from that file.
 5. **Read the board and run `next` again.** The action for that ticket has changed.
 

@@ -6857,5 +6857,109 @@ class LauncherSmallAndVerdictByTests(Scratch):
         self.assertFalse((work / "verdict.json").exists())
 
 
+class OuterLoopBoardTests(Scratch):
+    """Outer-loop board writes as documented in starting-sessions.md: sessions never write the board."""
+
+    def session(self, *args):
+        """Run an inner-loop jtek command without applying its `board:` line directly."""
+        saved = self.board.apply
+        self.board.apply = lambda *a, **k: None
+        try:
+            return self.jtek(*args)
+        finally:
+            self.board.apply = saved
+
+    def next_rows(self):
+        code, out = self.jtek("next")
+        self.assertEqual(code, 0, out)
+        return {line.split("\t")[0]: line.split("\t")[1:] for line in out.splitlines()}
+
+    def outer_mark_running(self, ticket_id):
+        """Step 2: once `next` reports `running`, write `Status=In Progress; Waiting=` on the board."""
+        rows = self.next_rows()
+        if rows.get(ticket_id, [""])[0] == "running":
+            self.board.apply(ticket_id, "board: Status=In Progress; Waiting=")
+
+    def outer_after_session(self, ticket_id, output):
+        """Step 4: apply the result's `board:` line, plus `Status=In Progress; Waiting=` when `status: In Progress`
+        and `waiting: -` (or `Status=In Progress` if still Todo with `status: In Progress`)."""
+        self.board.apply(ticket_id, output)
+        if "status: In Progress" in output:
+            if "waiting: -" in output:
+                self.board.apply(ticket_id, "board: Status=In Progress; Waiting=")
+            elif self.field(ticket_id, "status") == "Todo":
+                self.board.set(ticket_id, Status="In Progress")
+
+    def test_outer_loop_clears_waiting_after_answered_question_and_reaches_review(self):
+        # 1. Normal documented outer loop (step 2 `running` write + step 4 after-session write).
+        self.ticket("T-1")
+        self.assertEqual(self.next_rows()["T-1"][0], "work")
+        code, out = self.session("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.field("T-1", "status"), "Todo", "inner session must not touch the board")
+        self.outer_mark_running("T-1")
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertIsNone(self.field("T-1", "waiting"))
+
+        code, out = self.session("stop", "T-1", "--waiting", "input", "--note", "which currency?")
+        self.assertEqual(code, 0, out)
+        self.outer_after_session("T-1", out)
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertEqual(self.field("T-1", "waiting"), "input")
+        self.assertEqual(self.next_rows()["T-1"][0], "human")
+
+        # Human answers on the page and sets Status back to Todo (Waiting stays on the page).
+        self.board.set("T-1", Status="Todo")
+        self.assertEqual(self.next_rows()["T-1"][0], "work")
+
+        code, out = self.session("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.outer_mark_running("T-1")
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertIsNone(self.field("T-1", "waiting"))
+
+        self.commit_change("T-1")
+        self.assertEqual(self.session("check", "T-1")[0], 0)
+        code, out = self.session("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("waiting: -", out)
+        self.outer_after_session("T-1", out)
+
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertIsNone(self.field("T-1", "waiting"))
+        self.assertEqual(self.next_rows()["T-1"][0], "review")
+
+        # 2. Even if step 2's `running` write was missed, step 4 clears Waiting on `status: In Progress` + `waiting: -`.
+        self.ticket("T-2")
+        self.assertEqual(self.session("start", "T-2")[0], 0)
+        code, out = self.session("stop", "T-2", "--waiting", "input", "--note", "which format?")
+        self.assertEqual(code, 0, out)
+        self.outer_after_session("T-2", out)
+        self.assertEqual(self.field("T-2", "status"), "In Progress")
+        self.assertEqual(self.field("T-2", "waiting"), "input")
+        self.assertEqual(self.next_rows()["T-2"][0], "human")
+
+        self.board.set("T-2", Status="Todo")
+        self.assertEqual(self.next_rows()["T-2"][0], "work")
+
+        self.assertEqual(self.session("start", "T-2")[0], 0)
+        self.commit_change("T-2")
+        self.assertEqual(self.session("check", "T-2")[0], 0)
+        code, out = self.session("finish", "T-2", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("waiting: -", out)
+        # Without clearing Waiting, a stale Waiting=input traps `next` on `human`.
+        self.board.set("T-2", Status="In Progress")
+        self.assertEqual(self.next_rows()["T-2"][0], "human")
+        # From the exact missed-step-2 state (Todo + stale Waiting), step 4 sets In Progress, clears Waiting, and reaches review.
+        self.board.set("T-2", Status="Todo")
+        self.outer_after_session("T-2", out)
+        self.assertEqual(self.field("T-2", "status"), "In Progress")
+        self.assertIsNone(self.field("T-2", "waiting"))
+        self.assertEqual(self.next_rows()["T-2"][0], "review")
+
+
 if __name__ == "__main__":
     unittest.main()
