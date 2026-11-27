@@ -32,7 +32,7 @@ The repository id is the origin URL's host, a non-default port, and its path. `h
    ```
 
    Add `"board": "<the database link>"` to each, unless the repository has no board.
-3. A command is one program with arguments. It runs in the ticket's worktree with `JTEK_TICKET` and `JTEK_WORKTREE` set, so a command can pick its own port or data folder when several tickets run at once. Shell operators such as `&&` and `|` do not work. Put a pipeline in a script and call the script.
+3. A command is one program with arguments. It runs in the ticket's worktree with `JTEK_TICKET` and `JTEK_WORKTREE` set, so a command can pick its own port or data folder when several tickets run at once; `check`, `broke`, and `run` also set `JTEK_VERIFY_DIR` when `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` exists (whole-file overrides for `verify.md`, `features/`, or `rules.md`, promoted to the main folder by `jtek.py sync` after merge). Shell operators such as `&&` and `|` do not work. Put a pipeline in a script and call the script.
 4. **`verify`** should run the real thing: start the app and drive it, call the running API, or run the command-line tool on real input. If the project has no such command, build it with the `jt-harness` skill first. This check is the one that matters most. A check named `eslint`, `ruff`, `ruff-format`, `prettier`, `tsc`, `mypy`, or another lint, format, or type tool does not prove a Done when item. Name the behaviour check `test` or `verify`. Prefix `behaviour-` when the command is a linter but the check is the behaviour (`behaviour-eslint`).
 5. Run `jtek.py doctor`. It reads only, and lists what is set up and what is missing, in the order to fix it. It cannot see the board. With no board, it prints the folder of the ticket files. When `setup` creates a virtualenv, including when that call is inside a script the command names and doctor can read, doctor checks that `ensurepip` imports, and says so when the venv package is missing.
 6. The human reviews the file `init` wrote. `check` reads that file, never a `jtek.json` in the worktree, so a ticket cannot weaken a check by committing one.
@@ -51,7 +51,7 @@ The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. S
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 
-Every `start` runs the checks once on the base before any edit, so keep the base green. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
+Every `start` runs the checks once on the base before any edit, so keep the base green. If a check is already red on the base, `start` records `known-red` for that base commit, opens one follow-up ticket (or prints a draft path for a board), and continues so the ticket is not blocked; `check` and `finish` waive only that check while the base commit stays the same. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
 
 ## Commands that are not part of working a ticket
 

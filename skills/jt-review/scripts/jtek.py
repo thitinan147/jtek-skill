@@ -1740,6 +1740,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     parked = (work / "result.md").exists()
 
     baseline = asked = ""
+    known_red_lines: list[str] = []
+    followup_id = followup_path = followup_board = ""
     if args.resume or parked:
         meta = load_meta(ticket_id, tree=True)
         if status not in ("Todo", "In Progress"):
@@ -1851,7 +1853,7 @@ def cmd_start(args: argparse.Namespace) -> None:
         setup = load_config(base).get("setup", "")
         if isinstance(setup, str) and setup.strip():
             # A new worktree has no installed dependencies. Install them before anything runs.
-            if not run_command(setup, worktree, logs / "setup.log"):
+            if not run_command(setup, worktree, logs / "setup.log", ticket_id=ticket_id, use_verify_override=False):
                 raise give_back(f"the setup command from {CONFIG} failed in the new worktree", logs / "setup.log")
         baseline = "skipped, because the work goes on from an existing branch" if kept else "skipped (--no-baseline)"
         if not args.no_baseline and not kept:
@@ -1862,16 +1864,32 @@ def cmd_start(args: argparse.Namespace) -> None:
             green = state_dir() / "baseline" / "green" / key
             baseline = f"passed earlier on {base} at {base_sha[:7]} with the same commands; not run again"
             if not green.exists():
-                _, failed = run_checks(worktree, selected, declared, logs)
+                base_results, failed = run_checks(worktree, selected, declared, logs, all_of=True,
+                                                  ticket_id=ticket_id, use_verify_override=False)
                 if failed:
-                    raise give_back(
-                        f"check `{failed}` fails on {base} before any change (fix {base} first, or pass --no-baseline)",
-                        logs / f"{failed}.log",
+                    red_checks = [row["name"] for row in base_results if row["status"] == "fail"]
+                    meta["known_red"] = red_checks
+                    meta["known_red_base"] = base_sha
+                    followup_id, followup_path, followup_board = record_known_red_followup(
+                        work, base, base_sha, red_checks, ticket_id, logs, this_repo
                     )
-                green.parent.mkdir(parents=True, exist_ok=True)
-                green.write_text(base_sha + "\n")
-                baseline = f"{', '.join(selected)} passed on {base} at {base_sha[:7]} before any change"
+                    if followup_id:
+                        meta["known_red_followup"] = followup_id
+                    suffix = f" (follow-up: {followup_id})" if followup_id else ""
+                    known_red_lines = [
+                        f"known-red: {name} on {base} at {base_sha[:7]} (log: {logs / f'{name}.log'}){suffix}"
+                        for name in red_checks
+                    ]
+                    (work / "known-red.md").write_text("\n".join(known_red_lines) + "\n")
+                    baseline = f"known-red on {base} at {base_sha[:7]}: {', '.join(red_checks)}"
+                else:
+                    green.parent.mkdir(parents=True, exist_ok=True)
+                    green.write_text(base_sha + "\n")
+                    baseline = f"{', '.join(selected)} passed on {base} at {base_sha[:7]} before any change"
 
+    known_red_file = work / "known-red.md"
+    if resumed and active_known_red(meta, Path(meta["worktree"])) and known_red_file.is_file():
+        known_red_lines = [line.strip() for line in known_red_file.read_text().splitlines() if line.strip()]
     meta["checks"] = selected
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
     meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
@@ -1895,6 +1913,15 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"checks: {', '.join(selected)}")
     if baseline:
         print(f"baseline: {baseline}")
+    for line in known_red_lines:
+        print(line)
+    if known_red_lines and not resumed:
+        print(f"known-red file: {work / 'known-red.md'}  (included in evidence automatically, or copy into your evidence)")
+        if followup_id:
+            print(f"follow-up: {followup_id} ({followup_path}, Backlog)")
+        elif followup_path:
+            print(f"follow-up draft: {followup_path}")
+            print(f"board: {followup_board}")
     if asked:
         print(f"asked: {asked}")
         print("answer: in the chat" if args.local else "answer: on the page, so in the ticket file above")
@@ -1919,10 +1946,87 @@ def cmd_start(args: argparse.Namespace) -> None:
     print("next: follow the playbook for this kind; its order is the default. Work only inside the worktree")
 
 
-def ticket_env(ticket_id: str, worktree: Path) -> dict:
-    """The session's own environment, plus the ticket id and the worktree, so that a command can pick
-    its own port or data folder when several worktrees run at once. Nothing is read from it here."""
-    return {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
+def active_known_red(meta: dict, worktree: Path) -> list[str]:
+    """Checks recorded red on the base, still waived only while the base is at that same commit and they have not passed."""
+    passed = {str(name) for name in (meta.get("known_red_passed") or []) if isinstance(name, str) and name}
+    red = [str(name) for name in (meta.get("known_red") or []) if isinstance(name, str) and name and name not in passed]
+    recorded_base = str(meta.get("known_red_base") or "")
+    if not red or not recorded_base:
+        return []
+    base = meta["base"]
+    local = base_ref(base)
+    now_base = git("rev-parse", local, cwd=worktree, check=False)
+    if now_base != recorded_base:
+        return []
+    common = git("merge-base", local, "HEAD", cwd=worktree, check=False)
+    if common != recorded_base:
+        return []
+    remote = f"refs/remotes/origin/{base}"
+    if git("rev-parse", "--verify", "--quiet", remote, cwd=worktree, check=False):
+        remote_common = git("merge-base", remote, "HEAD", cwd=worktree, check=False)
+        if remote_common != recorded_base:
+            return []
+    return red
+
+
+def known_red_draft(base: str, base_sha: str, red_checks: list[str], source_id: str,
+                    logs: Path, repo_name: str = "") -> str:
+    """Draft one Backlog ticket to make every failing baseline check green on the base."""
+    checks_csv = ", ".join(red_checks)
+    header = [f"# Fix failing base checks on {base} ({checks_csv})", "kind: bug"]
+    if repo_name:
+        header.append(f"repo: {' '.join(repo_name.split())}")
+    done_lines = [f"- running declared check `{name}` on `{base}` exits 0" for name in red_checks]
+    log_lines = [f"- `{name}` log: `{logs / f'{name}.log'}`" for name in red_checks]
+    sections = [
+        "## Goal",
+        f"Make the declared base checks ({checks_csv}) exit 0 on `{base}` (seen red at `{base_sha[:7]}` when starting `{source_id}`).",
+        "",
+        "## Done check",
+        *done_lines,
+        "",
+        "## Proof",
+        f"- recorded check output showing exit 0 for {checks_csv} on `{base}`",
+        "",
+        "## Context",
+        f"- source ticket: `{source_id}`",
+        f"- base: `{base}` at `{base_sha}`",
+        *log_lines,
+        "",
+        "## Constraints",
+        "- do not weaken or skip the declared checks",
+    ]
+    return "\n".join(header) + "\n\n" + "\n".join(sections) + "\n"
+
+
+def record_known_red_followup(work: Path, base: str, base_sha: str, red_checks: list[str], source_id: str,
+                              logs: Path, repo_name: str) -> tuple[str, str, str]:
+    """Open one Backlog ticket for a red base (saved file without a board, or draft path with a board)."""
+    draft = known_red_draft(base, base_sha, red_checks, source_id, logs, repo_name)
+    if has_board(base):
+        draft_path = work / "known-red-followup.md"
+        try:
+            draft_path.write_text(draft)
+        except OSError:
+            return "", "", ""
+        return "", str(draft_path), f"create Backlog follow-up card from {draft_path}"
+    try:
+        saved_path = save_ticket(draft)
+    except (OSError, Refuse):
+        return "", "", ""
+    return saved_path.stem, str(saved_path), ""
+
+
+def ticket_env(ticket_id: str, worktree: Path, *, use_verify_override: bool = True) -> dict:
+    """The session's own environment, plus the ticket id, the worktree, and JTEK_VERIFY_DIR when a ticket
+    override exists. Nothing is read from it here."""
+    env = {**os.environ, "JTEK_TICKET": ticket_id, "JTEK_WORKTREE": str(worktree)}
+    env.pop("JTEK_VERIFY_DIR", None)
+    if use_verify_override and ticket_id and ID_RE.match(ticket_id):
+        override = active_verify_dir(ticket_id, cwd=worktree)
+        if override is not None:
+            env["JTEK_VERIFY_DIR"] = str(override)
+    return env
 
 
 def run_logged(argv: list[str], cwd: Path, env: dict, out_path: Path, stdin=None, err_log: Path | None = None) -> int | str:
@@ -1939,7 +2043,8 @@ def run_logged(argv: list[str], cwd: Path, env: dict, out_path: Path, stdin=None
         return f"did not run: {err}"
 
 
-def run_command(command: str, worktree: Path, log: Path) -> bool:
+def run_command(command: str, worktree: Path, log: Path, *, ticket_id: str = "",
+                use_verify_override: bool = True) -> bool:
     """Run one declared command."""
     try:
         argv = shlex.split(command)
@@ -1948,23 +2053,28 @@ def run_command(command: str, worktree: Path, log: Path) -> bool:
         log.write_text(f"jtek: {err}\n")
         return False
     # A check gets no input, so one that reads it cannot wait on the session's terminal.
-    return run_logged(argv, worktree, ticket_env(worktree.name, worktree), log, stdin=subprocess.DEVNULL) == 0
+    tid = ticket_id or worktree.name
+    return run_logged(argv, worktree, ticket_env(tid, worktree, use_verify_override=use_verify_override),
+                      log, stdin=subprocess.DEVNULL) == 0
 
 
 def run_checks(worktree: Path, names: list[str], declared: dict[str, str], logs: Path, *,
-               all_of: bool = False) -> tuple[list[dict], str | None]:
-    """Run checks in order. Stop at the first failure unless `all_of`, which is how `broke` runs them.
+               all_of: bool = False, ticket_id: str = "", use_verify_override: bool = True,
+               known_red: set[str] | frozenset[str] = frozenset()) -> tuple[list[dict], str | None]:
+    """Run checks in order. Stop at the first non-waived failure unless `all_of`, which is how `broke` runs them.
 
-    Return the results and the first failed name."""
+    Return the results and the first non-waived failed name."""
     results: list[dict] = []
     failed: str | None = None
     for name in names:
         started = time.time()
-        ok = run_command(declared[name], worktree, logs / f"{name}.log")
-        results.append({"name": name, "status": "pass" if ok else "fail", "seconds": round(time.time() - started, 1)})
-        if not ok and failed is None:
+        ok = run_command(declared[name], worktree, logs / f"{name}.log",
+                         ticket_id=ticket_id, use_verify_override=use_verify_override)
+        status = "pass" if ok else ("known-red" if name in known_red else "fail")
+        results.append({"name": name, "status": status, "seconds": round(time.time() - started, 1)})
+        if status == "fail" and failed is None:
             failed = name
-        if not ok and not all_of:
+        if status == "fail" and not all_of:
             return results, name
     return results, failed
 
@@ -1988,11 +2098,29 @@ def cmd_check(args: argparse.Namespace) -> None:
         raise Refuse(f"{limit} check runs have failed. One more guess usually means the design is wrong, not "
                      f"the line. Stop: `jtek.py stop {args.id} --waiting input --note \"<the cause you suspect>\"`")
     logs = work / "logs"
-    results, failed = run_checks(worktree, meta["checks"], declared, logs)
+    waived = set(active_known_red(meta, worktree))
+    results, failed = run_checks(worktree, meta["checks"], declared, logs,
+                                 ticket_id=args.id, use_verify_override=True, known_red=waived)
     failed_runs = previous.get("failed_runs", 0) + 1 if failed else 0
-    write_json(work / "checks.json", {"sha": sha, "dirty": bool(dirty), "results": results, "failed_runs": failed_runs})
+    record: dict = {"sha": sha, "dirty": bool(dirty), "results": results, "failed_runs": failed_runs}
+    if waived:
+        record["known_red_base"] = meta["known_red_base"]
+    write_json(work / "checks.json", record)
+    recorded_red = [str(name) for name in (meta.get("known_red") or []) if isinstance(name, str) and name]
+    recorded_red_set = set(recorded_red)
+    passed_known_red = [row["name"] for row in results if row["name"] in recorded_red_set and row["status"] == "pass"]
+    prior_passed = {str(name) for name in (meta.get("known_red_passed") or []) if isinstance(name, str) and name}
+    if recorded_red and passed_known_red:
+        all_passed = [name for name in recorded_red if name in prior_passed or name in passed_known_red]
+        if all_passed != list(meta.get("known_red_passed") or []):
+            meta = update_meta(work, known_red_passed=all_passed)
     for result in results:
         print(f"{result['name']}: {result['status']} ({result['seconds']}s)")
+    still_red = [row["name"] for row in results if row["status"] == "known-red"]
+    for name in still_red:
+        print(f"known-red: {name} (still red on {meta['base']} @{meta['known_red_base'][:7]}; log: {logs / f'{name}.log'})")
+    if passed_known_red:
+        print(f"known-red passed: {', '.join(passed_known_red)}")
     if failed:
         log = logs / f"{failed}.log"
         print(f"log: {log}")
@@ -2005,6 +2133,9 @@ def cmd_check(args: argparse.Namespace) -> None:
     if dirty:
         print(f"next: all checks pass, but these files are not committed; {DIRTY_HINT} and run check again")
         print(dirty)
+    elif still_red:
+        print(f"next: checks pass at {sha[:7]} (known-red waived: {', '.join(still_red)}); "
+              "go on with the next step of your playbook. Run check again after any new commit")
     else:
         print(f"next: all checks pass at {sha[:7]}; go on with the next step of your playbook. "
               "Run check again after any new commit")
@@ -2059,11 +2190,23 @@ def cmd_broke(args: argparse.Namespace) -> None:
     if not shown.strip():
         raise Refuse("the worktree is dirty, but there is no diff to record. Break a tracked file, or add a file a check reads.")
     declared = load_checks(meta["base"])
+    waived = set(active_known_red(meta, worktree))
     # One directory per item, so item 2 does not truncate the log of item 1.
     results, _failed = run_checks(worktree, meta["checks"], declared, work / "logs" / "broke" / f"item-{number}",
-                                  all_of=True)
+                                  all_of=True, ticket_id=args.id, use_verify_override=True, known_red=waived)
     behaviour = [row["name"] for row in results if row["status"] == "fail" and is_behaviour_check(row["name"])]
     if not behaviour:
+        known_red_behaviour = [
+            row["name"] for row in results if row["status"] == "known-red" and is_behaviour_check(row["name"])
+        ]
+        if known_red_behaviour:
+            names = ", ".join(known_red_behaviour)
+            raise Refuse(
+                f"only known-red behaviour check(s) failed while item {number} was broken (`{items[number - 1][:80]}`): {names}. "
+                f"A check that was already red on {meta['base']} is not proof that this edit broke the item. "
+                "A non-waived behaviour check has to fail. "
+                "The break is still in the worktree."
+            )
         if not any(row["status"] == "fail" for row in results):
             raise Refuse(
                 f"every check still passed while item {number} was broken (`{items[number - 1][:80]}`). "
@@ -2301,12 +2444,27 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         print(f"comment file: {work / 'review-comment.md'}  (the verdict line and the notes, ready to post on {meta['pr']})")
 
 
+def merge_known_red_evidence(work: Path, text: str) -> str:
+    """Append recorded known-red lines to saved evidence when the author did not include them."""
+    kr_file = work / "known-red.md"
+    if not kr_file.is_file() or re.search(r"^\s*(-\s*)?known-red:", text, re.M | re.I):
+        return text
+    kr_lines = [line.strip() for line in kr_file.read_text().splitlines() if line.strip()]
+    if not kr_lines:
+        return text
+    extra = "\n".join(f"- {line}" for line in kr_lines)
+    base_text = text if text.endswith("\n") else text + "\n"
+    return base_text + extra + "\n"
+
+
 def check_evidence(work: Path, text: str) -> None:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise Refuse("the evidence file is empty")
     items = done_when_items(work)
-    limit = max(MAX_EVIDENCE_LINES, len(items) + 10)
+    kr_file = work / "known-red.md"
+    kr_extra = len([line for line in kr_file.read_text().splitlines() if line.strip()]) if kr_file.is_file() else 0
+    limit = max(MAX_EVIDENCE_LINES, len(items) + 10) + kr_extra
     if len(lines) > limit:
         raise Refuse(
             f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
@@ -2333,7 +2491,7 @@ def check_evidence(work: Path, text: str) -> None:
         # The step that reads the diff once more is the easiest to skip at the end of a long session.
         raise Refuse(
             "the evidence has no `clean-up:` line. Read the diff as the `jt-cleanup` skill says, then add one line "
-            "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to remove`"
+            "under Notes: `- clean-up: <what you removed>`, or `- clean-up: nothing to clean up`"
         )
 
 
@@ -2478,7 +2636,12 @@ def cmd_finish(args: argparse.Namespace) -> None:
                      "A commit cannot set that flag.")
     sha, dirty = head_state(worktree)
     checks = read_json(work / "checks.json")
-    passed = checks.get("results") and all(r["status"] == "pass" for r in checks["results"])
+    waived = set(active_known_red(meta, worktree))
+    same_base = bool(waived) and checks.get("known_red_base") == meta.get("known_red_base")
+    passed = bool(checks.get("results")) and all(
+        r["status"] == "pass" or (same_base and r["status"] == "known-red" and r["name"] in waived)
+        for r in checks["results"]
+    )
     ran_all = [r["name"] for r in checks.get("results", [])] == meta["checks"]
     if dirty:
         raise Refuse(f"these files are not committed; {DIRTY_HINT} and run `jtek.py check {args.id}`\n{dirty}")
@@ -2493,7 +2656,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
     if args.evidence_file:
         text = read_file(args.evidence_file, "evidence")
         check_evidence(work, text)
-        saved.write_text(text)
+        saved.write_text(merge_known_red_evidence(work, text))
         meta = update_meta(work, evidence_patch=patch, evidence_ticket=about)  # kept even when a later rule refuses
     elif not saved.exists():
         raise Refuse(
@@ -2714,6 +2877,10 @@ def cmd_show(args: argparse.Namespace) -> None:
         declared = {}
     for name in meta["checks"]:
         print(f"check {name}: {declared.get(name, '(no longer declared)')}")
+    override = active_verify_dir(args.id)
+    if override is not None:
+        files = verify_override_files(override)
+        print(f"verify override: {override}" + (f" ({', '.join(files)})" if files else ""))
     print(f"pr: {public_url(str(meta.get('pr') or '-'))}")
 
 
@@ -3349,8 +3516,61 @@ def config_name(cwd: Path | None = None) -> str:
     return str(path)
 
 
-def knowledge_path(name: str, cwd: Path | None = None) -> Path | None:
-    """An existing verify guide, feature directory, rules file, or tickets directory."""
+VERIFY_OVERRIDE_DIR = "verify.d"
+
+
+def verify_override_dir(ticket_id: str, cwd: Path | None = None) -> Path:
+    """Where a ticket keeps whole-file verify overrides under this repository's machine home."""
+    return repo_home(cwd) / VERIFY_OVERRIDE_DIR / check_id(ticket_id)
+
+
+def active_verify_dir(ticket_id: str, cwd: Path | None = None) -> Path | None:
+    """The existing per-ticket verify override directory, or None when the ticket has none."""
+    tid = check_id(ticket_id)
+    for home in candidate_homes(cwd):
+        folder = home / VERIFY_OVERRIDE_DIR / tid
+        if folder.is_dir() and not folder.is_symlink():
+            return folder
+    return None
+
+
+def verify_override_files(folder: Path) -> list[str]:
+    """Relative POSIX paths of known knowledge files under one verify.d/<ticket>/ directory."""
+    if not folder.is_dir() or folder.is_symlink():
+        return []
+    found: list[str] = []
+    for name in ("verify.md", "rules.md"):
+        path = folder / name
+        if path.is_file() and not path.is_symlink():
+            found.append(name)
+    features = folder / "features"
+    if features.is_dir() and not features.is_symlink():
+        for root_dir, dirnames, filenames in os.walk(features, followlinks=False):
+            dirnames[:] = sorted(d for d in dirnames if not (Path(root_dir) / d).is_symlink())
+            for filename in sorted(filenames):
+                file_path = Path(root_dir) / filename
+                if file_path.is_file() and not file_path.is_symlink():
+                    found.append(file_path.relative_to(folder).as_posix())
+    return sorted(found)
+
+
+def knowledge_path(name: str, cwd: Path | None = None, ticket_id: str | None = None) -> Path | None:
+    """An existing verify guide, feature directory or file, rules file, or tickets directory.
+
+    When `ticket_id` is given, a matching entry under `verify.d/<ticket_id>/` wins over the main home.
+    """
+    if ticket_id:
+        override = active_verify_dir(ticket_id, cwd)
+        if override is not None:
+            base_dir = override.resolve()
+            candidate = override / name
+            try:
+                resolved = candidate.resolve()
+                resolved.relative_to(base_dir)
+            except (OSError, ValueError):
+                resolved = None
+            if resolved is not None and candidate.exists() and not candidate.is_symlink():
+                return candidate
     for home in candidate_homes(cwd):
         path = home / name
         if path.exists():

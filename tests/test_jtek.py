@@ -495,23 +495,35 @@ class CheckTests(Scratch):
         self.assertNotIn("stop", outs[1])
         self.assertIn("jtek.py stop T-1", outs[2])
 
-    def test_red_base_refuses_start_and_gives_the_claim_back(self):
+    def test_red_base_records_known_red_and_starts_and_clean_base_has_none(self):
         self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""})
         (self.repo / "red").write_text("")
         self.git("add", "red")
         self.git("commit", "-q", "-m", "break main")
+        red_sha = self.git("rev-parse", "main")
         path = self.ticket("T-1")
         code, out = self.jtek("start", "T-1")
-        self.assertEqual(code, 1)
-        self.assertIn("fails on main before any change", out)
-        self.assertEqual(self.field(path, "status"), "Todo")
-        self.assertFalse(self.worktree("T-1").exists())
-        self.assertEqual(self.git("branch", "--list", "jtek/T-1"), "")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: test", out)
+        self.assertEqual(self.field(path, "status"), "In Progress")
+        self.assertTrue(self.worktree("T-1").is_dir())
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.worktree("T-1")), "jtek/T-1")
+        meta = json.loads((self.repo / ".git" / "jtek" / "work" / "T-1" / "meta.json").read_text())
+        self.assertEqual(meta["known_red"], ["test"])
+        self.assertEqual(meta["known_red_base"], red_sha)
+        green_dir = self.repo / ".git" / "jtek" / "baseline" / "green"
+        self.assertFalse(green_dir.exists() and list(green_dir.iterdir()), "red base must not write green cache")
+
+        # After main is fixed, a fresh ticket starts cleanly with no known-red.
         self.git("rm", "-q", "red")
         self.git("commit", "-q", "-m", "fix main")
-        code, out = self.jtek("start", "T-1")
+        self.ticket("T-3")
+        code, out = self.jtek("start", "T-3")
         self.assertEqual(code, 0, out)
-        self.assertEqual(self.git("status", "--porcelain", cwd=self.worktree("T-1")), "")
+        self.assertNotIn("known-red:", out)
+        meta3 = json.loads((self.repo / ".git" / "jtek" / "work" / "T-3" / "meta.json").read_text())
+        self.assertNotIn("known_red", meta3)
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.worktree("T-3")), "")
 
     def test_baseline_runs_once_per_base_commit(self):
         counter = Path(self.tmp.name) / "runs"
@@ -5915,6 +5927,650 @@ class ForgeTests(Scratch):
         self.assertIn("no PR yet", out)
         self.assertIn("draft", out.lower())
         self.assertNotIn("ready, not draft", out.lower())
+
+
+class VerifyOverrideAndKnownRedTests(Scratch):
+    """SQ-127: per-ticket verify.d overrides, sync promote/hold, and known-red baseline (v28.0.0-pre.5)."""
+
+    def _repo_home(self) -> Path:
+        return self.config_file().parent
+
+    def _fake_gh_states(self, mapping: dict[str, str], head: str = "a" * 40) -> dict[str, str]:
+        folder = Path(self.tmp.name) / f"gh-sync-{time.time_ns()}"
+        folder.mkdir()
+        fake = folder / "gh"
+        fake.write_text(
+            f"#!{sys.executable}\n"
+            "import sys\n"
+            f"mapping = {mapping!r}\n"
+            "url = next((a for a in sys.argv[1:] if a.startswith('http')), '')\n"
+            "state = mapping.get(url, 'ERROR')\n"
+            "if state == 'ERROR':\n"
+            "    sys.stderr.write('unreadable\\n')\n"
+            "    sys.exit(1)\n"
+            f"print(f'{{state}} {head} none')\n"
+        )
+        fake.chmod(0o755)
+        return {"PATH": f"{folder}{os.pathsep}{os.environ['PATH']}"}
+
+    def test_verify_d_override_is_scoped_to_ticket_for_check_broke_run_and_knowledge_lookup(self):
+        home = self._repo_home()
+        (home / "verify.md").write_text("# Main verify\n")
+        (home / "features").mkdir(parents=True, exist_ok=True)
+        (home / "features" / "auth.md").write_text("# Main auth\n")
+        (home / "features" / "billing.md").write_text("# Main billing\n")
+        (home / "rules.md").write_text("# Main rules\n")
+
+        # Verify command checks JTEK_VERIFY_DIR: fails if it sees T-1's "FAIL" override, passes on main.
+        seen_log = Path(self.tmp.name) / "seen-verify-dir.jsonl"
+        checker = Path(self.tmp.name) / "check_verify.py"
+        checker.write_text(
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            f"log = Path({str(seen_log)!r})\n"
+            "vdir = os.environ.get('JTEK_VERIFY_DIR')\n"
+            "ticket = os.environ.get('JTEK_TICKET')\n"
+            "entry = {'ticket': ticket, 'verify_dir': vdir}\n"
+            "log.write_text((log.read_text() if log.exists() else '') + json.dumps(entry) + '\\n')\n"
+            "if Path('broken.flag').exists():\n"
+            "    sys.exit(1)\n"
+            "if vdir and (Path(vdir) / 'verify.md').exists() and 'RED_OVERRIDE' in (Path(vdir) / 'verify.md').read_text():\n"
+            "    sys.exit(1)\n"
+        )
+        self.write_config({"verify": f"{sys.executable} {checker}"})
+
+        # Write a RED override for T-1 BEFORE starting T-1 and T-2:
+        # start's baseline MUST ignore verify.d/T-1 and see only the main files.
+        ov1 = home / "verify.d" / "T-1"
+        (ov1 / "features").mkdir(parents=True)
+        (ov1 / "verify.md").write_text("# T-1 verify RED_OVERRIDE\n")
+        (ov1 / "features" / "auth.md").write_text("# T-1 auth\n")
+        (ov1 / "rules.md").write_text("# T-1 rules\n")
+
+        self.ticket("T-1")
+        self.ticket("T-2")
+        code1, out1 = self.jtek("start", "T-1")
+        self.assertEqual(code1, 0, out1)
+        self.assertNotIn("known-red:", out1, "start baseline must not use verify.d/T-1")
+        code2, out2 = self.jtek("start", "T-2")
+        self.assertEqual(code2, 0, out2)
+        self.assertNotIn("known-red:", out2)
+
+        # T-1 check sees JTEK_VERIFY_DIR -> fails because of RED_OVERRIDE.
+        code, out = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("verify: fail", out)
+
+        # T-2 check does NOT see T-1's override (even if outer env sets JTEK_VERIFY_DIR).
+        code, out = self.jtek("check", "T-2", env={"JTEK_VERIFY_DIR": str(ov1)})
+        self.assertEqual(code, 0, out)
+
+        # Update T-1 override to a passing guide and verify check, broke, run, show, knowledge_path, doctor.
+        (ov1 / "verify.md").write_text("# T-1 verify PASS\n")
+        code, out = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, out)
+
+        # `run` for T-1 sees JTEK_VERIFY_DIR; `run` for T-2 does not.
+        code, out = self.jtek("run", "T-1", "--", sys.executable, "-c",
+                              "import os; print('VDIR=' + str(os.environ.get('JTEK_VERIFY_DIR')))")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"VDIR={ov1}", out)
+        code, out = self.jtek("run", "T-2", "--", sys.executable, "-c",
+                              "import os; print('VDIR=' + str(os.environ.get('JTEK_VERIFY_DIR')))")
+        self.assertEqual(code, 0, out)
+        self.assertIn("VDIR=None", out)
+
+        # `broke` for T-1 sees JTEK_VERIFY_DIR.
+        self.commit_change("T-1")
+        (self.worktree("T-1") / "broken.flag").write_text("1\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        (self.worktree("T-1") / "broken.flag").unlink()
+
+        entries = [json.loads(line) for line in seen_log.read_text().splitlines()]
+        # First entry is T-1 baseline (must have verify_dir=None).
+        self.assertEqual(entries[0], {"ticket": "T-1", "verify_dir": None})
+        # T-2 checks always have verify_dir=None.
+        t2_entries = [e for e in entries if e["ticket"] == "T-2"]
+        self.assertTrue(t2_entries and all(e["verify_dir"] is None for e in t2_entries))
+        # Last entry is T-1's broke run (must have verify_dir=str(ov1)).
+        self.assertEqual(entries[-1], {"ticket": "T-1", "verify_dir": str(ov1)})
+
+        # knowledge_path: T-1 gets overrides and falls back to main for un-overridden files; T-2 & ticketless get main.
+        mod = jtek_module()
+        old_cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            self.assertEqual(mod.knowledge_path("verify.md", ticket_id="T-1"), ov1 / "verify.md")
+            self.assertEqual(mod.knowledge_path("features/auth.md", ticket_id="T-1"), ov1 / "features" / "auth.md")
+            self.assertEqual(mod.knowledge_path("features/billing.md", ticket_id="T-1"), home / "features" / "billing.md")
+            self.assertEqual(mod.knowledge_path("rules.md", ticket_id="T-1"), ov1 / "rules.md")
+            self.assertEqual(mod.knowledge_path("verify.md", ticket_id="T-2"), home / "verify.md")
+            self.assertEqual(mod.knowledge_path("verify.md"), home / "verify.md")
+        finally:
+            os.chdir(old_cwd)
+
+        # doctor sees only main verify.md, not verify.d/T-1.
+        code, doc_out = self.jtek("doctor")
+        self.assertEqual(code, 0, doc_out)
+        self.assertIn(f"verify guide {home / 'verify.md'}", doc_out)
+        self.assertNotIn("verify.d", doc_out)
+
+        # show names the override for the reviewer.
+        code, show_out = self.jtek("show", "T-1")
+        self.assertEqual(code, 0, show_out)
+        self.assertIn(f"verify override: {ov1}", show_out)
+        self.assertEqual(self.git("status", "--porcelain"), "", "nothing of jtek is written into the project repo")
+
+    def test_sync_promotes_merged_override_and_ignores_unknown_files(self):
+        home = self._repo_home()
+        (home / "verify.md").write_text("# Old verify\n")
+        (home / "features").mkdir(parents=True, exist_ok=True)
+        (home / "features" / "auth.md").write_text("# Old auth\n")
+        (home / "rules.md").write_text("# Old rules\n")
+
+        ov1 = home / "verify.d" / "T-1"
+        (ov1 / "features" / "nested").mkdir(parents=True)
+        (ov1 / "verify.md").write_text("# New verify from T-1\n")
+        (ov1 / "features" / "auth.md").write_text("# New auth from T-1\n")
+        (ov1 / "features" / "nested" / "sso.md").write_text("# SSO\n")
+        (ov1 / "rules.md").write_text("# New rules from T-1\n")
+        (ov1 / "scratch.txt").write_text("must not be promoted\n")
+        (ov1 / "jtek.json").write_text('{"checks": {}}\n')
+
+        url = "https://example.invalid/pr/1"
+        self.ticket("T-1", status="Review", extra=f"pr: {url}\n")
+        code, out = self.jtek("sync", env=self._fake_gh_states({url: "MERGED"}))
+        self.assertEqual(code, 0, out)
+        self.assertIn("T-1\tboard: Status=Done", out)
+        self.assertIn("promoted", out)
+        self.assertIn("T-1", out)
+        self.assertIn("verify.md", out)
+        self.assertIn("features/auth.md", out)
+        self.assertIn("features/nested/sso.md", out)
+        self.assertIn("rules.md", out)
+        self.assertNotIn("scratch.txt", out)
+        self.assertEqual((home / "verify.md").read_text(), "# New verify from T-1\n")
+        self.assertEqual((home / "features" / "auth.md").read_text(), "# New auth from T-1\n")
+        self.assertEqual((home / "features" / "nested" / "sso.md").read_text(), "# SSO\n")
+        self.assertEqual((home / "rules.md").read_text(), "# New rules from T-1\n")
+        self.assertFalse((home / "scratch.txt").exists(), "unknown files must be ignored")
+        self.assertNotEqual((home / "jtek.json").read_text(), '{"checks": {}}\n', "jtek.json must not be promoted")
+        self.assertFalse(ov1.exists(), "override tree must be removed after promotion")
+
+    def test_sync_holds_on_conflicting_overrides_and_allows_identical_bytes(self):
+        home = self._repo_home()
+        (home / "verify.md").write_text("# Main verify\n")
+        (home / "rules.md").write_text("# Main rules\n")
+
+        ov1 = home / "verify.d" / "T-1"
+        ov2 = home / "verify.d" / "T-2"
+        ov1.mkdir(parents=True)
+        ov2.mkdir(parents=True)
+        (ov1 / "verify.md").write_text("# T-1 verify\n")
+        (ov1 / "rules.md").write_text("# T-1 rules\n")
+        (ov2 / "verify.md").write_text("# T-2 DIFFERENT verify\n")
+
+        url1 = "https://example.invalid/pr/1"
+        url2 = "https://example.invalid/pr/2"
+        self.ticket("T-1", status="Review", extra=f"pr: {url1}\n")
+        self.ticket("T-2", status="Review", extra=f"pr: {url2}\n")
+        code, out = self.jtek("sync", env=self._fake_gh_states({url1: "MERGED", url2: "OPEN"}))
+        self.assertEqual(code, 0, out)
+        self.assertIn("hold", out)
+        self.assertIn("T-1", out)
+        self.assertIn("T-2", out)
+        self.assertIn("verify.md", out)
+        # Neither verify.md nor rules.md was promoted; both override trees remain untouched.
+        self.assertEqual((home / "verify.md").read_text(), "# Main verify\n")
+        self.assertEqual((home / "rules.md").read_text(), "# Main rules\n")
+        self.assertTrue(ov1.is_dir())
+        self.assertTrue(ov2.is_dir())
+
+        # Now make T-2's verify.md byte-identical to T-1's -> not a conflict; T-1 promotes cleanly.
+        (ov2 / "verify.md").write_text("# T-1 verify\n")
+        self.board.set("T-1", Status="Review")
+        code, out = self.jtek("sync", env=self._fake_gh_states({url1: "MERGED", url2: "OPEN"}))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("hold", out)
+        self.assertIn("promoted", out)
+        self.assertEqual((home / "verify.md").read_text(), "# T-1 verify\n")
+        self.assertEqual((home / "rules.md").read_text(), "# T-1 rules\n")
+        self.assertFalse(ov1.exists())
+        self.assertTrue(ov2.is_dir(), "unmerged ticket's override tree stays")
+
+    def test_sync_does_not_promote_open_draft_closed_or_unreadable_prs(self):
+        home = self._repo_home()
+        (home / "verify.md").write_text("# Main verify\n")
+        cases = [
+            ("T-1", "https://example.invalid/pr/open", "OPEN"),
+            ("T-2", "https://example.invalid/pr/draft", "DRAFT"),
+            ("T-3", "https://example.invalid/pr/closed", "CLOSED"),
+            ("T-4", "https://example.invalid/pr/err", "ERROR"),
+        ]
+        mapping = {url: state for _, url, state in cases}
+        for tid, url, _ in cases:
+            ov = home / "verify.d" / tid
+            ov.mkdir(parents=True)
+            (ov / "verify.md").write_text(f"# Override {tid}\n")
+            self.ticket(tid, status="Review", extra=f"pr: {url}\n")
+        code, out = self.jtek("sync", env=self._fake_gh_states(mapping))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("promoted", out)
+        self.assertEqual((home / "verify.md").read_text(), "# Main verify\n")
+        for tid, _, _ in cases:
+            self.assertTrue((home / "verify.d" / tid / "verify.md").is_file())
+
+    def test_known_red_baseline_flow_waives_only_known_red_and_creates_one_followup_file_board(self):
+        # Two checks fail on base (`lint` and `verify`), one passes (`test`).
+        run_counter = Path(self.tmp.name) / "known-red-runs.txt"
+        self.write_config({
+            "lint": f"{sys.executable} -c \"import os,sys;open(r'{run_counter}','a').write('lint\\n');sys.exit(os.path.exists('red_lint'))\"",
+            "test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red_test'))\"",
+            "verify": f"{sys.executable} -c \"import os,sys;open(r'{run_counter}','a').write('verify\\n');sys.exit(os.path.exists('red_verify'))\"",
+        })
+        (self.repo / "red_lint").write_text("")
+        (self.repo / "red_verify").write_text("")
+        self.git("add", "red_lint", "red_verify")
+        self.git("commit", "-q", "-m", "red base with two failing checks")
+        base_sha = self.git("rev-parse", "main")
+
+        # File-ticket workflow (no board in jtek.json).
+        tickets = self._repo_home() / "tickets"
+        tickets.mkdir(parents=True, exist_ok=True)
+        (tickets / "T-1.md").write_text("# Ticket T-1\nid: T-1\nstatus: Todo\nreview: human\n\n" + BODY)
+
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "T-1"], cwd=self.repo,
+                              capture_output=True, text=True, env=with_session())
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("board: Status=In Progress; Waiting=", out)
+        self.assertIn("known-red: lint", out)
+        self.assertIn("known-red: verify", out)
+        self.assertIn("follow-up: T-2", out)
+        self.assertTrue(self.worktree("T-1").is_dir())
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.worktree("T-1")), "jtek/T-1")
+
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        meta = json.loads((work / "meta.json").read_text())
+        self.assertEqual(meta["known_red"], ["lint", "verify"])
+        self.assertEqual(meta["known_red_base"], base_sha)
+        self.assertEqual(meta["known_red_followup"], "T-2")
+        self.assertTrue((work / "known-red.md").is_file())
+        self.assertIn("known-red: lint", (work / "known-red.md").read_text())
+
+        # Exactly ONE follow-up ticket was saved (T-2.md) despite two failing checks.
+        saved_files = sorted(p.name for p in tickets.glob("*.md"))
+        self.assertEqual(saved_files, ["T-1.md", "T-2.md"])
+        followup_text = (tickets / "T-2.md").read_text()
+        self.assertIn("status: Backlog", followup_text)
+        self.assertIn("T-1", followup_text)
+        self.assertIn("lint", followup_text)
+        self.assertIn("verify", followup_text)
+        # The saved follow-up ticket itself passes `jtek.py ticket`.
+        tcheck = subprocess.run([sys.executable, str(SCRIPT), "ticket", str(tickets / "T-2.md")],
+                                cwd=self.repo, capture_output=True, text=True, env=with_session())
+        self.assertEqual(tcheck.returncode, 0, tcheck.stdout + tcheck.stderr)
+
+        # Make a change on T-1 and run check 4 times: known-red checks STILL run, exit 0, failed_runs stays 0.
+        self.commit_change("T-1")
+        run_counter.write_text("")
+        for _ in range(4):
+            code, cout = self.jtek("check", "T-1")
+            self.assertEqual(code, 0, cout)
+            self.assertIn("lint: known-red", cout)
+            self.assertIn("test: pass", cout)
+            self.assertIn("verify: known-red", cout)
+        self.assertEqual(run_counter.read_text().splitlines().count("lint"), 4, "known-red checks must still run")
+        self.assertEqual(run_counter.read_text().splitlines().count("verify"), 4, "known-red checks must still run")
+        checks = json.loads((work / "checks.json").read_text())
+        self.assertEqual(checks["failed_runs"], 0)
+
+        # finish (with evidence and --no-pr) is allowed, and evidence.md includes known-red lines.
+        self.write_break_proof("T-1")
+        fproc = subprocess.run([sys.executable, str(SCRIPT), "finish", "T-1", "--no-pr", "--evidence-file", self.evidence()],
+                               cwd=self.repo, capture_output=True, text=True, env=with_session())
+        fout = fproc.stdout + fproc.stderr
+        self.assertEqual(fproc.returncode, 0, fout)
+        self.assertIn("outcome: review", fout)
+        saved_ev = (work / "evidence.md").read_text()
+        self.assertIn("known-red: lint", saved_ev)
+        self.assertIn("known-red: verify", saved_ev)
+        # Re-running finish without --evidence-file still passes check_evidence on saved evidence.
+        fproc2 = subprocess.run([sys.executable, str(SCRIPT), "finish", "T-1", "--no-pr"],
+                                cwd=self.repo, capture_output=True, text=True, env=with_session())
+        self.assertEqual(fproc2.returncode, 0, fproc2.stdout + fproc2.stderr)
+
+        # Breaking a different check (`test`) still fails check (increments failed_runs) and blocks finish.
+        (self.worktree("T-1") / "red_test").write_text("")
+        self.git("add", "red_test", cwd=self.worktree("T-1"))
+        self.git("commit", "-q", "-m", "break test", cwd=self.worktree("T-1"))
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], 1)
+        self.write_break_proof("T-1")
+        fproc3 = subprocess.run([sys.executable, str(SCRIPT), "finish", "T-1", "--no-pr", "--evidence-file", self.evidence()],
+                                cwd=self.repo, capture_output=True, text=True, env=with_session())
+        fout3 = fproc3.stdout + fproc3.stderr
+        self.assertEqual(fproc3.returncode, 1, fout3)
+        self.assertIn("checks have not passed", fout3)
+
+        # Fix `test` AND fix `lint` (one of the known-red checks) -> meta records known_red_passed!
+        self.git("rm", "-q", "red_test", "red_lint", cwd=self.worktree("T-1"))
+        self.git("commit", "-q", "-m", "fix test and lint", cwd=self.worktree("T-1"))
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("lint: pass", cout)
+        self.assertIn("known-red passed: lint", cout)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["lint"])
+
+    def test_known_red_waiver_stops_applying_after_base_sha_changes(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""})
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "break main")
+
+        self.ticket("T-1", extra="review: human\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+        # Base sha changes (even before rebasing): old known-red waiver no longer applies.
+        (self.repo / "other.txt").write_text("move main\n")
+        self.git("add", "other.txt")
+        self.git("commit", "-q", "-m", "advance main")
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
+        # Rebase onto the new base while still red -> check fails (exit 1, increments failed_runs).
+        self.git("rebase", "-q", "main", cwd=self.worktree("T-1"))
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], 1)
+
+        # Fix main, rebase onto fixed base -> check passes and finish succeeds.
+        self.git("rm", "-q", "red")
+        self.git("commit", "-q", "-m", "fix main")
+        self.git("rebase", "-q", "main", cwd=self.worktree("T-1"))
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 0, fout)
+        self.assertIn("outcome: review", fout)
+
+    def test_known_red_with_board_writes_draft_without_failing_start(self):
+        self.write_config(
+            {"test": f"{sys.executable} -c raise(SystemExit(1))"},
+            board="https://www.notion.so/board",
+        )
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.field("T-1", "status"), "In Progress")
+        self.assertIn("known-red: test", out)
+        draft = self.repo / ".git" / "jtek" / "work" / "T-1" / "known-red-followup.md"
+        self.assertTrue(draft.is_file())
+        self.assertIn(f"follow-up draft: {draft}", out)
+        self.assertIn(f"board: create Backlog follow-up card from {draft}", out)
+        self.assertIn("T-1", draft.read_text())
+        tickets = self._repo_home() / "tickets"
+        self.assertFalse(tickets.exists() and list(tickets.glob("*.md")),
+                         "with a board configured, start must write a draft, not a file ticket")
+
+    def test_no_baseline_on_red_base_starts_without_inventing_known_red(self):
+        self.write_config({"test": f"{sys.executable} -c raise(SystemExit(1))"})
+        self.ticket("T-1")
+        code, out = self.jtek("start", "T-1", "--no-baseline")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("known-red:", out)
+        self.assertNotIn("follow-up:", out)
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        meta = json.loads((work / "meta.json").read_text())
+        self.assertNotIn("known_red", meta)
+        self.assertNotIn("known_red_base", meta)
+        self.assertFalse((work / "known-red.md").exists())
+        tickets = self._repo_home() / "tickets"
+        self.assertFalse(tickets.exists() and list(tickets.glob("*.md")))
+        # check fails normally because there is no known-red waiver.
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], 1)
+
+    def test_broke_refuses_when_only_known_red_base_check_fails(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red_base'))\""})
+        (self.repo / "red_base").write_text("")
+        self.git("add", "red_base")
+        self.git("commit", "-q", "-m", "red base on only check")
+
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: test", out)
+        self.commit_change("T-1")
+        self.assertEqual(self.jtek("check", "T-1")[0], 0)
+
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        (tree / "feature.txt").write_text("unrelated no-op edit\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("known-red", out)
+        self.assertIn("test", out)
+        self.assertIn("still in the worktree", out)
+        self.assertFalse((work / "broke.json").exists(), "known-red failure must not write or seal broke.json")
+        self.assertEqual((tree / "feature.txt").read_text(), "unrelated no-op edit\n")
+
+        # Restoring leaves no broke proof, so finish --no-pr must refuse.
+        self.git("checkout", "--", ".", cwd=tree)
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 1, fout)
+        self.assertIn("broke", fout)
+        self.assertNotIn("outcome:", fout)
+
+    def test_broke_on_mixed_known_red_refuses_unrelated_edit_and_accepts_green_test_break(self):
+        self.write_config({
+            "test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('BROKEN_APP'))\"",
+            "verify": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red_verify'))\"",
+        })
+        (self.repo / "red_verify").write_text("")
+        self.git("add", "red_verify")
+        self.git("commit", "-q", "-m", "red verify on base")
+
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: verify", out)
+        self.assertNotIn("known-red: test", out)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertIn("verify: known-red", cout)
+
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+
+        # Unrelated edit: green `test` still passes, only known-red `verify` fails -> broke must refuse.
+        (tree / "feature.txt").write_text("unrelated edit\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("known-red", out)
+        self.assertIn("verify", out)
+        self.assertIn("still in the worktree", out)
+        self.assertFalse((work / "broke.json").exists(), "known-red verify must not be accepted as proof")
+        self.assertEqual((tree / "feature.txt").read_text(), "unrelated edit\n")
+
+        # Real break of the green `test` check -> broke succeeds and records sealed proof citing `test`.
+        (tree / "BROKEN_APP").write_text("1\n")
+        code, out = self.jtek("broke", "T-1", "--item", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("broke: item 1 made `test` fail", out)
+        proof = json.loads((work / "broke.json").read_text())
+        old_cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            self.assertTrue(jtek_module().broke_intact(proof))
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(proof["items"]["1"]["check"], "test")
+        self.assertEqual(proof["items"]["1"]["fails"], ["test"])
+
+        # Restore and confirm finish accepts the real proof.
+        self.git("checkout", "--", ".", cwd=tree)
+        (tree / "BROKEN_APP").unlink()
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence(), "--skip-prove")
+        self.assertEqual(code, 0, fout)
+        self.assertIn("outcome: review", fout)
+
+    def _remote(self):
+        """Give the repository a bare origin and return a second clone that can push to it."""
+        bare = Path(self.tmp.name) / "origin.git"
+        self.git("clone", "-q", "--bare", str(self.repo), str(bare))
+        self.git("remote", "add", "origin", str(bare))
+        self.git("fetch", "-q", "origin")
+        other = Path(self.tmp.name) / "other"
+        self.git("clone", "-q", str(bare), str(other))
+        self.git("config", "user.email", "t@example.invalid", cwd=other)
+        self.git("config", "user.name", "t", cwd=other)
+        return other
+
+    def test_known_red_waiver_drops_after_rebase_onto_newer_origin_base(self):
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        old_sha = self.git("rev-parse", "main")
+
+        other = self._remote()
+        self.write_config(
+            {"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""},
+            forge=False,
+        )
+        self.ticket("T-1", extra="review: human\n")
+        code, out = self.jtek("start", "T-1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("known-red: test", out)
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_base"], old_sha)
+
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # A forge merge fixes `origin/main` while local `refs/heads/main` stays at old_sha.
+        self.git("rm", "-q", "red", cwd=other)
+        self.git("commit", "-q", "-m", "fix origin main", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+
+        tree = self.worktree("T-1")
+        self.git("fetch", "-q", "origin", cwd=tree)
+        self.git("rebase", "-q", "origin/main", cwd=tree)
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), old_sha)
+        self.assertNotEqual(self.git("rev-parse", "refs/remotes/origin/main", cwd=tree), old_sha)
+
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+
+        # Ticket introduces a regression (`red` returns): old waiver must not apply.
+        (tree / "red").write_text("")
+        self.git("add", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "ticket breaks test", cwd=tree)
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertNotIn("test: known-red", cout)
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
+    def test_known_red_waiver_drops_after_rebase_onto_still_red_origin_base(self):
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        old_sha = self.git("rev-parse", "main")
+
+        other = self._remote()
+        self.write_config(
+            {"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""},
+            forge=False,
+        )
+        self.ticket("T-1", extra="review: human\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # `origin/main` advances to a new sha that is still red, so `known_red_passed` stays unset.
+        (other / "other.txt").write_text("move origin\n")
+        self.git("add", "other.txt", cwd=other)
+        self.git("commit", "-q", "-m", "advance origin main", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+
+        tree = self.worktree("T-1")
+        self.git("fetch", "-q", "origin", cwd=tree)
+        self.git("rebase", "-q", "origin/main", cwd=tree)
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), old_sha)
+
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.assertNotIn("known_red_passed", json.loads((work / "meta.json").read_text()))
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 1, cout)
+        self.assertIn("test: fail", cout)
+        self.assertNotIn("test: known-red", cout)
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
+
+    def test_known_red_passed_check_is_not_waived_again_when_base_unchanged(self):
+        self.write_config({"test": f"{sys.executable} -c \"import os,sys;sys.exit(os.path.exists('red'))\""})
+        (self.repo / "red").write_text("")
+        self.git("add", "red")
+        self.git("commit", "-q", "-m", "red base on main")
+        base_sha = self.git("rev-parse", "main")
+
+        self.ticket("T-1", extra="review: human\n")
+        self.assertEqual(self.jtek("start", "T-1")[0], 0)
+        self.commit_change("T-1")
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: known-red", cout)
+
+        # Ticket makes `test` green while local `main` stays at base_sha.
+        tree = self.worktree("T-1")
+        work = self.repo / ".git" / "jtek" / "work" / "T-1"
+        self.git("rm", "-q", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "fix test in ticket", cwd=tree)
+        code, cout = self.jtek("check", "T-1")
+        self.assertEqual(code, 0, cout)
+        self.assertIn("test: pass", cout)
+        self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+        self.assertEqual(self.git("rev-parse", "refs/heads/main"), base_sha)
+
+        # Later commit breaks `test` again; must fail and stay unwaived across repeated checks.
+        (tree / "red").write_text("")
+        self.git("add", "red", cwd=tree)
+        self.git("commit", "-q", "-m", "break test again", cwd=tree)
+        for expected_runs in (1, 2):
+            code, cout = self.jtek("check", "T-1")
+            self.assertEqual(code, 1, cout)
+            self.assertIn("test: fail", cout)
+            self.assertNotIn("test: known-red", cout)
+            self.assertEqual(json.loads((work / "checks.json").read_text())["failed_runs"], expected_runs)
+            self.assertEqual(json.loads((work / "meta.json").read_text())["known_red_passed"], ["test"])
+
+        code, fout = self.jtek("finish", "T-1", "--no-pr", "--evidence-file", self.evidence())
+        self.assertEqual(code, 1, fout)
+        self.assertIn("checks have not passed", fout)
 
 
 if __name__ == "__main__":
