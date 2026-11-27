@@ -2474,7 +2474,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
         "verdict": args.verdict, "by": by, "sha": sha,
         "patch": patch, "ticket": ticket_id_of_text(work),
     })
-    line = f"verdict: {args.verdict} by {by} @{sha[:7]}"
+    line = f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}"
     (work / "review-comment.md").write_text(f"`{line}`\n\n{notes_text}".rstrip() + "\n")
     print(line)
     if meta.get("pr"):
