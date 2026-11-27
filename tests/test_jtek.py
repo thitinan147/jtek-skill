@@ -2947,7 +2947,13 @@ class FileBoard(Scratch):
         code, out = self.save()
         self.assertEqual(code, 1)
         self.assertIn("create the ticket there", out)
+        self.assertIn("outer loop", out)
+        self.assertNotIn("board's tool", out)
         self.assertFalse(self.folder().exists())
+        code, out = self.raw("start", "T-1")
+        self.assertEqual(code, 1)
+        self.assertIn("--from-file", out)
+        self.assertIn("outer loop", out)
 
     def test_a_released_file_id_is_never_given_again(self):
         self.save()

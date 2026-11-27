@@ -1,6 +1,6 @@
 ---
 name: jt-ship
-description: Pushes a ticket's branch, opens a pull request that shows how each acceptance item was seen working, and moves the ticket to Review without merging. Use when jt-work reaches the Ship step, or when the user asks to open the pull request for a finished ticket.
+description: Pushes a ticket's branch, opens a pull request that shows how each acceptance item was seen working, and records the Review result without merging. Use when jt-work reaches the Ship step, or when the user asks to open the pull request for a finished ticket.
 ---
 
 # jt-ship
@@ -33,8 +33,8 @@ Pass `--evidence-file` again whenever the code changed since the last `finish`. 
 
 ## 3. Read the result
 
-- **`outcome: review`:** stop. When the pull request was a draft and both a passing verdict and green CI hold, `finish` has marked it ready. The human reviews and merges. Write on the ticket's page exactly what the `board:` line of the result says. The page is the ticket file when the repository has no board, and `board: -` means write nothing.
-- **`outcome: needs-review`:** the usual first result. The pull request stays a draft while a session that did not write the change records a verdict, and then `finish` runs again to mark it ready. When the `board:` line holds the pull request's link, write it on the page.
+- **`outcome: review`:** stop. When the pull request was a draft and both a passing verdict and green CI hold, `finish` has marked it ready. The human reviews and merges. With a board, do not write to it: leave the result's `board:` line (and any draft follow-up ticket path named in evidence) for the outer loop. With no board (`board` is empty), write the `board:` line to the local ticket file `start` printed as `page:`, and `board: -` means write nothing.
+- **`outcome: needs-review`:** the usual first result. The pull request stays a draft while a session that did not write the change records a verdict, and then `finish` runs again to mark it ready. With a board, do not write to it: leave the `board:` line for the outer loop. With no board, write the pull request link from the `board:` line into the local ticket file.
 - **`refused: cannot read`:** `gh` or `glab` could not read the pull request, so nothing was sent for review. The message says what to fix, including the token scope or CLI login. An unknown state and an unknown CI result both refuse.
 - **`refused: CI is still pending`**, or **`no checks have appeared`:** pending includes SKIPPED, NEUTRAL, and a mix of those with SUCCESS. An empty, null, or missing rollup is not `none`. `finish` waits `JTEK_CI_APPEAR_TRIES` looks (3) and `JTEK_CI_APPEAR_WAIT` seconds (2) for the first check, then refuses. It waits `JTEK_CI_TRIES` (40) and `JTEK_CI_WAIT` (15) while a check is still running. Only every required check at SUCCESS ships, or `none` when GitLab has no pipeline or the project's `pr_state` command says this repository has no checks.
 - **`refused:` a broke proof:** for each `Done when` item, break that behaviour, run `jtek.py broke <id> --item <n>` while the edit is uncommitted, then restore the file. Every declared check runs. A lint, syntax, format, or import failure does not count: the behaviour check has to fail. Rewriting the Done when line invalidates the record. `finish` refuses until every item has a record on this commit.

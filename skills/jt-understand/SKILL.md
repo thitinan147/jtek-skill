@@ -27,12 +27,12 @@ For each `Done when` item, write one line: how you will see it work for real. A 
 
 An item that asks for a quality with no number or named standard ("fast", "secure", "accessible") cannot be seen working either.
 
-If an item has no way to be seen working, do not stop. Propose a measurable reading of it, such as a number or a named standard, write it for the evidence as `choice: <question> → <picked> (other options: …) (P19)`, and go on. When no reading makes it measurable, open a new card that names the gap (`jtek.py ticket --save`, or on the board), say so on that item's `not run:` line, and go on with the items that can be seen.
+If an item has no way to be seen working, do not stop. Propose a measurable reading of it, such as a number or a named standard, write it for the evidence as `choice: <question> → <picked> (other options: …) (P19)`, and go on. When no reading makes it measurable, draft a new card that names the gap (with a board, write a checked draft ticket file outside the repository and worktree and name its path on that item's `not run:` line for the outer loop — never touch the board yourself; with no board, save it with `jtek.py ticket <file> --save`), and go on with the items that can be seen.
 
 ## 4. Settle what the ticket leaves open
 
 - **Small and easy to change later:** choose the reading that changes less of what users see today, even when it takes more code. (P17) Write the choice down for the evidence.
-- **Costly to undo, it changes what the ticket is for, or two `Done when` items cannot both hold:** do not stop, and do not pick silently. Follow the reading that still makes a coherent ticket and changes less of what users see, and write it as a `choice:` line (P19). When the conflict is real, open a new card for the reading you did not take (`jtek.py ticket --save`, or on the board), and name it in the evidence.
+- **Costly to undo, it changes what the ticket is for, or two `Done when` items cannot both hold:** do not stop, and do not pick silently. Follow the reading that still makes a coherent ticket and changes less of what users see, and write it as a `choice:` line (P19). When the conflict is real, draft a new card for the reading you did not take (with a board, write a draft ticket file for the outer loop and name its path in the evidence; with no board, save it with `jtek.py ticket <file> --save`), and go on.
 - **The human's answer has an effect it says it does not want:** do what it asks for in so many words, and put the effect under `Notes` in the evidence for the human to weigh.
 - **The base already does what an item asks:** see it for real, and say so in the evidence. Build only what the ticket still asks for. When nothing is left to build, stop with `--waiting input` and say what you saw.
 

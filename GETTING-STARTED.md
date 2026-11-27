@@ -72,8 +72,8 @@ If the repository still has an old `jtek.json` or `.jtek/`, `/jt-init` runs `jte
 You choose the board when `/jt-init` asks `board? none (tickets as files) / Notion database link / FLO product link`:
 
 - **`none` (tickets as files):** records `"board": ""` and keeps tickets in `~/.jtek/repos/<repo id>/tickets/`. **You should see:** `no board: the tickets are files in ...` in `jtek.py doctor`. Format and rules: [files.md](skills/jt-work/references/files.md).
-- **Notion:** connect the Notion tool in your agent, give it access to your database, and paste the database link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the database against the schema in [notion.md](skills/jt-work/references/notion.md).
-- **FLO:** connect the FLO tool in your agent and paste the FLO product link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your agent can read the product against the schema in [flo.md](skills/jt-work/references/flo.md).
+- **Notion:** connect the Notion tool in your outer-loop agent (worker sessions do not need it), give it access to your database, and paste the database link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your outer-loop agent can read the database against the schema in [notion.md](skills/jt-work/references/notion.md).
+- **FLO:** connect the FLO tool in your outer-loop agent (worker sessions do not need it) and paste the FLO product link when `/jt-init` asks. **You should see:** `` `board`: the Notion database or FLO product link `` in `jtek.py doctor`, and your outer-loop agent can read the product against the schema in [flo.md](skills/jt-work/references/flo.md).
 
 ## Next
 

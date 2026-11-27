@@ -323,7 +323,7 @@ def run(j, args=None) -> None:
     if shutil.which(forge) and not own_forge:
         print(f"not checked: whether `{forge}` is signed in. Run `{forge} auth status` to see.")
     if has_board:
-        print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
+        print("not checked: the board. This script cannot see it. Ask your outer-loop agent to read the board with its tool\n"
               "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
     if legacy:
         trigger = "migrate"
@@ -335,7 +335,7 @@ def run(j, args=None) -> None:
     if not report["ready"]:
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
     if has_board:
-        print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")
+        print("ready: write a ticket on the board, set it to Todo, and hand its ticket file and page link to jt-work (see references/starting-sessions.md)")
     else:
         print("ready: this repository needs no board. Save a ticket with `jtek.py ticket <file> --save`, write\n"
               "       `status: Todo` in its file, and give its id to the jt-work skill; or start work that has\n"

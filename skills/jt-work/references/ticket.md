@@ -2,7 +2,7 @@
 
 ## Ticket format
 
-A ticket is a page on the board: a Notion page, or a FLO item. The session reads it with the board's tool and saves it in this format, as [notion.md](notion.md) or [flo.md](flo.md) says. The header lines come from the page's properties, and the sections from its body. The header lines sit right under the title: the first blank line after one, or the first line of other text, ends them, and `start` reads no header line below that. `jtek.py start` keeps a copy, and that copy is the file to work from.
+A ticket is a page on the board (a Notion page or a FLO item), or a local file when there is no board. Only the outer loop reads the board with its tool and saves a ticket file in this format, as [starting-sessions.md](starting-sessions.md), [notion.md](notion.md), and [flo.md](flo.md) say, then hands the file and page link to the inner-loop session. The header lines come from the page's properties, and the sections from its body. The header lines sit right under the title: the first blank line after one, or the first line of other text, ends them, and `start` reads no header line below that. `jtek.py start` keeps a copy, and that copy is the file to work from.
 
 ```markdown
 # Short title
@@ -49,7 +49,7 @@ Work without a ticket is started with `jtek.py start --local --from-file <file>`
 
 ## Where tickets live
 
-The page on the board is the source of truth. The layout of the board is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. A repository with no board keeps each ticket as a file, and that file is the page: [files.md](files.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
+The page on the board is the source of truth. The layout of the board (for the outer loop) is in [notion.md](notion.md), or [flo.md](flo.md) for FLO. A repository with no board keeps each ticket as a file, and that file is the page: [files.md](files.md). The copy, the claim, the logs, and the result of each ticket are in `<git-common-dir>/jtek/work/<id>/`, outside the tracked files, so parallel sessions never conflict on them. Set `JTEK_STATE` to keep that folder somewhere else.
 
 ## Statuses
 
@@ -57,21 +57,21 @@ The page on the board is the source of truth. The layout of the board is in [not
 |---|---|---|
 | Backlog | Written down, not released. | Human |
 | Todo | Released for an agent to take. | Human only |
-| In Progress | A session has claimed it. | the session, after `jtek.py start` allows it |
-| Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | the session, after `jtek.py finish` prints `outcome: review` |
-| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | whoever runs `jtek.py sync`, when it prints `board: Status=Done` |
+| In Progress | A session has claimed it. | the outer loop, after `jtek.py start` allows it (or the session, in the local file when there is no board) |
+| Review | Checks pass, a non-author verdict is PASS, the evidence is saved, and a pull request is open (or the repository has no forge). | the outer loop, from `jtek-result` after `jtek.py finish` prints `outcome: review` (or the session, in the local file when there is no board) |
+| Done | The pull request is merged. Read from the forge. Without a forge, the human sets it after merging. | the outer loop, when `jtek.py sync` prints `board: Status=Done` |
 | Cancelled | Dropped. | Human |
 
 - **Waiting** is a property, not a status. `input` means the agent has a question. `approval` means a step needs permission. The ticket stays In Progress.
-- **Rework:** the human sets a Review ticket back to Todo and adds what to fix. A new session runs `start` again and continues in the same worktree.
-- **Answering a question:** the human writes the answer on the page and sets Status to Todo. A new session runs `start` again.
+- **Rework:** the human sets a Review ticket back to Todo and adds what to fix. With a board, the outer loop reads the updated page into a ticket file and starts a new session, which runs `start` again and continues in the same worktree.
+- **Answering a question:** the human writes the answer on the page and sets Status to Todo. With a board, the outer loop reads the updated page into a ticket file and starts a new session, which runs `start` again.
 - There is no command that sets Todo, Done by hand, or Cancelled. The human edits the page.
 
 ## Claims and parallel work
 
 Before anything else, `start` fetches the base branch from `origin` and moves the local one forward when it is only behind, so a ticket starts from what is merged. It never rewrites the branch: when both sides have moved it says so and starts from the local one, and when the branch cannot move it refuses. `--no-fetch` skips this.
 
-After creating the worktree, `start` runs the `setup` command from the machine config, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one or more checks fail there, `start` keeps the worktree and claim, records `known_red` and `known_red_base` in meta (and `known-red.md` in the work dir for evidence), opens one Backlog follow-up ticket (or writes a draft file for a board), and keeps the logs in `<git-common-dir>/jtek/baseline/<id>/`. `check` and `finish` still run those checks and waive only them while the base stays at that commit. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
+After creating the worktree, `start` runs the `setup` command from the machine config, when there is one. Then, before the first edit, `start` runs the ticket's checks on the base. If one or more checks fail there, `start` keeps the worktree and claim, records `known_red` and `known_red_base` in meta (and `known-red.md` in the work dir for evidence), saves one Backlog follow-up ticket (or writes a draft file for the outer loop when a board is configured), and keeps the logs in `<git-common-dir>/jtek/baseline/<id>/`. `check` and `finish` still run those checks and waive only them while the base stays at that commit. A green run is remembered for that base commit and set of commands, so tickets started from the same commit do not repeat it. Pass `--no-baseline` to skip this when the checks are slow.
 
 `start` creates `<git-common-dir>/jtek/work/<id>/`. Creating a directory is atomic, so when two sessions start the same id, one is refused. Each new ticket gets the worktree `.claude/worktrees/<id>` inside the repository (with `.claude/worktrees/` added once to `.git/info/exclude`, never editing `.gitignore` or any tracked file) and the branch `jtek/<id>`. Existing claims keep the path stored in `meta.json`.
 
@@ -79,7 +79,7 @@ After creating the worktree, `start` runs the `setup` command from the machine c
 
 A claim is live until its session ends with a result (`finish` or `stop`). After that it is parked, and the next `start` for that id resumes it. `start` refuses a live claim. When a session died without a result, the human tells a new session to take the ticket over, and that session adds `--resume` to `start`. A session never adds it on its own.
 
-The board has no atomic claim. The directory above is the lock for sessions on one machine. The session writes In Progress on the page only after `start` allows it.
+The board has no atomic claim. The directory above is the lock for sessions on one machine. The outer loop writes In Progress on the page only after `start` allows it (with no board, the session updates the local ticket file).
 
 ## Result
 
@@ -104,7 +104,7 @@ comment file: <path> (when the board line asks for a comment)
 board: Status=Review; Waiting=; PR=<url>; comment=result+evidence | Waiting=input; comment=result | PR=<url> | -
 ```
 
-- **`board`:** what the session must now write on the ticket's page. The meaning of each part is in [notion.md](notion.md), and where each lives in FLO in [flo.md](flo.md). `-` means nothing.
+- **`board`:** what the outer loop must write on the ticket's page (or what the session writes to the local ticket file when there is no board). The meaning of each part is in [notion.md](notion.md), and where each lives in FLO in [flo.md](flo.md). `-` means nothing.
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh` or `glab`, or with the project's `pr_state` command. `finish` refuses while it is `fail`. `none` right after a push usually means the forge has not started the run yet.
 - **`verdict`:** only a verdict for the change and the ticket as they are now is shown. `none` means one is still needed. A verdict stops counting when the code changes, even by whitespace or by moving the same edit to another place, and when the human changes the ticket's `Goal`, `Done when`, or `Out of scope`.
 - **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones (more only for a ticket with over 30 items), with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.

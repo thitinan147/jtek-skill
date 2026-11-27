@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """jtek inner loop: one ticket, one session, one worktree.
 
-The board is a Notion database or a FLO product, which the agent reads and writes
-with its own tool. This script never talks to the board: it takes the ticket as a file
-and prints what to write back. Config and per-repository knowledge live on this machine,
+The board is a Notion database or a FLO product, which only the outer loop reads and writes
+with its own tool. Neither this script nor inner-loop sessions talk to the board: the outer loop
+hands the ticket in as a file and writes back what the `board:` line says. Config and per-repository knowledge live on this machine,
 under $HOME/.jtek (or JTEK_HOME). No file there means the defaults: an empty board, so tickets
 are files. Nothing is read from jtek.json or .jtek/ inside the repository.
 Claims, logs, and results live under the repository's common git directory, so every
@@ -841,8 +841,8 @@ def load_meta(ticket_id: str, tree: bool = False) -> dict:
         if work_dir(ticket_id).exists():
             raise Refuse(claimed(ticket_id))
         raise Refuse(f"{ticket_id} is not started in this repository ({main_root()}). If the ticket belongs to another "
-                     "repository, run the command from there or from the ticket's worktree. Otherwise read its page and "
-                     "run `jtek.py start`")
+                     "repository, run the command from there or from the ticket's worktree. Otherwise run `jtek.py start` "
+                     "(with the ticket file and page link from the outer loop when this repository has a board)")
     if tree and not Path(meta["worktree"]).is_dir():
         raise Refuse(f"the worktree of {ticket_id} is gone: {meta['worktree']}. Run `jtek.py release {ticket_id}`; "
                      f"the commits are on the branch {meta['branch']}")
@@ -1243,7 +1243,7 @@ def attention(meta: dict) -> str:
 
 
 def board_line(outcome: str, waiting: str = "", pr: str = "") -> str:
-    """What the session must now write on the ticket's page with the board's tool. `-` means nothing."""
+    """What the outer loop must write on the ticket's page (or the session in a local file with no board). `-` means nothing."""
     if outcome == "review":
         return "Status=Review; Waiting=; " + (f"PR={public_url(pr)}; " if pr else "") + "comment=result+evidence"
     if outcome == "needs-human":
@@ -1670,7 +1670,7 @@ def cmd_ticket(args: argparse.Namespace) -> None:
     label, lines = outcome_lines(ticket["sections"])
     items = sum(1 for line in lines if re.match(r"^-\s*\S", line))
     if args.save and has_board(base):
-        raise Refuse(f"this repository has a board (`board` in {CONFIG}); create the ticket there with the board's tool")
+        raise Refuse(f"this repository has a board (`board` in {CONFIG}); leave the draft file for the outer loop to create the ticket there")
     print(f"ticket: ok, {items} item(s) under {label}, as start will read it")
     if args.save:
         path = save_ticket(Path(args.file).read_text())
@@ -1702,7 +1702,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     if not args.from_file:
         # Without a board the tickets are files, and the id alone names one.
         if has_board(base):
-            raise Refuse("pass --from-file: the page, read just now from the board and saved in the ticket format")
+            raise Refuse("pass --from-file: the ticket file the outer loop read from the board and saved in the ticket format")
         page = ticket_file(check_id(args.ref))
         if not page.is_file():
             raise Refuse(f"there is no ticket file {page}. This repository has no board, so its tickets are files in "
@@ -3288,7 +3288,7 @@ def build_parser() -> argparse.ArgumentParser:
     start = sub.add_parser("start", help="claim a ticket and create its worktree")
     start.add_argument("ref", nargs="?", default="", help="the link of the ticket's page on the board; it becomes the `source:` of the result. Without a board: the ticket's id")
     start.add_argument("--local", action="store_true", help="work with no ticket: the file has no id, and the script gives it a LOCAL-<n> one")
-    start.add_argument("--from-file", help="the page, read just now and saved in the ticket format; not needed when the tickets are files")
+    start.add_argument("--from-file", help="the ticket file the outer loop read from the board and saved in the ticket format; not needed when the tickets are files")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--answered", action="store_true", help="only with --local: the human answered the question the ticket stopped with")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")

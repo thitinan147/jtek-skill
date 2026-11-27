@@ -1,5 +1,19 @@
 # Changelog
 
+## 28.0.1 - only the outer loop reads and writes the board
+
+Patch release establishing the outer-loop / inner-loop board boundary in skills, references, contract tests, and script hint messages (no CLI behaviour change).
+
+### Changes
+
+- **Inner-loop sessions never talk to Notion or FLO.** `jt-work`, its step skills (`jt-understand`, `jt-build`, `jt-debug`, `jt-verify`, `jt-cleanup`), `jt-ship`, `jt-review`, `jt-babysit`, `jt` on a ticket, `playbooks/*`, and `worker.md` no longer link to `references/notion.md` or `references/flo.md` and never instruct a ticket session to use a board tool. With a board configured, `jt-work` receives a ticket file and page link from the outer loop, runs `jtek.py start <page link> --from-file <ticket file>`, and stops pointing to `starting-sessions.md` if no ticket file was handed in; it ends with the `jtek-result` block whose `board:` line the outer loop writes back to the page. No-board mode (`board` empty, local ticket files in `references/files.md`) is preserved unchanged (`jtek.py start <id>`, and the session updates that local file directly).
+- **Outer-loop docs own board reads and writes.** `skills/jt-work/references/starting-sessions.md` now documents the full outer-loop cycle: read the ticket from the board with its tool (`notion.md` or `flo.md`), save a ticket file, start the session with the file and page link, and after the session ends write the `jtek-result` `board:` line (and create any Backlog follow-up card from draft paths) on the page in one batch. `references/notion.md` and `references/flo.md` now state in their intros that they are for the outer loop. `README.md` ("How it works" and "The whole factory"), `GETTING-STARTED.md`, `SECURITY.md`, `ticket.md`, `several-tickets.md`, `two-repos.md`, `setup.md`, and `files.md` reflect the same boundary.
+- **Follow-up cards use draft files when a board is configured.** `jt-understand`, `jt-build`, `jt-review` (and `notes.md`), `jt`, `playbooks/refactor.md`, and `jt-work` (`known-red` drafts) now tell inner-loop sessions to write checked draft ticket files outside the repository/worktree and name their paths in evidence or review notes for the outer loop to create on the board; with no board, `jtek.py ticket --save` continues as before.
+- **Refusal and help wording updated in scripts (no CLI behaviour change).** Both byte-identical copies of `jtek.py` (`jt-work` and `jt-review`), `launcher.py`, and `doctor.py` reword refusal/help hints (`start` without `--from-file`, `ticket --save` on a board repo, unstarted ticket in `load_meta`, `init`, and `doctor`) so they direct to the outer loop instead of telling an inner-loop session to use a board tool. CLI flags, exit codes, and output formats are unchanged.
+- **Board-boundary contract test.** `tests/test_skill_contracts.py` asserts that inner-loop skill files, playbooks, and `worker.md` do not link to `notion.md`/`flo.md` or instruct using Notion/FLO/board tools, that `starting-sessions.md` links to both, and that `notion.md`/`flo.md` declare themselves outer-loop references.
+
+Where it cuts time across the whole flow: inner-loop sessions no longer spend tool calls or context window reading and writing the board (no Notion or FLO MCP is needed inside a worker), workers can run on machines or agents without board access, board writes happen once in the outer loop in a batch, and there is one place to maintain and fix board handling.
+
 ## 28.0.0 - lean end-to-end flow: multi-repo visibility, `status` choices, and `verdict --by` check
 
 Official v28.0.0 release. Finishes the six-part v28 flow overhaul with the remaining small launcher and `verdict` fixes.

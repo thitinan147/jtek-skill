@@ -26,7 +26,7 @@ def init(j, args) -> None:
     j.write_json(path, TEMPLATE)
     print(f"wrote {path}")
     print("This file is on this machine. It is not in the repository, and it is not committed.")
-    print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
+    print("`board` is the link of the Notion database or FLO product that holds the tickets. Only the outer loop reads and writes it.")
     print(f"Leave it empty to keep the tickets as files in {j.tickets_dir()}; no board is needed then.")
     print("With no config file at all, that empty board is already the default.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")

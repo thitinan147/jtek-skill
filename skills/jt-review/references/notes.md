@@ -13,7 +13,7 @@ Findings:
 Notes:
 - design: <one line on whether the shape of the change fits the ticket>
 - to weigh: <a behaviour the human may not want, or a coverage gap, which the ticket does not settle>
-- follow-up: <the new card for that gap: its id from `jtek.py ticket --save`, or its board link>
+- follow-up: <the new card for that gap: its id from `jtek.py ticket --save` with no board, or the path of a draft ticket file for the outer loop when a board is configured>
 - item <n> seen: <what you ran, and what you saw>
 - broke: <sealed broke.json covers items 1–N at this commit; seal intact; did not re-break> | <the line you broke, and which checks failed or still passed>
 - stand-in: <what you used in place of the real thing, and for which case>
@@ -51,7 +51,7 @@ Notes:
 
 - **A finding has `steps:` or `scenario:`, and `expected:`.** A suspicion without them goes under Notes as `did not reproduce`, or is left out. The script refuses a `- reproduces:` line that has neither.
 - **Tie each finding to a P0 or P1 bug:** a `Done when` item that is false, a regression (an `Out of scope` line, or something that worked before), a security issue, or data loss. Compare the change with the ticket, and skip style. A nit goes under `Dropped` or `Nits`, or is left out. A nit anywhere else in the notes blocks a pass. Taste is not a FAIL.
-- **A coverage gap is a `to weigh:` line and a `follow-up:` card, not a finding.** No declared check would notice if a `Done when` behaviour stopped being true, but the behaviour is right today. A behaviour that is actually wrong is a finding.
+- **A coverage gap is a `to weigh:` line and a `follow-up:` card, not a finding.** No declared check would notice if a `Done when` behaviour stopped being true, but the behaviour is right today. With a board, write a draft ticket file and put its path on `follow-up:` for the outer loop instead of touching the board yourself. A behaviour that is actually wrong is a finding.
 - **`broke:` may cite the sealed proof.** After you check that `broke.json` covers every `Done when` item at this commit and that its seal is intact, the `broke:` line says so instead of a break you made yourself. Do not leave it out: the script refuses a pass without it. A break you made in a deep review gets its own `broke:` line.
 - **Say what you did not check.** The human decides whether that matters. When there is no verify guide, say so.
 - **`FAIL` needs at least one such finding.** `PASS+NOTES` has no finding and at least one `to weigh:` line. `PASS` has neither. Both passes need at least one `broke:` line and a `safe because:` line, and the script refuses a pass without them. The script also refuses a FAIL that is only a nit. `design:` and `follow-up:` are read by the human; the script does not check them.

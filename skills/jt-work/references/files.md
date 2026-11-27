@@ -1,6 +1,6 @@
 # The board as files
 
-A repository needs no board. When `board` is empty, or there is no config file, each ticket is a file, and the folder of those files is the board. Everything [notion.md](notion.md) says about the `board:` line, the Todo signal, and the limits holds here too. This file says only where each part lives in a ticket file.
+A repository needs no board. When `board` is empty, or there is no config file, each ticket is a local file, and the folder of those files is the board. Because these files are local and not a remote board, the inner-loop session reads and writes them directly. Everything [notion.md](notion.md) says about the `board:` line, the Todo signal, and the limits holds here too. This file says only where each part lives in a ticket file.
 
 ## Where the files are
 

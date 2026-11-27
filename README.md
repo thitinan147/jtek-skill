@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0-111111?style=flat-square" alt="Version 28.0.0">
+  <img src="https://img.shields.io/badge/version-28.0.1-111111?style=flat-square" alt="Version 28.0.1">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -70,31 +70,31 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 ## How it works
 
 1. **You write a ticket** as a page on the board (a Notion database, a FLO product, or a file when there is no board), with `Goal` and `Done when`, and set it to Todo.
-2. **A session takes it.** The agent reads the page with the board's tool and runs `jtek.py start`. The script claims the ticket, creates a worktree, and runs the checks on the base first. If a check is already red on the base, `start` records it as `known-red`, opens one follow-up ticket, and continues.
+2. **The outer loop hands a session the ticket.** Whoever starts sessions (you, a launching Claude Code session, or a bot) reads the page from the board with its Notion or FLO tool, saves a ticket file, and passes that file and the page link to a fresh session (with no board, tickets are local files and no board tool is used). The session runs `jtek.py start`, which claims the ticket, creates a worktree, and runs the checks on the base first. If a check is already red on the base, `start` records it as `known-red`, writes one follow-up ticket (or a draft file for the outer loop when a board is configured), and continues.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from the machine config, not from the worktree. An edit in the worktree cannot weaken them.
 5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
-6. **A pull request opens** with the evidence as its body. The script prints a `board:` line, and the agent writes exactly that on the page.
+6. **A pull request opens** with the evidence as its body. The session ends with a `jtek-result` block whose `board:` line (and any draft follow-up card) the outer loop writes on the page. With no board, the session updates the local ticket file directly.
 7. **You merge.** There is no merge command.
 
-Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck. A decision that belongs in the pull request is not a stop: the agent chooses, writes it as a `choice:` line in the evidence, and goes on, so you see it and can change it at review. When it does stop, it puts the question on the page. You answer and set the ticket back to Todo, or comment on the pull request.
+Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck. A decision that belongs in the pull request is not a stop: the agent chooses, writes it as a `choice:` line in the evidence, and goes on, so you see it and can change it at review. When it does stop, the result's `board:` line tells the outer loop to put the question on the page. You answer on the page and set the ticket back to Todo (the outer loop passes the updated ticket file to the next session), or comment on the pull request.
 
-`jtek.py` never talks to the board. The agent reads and writes it with its own Notion or FLO tool, and the script says what to write.
+**Only the outer loop reads and writes the board.** Neither `jtek.py` nor any inner-loop ticket session (`jt-work`, its step skills, `jt-ship`, `jt-review`, `jt-babysit`, or `/jt` on a ticket) talks to Notion or FLO, so worker sessions need no board MCP or board access. The outer loop reads the page into a ticket file, hands it to the session, and writes back what the script's `board:` line says.
 
 ## The whole factory
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/factory-dark.svg">
-    <img src="assets/factory.svg" width="880" alt="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board, in Notion, in FLO, or as ticket files: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: read the board, ask jtek.py next what each ticket needs, start a session, and ask again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict.">
+    <img src="assets/factory.svg" width="880" alt="The whole factory in four bands. Human in the loop: you write the ticket, set Todo, answer questions, read the evidence and merge. The board, in Notion, in FLO, or as ticket files: Backlog, Todo, In Progress with Waiting, Review, Done. Outer loop, run by you, Claude Code, or a bot: the only loop that reads and writes the board; asks jtek.py next what each ticket needs, hands a ticket file and page link to start a session, writes the jtek-result board line back, and asks again when it ends; jtek.py sync sets Done after a merge. Inner loop, one session per ticket in its own worktree: start, understand, build, check, verify, ship, finish; a second session reviews and gives a verdict; never reads or writes the board.">
   </picture>
 </p>
 
 | Loop | Who | What it does | What it never does |
 |---|---|---|---|
 | **Human in the loop** | You | Writes the ticket, sets Todo, answers questions, reads the evidence, merges | |
-| **Outer loop** | You, a Claude Code session, or a bot | Reads the board, asks `jtek.py next` what each ticket needs, starts a session, asks again when it ends | Writes code, gives a verdict, sets Todo, merges |
-| **Inner loop** | One agent session per ticket | Builds the change in its own worktree, passes the checks, sees it work, opens the pull request. A second session gives the verdict | Picks the next ticket, merges |
+| **Outer loop** | You, a Claude Code session, or a bot | **Only loop that reads and writes the board:** reads the board, asks `jtek.py next` what each ticket needs, saves a ticket file + page link to start a session, writes the `jtek-result` `board:` line (and any draft follow-up card) back to the board, and runs `jtek.py sync` after a merge | Writes code, gives a verdict, sets Todo, merges |
+| **Inner loop** | One agent session per ticket | Works from the handed-in ticket file in its own worktree, passes the checks, sees it work, opens the pull request, and prints `jtek-result`. A second session gives the verdict | Reads or writes the board (Notion/FLO), picks the next ticket, merges |
 
 jtek is the inner loop, plus the one command the outer loop needs. Black boxes are yours. Green boxes run something real. Dashed lines are the ways back: a question for you, or a failed review.
 
@@ -123,7 +123,7 @@ npx skills add thitinan147/jtek-skill
 
 Install the whole set. The script lives in `jt-work` and `jt-review`, so a step skill installed alone cannot run it. After that, day to day is `/jt`, `/jt-review`, and `/jt-status`. The first repository is `/jt-init`, or nothing if you want the defaults.
 
-Needs `git` 2.31 or later, Python 3.10 or later, and an agent with a Notion or FLO tool, or neither when the tickets are files. With GitHub you also need `gh`, signed in; with GitLab, `glab`, signed in: the agent opens a draft pull or merge request with it, and the script reads state, posts comments, and marks it ready once both PASS and green CI hold. With another forge, you can override state reading with `pr_state` in the machine config.
+Needs `git` 2.31 or later, Python 3.10 or later, and a Notion or FLO tool in the outer loop (not needed inside worker sessions, or at all when the tickets are files). With GitHub you also need `gh`, signed in; with GitLab, `glab`, signed in: the agent opens a draft pull or merge request with it, and the script reads state, posts comments, and marks it ready once both PASS and green CI hold. With another forge, you can override state reading with `pr_state` in the machine config.
 
 ## Set up
 
@@ -169,10 +169,10 @@ Day to day you type `/jt`, `/jt-review`, and `/jt-status`. Setup is `/jt-init`, 
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
 | Work with no board at all | Leave `board` empty, or have no config file. `/jt <what to do>` works as before, and tickets are files in `~/.jtek/repos/<repo id>/tickets`: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
-| Work a ticket | `/jt-work T-12`, or `/jt-work <Notion page or FLO item link>` |
-| Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
+| Work a ticket | `/jt-work <ticket file> <page link>` (handed in by the outer loop when a board is configured), or `/jt-work T-12` (with no board) |
+| Work a few small, related tickets | `/jt-work` with those ticket files and links (or `/jt-work T-12 T-13 T-14` with no board) |
 | Give the verdict a ticket needs | `/jt-review T-12` in a fresh session |
-| Answer a question, or ask for a fix | Write on the page, set Status to Todo, then `/jt-work T-12` |
+| Answer a question, or ask for a fix | Write on the page and set Status to Todo (the outer loop passes the updated ticket file to the next session), or comment on the pull request |
 | Give a ticket back, or clean up a start that was interrupted | Ask the agent to run `jtek.py release T-12`. A branch that holds work is kept, and the next start goes on from it |
 | Let something else start the sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
@@ -203,7 +203,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 | A check fails | `jt-debug` | Finds the cause before changing code, and stops after three failed runs, or the number the project set |
 | See it work | `jt-verify` | Runs the real thing and reports only what was seen |
 | Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
-| Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
+| Ship | `jt-ship` | Opens the pull request with the proof for each item, and prints the Review result with its `board:` line for the outer loop |
 | Second look | `jt-review` | A session that did not write the change tries to break it, and records the verdict |
 | The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
 | After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
@@ -430,9 +430,9 @@ Details: [setup.md](skills/jt-work/references/setup.md).
 |---|---|---|
 | Backlog | Written down, not released | You |
 | Todo | Released for an agent | You only |
-| In Progress | A session has claimed it | The session, after `jtek.py start` |
-| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no forge) | The session, after `jtek.py finish` |
-| Done | Pull request merged | Read from the forge by `jtek.py sync` |
+| In Progress | A session has claimed it | The outer loop, after `jtek.py start` (or the session, in the local file when there is no board) |
+| Review | Checks pass, verdict is PASS, evidence saved, pull request open (or the repository has no forge) | The outer loop, from `jtek-result` after `jtek.py finish` (or the session, in the local file when there is no board) |
+| Done | Pull request merged | The outer loop, from `jtek.py sync` |
 | Cancelled | Dropped | You |
 
 Waiting, with `input` or `approval`, is a property of an In Progress ticket. It is not a status. The ticket format and the result block are in [ticket.md](skills/jt-work/references/ticket.md).
@@ -472,7 +472,7 @@ Not by editing `jtek.json`: the script reads it from the base branch. What a che
 `start` records the session, and `verdict` refuses that same session. Set `JTEK_SESSION` to one id for the writing session and a different id for the reviewer. The same text in `CURSOR_SESSION_ID` is the same session. Without one of those ids, `start` and `verdict` refuse. The parent process is not a session. An agent that changes `JTEK_SESSION` for the verdict can still bypass this. Do not put `verdict` on an always-allow list in the session that writes code. See [SECURITY.md](SECURITY.md).
 
 **Why does the script not talk to the board?**
-Your agent already has a Notion or FLO tool, and the script would need a token of its own. So the agent reads the page, and the script prints what to write back. The cost: the script cannot check that the page was copied faithfully or that the line was written.
+Your outer-loop agent (or bot) already has a Notion or FLO tool, and the script would need a token of its own. So only the outer loop reads the page into a ticket file and writes back what the script's `board:` line says; inner-loop worker sessions need no board tool at all. The cost: the script cannot check that the page was copied faithfully or that the line was written.
 
 **Do I need the second session for a one-line fix?**
 Set Review to `human` on that ticket. The waiver is ignored when the change touches a file on the `attention:` line.

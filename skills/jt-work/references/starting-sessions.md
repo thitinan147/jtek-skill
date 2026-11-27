@@ -2,9 +2,11 @@
 
 A session works the tickets it is given. Something else decides which ticket runs next and starts the session: the human, a Claude Code session that starts other sessions, or a bot. All three follow the same contract.
 
+**Only this outer loop reads or writes the board.** Inner-loop sessions (`jt-work`, its step skills, `jt-ship`, `jt-review`, `jt-babysit`, and `/jt` on a ticket) never talk to Notion or FLO and need no board tool. With a board configured, the outer loop reads the ticket into a file, passes that file and the page link to the session, and writes back the `jtek-result` `board:` line (and creates any draft follow-up card) after the session ends.
+
 ## Ask what each ticket needs
 
-1. Read the board (the database named as `board` in the machine config) with the board's tool, and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`. On a Scrum board, count To do (Todo) only in the current sprint:
+1. Read the board (the database named as `board` in the machine config) with the board's tool ([notion.md](notion.md) or [flo.md](flo.md)), and save its tickets as a JSON file outside the repository. Leave out tickets that were already Done or Cancelled the last time you ran `sync`. On a Scrum board, count To do (Todo) only in the current sprint:
 
    ```json
    [{"id": "T-12", "title": "...", "status": "Todo", "repo": "api", "waiting": "", "pr": "", "after": ["T-10"]}]
@@ -17,8 +19,8 @@ A session works the tickets it is given. Something else decides which ticket run
 
 | Action | What to do |
 |---|---|
-| `work` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-work` skill for ticket `<id>`." |
-| `review` | Start a fresh session in this repository: "Read <jt-work folder>/worker.md before anything else. Follow the `jt-review` skill for ticket `<id>`." It must not be the session that wrote the change. |
+| `work` | With a board: read the ticket fresh from the board with its tool ([notion.md](notion.md) or [flo.md](flo.md)), save a ticket file outside the repository and its worktrees, and start a fresh session in this repository: `"Read <jt-work folder>/worker.md before anything else. Follow the jt-work skill for ticket <id> using ticket file <file> and page link <page link>."` Without a board: start a fresh session with `"Read <jt-work folder>/worker.md before anything else. Follow the jt-work skill for ticket <id>."` |
+| `review` | Start a fresh session in this repository: `"Read <jt-work folder>/worker.md before anything else. Follow the jt-review skill for ticket <id>."` It must not be the session that wrote the change. |
 | `board` | The page does not show the saved result or question. Write the `board:` line of `jtek.py result <id>` on the page, as [notion.md](notion.md), [flo.md](flo.md), or [files.md](files.md) says. Do not start a session. |
 | `human` | Nothing. The human answers on the page and sets Todo, or reviews and merges. |
 | `hold` | Nothing. The ticket is in Backlog, or it comes after one that is not Done. |
@@ -26,7 +28,15 @@ A session works the tickets it is given. Something else decides which ticket run
 | `stuck` | Nothing. Tell the human: a `start` died half way, or the claim is damaged. The reason says which command cleans it up. |
 | `elsewhere` | Nothing. Another machine has the ticket. |
 
-After a session ends, read the board and run `next` again. The action for that ticket has changed.
+## How the outer loop runs one ticket with a board
+
+1. **Read the ticket from the board** with its tool ([notion.md](notion.md) or [flo.md](flo.md)), including any human comments after the latest `jtek-result` comment, and save a ticket file outside the repository and its worktrees. Keep its page link.
+2. **Start the session with the file and link.** The session runs `jtek.py start <page link> --from-file <ticket file>` and works without touching the board. (If you want the board to show `In Progress` while the session runs, write `Status=In Progress; Waiting=` only after `start` allows the claim.)
+3. **Wait for `jtek-result`.** When the session ends, read its `jtek-result` block (or run `jtek.py result <id>`). For a background Claude Code session, stop it with `claude stop <id>`.
+4. **Write back to the board in one batch:**
+   - Apply the `jtek-result` `board:` line on the page ([notion.md](notion.md) or [flo.md](flo.md)). If the card is still in `Todo` and the result says `status: In Progress` (`outcome: needs-review` or `outcome: needs-human`), set `Status=In Progress` on the page as well so `next` does not treat `Todo` as a new human release.
+   - If the session output (`follow-up draft:`), evidence, or review notes (`follow-up:`) name a draft ticket file, create a Backlog card on the board from that file.
+5. **Read the board and run `next` again.** The action for that ticket has changed.
 
 A session may end with `needs-review` while a reviewer it started is still at work, when the project's checks are slow. Run `next` before you start another reviewer: `review` means no verdict is recorded yet, and one may be on its way.
 
@@ -36,7 +46,7 @@ A session does not stop to ask about a decision that belongs in the pull request
 
 A session still stops and waits in two cases: before an act outside the pull request (`--waiting approval`, P16), and with `--waiting input` where a step or the script says so, such as after the third FAIL verdict or three failed checks.
 
-The human answers on the page or in the ticket file and sets Todo, as before. That is no longer the only way: they may also comment on the pull request, or leave a note under `## Log`. Submit a review as a whole (GitHub or GitLab "Submit review", with several notes), not one comment at a time: a session acts on the whole review, so the human is interrupted by a review they chose to send, not by every comment. When `next` says `work` for that ticket, the new session reads every comment since the latest verdict with `gh` or the forge, and answers them in one round with `jt-babysit`. Nobody moves the card to another status to have the comments picked up.
+The human answers on the page or in the ticket file and sets Todo, as before: with a board, the outer loop reads the updated page and comments fresh into a new ticket file and hands it to the next session. That is no longer the only way: they may also comment on the pull request, or leave a note under `## Log`. Submit a review as a whole (GitHub or GitLab "Submit review", with several notes), not one comment at a time: a session acts on the whole review, so the human is interrupted by a review they chose to send, not by every comment. When `next` says `work` for that ticket, the new session reads every pull request comment since the latest verdict with `gh` or the forge (which is not the board), and answers them in one round with `jt-babysit`. Nobody moves the card to another status to have the comments picked up.
 
 Now and then, run `jtek.py sync --board-file <file>`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled. When the forge reports a pull request as merged, the line has `board: Status=Done`: set that on the page. It also removes the worktrees of finished tickets, and says when it kept one. It deletes a ticket's branch only when every commit is on the base, or the forge says the pull request merged at the branch's last commit.
 
@@ -44,9 +54,9 @@ Now and then, run `jtek.py sync --board-file <file>`. It prints one line for eac
 
 - Start a session only for `work` and `review`. Never set Todo or Cancelled, never record a verdict, and never merge.
 - One session per ticket at a time. Before you start one, check that none is running for that id.
-- Give each session only the line in the table. Do not pass on what another session said.
+- Give each session only the line in the table (with the ticket file path and page link for a board `work` ticket). Do not pass on what another session said.
 - Run one ticket at a time. Run tickets in parallel only when they do not share a database, a port, an e2e stack, or shared files. You decide this when you release the cards; no command checks it.
-- A session needs the board's tool (Notion or FLO; none when the tickets are files), and permission to run git, the project's checks, and `gh`.
+- Only the outer loop needs the board's tool (Notion or FLO; none when the tickets are files). Inner-loop sessions need no board tool or board access — only permission to run git, the project's checks, and `gh` or `glab`.
 - Which tickets may share one session is in [several-tickets.md](several-tickets.md).
 
 ## Which agent reviews

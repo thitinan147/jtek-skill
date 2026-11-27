@@ -6,8 +6,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-VERSION = "28.0.0"
+VERSION = "28.0.1"
 STEPS = ["jt-babysit", "jt-build", "jt-cleanup", "jt-debug", "jt-harness", "jt-learn", "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work"]
+# Inner-loop skills run inside a ticket session and must never talk to the board (Notion/FLO).
+INNER_LOOP_SKILLS = [
+    "jt", "jt-babysit", "jt-build", "jt-cleanup", "jt-debug",
+    "jt-review", "jt-ship", "jt-understand", "jt-verify", "jt-work",
+]
 # Modes sit above the router: the human types them, and they hand ticket work to jt-work.
 MODES = ["jt", "jt-agents", "jt-init", "jt-me", "jt-status", "jt-ticket"]
 # A mode that may start helpers, so it must pass the delegate rules on. jt-agents starts none.
@@ -103,6 +108,45 @@ class SkillContracts(unittest.TestCase):
         text = (SKILLS / "jt-work" / "SKILL.md").read_text()
         self.assertIn("never merges", text)
         self.assertIn("never picks the next ticket", text)
+
+    def test_only_the_outer_loop_talks_to_the_board(self):
+        board_refs = ("notion.md", "flo.md")
+        forbidden_instruction = re.compile(
+            r"\b(?:notion|flo)\b|board's tool|write on the (?:ticket's )?page|or on the board|put on the board",
+            re.I,
+        )
+        inner_docs = [SKILLS / name / "SKILL.md" for name in INNER_LOOP_SKILLS]
+        inner_docs += sorted((SKILLS / "jt-work" / "playbooks").glob("*.md"))
+        inner_docs.append(SKILLS / "jt-work" / "worker.md")
+        for path in inner_docs:
+            text = path.read_text()
+            targets = re.findall(r"\]\(([^)#]+)\)", text)
+            for ref in board_refs:
+                self.assertFalse(
+                    any(target.endswith(ref) for target in targets),
+                    f"{path} links to {ref}; only the outer loop talks to the board",
+                )
+                self.assertNotIn(f"references/{ref}", text, f"{path} names references/{ref}")
+            match = forbidden_instruction.search(text)
+            self.assertIsNone(
+                match,
+                f"{path} tells the inner loop to use the board ({match.group(0) if match else ''!r})",
+            )
+        work_text = (SKILLS / "jt-work" / "SKILL.md").read_text()
+        self.assertIn("references/starting-sessions.md", work_text)
+        self.assertIn("references/files.md", work_text)
+        starting = (SKILLS / "jt-work" / "references" / "starting-sessions.md").read_text()
+        starting_targets = re.findall(r"\]\(([^)#]+)\)", starting)
+        for ref in board_refs:
+            self.assertTrue(
+                any(target.endswith(ref) for target in starting_targets),
+                f"starting-sessions.md must link to {ref} for the outer loop",
+            )
+            intro = "\n".join((SKILLS / "jt-work" / "references" / ref).read_text().splitlines()[:10]).lower()
+            self.assertIn("outer loop", intro, f"{ref} intro must state it is for the outer loop")
+        script_text = (SKILLS / "jt-work" / "scripts" / "jtek.py").read_text()
+        self.assertNotIn("create the ticket there with the board's tool", script_text)
+        self.assertNotIn("Otherwise read its page and", script_text)
 
     def test_statuses_match_the_script(self):
         script = (SKILLS / "jt-work" / "scripts" / "jtek.py").read_text()

@@ -27,7 +27,7 @@ A check command is one program with arguments, so each of these is a script.
 
 - One ticket per repository, each with `repo:`. The provider's ticket comes first.
 - Put the contract change in the provider ticket's `Done when`, so the evidence covers it.
-- Set After on the consumer's ticket to the provider's ticket. Both are on the same board, so the consumer's ticket file carries `after:` until the provider's ticket is Done, which means merged, and `start` refuses it until then.
+- Set After on the consumer's ticket to the provider's ticket. Both are on the same board, so the ticket file the outer loop saves for the consumer carries `after:` until the provider's ticket is Done, which means merged, and `start` refuses it until then.
 - After keeps the order. The checks below keep the two sides in agreement.
 
 ## Working the consumer's ticket

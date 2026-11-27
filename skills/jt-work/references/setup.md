@@ -12,7 +12,7 @@ The repository id is the origin URL's host, a non-default port, and its path. `h
    {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
    ```
 
-   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. The agent reads it to know where a ticket id such as `T-12` lives. The script only looks at whether it is empty: an empty `board` means the tickets are files in `$HOME/.jtek/repos/<repo id>/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository, `<name>.jtek/_tickets`, is still read.
+   **`board`** is the link of the Notion database, or the FLO product, that holds the tickets. Only the outer loop reads and writes it; inner-loop sessions never talk to the board. The script only looks at whether it is empty: an empty `board` means the tickets are files in `$HOME/.jtek/repos/<repo id>/tickets`, and `start`, `next`, and `sync` read them there. An older folder beside the repository, `<name>.jtek/_tickets`, is still read.
 
    **`setup`** installs dependencies in a new worktree, for example `npm ci` or `uv sync`. A new worktree has none, so without it the checks fail before any edit. Leave it empty when nothing is needed.
 
@@ -51,14 +51,14 @@ The base branch is `origin/HEAD` when it is set, otherwise `main` or `master`. S
 
 **`watch`** is an optional list of file patterns, for example `["migrations/*", "infra/*"]`. When a ticket changes a matching file, the result names it on the `attention:` line.
 
-Every `start` runs the checks once on the base before any edit, so keep the base green. If a check is already red on the base, `start` records `known-red` for that base commit, opens one follow-up ticket (or prints a draft path for a board), and continues so the ticket is not blocked; `check` and `finish` waive only that check while the base commit stays the same. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
+Every `start` runs the checks once on the base before any edit, so keep the base green. If a check is already red on the base, `start` records `known-red` for that base commit, saves one follow-up ticket (or prints a draft path for the outer loop when a board is configured), and continues so the ticket is not blocked; `check` and `finish` waive only that check while the base commit stays the same. A slow `verify` makes every ticket start slowly. `start --no-baseline` skips that run.
 
 ## Commands that are not part of working a ticket
 
 - **Tickets** are written on the board. Set Status to Todo, or move a FLO item to To do, to release one.
 - **`jtek.py doctor`:** what is set up in this repository and what is missing. Anyone may run it. It only reads.
 - **`jtek.py next --board-file <file>` and `jtek.py sync --board-file <file>`:** what each open ticket needs, and which Review tickets are merged. Whoever starts the sessions runs them: the human, or an agent that was asked to. See [starting-sessions.md](starting-sessions.md).
-- **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It reads the page and adds `--resume` to `start`. A session adds `--resume` only when the human said so.
+- **Take over a claim whose session died without a result:** the outer loop reads the page fresh into a ticket file (when a board is configured), hands it to a new session, and tells it that the earlier session died so it adds `--resume` to `start`. A session adds `--resume` only when the human said so.
 - **`jtek.py release <id>`:** drop a claim and its worktree. Only the human decides this, and an agent runs it only when the human asks. It refuses while the worktree has uncommitted files or commits that are not on the ticket's branch, and while a `start` for that ticket is still running. Files that git ignores, such as `.env`, go with the worktree. A worktree with submodules is never removed by the script: remove it by hand when its submodule commits are pushed. The branch is kept, and the next `start` for that ticket goes on from it. The one exception is a `start` that was interrupted before any work: its empty branch is removed. The page is not changed.
 
 `init`, `doctor`, `next`, `sync`, and `release` run only from the `jt-work` skill's copy of the script.

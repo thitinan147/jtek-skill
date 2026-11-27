@@ -2,7 +2,7 @@
 name: jt
 description: The owner's working mode for any coding task, with a ticket or without one. Restates the goal, routes ticket work to jt-work, gives work without a ticket a local id with the same evidence and review, and reports in the owner's style with the principle behind each decision. Use when the user types /jt, and only then.
 disable-model-invocation: true
-argument-hint: "<ticket id | page link | what to do>"
+argument-hint: "<ticket id | ticket file | page link | what to do>"
 ---
 
 # jt
@@ -18,7 +18,7 @@ When you think the request is wrong, or a part of it does not earn its place, sa
 ## Route
 
 - **No machine config yet:** when `jtek.py doctor` prints `init: needed` or `init: migrate`, follow the jt-init skill first (one confirmation), say so in one line, then continue this request.
-- **A ticket id, a ticket file, or a Notion or FLO link:** follow the `jt-work` skill for it, from its Start step. Everything below about the report still applies.
+- **A ticket id, a ticket file, or a page link:** follow the `jt-work` skill for it, from its Start step. Only the outer loop reads or writes a board; with a board configured, `jt-work` requires a ticket file and page link handed in. Everything below about the report still applies.
 - **Several ids:** the same, with the rules `jt-work` gives for several tickets.
 - **No ticket:** work it as a local ticket, below. When it is too large for one pull request, or the owner has not decided what it should do, say so and suggest `/jt-ticket` instead.
 - **A question about code, with nothing to change:** answer it. Read and run what you need, change no file, and say what you saw and where.
@@ -40,7 +40,7 @@ Push the branch and open the pull request as for a ticket. Never merge.
 ## Choices
 
 - **Easy to undo, and the ticket or the user does not decide it:** choose the one that changes least of what users see today, and write it in the evidence as a `choice:` line (P17).
-- **A decision inside the pull request, or about the ticket's scope:** do not stop. Choose, write `choice: <question> → <picked> (other options: …)` in the evidence, and go on (P19). Work that grows past the ticket goes on a new card. Two `Done when` items that cannot both hold get a `choice:` line for the reading you follow, and a new card for the other one. A new dependency, a migration file, or a change to CI inside the pull request is this case too: do it, and say it in the evidence.
+- **A decision inside the pull request, or about the ticket's scope:** do not stop. Choose, write `choice: <question> → <picked> (other options: …)` in the evidence, and go on (P19). Work that grows past the ticket goes on a new card (with a board, write a draft ticket file outside the repository and worktree and name its path in the evidence for the outer loop; with no board, save it with `jtek.py ticket --save`). Two `Done when` items that cannot both hold get a `choice:` line for the reading you follow, and a new card for the other one the same way. A new dependency, a migration file, or a change to CI inside the pull request is this case too: do it, and say it in the evidence.
 - **It acts outside the pull request:** a deploy, deleting or changing real or shared data, a migration run against a shared database, a message to someone outside the run. Stop with `--waiting approval` and ask one question (P16).
 - **A question a run can settle:** run it. Do not ask (P19).
 
