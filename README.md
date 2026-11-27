@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-29.0.0-111111?style=flat-square" alt="Version 29.0.0">
+  <img src="https://img.shields.io/badge/version-30.0.0-111111?style=flat-square" alt="Version 30.0.0">
   <img src="https://img.shields.io/badge/skills-15-111111?style=flat-square" alt="15 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/tickets-local%20files%20%7C%20chat-111111?style=flat-square" alt="Tickets are local files or goals typed in chat">
@@ -27,7 +27,7 @@
 
 You know the pull request. Forty files. "All tests pass." The feature does not start.
 
-An agent will tell you the work is done. jtek does not take its word. A ticket reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and every `Done when` item has a line that says what was run and seen, or why it was not run.
+An agent will tell you the work is done. jtek does not take its word. Work reaches Review only when the project's own checks pass on the current commit, a session that did not write the change has tried to break it, and the evidence says what was run and seen (or why it was not run) — one line per `Done when` item on ticket files, or for the goal as a whole on chat goals — plus `clean-up:`.
 
 Then it stops. You read the evidence. You merge.
 
@@ -68,13 +68,13 @@ Read `evidence` first, then `attention`, then the diff. `attention` names files 
 ## How it works
 
 1. **You start from a ticket file or a goal typed in chat.**
-   - **Goal in chat:** type `/jt <goal>` (or `/jt-work <goal>`). The agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` itself into a local ticket file (`jtek.py start --local --from-file <file>`, assigning a local id such as `LOCAL-1`), shows the `Done when` list, and proceeds unless the change reaches outside the pull request.
+   - **Goal in chat:** type `/jt <goal>` (or `/jt-work <goal>`). The agent starts directly with `jtek.py start --local --goal "<goal>"` (assigning a local id such as `LOCAL-1` with no ticket file, no `Done when`, and no `broke` step) and proceeds unless the change reaches outside the pull request.
    - **Existing ticket file:** save a ticket file under `~/.jtek/repos/<repo id>/tickets/` with `jtek.py ticket <file> --save` (or write one directly), set `status: Todo`, and run `/jt-work T-12` (or `jtek.py start --from-file <file>`).
 2. **A session claims it.** `jtek.py start` claims the ticket, creates a worktree under `.claude/worktrees/<id>`, runs `setup`, and runs the declared checks on the base first. If a check is already red on the base, `start` records it as `known-red`, saves one local Backlog follow-up ticket file, and continues.
 3. **It works in steps.** Understand, build, check, see it work, clean up, ship. Each step is one small skill, and `jt-work` keeps the order.
 4. **The project's checks run.** They come from the machine config, not from the worktree. An edit in the worktree cannot weaken them.
-5. **A second session gives the verdict.** It did not write the change, and it reads only the local ticket file and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
-6. **A pull request opens** with the evidence per `Done when` item as its body. `finish` marks a draft pull request ready once both a passing verdict and green CI hold, and updates the ticket file's header directly (`status: Review` and `pr:`). If review comments, conflicts, or red CI arrive, `jt-babysit` handles them.
+5. **A second session gives the verdict.** It did not write the change, and it reads only the ticket file (or the stored chat goal) and the diff. A verdict belongs to the content of the change, so any edit, even of whitespace, needs a new one. So does a change you make to the ticket.
+6. **A pull request opens** with the evidence as its body (per `Done when` item for ticket files, or at least one `seen:`/`not run:` line plus `clean-up:` for chat goals). `finish` marks a draft pull request ready once both a passing verdict and green CI hold, and updates the ticket file's header directly (`status: Review` and `pr:`). If review comments, conflicts, or red CI arrive, `jt-babysit` handles them.
 7. **You merge.** There is no merge command.
 
 Inside the pull request the agent decides for itself: a new dependency, a migration file, or a change to CI goes ahead, and the result names it for you. It stops only before something that acts outside the pull request, such as a deploy or a change to real data, or when it is stuck. A decision that belongs in the pull request is not a stop: the agent chooses, writes it as a `choice:` line in the evidence, and goes on, so you see it and can change it at review. When it does stop, you answer in chat (for a `LOCAL-<n>` ticket) or in the ticket file and set `status: Todo` (or comment on the pull request).
@@ -161,14 +161,14 @@ Day to day you type `/jt`, `/jt-work`, and `/jt-review`. Setup is `/jt-init`.
 | You want to | Do this |
 |---|---|
 | Set up this repository | `/jt-init`, once. One confirmation covers the guessed `setup` and `checks` commands |
-| Work from a chat goal | `/jt <what to do>` (or `/jt-work <what to do>`). The agent restates the goal + smallest change, drafts `Goal` and `Done when` into a local ticket file (`LOCAL-<n>`), and works it with the same checks, evidence, and review |
+| Work from a chat goal | `/jt <what to do>` (or `/jt-work <what to do>`). Starts directly with `start --local --goal` (`LOCAL-<n>`, no ticket file, no `Done when`, no `broke`), with the same checks, evidence, and second-session review |
 | Save a ticket file for later | Draft a five-slot ticket file and run `jtek.py ticket <file> --save` (saves Backlog under `~/.jtek/repos/<repo id>/tickets/T-<n>.md`); set `status: Todo` in the file to release it. See [files.md](skills/jt-work/references/files.md) |
 | Work a ticket file | `/jt-work T-12` or `/jt-work <path/to/ticket.md>` (or `/jt T-12`) |
 | Work a few small, related tickets | `/jt-work T-12 T-13 T-14` |
 | Give the verdict a ticket needs | `/jt-review T-12` (or `/jt-review LOCAL-1`) in a fresh session |
 | Check readiness and open tickets | `jtek.py status` (read-only readiness + Thai summary table) or `jtek.py next` (tab-separated next actions) |
 | Mark merged PRs Done and tidy worktrees | `jtek.py sync` |
-| Answer a question, or ask for a fix | Reply in chat (for `LOCAL-<n>`), edit the ticket file and set `status: Todo`, or submit a PR review |
+| Answer a question, or ask for a fix | Reply in chat (for `LOCAL-<n>`, resumed with `start --local <id> --answered`), edit the ticket file and set `status: Todo`, or submit a PR review |
 | Give a ticket back, or clean up an interrupted start | Run `jtek.py release T-12`. A branch that holds work is kept, and the next start goes on from it |
 | Let a script or session start sessions | [starting-sessions.md](skills/jt-work/references/starting-sessions.md) |
 
@@ -188,7 +188,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 | Set up a repository | `jt-init` | Typed as `/jt-init` only. Guesses the checks, asks once to confirm or edit them, records the machine config, runs the harness, then doctor. An old `jtek.json` or `.jtek/` is migrated instead, and you commit the removal |
 | Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.jtek/agents.json`, which you accept or not |
 | Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.jtek/me.md`, which you accept or not |
-| Your mode | `jt` | Typed as `/jt` only. Restates the goal and smallest change, routes ticket files to `jt-work`, gives chat goals a local ticket file (`LOCAL-<n>`), and reports in your style with the principle behind each decision |
+| Your mode | `jt` | Typed as `/jt` only. Routes ticket files and chat goals directly to `jt-work` (chat goals run under `LOCAL-<n>` with no ticket file or `Done when`), and reports in your style with the principle behind each decision |
 | Start, check, stop | `jt-work` | Claims the ticket, creates the worktree, runs the declared checks, and keeps the order of the steps in a playbook for a feature, a bug, or a refactor |
 | Understand | `jt-understand` | Reads the ticket and the code, and names how each `Done when` item will be seen working |
 | Build | `jt-build` | Makes the smallest change with tests, reusing what the codebase already has |
@@ -196,7 +196,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 | See it work | `jt-verify` | Runs the real thing and reports only what was seen |
 | Clean up | `jt-cleanup` | Removes debug output, unused code, and comments that repeat the code |
 | Ship | `jt-ship` | Opens the pull request with the proof for each item, and moves the ticket to Review |
-| Second look | `jt-review` | A session that did not write the change reads the ticket file and diff, tries to break it, and records the verdict |
+| Second look | `jt-review` | A session that did not write the change reads the ticket file (or stored chat goal) and diff, tries to break it, and records the verdict |
 | The pull request needs work | `jt-babysit` | Clears conflicts, failing CI, and review comments, and never merges |
 | After a correction | `jt-learn` | Turns a repeated mistake into a type, a lint rule, a fix to old examples, or a new check, and keeps a small rule table |
 | Once per repository | `jt-harness` | Builds the way to run and observe the real app: a verify guide, a feature map, and the `verify` check |
@@ -205,8 +205,8 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 
 `/jt` is a mode, not a step: it loads only when you type it. Type `/jt` and then a ticket id, a ticket file, or what you want done:
 
-- From a chat goal, the agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` into a local ticket file, shows you the `Done when` items, and proceeds unless the change reaches outside the pull request.
-- `jtek.py start --local --from-file <file>` gives it an id such as `LOCAL-3`, saves the ticket file in the claim folder for the reviewer to read, and creates a worktree. The header the session wrote grants nothing: every declared check runs, `review: human` is ignored, and only you give it new tries.
+- From a chat goal, the agent starts directly with `jtek.py start --local --goal "<goal>"` (giving it an id such as `LOCAL-3`) and proceeds unless the change reaches outside the pull request. No ticket file, no `Done when`, and `broke` is skipped (`broke` applies per `Done when` item on ticket files only).
+- The script stores the goal in the claim folder for the reviewer to read, creates a worktree, runs every declared check, and requires evidence (`seen:`/`not run:` and `clean-up:`). Only you give it new tries via `jtek.py release`.
 - A local change of one file, with nothing on the `attention:` line, skips the second look, and the result says so. Anything bigger needs a verdict, as a ticket file does.
 - It pushes and opens a pull request. It never merges.
 
@@ -250,7 +250,7 @@ Put only models you trust to review on it: the script follows your order and doe
 
 Three files carry a task from your head to your review. Each has a form, and each form is short.
 
-**The ticket file**, which you write or the agent drafts from chat:
+**The ticket file**, when you work from a saved ticket:
 
 ```markdown
 ## Goal
@@ -268,7 +268,7 @@ A user can add a phone number on the profile page, so that sales can call back.
 
 Every `Done when` item names an input and a result, so someone can see it work. `Out of scope` names behaviour that must not change.
 
-**The evidence**, which the agent writes and you read before the diff. One numbered line per `Done when` item and a `clean-up:` line, and the script refuses a file that lacks either:
+**The evidence**, which the agent writes and you read before the diff. One numbered line per `Done when` item (or at least one `seen:`/`not run:` line for a chat goal) and a `clean-up:` line, and the script refuses a file that lacks either:
 
 ```text
 The profile now stores a phone number. PATCH /me validates it with the existing validator, and the page shows it.
@@ -374,7 +374,7 @@ The full forms, with the rules each one stands for:
 
 | For | File | Who fills it in |
 |---|---|---|
-| A ticket file | [ticket-template.md](skills/jt-work/references/ticket-template.md) | You, or the agent from chat |
+| A ticket file | [ticket-template.md](skills/jt-work/references/ticket-template.md) | You (or `jtek.py ticket --save`) |
 | `jtek.json` for Node, Python, and Go | [setup.md](skills/jt-work/references/setup.md) | You, once per repository |
 | The evidence | [evidence.md](skills/jt-ship/references/evidence.md) | The agent |
 | The review notes | [notes.md](skills/jt-review/references/notes.md) | The reviewing session |
@@ -397,7 +397,7 @@ The rules are fixed. The numbers and names around them are yours, in `jtek.json`
 
 Details: [setup.md](skills/jt-work/references/setup.md).
 
-**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the broke record, the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
+**What jtek does not decide.** How the agent writes the code, which tools it uses, how it splits the work inside a ticket, and how good the model is. The script looks at results: the checks, the broke record (for ticket files), the evidence, the verdict. A better model reaches them sooner, and nothing here is in its way.
 
 <details>
 <summary><strong>Which agent, which model, and where it does not fit yet</strong></summary>
@@ -474,7 +474,7 @@ It is the part inside one session, plus local file bookkeeping. What starts the 
 
 ## Coming from earlier versions
 
-See [CHANGELOG.md](CHANGELOG.md) for the full history, including the v26 rewrite (old v25 set at commit `4c9d0f1`), the v27 move of config and knowledge out of repositories onto `~/.jtek`, and the v29 removal of external trackers in favour of local ticket files and chat-goal intake.
+See [CHANGELOG.md](CHANGELOG.md) for the full history, including the v26 rewrite (old v25 set at commit `4c9d0f1`), the v27 move of config and knowledge out of repositories onto `~/.jtek`, the v29 removal of external trackers, and the v30 simplification of chat goals (direct `--local --goal` runs with no ticket file or `Done when`).
 
 ## Acknowledgements
 

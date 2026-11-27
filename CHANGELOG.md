@@ -1,5 +1,25 @@
 # Changelog
 
+## 30.0.0 - breaking: chat goals run directly with no `Done when`
+
+Breaking release for `--local` chat goals. Chat goals no longer restate the goal or draft a local ticket file with `Done when` items — work starts directly from the goal text with the simplest possible flow. Ticket files are unchanged.
+
+### Breaking changes
+
+- **`start --local` takes `--goal "<goal text>"` instead of `--from-file`:** `--local --from-file` and session-written `local_ticket()` parsing are removed. `jtek.py start --local --goal "<goal text>"` allocates `LOCAL-<n>`, stores the goal in `work/LOCAL-<n>/goal.md` (with `source: local, chat goal`), and creates the worktree. Resume a stopped local claim with `jtek.py start --local LOCAL-<n>` (adding `--answered` after the human answers a question in chat).
+- **No `Done when` and no `broke` for chat goals:** `/jt <goal>` and `/jt-work <goal>` start directly without drafting a ticket file or showing a `Done when` list. `broke` applies per `Done when` item on ticket files only: `jtek.py broke` refuses on a local claim, and `finish` skips `broke` proofs for local work.
+- **Reviewer reads the stored goal + diff:** `jtek.py show LOCAL-<n>` prints `goal: <path>/goal.md` instead of `ticket:`.
+
+### Gates kept for local chat goals
+
+- **Checks:** every declared check must pass on the current commit.
+- **Evidence:** at least one `seen:` or `not run:` line for the goal as a whole plus a `clean-up:` line (and valid cited runs, within the line cap). `finish` refuses if either is missing.
+- **Verdict:** a verdict from a different session is still required (one-file non-sensitive local changes still skip the second look).
+
+### Unchanged
+
+- Ticket file intake (`jtek.py start <id>`, `jtek.py start --from-file <file>`, `jtek.py ticket <file> --save`) keeps `Goal` + `Done when`/`Done check`, vague-word validation, per-item evidence, and per-item sealed `broke` proofs unchanged.
+
 ## 29.0.0 - breaking: remove the board, file-only and chat-goal intake
 
 Breaking release. Everything related to an external board (Notion, FLO, `board` config key, `--board-file`, `board:` output lines, `board-comment.md`) is removed. Work starts from an existing local ticket file or directly from a goal typed in chat.

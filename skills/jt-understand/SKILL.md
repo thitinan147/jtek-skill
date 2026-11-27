@@ -9,7 +9,7 @@ Do this before the first edit. The output is a short list, not a document. Write
 
 ## 1. Read
 
-1. Read the ticket file whose path `jtek.py start` printed. Note `Goal`, each `Done when` item, `Out of scope`, and `kind` when it is set.
+1. Read the ticket file (or `goal.md` for a `--local` chat goal) whose path `jtek.py start` printed. Note `Goal`, each `Done when` item, `Out of scope`, and `kind` when set.
 2. Read the code the ticket touches, the tests beside it, and one caller of each function you expect to change.
 3. If a question can be answered by reading the code or its history, or by running it, read or run. Do not ask the human. (P19)
 4. Search the history and the open pull requests for the same fix: `git log --all --grep <the symptom or the ticket id>`, and `gh pr list --search` on a forge. An open fix or a commit that already claims it: do not write a competing one; stop with `--waiting input` and name it. A fix that was reverted: read why before you plan.
@@ -23,7 +23,7 @@ Do this before the first edit. The output is a short list, not a document. Write
 
 ## 3. Name the proof
 
-For each `Done when` item, write one line: how you will see it work for real. A declared check counts. So does running the feature and looking at the output. "The code looks right" does not count.
+For each `Done when` item (or the goal as a whole for a `--local` chat goal), write one line: how you will see it work for real. A declared check counts. So does running the feature and looking at the output. "The code looks right" does not count.
 
 An item that asks for a quality with no number or named standard ("fast", "secure", "accessible") cannot be seen working either.
 
@@ -38,4 +38,4 @@ If an item has no way to be seen working, do not stop. Propose a measurable read
 
 ## Done when
 
-You can say, in a few lines: what will change, which existing pattern you follow, and how each `Done when` item will be seen working.
+You can say, in a few lines: what will change, which existing pattern you follow, and how each `Done when` item (or the goal) will be seen working.

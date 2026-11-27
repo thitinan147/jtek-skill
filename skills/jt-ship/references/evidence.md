@@ -36,7 +36,7 @@ Notes:
 
 ## Rules
 
-- **One numbered line per `Done when` item, in the ticket's order.** It starts with the number, then `seen:` or `not run:`. The script refuses a file that skips an item.
+- **One numbered line per `Done when` item, in the ticket's order** (or, for a `--local` chat goal with no `Done when`, at least one `seen:` or `not run:` line for the goal as a whole). It starts with the number (optional on `--local`), then `seen:` or `not run:`. The script refuses a file that skips an item or has no `seen:`/`not run:` line.
 - **`seen:` means you ran it and looked,** and it ends with the recorded runs it rests on, such as `(run 3)`. Make them with `jtek.py run`.
 - **Give the exact command, request, or steps,** then the result after `->`. A passing test counts when you run it through `jtek.py run`, cite the run, and the test covers the item.
 - **`not run:` is honest, not a failure.** Give the reason. The human then knows what to check by hand.

@@ -52,7 +52,7 @@ Every `start` runs the checks once on the base before any edit, so keep the base
 
 ## Commands that are not part of working a ticket
 
-- **Tickets** are local files in `$HOME/.jtek/repos/<repo id>/tickets/` (or drafted on the spot from a chat goal via `start --local --from-file`). Set `status: Todo` in a ticket file to release it.
+- **Tickets** are local files in `$HOME/.jtek/repos/<repo id>/tickets/` (set `status: Todo` in a ticket file to release it). Chat goals run directly with `start --local --goal "<goal>"` without a ticket file or `Done when`.
 - **`jtek.py doctor`:** what is set up in this repository and what is missing. Anyone may run it. It only reads.
 - **`jtek.py status`, `jtek.py next`, and `jtek.py sync`:** inspect readiness and claims, see what each open ticket file needs, and mark merged Review tickets Done while tidying finished worktrees. See [starting-sessions.md](starting-sessions.md).
 - **Take over a claim whose session died without a result:** tell a new session to work the ticket and that the earlier session died. It adds `--resume` to `start`. A session adds `--resume` only when the human said so.

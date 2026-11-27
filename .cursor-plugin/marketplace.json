@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Marketplace for the jtek inner-loop skills",
-    "version": "29.0.0"
+    "version": "30.0.0"
   },
   "plugins": [
     {

@@ -2,7 +2,7 @@
 """jtek inner loop: one ticket, one session, one worktree.
 
 Tickets are local files on this machine, under $HOME/.jtek/repos/<repo id>/tickets (or
-passed via --from-file / --local). Config and per-repository knowledge live under
+passed via --from-file), and chat goals start with --local --goal. Config and per-repository knowledge live under
 $HOME/.jtek (or JTEK_HOME). Nothing is read from jtek.json or .jtek/ inside the repository.
 Claims, logs, and results live under the repository's common git directory, so every
 worktree sees the same claims and no tracked file is shared between sessions.
@@ -89,6 +89,9 @@ LINT_TOKENS = frozenset({
     "bandit", "semgrep", "shellcheck", "hadolint", "markdownlint",
 })
 RUN_CITE = re.compile(r"\bruns? ([0-9]+(?:\s*(?:,\s*and|,|and)\s*[0-9]+)*)")
+SEEN_LINE = re.compile(r"^\s*(?:[0-9]+\.\s*|-\s*)?seen:.*$", re.M)
+NOT_RUN_LINE = re.compile(r"^\s*(?:[0-9]+\.\s*|-\s*)?not run:.*$", re.M)
+LOCAL_EVIDENCE_LINE = re.compile(r"^\s*(?:[0-9]+\.\s*|-\s*)?(?:seen|not run):\s*\S", re.M)
 
 
 def read_run(work: Path, number: int) -> dict:
@@ -1089,6 +1092,9 @@ def review_target(meta: dict, pr: str = "", at: str = "") -> tuple[Path, str, st
 
 def ticket_id_of_text(work: Path) -> str:
     """Identify what the ticket asks for, so that a ticket the human changed needs new evidence and a new verdict."""
+    if (work / "goal.md").is_file():
+        goal = " ".join((work / "goal.md").read_text().split())
+        return hashlib.sha256(json.dumps({"goal": goal}, sort_keys=True).encode()).hexdigest()
     sections = parse_ticket((work / "ticket.md").read_text())["sections"]
     # Only what the ticket asks for counts: an answer added under Notes, or a blank line, is not a new ticket.
     asked = {name: [" ".join(line.split()) for line in sections.get(name, []) if line.strip()]
@@ -1134,6 +1140,8 @@ def done_when_items(work: Path) -> list[str]:
 
     A blank `## Done when` is not a list. It must not hide the Done check items, or finish
     would accept evidence with no `seen:` line and no broke proof."""
+    if not (work / "ticket.md").is_file():
+        return []
     sections = parse_ticket((work / "ticket.md").read_text())["sections"]
     items: list[str] = []
     for name in ("done when", "done check"):
@@ -1176,16 +1184,18 @@ def stale_seen(work: Path, worktree: Path, text: str) -> list[str]:
                 for name in names)
         return changed_since[sha]
 
-    for item, line in re.findall(r"^\s*([0-9]+)\.\s*(seen:.*)$", text, re.M):
+    for match in re.finditer(r"^\s*(?:([0-9]+)\.\s*|-\s*)?(seen:.*)$", text, re.M):
+        item, line = match.group(1), match.group(2)
+        label = f"item {item}" if item else "seen line"
         runs = [run for run in (read_run(work, n) for n in cited_runs(line)) if run]
         # A run somewhere else, such as the base, is not a run of this change.
         here = [run for run in runs if WORKTREE_COMMIT not in run.get("commit", "") and run.get("commit")]
         if not here:
             continue
         if all("(with uncommitted files)" in run["commit"] for run in here):
-            found.append(f"item {item} rests on a run with uncommitted files")
+            found.append(f"{label} rests on a run with uncommitted files")
         elif all(code_changed(run["commit"].split()[0]) for run in here):
-            found.append(f"item {item} rests on a run before the last code change")
+            found.append(f"{label} rests on a run before the last code change")
     return found
 
 
@@ -1332,9 +1342,10 @@ def write_result(ticket_id: str, outcome: str, status: str, note: str = "", wait
     evidence = "-"
     if (work / "evidence.md").exists():
         text = (work / "evidence.md").read_text()
-        seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
-        not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
-        backed = len([line for line in re.findall(r"^\s*\d+\.\s*seen:.*$", text, re.M) if cited_runs(line)])
+        seen_lines = SEEN_LINE.findall(text)
+        seen = len(seen_lines)
+        not_run = len(NOT_RUN_LINE.findall(text))
+        backed = len([line for line in seen_lines if cited_runs(line)])
         evidence = f"{work / 'evidence.md'} ({seen} seen, {not_run} not run, {backed} of the seen cite a recorded run"
         cleanup = re.search(r"^\s*(-\s*)?clean-up:.*$", text, re.M | re.I)
         diff_runs = cited_runs(cleanup.group(0)) if cleanup else []
@@ -1620,21 +1631,6 @@ def save_ticket(text: str) -> Path:
         return path
 
 
-def local_ticket(text: str) -> str:
-    """A ticket the session wrote for work without one. Its header grants nothing: no waived review, no subset of
-    checks, no order after another ticket. Only the id it was given before, for picking it up again, is kept."""
-    ticket = parse_ticket(text)
-    given = ticket["fields"].get("id", "")
-    if given and not LOCAL_RE.match(given):
-        raise Refuse(f"a local ticket has no id of its own, or the `LOCAL-<n>` id `start --local` gave it; not `{given}`")
-    if given and not work_dir(given).exists():
-        raise Refuse(f"{given} was never started here; leave `id:` out, and `start --local` gives the ticket a new one")
-    header = [f"id: {given or next_local_id()}", "status: Todo", f"kind: {ticket['fields'].get('kind', '')}"]
-    first = re.search(r"^## ", text, re.M)
-    body = text[first.start():] if first else ""
-    return f"# {ticket['title'] or 'Local work'}\n" + "\n".join(header) + "\n\n" + body
-
-
 def existing_test_file(token: str) -> bool:
     """True when `token` is a test or spec file inside this repository."""
     if not token or "://" in token or token.startswith("~"):
@@ -1755,59 +1751,91 @@ def read_ticket_file(path: str) -> str:
 def cmd_start(args: argparse.Namespace) -> None:
     if not session_identity():
         raise Refuse(SESSION_MISSING)
-    from_file = args.from_file
-    if not args.local and not from_file and args.ref:
-        candidate = Path(args.ref).expanduser()
-        if ("/" in args.ref or os.sep in args.ref or args.ref.endswith(".md")) and candidate.is_file():
-            from_file = str(candidate)
-    text = read_ticket_file(from_file) if from_file else ""
-    if args.local:
-        if not from_file:
-            raise Refuse("--local needs --from-file: the ticket file the session wrote")
-        text = local_ticket(text)
-    elif not args.ref and not from_file:
-        raise Refuse("name a ticket id, pass --from-file <file>, or pass --local --from-file <file> for work started from chat")
-    base = base_branch()
-    # Before anything is read from the base: the checks and the settings come from it too.
-    base_note = "" if args.no_fetch else refresh_base(base)
+    if args.goal is not None and not args.local:
+        raise Refuse("--goal is only for `start --local`")
+    if args.local and args.from_file:
+        raise Refuse("`start --local` takes --goal \"<goal text>\" (or an existing LOCAL-<n> id to resume), not --from-file")
     page: Path | None = None
-    id_lookup = False
-    if not from_file:
-        page = ticket_file(check_id(args.ref))
-        if not page.is_file():
-            raise Refuse(f"there is no ticket file {page}. Ticket files live in {tickets_dir()} "
-                         f"(older ones are still read from {legacy_tickets_dir()}). "
-                         "Pass --from-file <file> for a ticket file elsewhere, or --local --from-file <file> for work started from chat")
-        text = read_ticket_file(str(page))
-        id_lookup = True
-    elif not args.local:
-        page = Path(from_file).expanduser().resolve()
-    english = {own: name for name, own in load_settings(base)["headings"].items()}
-    if english:
-        # The copy the session works from always has the three English headings, whatever the file calls them.
-        lines = [f"## {english[' '.join(line[2:].split()).lower()]}"
-                 if re.match(r"^##[ \t]", line) and not inside and " ".join(line[2:].split()).lower() in english else line
-                 for line, inside in fenced(text.splitlines())]
-        text = "\n".join(lines) + "\n"
-    ticket = parse_ticket(text)
-    fields = ticket["fields"]
-    ticket_id = check_id(fields.get("id", ""))
-    if id_lookup and ticket_id != args.ref:
-        raise Refuse(f"{page} says `id: {ticket_id}`, not `{args.ref}`; the file's name and its id must be the same")
-    if LOCAL_RE.match(ticket_id) and not args.local:
-        raise Refuse(f"`{ticket_id}` is a local id; only `start --local` uses one")
-    declared = load_checks(base)
-    # A local ticket runs every declared check: the session that wrote it cannot pick a subset.
-    selected = list(declared) if args.local else validate_ticket(ticket, declared)
-    wanted_repo = fields.get("repo", "")
-    this_repo = str(load_config(base).get("name") or main_root().name)
-    if wanted_repo and wanted_repo != this_repo:
-        raise Refuse(
-            f"{ticket_id} is for the repository `{wanted_repo}`, and this one is `{this_repo}`. "
-            "Start the session in that repository"
-        )
-    status = canon_status(fields.get("status", ""))
-    waiting = fields.get("waiting", "")
+    goal_text = ""
+    text = ""
+    fields: dict[str, str] = {}
+    if args.local:
+        if args.ref:
+            if not LOCAL_RE.match(args.ref):
+                raise Refuse(f"a local resume takes a `LOCAL-<n>` id, not `{args.ref}`")
+            if args.goal is not None:
+                goal_text = args.goal.strip()
+                if not goal_text:
+                    raise Refuse("--goal cannot be empty")
+        else:
+            goal_text = (args.goal or "").strip()
+            if not goal_text:
+                raise Refuse("--local needs --goal \"<goal text>\" (or an existing LOCAL-<n> id to resume)")
+        base = base_branch()
+        if args.ref:
+            ticket_id = args.ref
+            if not work_dir(ticket_id).exists():
+                raise Refuse(f"{ticket_id} was never started here; leave the id out and pass --goal \"<goal text>\" to start a new one")
+            if args.goal is None:
+                goal_file = work_dir(ticket_id) / "goal.md"
+                goal_text = goal_file.read_text().strip() if goal_file.is_file() else ""
+        base_note = "" if args.no_fetch else refresh_base(base)
+        load_settings(base)
+        declared = load_checks(base)
+        selected = list(declared)
+        this_repo = str(load_config(base).get("name") or main_root().name)
+        if not args.ref:
+            ticket_id = next_local_id()
+        status = "Todo"
+        waiting = ""
+    else:
+        from_file = args.from_file
+        if not from_file and args.ref:
+            candidate = Path(args.ref).expanduser()
+            if ("/" in args.ref or os.sep in args.ref or args.ref.endswith(".md")) and candidate.is_file():
+                from_file = str(candidate)
+        if not args.ref and not from_file:
+            raise Refuse("name a ticket id, pass --from-file <file>, or pass --local --goal \"<goal text>\" for work started from chat")
+        text = read_ticket_file(from_file) if from_file else ""
+        base = base_branch()
+        # Before anything is read from the base: the checks and the settings come from it too.
+        base_note = "" if args.no_fetch else refresh_base(base)
+        id_lookup = False
+        if not from_file:
+            page = ticket_file(check_id(args.ref))
+            if not page.is_file():
+                raise Refuse(f"there is no ticket file {page}. Ticket files live in {tickets_dir()} "
+                             f"(older ones are still read from {legacy_tickets_dir()}). "
+                             "Pass --from-file <file> for a ticket file elsewhere, or --local --goal \"<goal text>\" for work started from chat")
+            text = read_ticket_file(str(page))
+            id_lookup = True
+        else:
+            page = Path(from_file).expanduser().resolve()
+        english = {own: name for name, own in load_settings(base)["headings"].items()}
+        if english:
+            # The copy the session works from always has the three English headings, whatever the file calls them.
+            lines = [f"## {english[' '.join(line[2:].split()).lower()]}"
+                     if re.match(r"^##[ \t]", line) and not inside and " ".join(line[2:].split()).lower() in english else line
+                     for line, inside in fenced(text.splitlines())]
+            text = "\n".join(lines) + "\n"
+        ticket = parse_ticket(text)
+        fields = ticket["fields"]
+        ticket_id = check_id(fields.get("id", ""))
+        if id_lookup and ticket_id != args.ref:
+            raise Refuse(f"{page} says `id: {ticket_id}`, not `{args.ref}`; the file's name and its id must be the same")
+        if LOCAL_RE.match(ticket_id):
+            raise Refuse(f"`{ticket_id}` is a local id; only `start --local` uses one")
+        declared = load_checks(base)
+        selected = validate_ticket(ticket, declared)
+        wanted_repo = fields.get("repo", "")
+        this_repo = str(load_config(base).get("name") or main_root().name)
+        if wanted_repo and wanted_repo != this_repo:
+            raise Refuse(
+                f"{ticket_id} is for the repository `{wanted_repo}`, and this one is `{this_repo}`. "
+                "Start the session in that repository"
+            )
+        status = canon_status(fields.get("status", ""))
+        waiting = fields.get("waiting", "")
     work = work_dir(ticket_id)
     # A claim is parked once its session ended with a result. A parked claim can be picked up again.
     parked = (work / "result.md").exists()
@@ -1824,9 +1852,9 @@ def cmd_start(args: argparse.Namespace) -> None:
         except FileNotFoundError:  # another session picked it up between the two lines
             raise Refuse(CLAIMED.format(id=ticket_id)) from None
         if args.local and asked and not args.answered:
-            # A local ticket has no ticket file on disk, so its `status: Todo` is the script's own and says nothing about the human.
+            # A local chat goal has no ticket file on disk, so its `status: Todo` is the script's own and says nothing about the human.
             raise Refuse(f"{ticket_id} stopped with a question. When the human has answered it in the chat, start again "
-                         "with --answered. A session never adds it on its own")
+                         f"with `jtek.py start --local {ticket_id} --answered`. A session never adds it on its own")
         if (asked or waiting) and status != "Todo":
             # Only the human sets Todo, so a ticket that stopped with a question cannot be restarted by a session.
             raise Refuse(f"{ticket_id} stopped with a question. The human answers in the ticket file and sets status: Todo")
@@ -1906,7 +1934,7 @@ def cmd_start(args: argparse.Namespace) -> None:
                 (work / "meta.json").unlink()
                 work.rmdir()
                 raise
-        source = "local, written by the session" if args.local else " ".join(str(page).split())
+        source = "local, chat goal" if args.local else " ".join(str(page).split())
         meta = {"id": ticket_id, "source": source, "local": bool(args.local), "base": base, "worktree": str(worktree), "branch": branch, "pr": ""}
         if page is not None and not args.local:
             meta["ticket_file"] = str(page)
@@ -1969,11 +1997,15 @@ def cmd_start(args: argparse.Namespace) -> None:
     if page is not None and not args.local:
         meta["ticket_file"] = str(page)
     # Every change needs a verdict from a session that did not write it. The human may waive that per ticket.
-    meta["review"] = args.local or ticket["fields"].get("review", "").lower() != "human"
+    meta["review"] = args.local or fields.get("review", "").lower() != "human"
     note_author(meta)
     remember_origin()
     write_json(work / "meta.json", meta)
-    (work / "ticket.md").write_text(text)
+    if args.local:
+        if goal_text:
+            (work / "goal.md").write_text(goal_text + "\n")
+    else:
+        (work / "ticket.md").write_text(text)
     if page is not None and not args.local:
         update_ticket_header(page, status="In Progress", waiting="")
     print("jtek start: resumed" if resumed else "jtek start: allowed")
@@ -1987,7 +2019,10 @@ def cmd_start(args: argparse.Namespace) -> None:
     print(f"worktree: {meta['worktree']}")
     print(f"branch: {meta['branch']}")
     print(f"base: {meta['base']}")
-    print(f"ticket: {work / 'ticket.md'}  (a copy taken now; read this file)")
+    if args.local:
+        print(f"goal: {work / 'goal.md'}")
+    else:
+        print(f"ticket: {work / 'ticket.md'}  (a copy taken now; read this file)")
     print(f"checks: {', '.join(selected)}")
     if baseline:
         print(f"baseline: {baseline}")
@@ -2016,7 +2051,7 @@ def cmd_start(args: argparse.Namespace) -> None:
                                                       "reviewer's standard needs the human" if fails >= 3 else ""))
     if resumed and (work / "review.md").exists():
         print(f"review notes: {work / 'review.md'}")
-    kind = ticket["fields"].get("kind", "") or "not set; decide from the Goal"
+    kind = fields.get("kind", "") or "not set; decide from the Goal"
     print(f"kind: {kind}")
     print("next: follow the playbook for this kind; its order is the default. Work only inside the worktree")
 
@@ -2228,6 +2263,8 @@ def cmd_broke(args: argparse.Namespace) -> None:
     """Record that breaking one Done when item made a declared check fail. The edit stays uncommitted;
     the author restores it afterwards. finish refuses until every item has such a record for this commit."""
     meta = load_meta(args.id, tree=True)
+    if meta.get("local"):
+        raise Refuse(f"{args.id} is a local chat goal with no `Done when` items; `broke` applies per `Done when` item and is skipped for local work")
     work = work_dir(args.id)
     worktree = Path(meta["worktree"])
     items = done_when_items(work)
@@ -2562,28 +2599,36 @@ def merge_known_red_evidence(work: Path, text: str) -> str:
     return base_text + extra + "\n"
 
 
-def check_evidence(work: Path, text: str) -> None:
+def check_evidence(work: Path, text: str, local: bool = False) -> None:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise Refuse("the evidence file is empty")
-    items = done_when_items(work)
+    items = [] if local else done_when_items(work)
     kr_file = work / "known-red.md"
     kr_extra = len([line for line in kr_file.read_text().splitlines() if line.strip()]) if kr_file.is_file() else 0
     limit = max(MAX_EVIDENCE_LINES, len(items) + 10) + kr_extra
     if len(lines) > limit:
         raise Refuse(
             f"the evidence has {len(lines)} lines; the human reads it before the diff, so keep it to "
-            f"{limit}. Say what you ran and saw for each `Done when` item, and cut the rest"
+            f"{limit}. " + ("Say what you ran and saw for the goal, and cut the rest" if local
+                            else "Say what you ran and saw for each `Done when` item, and cut the rest")
         )
-    missing = [
-        f"{n}. {item}" for n, item in enumerate(items, 1)
-        if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
-    ]
-    if missing:
-        raise Refuse(
-            "the evidence must account for every `Done when` item. Start one line per item with its number and "
-            "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
-        )
+    if local:
+        if not LOCAL_EVIDENCE_LINE.search(text):
+            raise Refuse(
+                "the evidence needs at least one `seen:` or `not run:` line for the goal. "
+                "Add a line starting with `seen:` (the command or steps, and the result) or `not run:` (the reason)"
+            )
+    else:
+        missing = [
+            f"{n}. {item}" for n, item in enumerate(items, 1)
+            if not re.search(rf"^\s*{n}\.\s*(seen|not run):", text, re.M)
+        ]
+        if missing:
+            raise Refuse(
+                "the evidence must account for every `Done when` item. Start one line per item with its number and "
+                "`seen:` (the command or steps, and the result) or `not run:` (the reason). Missing:\n" + "\n".join(missing)
+            )
     cited = sorted(set(cited_runs(text)))
     missing_runs = [n for n in cited if not read_run(work, n)]
     if missing_runs:
@@ -2657,11 +2702,11 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_evidence(args: argparse.Namespace) -> None:
     """Check an evidence file before it becomes the body of a pull request. Saves nothing."""
-    load_meta(args.id)
+    meta = load_meta(args.id)
     text = read_file(args.file, "evidence")
-    check_evidence(work_dir(args.id), text)
-    seen = len(re.findall(r"^\s*\d+\.\s*seen:", text, re.M))
-    not_run = len(re.findall(r"^\s*\d+\.\s*not run:", text, re.M))
+    check_evidence(work_dir(args.id), text, local=bool(meta.get("local")))
+    seen = len(SEEN_LINE.findall(text))
+    not_run = len(NOT_RUN_LINE.findall(text))
     print(f"evidence: the form is accepted ({seen} seen, {not_run} not run). Nothing was saved; pass the file to `finish`")
 
 
@@ -2727,7 +2772,7 @@ def cmd_finish(args: argparse.Namespace) -> None:
     last = work / "result.md"
     if last.exists() and "outcome: needs-human" in last.read_text():
         if meta.get("local"):
-            raise Refuse(f"{args.id} stopped with a question. The human answers in the chat; then start again with --local --answered")
+            raise Refuse(f"{args.id} stopped with a question. The human answers in the chat; then start again with --local --answered {args.id}")
         raise Refuse(f"{args.id} stopped with a question. The human answers in the ticket file and sets status: Todo; then start again")
     if args.pr and args.no_pr:
         raise Refuse("pass --pr <url> or --no-pr, not both")
@@ -2756,28 +2801,42 @@ def cmd_finish(args: argparse.Namespace) -> None:
     if not patch:
         raise Refuse(f"the branch has no change against {meta['base']}, so there is nothing to review. If the ticket "
                      f"needs no change, stop and say so: `jtek.py stop {args.id} --waiting input --note \"...\"`")
+    is_local = bool(meta.get("local"))
     about = ticket_id_of_text(work)
     saved = work / "evidence.md"
     if args.evidence_file:
         text = read_file(args.evidence_file, "evidence")
-        check_evidence(work, text)
+        check_evidence(work, text, local=is_local)
         saved.write_text(merge_known_red_evidence(work, text))
         meta = update_meta(work, evidence_patch=patch, evidence_ticket=about)  # kept even when a later rule refuses
     elif not saved.exists():
+        if is_local:
+            raise Refuse(
+                "no evidence yet; the human reviews the evidence before the diff. Write at least one `seen:` or "
+                "`not run:` line for the goal and a `clean-up:` line to a file and pass --evidence-file <file>. "
+                "Use the same text as the pull request body"
+            )
         raise Refuse(
             "no evidence yet; the human reviews the evidence before the diff. Write what you ran and saw for each "
             "`Done when` item to a file and pass --evidence-file <file>. Use the same text as the pull request body"
         )
     elif meta.get("evidence_patch") != patch:
+        if is_local:
+            raise Refuse("the code changed after the evidence was saved, so the evidence describes an older change. "
+                         "See the change work again, and pass --evidence-file <file>")
         raise Refuse("the code changed after the evidence was saved, so the evidence describes an older change. "
                      "See each `Done when` item work again, and pass --evidence-file <file>")
     elif meta.get("evidence_ticket") != about:
-        check_evidence(work, saved.read_text())
+        check_evidence(work, saved.read_text(), local=is_local)
+        if is_local:
+            raise Refuse("the goal changed after the evidence was saved. Read the goal again, do what it now asks, "
+                         "and pass --evidence-file <file>")
         raise Refuse("the ticket changed after the evidence was saved. Read the ticket file again, do what it now asks, "
                      "and pass --evidence-file <file>")
     else:
-        check_evidence(work, saved.read_text())  # the ticket may have gained an item since
-    require_broke(work, sha)
+        check_evidence(work, saved.read_text(), local=is_local)  # the ticket may have gained an item since
+    if not is_local:
+        require_broke(work, sha)
     for item in args.attach or []:
         source = Path(item)
         if not source.is_file():
@@ -2966,7 +3025,11 @@ def cmd_show(args: argparse.Namespace) -> None:
     else:
         _repo, head, spec, note = review_target(meta, args.pr or "", args.at or "")
         repo_path = meta["worktree"] if worktree.is_dir() else str(_repo)
-    print(f"ticket: {work_dir(args.id) / 'ticket.md'}")
+    work = work_dir(args.id)
+    if meta.get("local") and (work / "goal.md").is_file():
+        print(f"goal: {work / 'goal.md'}")
+    else:
+        print(f"ticket: {work / 'ticket.md'}")
     print(f"worktree: {meta['worktree']}" if worktree.is_dir() else "worktree: gone")
     print(f"commit: {head}")
     print(f"base: {meta['base']}")
@@ -3351,10 +3414,11 @@ def build_parser() -> argparse.ArgumentParser:
     ticket.add_argument("--save", action="store_true", help="keep the checked draft as a ticket file on this machine, with the next id and status Backlog")
     ticket.set_defaults(func=cmd_ticket)
 
-    start = sub.add_parser("start", help="claim a ticket and create its worktree")
-    start.add_argument("ref", nargs="?", default="", help="ticket id (in the tickets folder) or path to a ticket file")
-    start.add_argument("--local", action="store_true", help="work started from a chat goal: the file has no id, and the script gives it a LOCAL-<n> one")
-    start.add_argument("--from-file", help="path to a ticket file (required with --local)")
+    start = sub.add_parser("start", help="claim a ticket or start a chat goal and create its worktree")
+    start.add_argument("ref", nargs="?", default="", help="ticket id (in the tickets folder), path to a ticket file, or LOCAL-<n> to resume")
+    start.add_argument("--local", action="store_true", help="work started from a chat goal: pass --goal \"<text>\", or an existing LOCAL-<n> id to resume")
+    start.add_argument("--goal", help="goal text for work started from chat (only with --local)")
+    start.add_argument("--from-file", help="path to a ticket file (not with --local)")
     start.add_argument("--resume", action="store_true", help="take over a claim whose session died without a result")
     start.add_argument("--answered", action="store_true", help="only with --local: the human answered the question the ticket stopped with")
     start.add_argument("--no-baseline", action="store_true", help="do not run the checks on the base first")
@@ -3389,7 +3453,7 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("id")
     finish.add_argument("--pr")
     finish.add_argument("--no-pr", action="store_true", help="only for a repository with no remote, or with `\"forge\": false` in this machine's config")
-    finish.add_argument("--evidence-file", help="what was run and seen for each `Done when` item; needed again whenever the code changed")
+    finish.add_argument("--evidence-file", help="what was run and seen (per `Done when` item, or for the goal on `--local`); needed again whenever the code changed")
     finish.add_argument("--attach", action="append", help="a screenshot, recording, or output file to keep with the evidence")
     finish.set_defaults(func=cmd_finish)
 

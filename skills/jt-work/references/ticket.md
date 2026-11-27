@@ -5,7 +5,7 @@
 Work enters jtek in one of two ways:
 
 1. **An existing ticket file** — either in `$HOME/.jtek/repos/<repo id>/tickets/<id>.md` (started with `jtek.py start <id>`) or anywhere on disk (started with `jtek.py start --from-file <file>` or `jtek.py start <file>`).
-2. **A goal typed in chat** — the agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` itself into a local ticket file, shows the `Done when` list, and runs `jtek.py start --local --from-file <file>`. The script assigns a `LOCAL-<n>` id and saves the file into the claim folder, where the second-session reviewer reads it alongside the diff. The agent proceeds unless the change reaches outside the pull request (P16).
+2. **A goal typed in chat** — the agent starts directly with `jtek.py start --local --goal "<goal>"`. The script assigns a `LOCAL-<n>` id and stores the goal in `work/LOCAL-<n>/goal.md`, where the second-session reviewer reads it alongside the diff. No ticket file, no `Done when`, and `broke` is skipped. The agent proceeds unless the change reaches outside the pull request (P16).
 
 To save a follow-up or future ticket file in Backlog without starting it yet, run `jtek.py ticket <file> --save`.
 
@@ -46,15 +46,15 @@ A ticket file written with `## Done when` and `## Out of scope` still starts. A 
 - **`repo`:** optional. The repository the ticket is for. It is the `name` in that repository's machine config, or its folder name. `start` refuses a ticket whose `repo` is another one.
 - **`area`:** optional. The part of the codebase the ticket touches, in a word or two, for example `billing`. Whoever starts sessions uses it to decide which tickets go together.
 - **`kind`:** optional. `feature`, `bug`, or `refactor`. It picks the playbook in the `jt-work` skill.
-- **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket file. Ignored when the change touches a file on the `attention:` line, and always ignored on `--local` tickets.
+- **`review: human`:** optional. By default a change needs a `PASS` from a session that did not write it before it reaches Review. The human adds this line to waive that for a small ticket file. Ignored when the change touches a file on the `attention:` line. (`--local` chat goals have no ticket header.)
 - **`## Goal` and the outcomes:** required. Outcomes live under `## Done when` or `## Done check`. `start` refuses a ticket with neither.
 - **`## Proof`, `## Context`, and `## Constraints`:** required on a draft checked by `jtek.py ticket`. Constraints name behaviour, not only a topic: "titles with non-ASCII letters give the same slug as today" is clearer than "non-ASCII letters".
 
 A blank form to copy, a filled example, and what makes a ticket workable: [ticket-template.md](ticket-template.md).
 
-## A local ticket (chat goal)
+## A local chat goal
 
-Work started from a chat goal uses `jtek.py start --local --from-file <file>`. The file has a title, `kind:`, `## Goal`, and `## Done when` (or the five slots), with no `id:` or `status:`. The script gives it the next free `LOCAL-<n>`, never one a released ticket had, writes `work/LOCAL-<n>/ticket.md` for the reviewer to read, and sets `source: local, written by the session` in the result. Because the session wrote the header, it grants nothing: every declared check runs, `review:`, `checks:`, and `after:` are ignored, and picking it up again with its `LOCAL-<n>` id does not reset the failed runs or the FAIL count. Only the human gives new tries, with `jtek.py release`. A local ticket that stopped with a question is picked up again with `start --local --answered`, once the human has answered in chat; without it `start` refuses, and a session never adds it on its own. A regular ticket file cannot use a `LOCAL-` id. When a local change touches one file and nothing is on the `attention:` line, `finish` skips the second look and prints `verdict: skipped`.
+Work started from a chat goal uses `jtek.py start --local --goal "<goal>"`. There is no ticket file, no header, and no `Done when`. The script gives it the next free `LOCAL-<n>`, never one a released claim had, writes `work/LOCAL-<n>/goal.md` for the reviewer to read, runs every declared check, and sets `source: local, chat goal` in the result. `broke` applies per `Done when` item only and is skipped for local work (`jtek.py broke` refuses, and `finish` does not require broke records). `finish` requires green checks on the current commit, evidence with at least one `seen:` or `not run:` line for the goal plus a `clean-up:` line, and a verdict from a different session (a one-file local change with nothing on the `attention:` line skips the second look and prints `verdict: skipped`). Resume a stopped local claim with `jtek.py start --local LOCAL-<n>` (adding `--answered` after the human answers a question in chat; without it `start` refuses, and a session never adds it on its own). Resuming does not reset failed runs or the FAIL count; only `jtek.py release` drops the claim. A regular ticket file cannot use a `LOCAL-` id.
 
 ## Where tickets live
 
@@ -75,7 +75,7 @@ Ticket files live on this machine under `$HOME/.jtek/repos/<repo id>/tickets/` (
 
 - **Waiting** (`waiting:`) is a header field, not a status. `input` means the agent has a question; `approval` means a step needs permission outside the PR. The ticket stays `In Progress`.
 - **Rework:** the human sets a Review ticket file back to `status: Todo` and adds what to fix (or submits a review on the pull request). A new session runs `start` again and continues in the same worktree.
-- **Answering a question:** for a ticket file, the human writes the answer in the file and sets `status: Todo`; for a `--local` ticket, the human answers in chat and the session resumes with `start --local --answered`.
+- **Answering a question:** for a ticket file, the human writes the answer in the file and sets `status: Todo`; for a `--local` chat goal, the human answers in chat and the session resumes with `jtek.py start --local <id> --answered`.
 - There is no command that sets Todo, merges a PR, or sets Cancelled.
 
 ## Claims and parallel work
@@ -107,13 +107,13 @@ ci: pass | fail | pending | none | unknown | -
 evidence: <path> (3 seen, 0 not run, 3 of the seen cite a recorded run) (+2 attached in <folder>) | -
 attention: jtek.json, scripts/verify.sh (run by `verify`) | -
 branch: jtek/T-12
-source: <ticket file path | local, written by the session>
+source: <ticket file path | local, chat goal>
 note: <one line>
 ```
 
 - **`ci`:** the state of the pull request's checks on the forge, read with `gh` or `glab`, or with the project's `pr_state` command. `finish` refuses while it is `fail`. `none` right after a push usually means the forge has not started the run yet.
 - **`verdict`:** only a verdict for the change and the ticket as they are now is shown. `none` means one is still needed. A verdict stops counting when the code changes, even by whitespace or by moving the same edit to another place, and when the human changes the ticket's `Goal`, `Done when`, or `Out of scope`.
-- **`evidence`:** the file that accounts for each `Done when` item as `seen` or `not run`, at most 40 lines not counting blank ones (more only for a ticket with over 30 items), with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
+- **`evidence`:** the file that accounts for each `Done when` item (or the goal as a whole for `--local`) as `seen` or `not run` plus `clean-up:`, at most 40 lines not counting blank ones (more only for a ticket with over 30 items), with the counts and how many screenshots or outputs are attached. It is also the pull request body. Read it before the diff, and look at every `not run`.
 - **`attention`:** files the human should open first, because they decide whether checks pass: `jtek.json`, `.jtek/`, `.claude/*`, CI config, lockfiles and dependency manifests (`requirements*.txt`, `go.mod`, `pom.xml`, `build.gradle`, `composer.json`, `*.csproj`, and the like), migration folders, the usual files that define a check command (`Makefile`, `package.json`, `pyproject.toml`, and the like), a file whose path is written in a check or `setup` command, a deleted test or spec file, an existing test or spec file that lost or changed lines (also when it was renamed), and anything matching `watch` in `jtek.json`. Adding tests is not flagged. `-` means none. The list is a set of known names, not proof: add your project's own to `watch`.
 - **`review`:** ready for the human to review and merge.
 - **`needs-review`:** the usual result of the first `finish`. Checks pass; start a non-author session with the `jt-review` skill for this id, then run `finish` again.

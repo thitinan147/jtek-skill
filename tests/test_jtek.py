@@ -2472,35 +2472,67 @@ class Lessons(Scratch):
 
 
 class LocalTickets(Scratch):
-    """Work without a ticket: the session writes the ticket, so its header grants nothing."""
+    """Work started from a chat goal: --local --goal allocates LOCAL-<n>, with no ticket file or Done when."""
 
-    LOCAL = "# Tidy the thing\nkind: feature\nreview: human\nchecks: test\nafter: T-9\n\n" + BODY + "## Out of scope\n- nothing else\n"
+    def local(self, goal="Tidy the thing", *extra):
+        args = [sys.executable, str(SCRIPT), "start", "--local"]
+        if goal is not None:
+            args += ["--goal", goal]
+        args += list(extra)
+        proc = subprocess.run(args, cwd=self.repo, capture_output=True, text=True, env=with_session())
+        return proc.returncode, proc.stdout + proc.stderr
 
-    def local(self, text=None, *extra):
-        path = Path(self.tmp.name) / "local.md"
-        path.write_text(text or self.LOCAL)
-        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path), *extra],
+    def resume_local(self, ticket_id, *extra):
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", ticket_id, *extra],
                               cwd=self.repo, capture_output=True, text=True, env=with_session())
         return proc.returncode, proc.stdout + proc.stderr
 
     def meta(self, ticket_id):
         return json.loads((self.repo / ".git" / "jtek" / "work" / ticket_id / "meta.json").read_text())
 
-    def test_a_local_ticket_gets_an_id_and_its_header_grants_nothing(self):
+    def test_start_local_goal_allocates_id_stores_goal_and_runs_all_checks(self):
         self.write_config({"test": f"{sys.executable} -c pass", "lint": f"{sys.executable} -c pass"})
-        code, out = self.local()
+        code, out = self.local("Add a health endpoint")
         self.assertEqual(code, 0, out)
         self.assertIn("id: LOCAL-1", out)
-        self.assertIn("checks: test, lint", out, "the session cannot pick a subset of the checks")
-        self.assertTrue(self.meta("LOCAL-1")["review"], "`review: human` written by the session waives nothing")
-        self.assertEqual(self.meta("LOCAL-1")["source"], "local, written by the session")
+        self.assertIn("checks: test, lint", out)
+        self.assertIn("goal: ", out)
+        self.assertNotIn("ticket: ", out)
+        work = self.repo / ".git" / "jtek" / "work" / "LOCAL-1"
+        self.assertEqual((work / "goal.md").read_text().strip(), "Add a health endpoint")
+        self.assertFalse((work / "ticket.md").exists(), "local chat goals have no ticket file or Done when")
+        self.assertTrue(self.meta("LOCAL-1")["review"])
+        self.assertEqual(self.meta("LOCAL-1")["source"], "local, chat goal")
+        code, show_out = self.jtek("show", "LOCAL-1")
+        self.assertEqual(code, 0, show_out)
+        self.assertIn(f"goal: {work / 'goal.md'}", show_out)
+        self.assertNotIn("ticket:", show_out)
+
+    def test_start_local_without_goal_or_with_from_file_refuses(self):
+        code, out = self.local(None)
+        self.assertEqual(code, 1, out)
+        self.assertIn("--goal", out)
+        code, out = self.local("   ")
+        self.assertEqual(code, 1, out)
+        self.assertIn("--goal", out)
+        draft = Path(self.tmp.name) / "draft.md"
+        draft.write_text("# Something\n\n" + BODY)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(draft)],
+                              cwd=self.repo, capture_output=True, text=True, env=with_session())
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("--goal", proc.stdout + proc.stderr)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--goal", "Only local"],
+                              cwd=self.repo, capture_output=True, text=True, env=with_session())
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("--local", proc.stdout + proc.stderr)
 
     def test_a_released_local_id_is_never_given_again(self):
-        self.local()
+        self.assertEqual(self.local()[0], 0)
         code, out = self.jtek("release", "LOCAL-1")
         self.assertEqual(code, 0, out)
         self.assertNotIn("ticket file is not changed", out)
         code, out = self.local()
+        self.assertEqual(code, 0, out)
         self.assertIn("id: LOCAL-2", out)
 
     def test_a_file_ticket_cannot_take_a_local_id_and_a_local_ticket_cannot_take_another(self):
@@ -2512,29 +2544,107 @@ class LocalTickets(Scratch):
         code, out = proc.returncode, proc.stdout + proc.stderr
         self.assertEqual(code, 1)
         self.assertIn("only `start --local` uses one", out)
-        code, out = self.local("id: T-3\n" + self.LOCAL)
+        code, out = self.resume_local("T-3")
         self.assertEqual(code, 1)
         self.assertIn("not `T-3`", out)
-        code, out = self.local("id: LOCAL-5\n" + self.LOCAL)
+        code, out = self.resume_local("LOCAL-5")
         self.assertEqual(code, 1)
         self.assertIn("was never started here", out)
 
     def test_picking_a_local_ticket_up_again_does_not_reset_the_failed_runs(self):
         self.write_config({"test": f"{sys.executable} -c 'import sys; sys.exit(1)'"})
-        self.local(None, "--no-baseline")
+        self.assertEqual(self.local("Fix failing test", "--no-baseline")[0], 0)
         self.jtek("check", "LOCAL-1")
         self.assertEqual(self.jtek("stop", "LOCAL-1", "--waiting", "input", "--note", "which one?")[0], 0)
-        code, out = self.local("id: LOCAL-1\n" + self.LOCAL, "--no-baseline")
+        code, out = self.resume_local("LOCAL-1", "--no-baseline")
         self.assertEqual(code, 1, "the session that asked cannot answer itself")
         self.assertIn("--answered", out)
-        code, out = self.local("id: LOCAL-1\n" + self.LOCAL, "--no-baseline", "--answered")
+        code, out = self.resume_local("LOCAL-1", "--no-baseline", "--answered")
         self.assertEqual(code, 0, out)
         self.assertIn("resumed", out)
         checks = json.loads((self.repo / ".git" / "jtek" / "work" / "LOCAL-1" / "checks.json").read_text())
         self.assertEqual(checks["failed_runs"], 1, "only the human gives new tries")
 
+    def test_broke_refuses_on_local_and_finish_skips_it(self):
+        self.assertEqual(self.local("Add a small helper")[0], 0)
+        self.commit_change("LOCAL-1")
+        self.assertEqual(self.jtek("check", "LOCAL-1")[0], 0)
+        code, out = self.jtek("broke", "LOCAL-1", "--item", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("skipped for local work", out)
+        ev = Path(self.tmp.name) / "local-ev.md"
+        ev.write_text("seen: ran helper -> ok\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", str(ev), "--skip-prove")
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work" / "LOCAL-1" / "broke.json").exists())
+
+    def test_finish_on_local_enforces_checks_evidence_and_verdict_gates(self):
+        self.assertEqual(self.local("Update two modules")[0], 0)
+        self.commit_change("LOCAL-1", "a.txt")
+        self.commit_change("LOCAL-1", "b.txt")
+        self.assertEqual(self.jtek("run", "LOCAL-1", "--", sys.executable, "-c", "print('ok')")[0], 0)
+
+        good_ev = Path(self.tmp.name) / "good.md"
+        good_ev.write_text("Updated both modules.\n\nseen: ran python snippet -> ok (run 1)\n- clean-up: nothing to remove\n")
+
+        # Refuses without green checks on current commit.
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", str(good_ev), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("checks have not passed", out)
+
+        self.assertEqual(self.jtek("check", "LOCAL-1")[0], 0)
+
+        # Refuses without evidence at all.
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("no evidence yet", out)
+
+        # Refuses without seen:/not run: line.
+        no_seen = Path(self.tmp.name) / "no-seen.md"
+        no_seen.write_text("Updated both modules.\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", str(no_seen), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("`seen:` or `not run:`", out)
+
+        # Refuses without clean-up: line.
+        no_cleanup = Path(self.tmp.name) / "no-cleanup.md"
+        no_cleanup.write_text("seen: ran python snippet -> ok (run 1)\n")
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", str(no_cleanup), "--skip-prove")
+        self.assertEqual(code, 1, out)
+        self.assertIn("clean-up:", out)
+
+        # `not run:` with `clean-up:` is accepted by `evidence`.
+        not_run_ev = Path(self.tmp.name) / "not-run.md"
+        not_run_ev.write_text("not run: requires external service\n- clean-up: nothing to remove\n")
+        code, out = self.jtek("evidence", "LOCAL-1", "--file", str(not_run_ev))
+        self.assertEqual(code, 0, out)
+        self.assertIn("(0 seen, 1 not run)", out)
+
+        # Without a verdict, finish returns needs-review (never silently Review).
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", str(good_ev), "--skip-prove")
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: needs-review", out)
+        self.assertIn("status: In Progress", out)
+        self.assertIn("(1 seen, 0 not run, 1 of the seen cite a recorded run", out)
+
+        # Same-session verdict is refused.
+        code, out = self.jtek("verdict", "LOCAL-1", "PASS", "--by", "reviewer",
+                              env={"JTEK_SESSION": "author-session"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("wrote the code", out)
+
+        # Different-session PASS verdict allows finish to reach Review without broke.json.
+        code, out = self.jtek("verdict", "LOCAL-1", "PASS", "--by", "reviewer")
+        self.assertEqual(code, 0, out)
+        code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--skip-prove")
+        self.assertEqual(code, 0, out)
+        self.assertIn("outcome: review", out)
+        self.assertIn("status: Review", out)
+        self.assertFalse((self.repo / ".git" / "jtek" / "work" / "LOCAL-1" / "broke.json").exists())
+
     def test_one_file_skips_the_second_look_and_two_files_do_not(self):
-        self.local()
+        self.assertEqual(self.local()[0], 0)
         self.commit_change("LOCAL-1")
         self.jtek("check", "LOCAL-1")
         code, out = self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", self.evidence())
@@ -2547,7 +2657,7 @@ class LocalTickets(Scratch):
         self.assertIn("outcome: needs-review", out)
 
     def test_one_file_on_the_attention_line_still_needs_a_verdict(self):
-        self.local()
+        self.assertEqual(self.local()[0], 0)
         tree = self.worktree("LOCAL-1")
         (tree / "jtek.json").write_text("{}\n")
         self.git("add", "jtek.json", cwd=tree)
@@ -3014,13 +3124,13 @@ class FileTickets(Scratch):
         self.assertIn(before.split("## Log")[0].strip(), (work / "ticket.md").read_text())
 
     def test_a_claimed_local_ticket_with_no_files_is_visible_to_status_and_next(self):
-        """A chat-goal LOCAL-<n> ticket with no saved file in tickets/. The claim under .git/jtek/work is the ticket."""
-        local = Path(self.tmp.name) / "local.md"
-        local.write_text(self.DRAFT)
-        code, out = self.raw("start", "--local", "--from-file", str(local))
+        """A chat-goal LOCAL-<n> claim with no saved file in tickets/. The claim under .git/jtek/work is the ticket."""
+        code, out = self.raw("start", "--local", "--goal", "Add the thing")
         self.assertEqual(code, 0, out)
         work = self.repo / ".git" / "jtek" / "work" / "LOCAL-1"
         self.assertTrue((work / "meta.json").is_file())
+        self.assertTrue((work / "goal.md").is_file())
+        self.assertFalse((work / "ticket.md").exists())
         self.assertTrue(self.worktree("LOCAL-1").is_dir())
         self.assertFalse(self.folder().exists() and any(self.folder().glob("*.md")))
         author = json.loads((work / "meta.json").read_text())["author"]
@@ -3079,9 +3189,7 @@ class FileTickets(Scratch):
         self.assertIn("T-2\t-\tno pull request in the ticket file", out)
 
     def test_sync_marks_a_merged_local_claim_done_and_cleans_up_its_worktree(self):
-        local = Path(self.tmp.name) / "local-sync.md"
-        local.write_text(self.DRAFT)
-        self.assertEqual(self.raw("start", "--local", "--from-file", str(local))[0], 0)
+        self.assertEqual(self.raw("start", "--local", "--goal", "Add the thing")[0], 0)
         work = self.repo / ".git" / "jtek" / "work" / "LOCAL-1"
         (work / "result.md").write_text(
             "jtek-result\nid: LOCAL-1\nstatus: Review\noutcome: review\nwaiting: -\n"
@@ -3101,15 +3209,12 @@ class FileTickets(Scratch):
         self.assertFalse(self.worktree("LOCAL-1").exists())
 
     def test_a_local_question_is_answered_in_the_chat_and_a_file_one_in_the_file(self):
-        local = Path(self.tmp.name) / "local.md"
-        local.write_text(self.DRAFT)
-        self.assertEqual(self.raw("start", "--local", "--from-file", str(local))[0], 0)
+        self.assertEqual(self.raw("start", "--local", "--goal", "Add the thing")[0], 0)
         self.raw("stop", "LOCAL-1", "--waiting", "input", "--note", "which one?")
         code, out = self.raw("finish", "LOCAL-1", "--no-pr")
         self.assertEqual(code, 1)
         self.assertIn("answers in the chat; then start again with --local --answered", out)
-        local.write_text("id: LOCAL-1\n" + self.DRAFT)
-        code, out = self.raw("start", "--local", "--from-file", str(local), "--answered")
+        code, out = self.raw("start", "--local", "LOCAL-1", "--answered")
         self.assertEqual(code, 0, out)
         self.assertIn("answer: in the chat", out)
         self.assertNotIn("in the ticket file", out)
@@ -3442,10 +3547,7 @@ class PilotFixes(Scratch):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_three_fails_stop_start_even_when_answered(self):
-        path = Path(self.tmp.name) / "local.md"
-        text = "# Tidy\nkind: feature\n\n" + BODY
-        path.write_text(text)
-        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path), "--no-baseline"],
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--goal", "Tidy the thing", "--no-baseline"],
                               cwd=self.repo, capture_output=True, text=True, env=with_session())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         notes = Path(self.tmp.name) / "notes.md"
@@ -3455,8 +3557,7 @@ class PilotFixes(Scratch):
             self.assertEqual(self.jtek("check", "LOCAL-1")[0], 0)
             self.assertEqual(self.jtek("finish", "LOCAL-1", "--no-pr", "--evidence-file", self.evidence())[0], 0)
             self.assertEqual(self.jtek("verdict", "LOCAL-1", "FAIL", "--by", "reviewer", "--notes-file", str(notes))[0], 0)
-        path.write_text("id: LOCAL-1\n" + text)
-        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "--from-file", str(path),
+        proc = subprocess.run([sys.executable, str(SCRIPT), "start", "--local", "LOCAL-1",
                                "--no-baseline", "--answered"], cwd=self.repo, capture_output=True, text=True,
                               env=with_session())
         out = proc.stdout + proc.stderr
@@ -5671,8 +5772,11 @@ class ForgeTests(Scratch):
         with_glab = self._bin_dir("with-glab")
         self._write_fake(with_glab, "glab", "import sys; sys.exit(0)\n")
         without_glab = self._bin_dir("no-glab")
-        path_with_glab = f"{with_glab}{os.pathsep}/usr/bin{os.pathsep}/bin"
-        path_no_glab = f"{without_glab}{os.pathsep}/usr/bin{os.pathsep}/bin"
+        git_bin = shutil.which("git")
+        if git_bin:
+            (without_glab / "git").symlink_to(git_bin)
+        path_with_glab = f"{with_glab}{os.pathsep}{without_glab}"
+        path_no_glab = str(without_glab)
 
         # github.com origin selects gh even when glab is on PATH.
         self.git("remote", "add", "origin", "https://github.com/acme/widget.git")

@@ -1,6 +1,6 @@
 # Ticket files
 
-Every ticket in jtek is a local file on this machine. Work starts either from an existing ticket file, or from a goal typed in chat (which the agent turns into a local ticket file with a `LOCAL-<n>` id).
+Saved tickets in jtek are local files on this machine. Work starts either from an existing ticket file, or directly from a goal typed in chat (`jtek.py start --local --goal "<goal>"`, which assigns a `LOCAL-<n>` id with no ticket file or `Done when`).
 
 ## Where ticket files live
 
@@ -21,7 +21,7 @@ The file is in the ticket format of [ticket.md](ticket.md): the title, the heade
 | `kind:`, `repo:`, `area:`, `after:`, `review: human`, `checks:` | header lines | human |
 | `waiting:` | a header line: `input` or `approval` | `jtek.py stop` sets it; `jtek.py start` and `finish` clear it |
 | `pr:` | a header line with the pull request's link | `jtek.py finish` sets it |
-| the body | `## Goal`, `## Done when` / `## Done check`, `## Proof`, `## Context`, `## Constraints` | human (or agent for a `--local` chat goal) |
+| the body | `## Goal`, `## Done when` / `## Done check`, `## Proof`, `## Context`, `## Constraints` | human |
 | notes | `## Log`, the last section of the file | human, for an answer or rework note |
 
 `after:` lists ticket ids. The script reads each one's file and counts an id only while that file is not Done.

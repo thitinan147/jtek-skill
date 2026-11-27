@@ -1,39 +1,33 @@
 ---
 name: jt
-description: The owner's working mode for any coding task, from a ticket file or a chat goal. Restates the goal and smallest change, drafts Goal and Done when into a local ticket file when started from chat, routes work to jt-work, and reports in the owner's style with the principle behind each decision. Use when the user types /jt, and only then.
+description: The owner's working mode for any coding task, from a ticket file or a chat goal. Routes ticket files and chat goals directly to jt-work, and reports in the owner's style with the principle behind each decision. Use when the user types /jt, and only then.
 disable-model-invocation: true
 argument-hint: "<ticket id | ticket file | what to do>"
 ---
 
 # jt
 
-One mode for every coding task. Work starts from an existing ticket file or a goal typed in chat. Both go through `jt-work` with the same checks, evidence, second-session review, and human merge.
+One mode for every coding task. Work starts from an existing ticket file or a goal typed in chat. Both go through `jt-work` with checks, evidence, second-session review, and human merge.
 
-## First message
-
-Restate what the user wants and the smallest change that gets it in 2–4 lines. Then proceed, unless the change reaches outside the pull request (P16) or a stop below applies.
-
-When you think the request is wrong, or a part of it does not earn its place, say so and why. "No" is an answer. Agreement is not the default.
+Proceed directly unless the change reaches outside the pull request (P16) or a stop below applies. When you think the request is wrong, or a part of it does not earn its place, say so and why. "No" is an answer. Agreement is not the default.
 
 ## Route
 
 - **No machine config yet:** when `jtek.py doctor` prints `init: needed` or `init: migrate`, follow the jt-init skill first (one confirmation), say so in one line, then continue this request.
 - **A ticket id or a ticket file:** follow the `jt-work` skill for it, from its Start step. Everything below about the report still applies.
 - **Several ids:** the same, with the rules `jt-work` gives for several tickets.
-- **A goal typed in chat:** work it as a local ticket, below. If the work is too large for one pull request, split it into ordered local ticket files with `jtek.py ticket <file> --save` for the owner to release, or work the first slice now and save the rest.
+- **A goal typed in chat:** start directly with `jtek.py start --local --goal "<goal>"`, below. No ticket file and no `Done when`. If the work is too large for one pull request, split it into ordered local ticket files with `jtek.py ticket <file> --save` for the owner to release, or work the first slice now and save the rest.
 - **A question about code, with nothing to change:** answer it. Read and run what you need, change no file, and say what you saw and where.
 
-## A local ticket
+## A chat goal
 
-Work started from a chat goal goes through the same pipeline under a local id:
+Work started from a chat goal runs directly under a `LOCAL-<n>` id:
 
-1. Write a ticket file in your session's temporary folder with a title, `kind:`, `## Goal`, `## Done when` (or the five-slot card of `jt-work`'s `references/ticket-template.md` with `## Done check`, `## Proof`, `## Context`, `## Constraints`), one observable outcome per item, no guessed cause, and no step the skills already run. Leave out `id:` and `status:`.
-2. Show the user the `Done when` items before you start, in one short list. You wrote them, so they are the bar the work is held to, and the user should see it. Proceed unless the change reaches outside the pull request or the user changes them.
-3. Run `jtek.py start --local --from-file <file>` from the repository. The script gives the ticket a local id such as `LOCAL-3`, saves the ticket file in the claim folder for the reviewer to read, and marks the result as written by the session.
+1. Run `jtek.py start --local --goal "<goal>"` from the repository. The script assigns a local id such as `LOCAL-3`, stores the goal in the claim folder for the reviewer, and creates the worktree. No ticket file, no `Done when`, and `broke` is skipped (`broke` applies per `Done when` item on ticket files only).
    - **`start` refuses because there is no config:** follow the jt-init skill (one confirmation), say so in one line, then continue this request. The file stays under `~/.jtek`. It is not committed.
-4. Follow the `jt-work` playbook for the `kind`, as for any ticket.
-5. `finish` decides whether a second look is needed. A local change of one file, with nothing on the `attention:` line, needs none. Any other change needs a verdict from a session that did not write it, as `jt-work` says.
-6. After a `stop`, pick the ticket up with its `id: LOCAL-<n>` in the file. When it stopped with a question, add `--answered` to `start`, and only after the user answered it in the chat.
+2. Follow the `jt-work` playbook for the kind of work.
+3. `finish` checks green declared checks on the current commit, evidence with at least one `seen:` or `not run:` line for the goal plus a `clean-up:` line, and a verdict from a different session (a one-file local change with nothing on `attention:` skips the second look).
+4. After a `stop`, resume with `jtek.py start --local LOCAL-<n>` (adding `--answered` when it stopped with a question, only after the user answered in chat).
 
 Push the branch and open the pull request as for a ticket. Never merge.
 

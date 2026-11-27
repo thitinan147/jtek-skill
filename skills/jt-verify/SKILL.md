@@ -13,7 +13,7 @@ Run each command through `jtek.py run <id> -- <command>`, or `jtek.py run <id> -
 
 If the repository names a slower way to check the change that is not a declared check, such as a script its README describes, run it when it covers what you changed, and say so in the evidence. The verify guide is `verify.md` in `~/.jtek/repos/<repo id>/` (the same id `jtek.py init` prints: host, non-default port, and path of the origin, or the checkout path when there is no origin). Check `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` first: when an override file is present there (`verify.md`, `features/<name>.md`, or `rules.md`), follow the override instead of the main file, and read `features/<name>.md` beside it for the feature you changed. When no guide exists in either place, do not stop and do not build one: read the README and the code, use the list below, and say in the evidence that no verify guide was found.
 
-For each `Done when` item, do what you named before you built it:
+For each `Done when` item (or the goal for a `--local` chat goal), do what you named before you built it:
 
 - **Command-line tool or library:** run it on real input, including the exact example in the ticket.
 - **API:** start the service and call the endpoint. Read the response body and the status.
@@ -21,7 +21,7 @@ For each `Done when` item, do what you named before you built it:
 
 ## 2. Look at the result
 
-1. Compare what you see with the `Done when` item, word for word.
+1. Compare what you see with the `Done when` item (or the goal), word for word.
 2. Try the edges the ticket implies: empty input, very long input, the same action twice, the wrong order. (P6, P12)
 3. For a screen, look at each state: empty, loading, error, and text that is too long.
 4. Check that behaviour under `Out of scope` is the same as on the base branch. In the bug playbook, your reproduction before any edit is the base run. Otherwise, to run the base, use the main checkout when it is on the base branch, and change nothing there, not even a cache: run it so that it writes none, such as `python3 -B`. Otherwise add a worktree of the base in a temporary folder, and remove it afterwards.

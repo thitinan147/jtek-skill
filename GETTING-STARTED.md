@@ -32,7 +32,7 @@ Install the whole set, not one skill at a time. The script lives in `jt-work` an
 
 There is **no single machine-level init command** today. These are the real machine-level pieces that exist:
 
-- **Storage:** jtek stores machine and repository data under `~/.jtek`. There is no required `~/.jtek/config` file; tickets are always local files on this machine.
+- **Storage:** jtek stores machine and repository data under `~/.jtek`. There is no required `~/.jtek/config` file; saved tickets are local files on this machine, and chat goals run directly without a file.
 - **Reviewer list (optional):** `/jt-agents` runs `jtek.py doctor --agents` and proposes `~/.jtek/agents.json`. The owner must say yes before it is written. Skip until you want a second-vendor reviewer.
 - **Style file (optional):** `/jt-me` proposes `~/.jtek/me.md`. The owner must say yes before it is written.
 - **GitHub (when using GitHub remotes):** sign in and check status:
@@ -71,7 +71,7 @@ If the repository still has an old `jtek.json` or `.jtek/`, `/jt-init` runs `jte
 
 Start from a goal typed in chat or an existing ticket file:
 
-- **Goal in chat:** type `/jt <what you want built or fixed>`. The agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` into a local ticket file (`LOCAL-<n>`), runs `jt-work` in a fresh worktree, gets a second-session review, and opens a pull request with evidence per `Done when`.
+- **Goal in chat:** type `/jt <what you want built or fixed>`. The agent starts directly with `jtek.py start --local --goal "<goal>"` (`LOCAL-<n>`, no ticket file, no `Done when`, no `broke` step), runs `jt-work` in a fresh worktree, gets a second-session review, and opens a pull request with evidence (`seen:`/`not run:` and `clean-up:`).
 - **Existing ticket file:** save a draft with `jtek.py ticket <file> --save` (into `~/.jtek/repos/<repo id>/tickets/T-<n>.md`), set `status: Todo` in that file, and run `/jt-work T-<n>` (or `/jt-work <path-to-file.md>`). Format and rules: [files.md](skills/jt-work/references/files.md).
 
 ## Next

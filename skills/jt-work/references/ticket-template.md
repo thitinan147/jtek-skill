@@ -1,6 +1,6 @@
 # Ticket template
 
-Use this form when writing a local ticket file (`jtek.py ticket <file> --save`) or drafting a local ticket from a chat goal (`jtek.py start --local --from-file <file>`).
+Use this form when writing a local ticket file (`jtek.py ticket <file> --save`). Chat goals (`jtek.py start --local --goal "<goal>"`) run directly without a ticket file or `Done when`.
 
 ## The body
 
@@ -30,13 +30,13 @@ Put header fields right under the `# Title` line, with no blank line between the
 | Field | Set it to |
 |---|---|
 | `# <title>` | What changes, in a few words: `# Add a phone number to the profile` |
-| `id:` | Set by `jtek.py ticket --save` (`T-<n>`) or `start --local` (`LOCAL-<n>`) |
+| `id:` | Set by `jtek.py ticket --save` (`T-<n>`) |
 | `status:` | `Backlog` while drafting; `Todo` releases a saved ticket file |
 | `repo:` | The `name` in that repository's machine config |
 | `kind:` | `feature`, `bug`, or `refactor`. It picks the playbook |
 | `area:` | The part of the codebase, in a word or two |
 | `after:` | A ticket id that must be Done (merged) first |
-| `review:` | Leave empty. `human` waives the second session for a small ticket file (ignored on `--local` or sensitive changes) |
+| `review:` | Leave empty. `human` waives the second session for a small ticket file (ignored on sensitive changes) |
 | `checks:` | Leave empty to run every declared check |
 
 ## A filled example

@@ -170,6 +170,8 @@ def claim_rows(j, known: set[str]) -> list[dict]:
             continue
         ticket = plain_text(folder / "ticket.md")
         title = next((line[2:].strip() for line in ticket.splitlines() if line.startswith("# ")), "")
+        if not title:
+            title = " ".join(plain_text(folder / "goal.md").split())
         result = plain_text(folder / "result.md")
         status = header_value(result, "status")
         waiting = header_value(result, "waiting")

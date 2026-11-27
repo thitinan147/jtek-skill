@@ -2,7 +2,7 @@
 
 Work starts in one of two ways:
 
-1. **A goal typed in chat:** give the goal to `/jt` or `/jt-work`. The agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` into a local ticket file (`jtek.py start --local --from-file <file>`, assigning `LOCAL-<n>`), and proceeds unless the change reaches outside the pull request (P16). The second-session reviewer reads that local ticket file and the diff.
+1. **A goal typed in chat:** give the goal to `/jt` or `/jt-work`. The agent starts directly with `jtek.py start --local --goal "<goal>"` (assigning `LOCAL-<n>` and storing the goal in the claim folder), with no ticket file, no `Done when`, and no `broke` step, and proceeds unless the change reaches outside the pull request (P16). The second-session reviewer reads that stored goal and the diff.
 2. **Existing ticket files:** local Markdown files in `$HOME/.jtek/repos/<repo id>/tickets/` ([files.md](files.md)), saved with `jtek.py ticket <file> --save` (or written directly). The human releases a file by setting `status: Todo`. A session works the ids it is given; the human, another session, or a script decides which ticket runs next.
 
 ## Ask what each ticket file needs
@@ -29,7 +29,7 @@ A session does not stop to ask about a decision that belongs in the pull request
 
 A session still stops and waits in two cases: before an act outside the pull request (`--waiting approval`, P16), and with `--waiting input` where a step or the script says so, such as after the third FAIL verdict or three failed checks.
 
-For a ticket file, `jtek.py stop` writes `waiting:` to the file's header. The human answers in the ticket file (or under `## Log`) and sets `status: Todo`, or submits a review on the pull request. Submit a review as a whole (GitHub or GitLab "Submit review", with several notes), not one comment at a time: a session acts on the whole review, so the human is interrupted by a review they chose to send, not by every comment. When `next` says `work` for that ticket, the new session reads every comment since the latest verdict with `gh` or the forge, and answers them in one round with `jt-babysit`. For a `--local` chat ticket, the human replies in chat and the session resumes with `start --local --answered`.
+For a ticket file, `jtek.py stop` writes `waiting:` to the file's header. The human answers in the ticket file (or under `## Log`) and sets `status: Todo`, or submits a review on the pull request. Submit a review as a whole (GitHub or GitLab "Submit review", with several notes), not one comment at a time: a session acts on the whole review, so the human is interrupted by a review they chose to send, not by every comment. When `next` says `work` for that ticket, the new session reads every comment since the latest verdict with `gh` or the forge, and answers them in one round with `jt-babysit`. For a `--local` chat goal, the human replies in chat and the session resumes with `jtek.py start --local <id> --answered`.
 
 Now and then, run `jtek.py sync`. It prints one line for each of this repository's tickets in Review, Done, or Cancelled (including `LOCAL-<n>` claims). When the forge reports a pull request as merged, `sync` marks the ticket Done, promotes any `verify.d/<id>/` overrides (or prints `hold` on conflict), removes the worktree, and deletes the ticket's branch only when every commit is on the base or the forge says the pull request merged at the branch's last commit.
 

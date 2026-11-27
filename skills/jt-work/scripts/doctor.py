@@ -326,4 +326,4 @@ def run(j, args=None) -> None:
     if not report["ready"]:
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
     print("ready: pass a ticket file or chat goal to /jt or /jt-work; save a ticket with `jtek.py ticket <file> --save` "
-          "and set `status: Todo`, or start from chat with `jtek.py start --local --from-file <file>`")
+          "and set `status: Todo`, or start from chat with `jtek.py start --local --goal \"<goal>\"`")
