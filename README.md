@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-28.0.0--pre.5-111111?style=flat-square" alt="Version 28.0.0-pre.5">
+  <img src="https://img.shields.io/badge/version-28.0.0-111111?style=flat-square" alt="Version 28.0.0">
   <img src="https://img.shields.io/badge/skills-17-111111?style=flat-square" alt="17 skills">
   <img src="https://img.shields.io/badge/script-Python%20stdlib-111111?style=flat-square" alt="One script, Python standard library only">
   <img src="https://img.shields.io/badge/board-Notion%20%7C%20FLO%20%7C%20files-111111?style=flat-square" alt="The board is a Notion database, a FLO product, or ticket files">
@@ -165,7 +165,7 @@ Day to day you type `/jt`, `/jt-review`, and `/jt-status`. Setup is `/jt-init`, 
 | You want to | Do this |
 |---|---|
 | Set up this repository | `/jt-init`, once. One confirmation covers the guessed checks and `board? none (tickets as files) / Notion database link / FLO product link`. Or type nothing and leave the defaults |
-| See readiness and where the work stands | `/jt-status`. First line shows whether the machine and repository are ready (and the fix command if not), followed by a short table in Thai: in progress (session), waiting for review, waiting for merge, and the one next action. It only reads |
+| See readiness and where the work stands | `/jt-status`. First line shows whether the machine and repository are ready (and the fix command if not), followed by a short table in Thai: in progress (session), waiting for review, waiting for merge, choices to confirm, and the one next action. It only reads |
 | Work in your own mode, with a ticket or without | `/jt T-12`, or `/jt <what to do>`. Without a ticket, the agent writes one, shows you its `Done when`, and works it as `LOCAL-<n>` with the same evidence and review |
 | Add a ticket | Write a page on the board with `Goal` and `Done when`, and set Status to Todo. Or type `/jt-ticket <what you want>`: it reads the code, asks you only what the code cannot tell, splits large work into ordered tickets, and creates the ones you approve as Backlog |
 | Work with no board at all | Leave `board` empty, or have no config file. `/jt <what to do>` works as before, and tickets are files in `~/.jtek/repos/<repo id>/tickets`: `/jt-ticket` saves them, you write `status: Todo` in one to release it, and `/jt-work T-1` works it. See [files.md](skills/jt-work/references/files.md) |
@@ -192,7 +192,7 @@ Black boxes are what you type. Green boxes run something real. `start` and `chec
 | Step | Skill | What it does |
 |---|---|---|
 | Set up a repository | `jt-init` | Typed as `/jt-init` only. Guesses the checks, asks once (checks and board), records the machine config, runs the harness, then doctor. An old `jtek.json` or `.jtek/` is migrated instead, and you commit the removal |
-| Readiness and work state | `jt-status` | Typed as `/jt-status` only. Read-only: first line reports machine and repository readiness from doctor, then a Thai table of in progress, waiting for review, waiting for merge, and the one next action |
+| Readiness and work state | `jt-status` | Typed as `/jt-status` only. Read-only: first line reports machine and repository readiness from doctor, then a Thai table of in progress, waiting for review, waiting for merge, choices to confirm, and the one next action |
 | Write tickets | `jt-ticket` | Typed as `/jt-ticket` only. Turns what you want into tickets a session can work, checks each with `jtek.py ticket`, and creates the approved ones as Backlog, on the board or as ticket files when the repository has no board |
 | Your reviewers | `jt-agents` | Typed as `/jt-agents` only. Surveys the coding agents on your machine with `jtek.py doctor --agents` and proposes your ordered list of reviewers, `~/.jtek/agents.json`, which you accept or not |
 | Your style | `jt-me` | Typed as `/jt-me` only. Reads how you have really worked and proposes changes to your style file, `~/.jtek/me.md`, which you accept or not |
@@ -252,7 +252,7 @@ The list is `~/.jtek/agents.json`, outside every repository. `jtek.py migrate` m
 ]}
 ```
 
-Put only models you trust to review on it: the script follows your order and does not rank models. `vendor` is who made the model, so an agent that serves several vendors has one entry per model. Without a list, the reviewer is a fresh session of the author's own model, as before. The script cannot prove which model answered: `--by` on the verdict is a label, as [SECURITY.md](SECURITY.md) says.
+Put only models you trust to review on it: the script follows your order and does not rank models. `vendor` is who made the model, so an agent that serves several vendors has one entry per model. Without a list, the reviewer is a fresh session of the author's own model, as before. When the list exists, `verdict` accepts only names from it; the script still cannot prove which model answered, so `--by` on the verdict remains a label, as [SECURITY.md](SECURITY.md) says.
 
 ## Templates
 

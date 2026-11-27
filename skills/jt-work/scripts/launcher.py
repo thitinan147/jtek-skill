@@ -333,12 +333,22 @@ def sync(j, args) -> None:
                 print(f"{ticket_id}\t-\tPR state: {state}")
 
 
+def repo_names(value: str) -> list[str]:
+    """Comma-separated repository names from a ticket's `repo:` field, trimmed and deduplicated in order."""
+    return list(dict.fromkeys(part.strip() for part in str(value or "").split(",") if part.strip()))
+
+
 def next_step(j, row: dict, repo: str) -> tuple[str, str]:
     """What one ticket needs now. The first word is the action: `work`, `review`, and `board` are for a
     session to do. Every other word means do not start one."""
     ticket_id, status = row["id"], row["status"]
-    if row["repo"] not in ("", repo):
-        return "other", f"belongs to the repository `{row['repo']}`"
+    repos = repo_names(row["repo"])
+    if len(repos) > 1:
+        if status in ("Done", "Cancelled"):
+            return ("hold", "finished") if repo in repos else ("other", f"belongs to the repositories `{', '.join(repos)}`")
+        return "board", f"several repositories ({', '.join(repos)}); split it into one ticket per repo"
+    if repos and repos[0] != repo:
+        return "other", f"belongs to the repository `{repos[0]}`"
     if status == "Backlog":
         return "hold", "not released; the human sets Todo"
     if status in ("Done", "Cancelled"):
@@ -489,8 +499,37 @@ def session_label(meta: dict) -> str:
     return "session -"
 
 
+CHOICE_CAP = 3
+
+
+def ticket_choices(j, ticket_id: str, cap: int = CHOICE_CAP) -> list[str]:
+    """`choice:` lines from one ticket's evidence, collapsed to one line and capped per ticket. Never raises."""
+    try:
+        path = j.work_dir(ticket_id) / "evidence.md"
+    except j.Refuse:
+        return []
+    if not path.is_file() or path.is_symlink():
+        return []
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return []
+    found: list[str] = []
+    for line in text.splitlines():
+        item = line.strip()
+        while item.startswith(("- ", "* ")):
+            item = item[2:].lstrip()
+        if item.startswith("choice:"):
+            body = " ".join(item[len("choice:"):].split())
+            if body:
+                found.append(body)
+    if len(found) > cap:
+        return found[:cap] + [f"… +{len(found) - cap}"]
+    return found
+
+
 def status(j, args) -> None:
-    """Read-only readiness line and Thai table: in progress, waiting for review, waiting for merge, and next actions.
+    """Read-only readiness line and Thai table: in progress, waiting for review, waiting for merge, choices to confirm, and next actions.
 
     First line reports machine and repository readiness derived from `doctor.assess(j)`.
     Every row that `next` prints appears either in a group or under `ถัดไป`.
@@ -516,6 +555,7 @@ def status(j, args) -> None:
     doing: list[str] = []
     review: list[str] = []
     merge: list[str] = []
+    choices: list[str] = []
     ranked: list[tuple[int, str, str, str, bool]] = []
     for row in board_rows:
         action, reason = next_step(j, row, repo)
@@ -523,6 +563,9 @@ def status(j, args) -> None:
             continue
         ticket_id = row["id"]
         detail = " ".join(str(reason).split())
+        if not (action == "hold" and detail == "finished"):
+            for choice in ticket_choices(j, ticket_id):
+                choices.append(f"choice รอยืนยัน\t{ticket_id}\t{choice}")
         if action == "running":
             try:
                 meta = j.read_json(j.work_dir(ticket_id) / "meta.json")
@@ -549,7 +592,12 @@ def status(j, args) -> None:
         else:
             ranked.append((8, ticket_id, action, detail, False))
     print(readiness)
-    for lines, empty in ((doing, "กำลังทำ\t-"), (review, "รอรีวิว\t-"), (merge, "รอ merge\t-")):
+    for lines, empty in (
+        (doing, "กำลังทำ\t-"),
+        (review, "รอรีวิว\t-"),
+        (merge, "รอ merge\t-"),
+        (choices, "choice รอยืนยัน\t-"),
+    ):
         for line in lines or [empty]:
             print(line)
     if ranked:

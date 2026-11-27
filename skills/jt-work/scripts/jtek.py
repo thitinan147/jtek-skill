@@ -2332,6 +2332,42 @@ def review_findings(text: str) -> tuple[list[str], list[str]]:
     return real, problems
 
 
+def check_reviewer_by(raw_by: str) -> str:
+    """Normalize `--by` and check it against the owner's agents.json when that file exists."""
+    by = " ".join((raw_by or "").split())
+    if not by:
+        raise Refuse("pass --by with the name of the model that reviewed")
+    path, notice = owner_file("agents.json")
+    if notice:
+        print(notice)
+    reviewers = load_reviewers(path)
+    if reviewers is None:
+        return by
+    accepted: set[str] = set()
+    shown: list[str] = []
+    seen: set[str] = set()
+    for entry in reviewers:
+        prog_name = Path(entry["program"]).name
+        for name in (entry["model"], entry["command"], entry["program"], prog_name):
+            accepted.add(name.lower())
+        for name in (entry["model"], entry["program"], prog_name):
+            low = name.lower()
+            if low not in seen:
+                seen.add(low)
+                shown.append(name)
+    if by.lower() in accepted:
+        return by
+    if not shown:
+        raise Refuse(
+            f"`--by {by}` is not in {path} (the reviewers list is empty). "
+            "Use the name `jtek.py reviewer` printed, add a reviewer with `/jt-agents`, or remove that file"
+        )
+    raise Refuse(
+        f"`--by {by}` is not in {path}. Accepted names: {', '.join(shown)}. "
+        "Use the name `jtek.py reviewer` printed"
+    )
+
+
 def cmd_verdict(args: argparse.Namespace) -> None:
     meta = load_meta(args.id)
     work = work_dir(args.id)
@@ -2360,6 +2396,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
             "The same text in any of those names is the same session. The parent process is not a session. "
             "The writing session must keep the same value the whole time."
         )
+    by = check_reviewer_by(args.by)
     worktree = Path(meta["worktree"])
     if args.pr or args.at or not worktree.is_dir():
         repo, sha, spec, _note = review_target(meta, args.pr or "", args.at or "")
@@ -2434,7 +2471,7 @@ def cmd_verdict(args: argparse.Namespace) -> None:
             meta = {**fresh, "failed_commits": failed, "fails": earlier + len(failed)}
             write_json(work / "meta.json", meta)
     write_json(work / "verdict.json", {
-        "verdict": args.verdict, "by": " ".join(args.by.split()), "sha": sha,
+        "verdict": args.verdict, "by": by, "sha": sha,
         "patch": patch, "ticket": ticket_id_of_text(work),
     })
     line = f"verdict: {args.verdict} by {' '.join(args.by.split())} @{sha[:7]}"
@@ -3228,7 +3265,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="write a jtek.json template on this machine, not in the repository").set_defaults(func=cmd_other)
     sub.add_parser("migrate", help="move jtek.json and .jtek/ out of this repository into $HOME/.jtek, and move the owner files").set_defaults(func=cmd_other)
     sub.add_parser("guess", help="print guessed check commands for this repository; reads only").set_defaults(func=cmd_other)
-    status = sub.add_parser("status", help="read-only readiness line and table of claims, reviews, and the one next action")
+    status = sub.add_parser("status", help="read-only readiness line and table of claims, reviews, choices to confirm, and the one next action")
     status.add_argument("--board-file", help="the open tickets, read from the board and saved as JSON; not needed when the tickets are files")
     status.set_defaults(func=cmd_other)
     doctor = sub.add_parser("doctor", help="say what is set up in this repository and what is missing")
@@ -3361,6 +3398,49 @@ def machine_root() -> Path:
 def machine_config_path() -> Path:
     """Machine-wide defaults. Absent, and with no per-repository file either, the board is empty."""
     return machine_root() / "config"
+
+
+def owner_file(name: str) -> tuple[Path, str]:
+    """The machine file, or the old ~/.config/jtek path when that is the one that exists.
+
+    The notice is one line when the old path is in use, and empty otherwise. A missing file returns the new path.
+    """
+    new = machine_root() / name
+    old = Path.home() / ".config" / "jtek" / name
+    if new.is_file() and not new.is_symlink():
+        return new, ""
+    if old.is_file() and not old.is_symlink():
+        return old, f"notice: reading {old}. Run `jtek.py migrate` to move it to {new}."
+    return new, ""
+
+
+def load_reviewers(path: Path) -> list[dict] | None:
+    """The owner's list, in the owner's order, or None when there is no file. Every entry is checked before any is used."""
+    if not path.is_file():
+        return None
+    form = ('{"reviewers": [{"command": "codex exec -m <model>", "vendor": "openai", "model": "<model>"}]}')
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as err:
+        raise Refuse(f"cannot read {path}: {err}. Its form is {form}") from None
+    entries = data.get("reviewers") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        raise Refuse(f"{path} must hold a `reviewers` list. Its form is {form}")
+    reviewers = []
+    for number, entry in enumerate(entries, 1):
+        values = {key: " ".join(str(entry.get(key) or "").split())
+                  if isinstance(entry, dict) and isinstance(entry.get(key), str) else ""
+                  for key in ("command", "vendor", "model")}
+        lacking = [key for key, value in values.items() if not value]
+        if lacking:
+            raise Refuse(f"entry {number} of {path} needs " + ", ".join(f"`{key}`" for key in lacking)
+                         + f", each a line of text. Its form is {form}")
+        try:
+            values["program"] = shlex.split(values["command"])[0]
+        except (ValueError, IndexError):
+            raise Refuse(f"entry {number} of {path}: the command `{values['command']}` has an unbalanced quote") from None
+        reviewers.append(values)
+    return reviewers
 
 
 def same_content(src: Path, dest: Path) -> bool:

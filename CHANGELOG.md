@@ -1,5 +1,33 @@
 # Changelog
 
+## 28.0.0 - lean end-to-end flow: multi-repo visibility, `status` choices, and `verdict --by` check
+
+Official v28.0.0 release. Finishes the six-part v28 flow overhaul with the remaining small launcher and `verdict` fixes.
+
+### New in this release
+
+- **Several `repo:` values surface as `board` instead of disappearing.** `next_step` in `launcher.py` splits `repo:` on commas (trimming spaces and dropping empty or duplicate entries). A single repository name keeps its existing behaviour (match or empty → normal; another repo → hidden `other`). Two or more repositories on an open ticket now return `board` with `several repositories (<list>); split it into one ticket per repo`, so `next` prints it and `status` lists it under `ถัดไป` instead of silently hiding it in every repository.
+- **`choice รอยืนยัน` group in `jtek.py status`.** `status` stays read-only and now reads `choice:` lines (including `- choice:` and `* choice:`) from each iterated ticket's `evidence.md`, collapsing each to one line and capping at 3 per ticket (followed by `… +N` when more exist). The group prints after `รอ merge` and before `ถัดไป` (or `choice รอยืนยัน\t-` when none exist), skipping `other` and Done/Cancelled tickets and silently ignoring missing or unreadable evidence files.
+- **`jtek.py verdict --by` validates against `agents.json` when the list exists.** Both copies of `jtek.py` (`jt-work` and `jt-review`) now share `owner_file` and `load_reviewers` (honouring `JTEK_HOME` and the legacy `~/.config/jtek/agents.json` migration notice). When `agents.json` exists, `--by` must match an entry's `model`, `command`, or program name (case-insensitive, trimmed), or `verdict` refuses before recording anything, lists the accepted names, and points at `jtek.py reviewer`. Malformed `agents.json` refuses with the existing `load_reviewers` error. When no file exists, any non-empty `--by` is accepted as before.
+- **Scrum board note in `starting-sessions.md`.** Step 1 notes that on a Scrum board, only To do (Todo) cards in the current sprint are counted.
+
+### Summary of v28 (`pre.1` – `pre.5`)
+
+- **Light review by default (`pre.1`):** `jt-review` reads diff in design → functionality → complexity → tests order (`design:`), checks sealed `broke.json` without re-breaking every item, runs only diff-affected checks, reserves deep review for extra real runs by one reviewer, narrows FAIL to reproducible P0/P1 bugs, and turns coverage gaps into `to weigh:` + `follow-up:`.
+- **Never block on in-PR decisions (`pre.2`):** P19 chooses and logs `choice:` in evidence instead of stopping with `--waiting input`; five mid-ticket stops are cut; PR review comments are handled as submitted batches; launchers stop background sessions with `claude stop`; one card runs at a time by default; `me.md` applies across every writer skill while keeping script prefixes in English.
+- **Worktrees under `.claude/worktrees/<id>` (`pre.3`):** new worktrees live inside `<root>/.claude/worktrees/<id>` and are excluded via `.git/info/exclude`, with `.claude/*` on `attention:`.
+- **Built-in `gh`/`glab` forge and draft → ready (`pre.4`):** `jt-ship` opens draft PRs/MRs; `finish` marks drafts ready automatically once both a passing verdict and green/none CI hold; red CI gets one fix round before stopping for the human; `examples/pr-state-gitlab.py` is removed.
+- **Per-ticket `verify.d` overrides and known-red baseline (`pre.5`):** verify-guide edits stay isolated under `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` until `sync` promotes them on merge (or holds on conflict) without a P16 approval stop; a red baseline check records `known-red` and one follow-up ticket instead of refusing `start`.
+
+### Migrating from v27 to v28
+
+- Existing in-flight claims keep working at their recorded `meta["worktree"]` path; only new tickets use `.claude/worktrees/<id>`.
+- Pull requests already opened as ready (`OPEN`) continue to work and finish normally.
+- Workarounds from v27 can now be removed: the `EnterWorktree` permission hook, `--append-system-prompt-file` for language/style, and custom GitLab `pr_state` scripts.
+- `agents.json` and `me.md` keep the same formats.
+
+Where it cuts time across the whole flow: a multi-repo ticket no longer vanishes silently (it surfaces as a `board` action instead of a stuck ticket nobody sees); the human sees `choice:` lines to confirm in one `/jt-status` read instead of opening each pull request; and a mistyped reviewer name is caught at `verdict` instead of at merge review.
+
 ## 28.0.0-pre.5 - per-ticket `verify.d` overrides and known-red baseline
 
 The fifth v28 pre-release. Verify-guide edits are now isolated per ticket under `~/.jtek/repos/<repo id>/verify.d/<ticket id>/` until `jtek.py sync` promotes them on merge, and a check that is already red on the base no longer blocks `start`.

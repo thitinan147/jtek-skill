@@ -7,7 +7,6 @@ a command; it starts nothing. `j` is the jtek module.
 """
 from __future__ import annotations
 
-import json
 import re
 import shlex
 import shutil
@@ -28,17 +27,8 @@ KNOWN = [
 
 
 def owner_file(j, name: str) -> tuple[Path, str]:
-    """The machine file, or the old ~/.config/jtek path when that is the one that exists.
-
-    The notice is one line when the old path is in use, and empty otherwise. A missing file returns the new path.
-    """
-    new = j.machine_root() / name
-    old = Path.home() / ".config" / "jtek" / name
-    if new.is_file() and not new.is_symlink():
-        return new, ""
-    if old.is_file() and not old.is_symlink():
-        return old, f"notice: reading {old}. Run `jtek.py migrate` to move it to {new}."
-    return new, ""
+    """The machine file, or the old ~/.config/jtek path when that is the one that exists."""
+    return j.owner_file(name)
 
 
 def one_line(value) -> str:
@@ -46,31 +36,8 @@ def one_line(value) -> str:
 
 
 def load_reviewers(j, path: Path) -> list[dict] | None:
-    """The owner's list, in the owner's order, or None when there is no file. Every entry is checked before any is used."""
-    if not path.is_file():
-        return None
-    form = ('{"reviewers": [{"command": "codex exec -m <model>", "vendor": "openai", "model": "<model>"}]}')
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError) as err:
-        raise j.Refuse(f"cannot read {path}: {err}. Its form is {form}") from None
-    entries = data.get("reviewers") if isinstance(data, dict) else None
-    if not isinstance(entries, list):
-        raise j.Refuse(f"{path} must hold a `reviewers` list. Its form is {form}")
-    reviewers = []
-    for number, entry in enumerate(entries, 1):
-        values = {key: one_line(entry.get(key) or "") if isinstance(entry, dict) and isinstance(entry.get(key), str) else ""
-                  for key in ("command", "vendor", "model")}
-        lacking = [key for key, value in values.items() if not value]
-        if lacking:
-            raise j.Refuse(f"entry {number} of {path} needs " + ", ".join(f"`{key}`" for key in lacking)
-                           + f", each a line of text. Its form is {form}")
-        try:
-            values["program"] = shlex.split(values["command"])[0]
-        except (ValueError, IndexError):
-            raise j.Refuse(f"entry {number} of {path}: the command `{values['command']}` has an unbalanced quote") from None
-        reviewers.append(values)
-    return reviewers
+    """The owner's list, in the owner's order, or None when there is no file."""
+    return j.load_reviewers(path)
 
 
 def list_models(program: str, argv: list[str]) -> list[str] | str:
