@@ -38,7 +38,7 @@ A new lint rule, check, or test must fail on the real past mistake. Run it again
 ## 4. Hand it over
 
 1. Fix the ticket's own work first, in its worktree. When that work is already merged, the fix goes into the new ticket below.
-2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so. Write the ticket out in your report, in the ticket format. Put it on the board, or save it as a ticket file when the repository has no board, only when the human asks, and then as Backlog. A repair the mechanism needs before it can pass belongs in the same ticket. Save a working trial as a patch file, and say where it is and that the folder may be temporary.
+2. Describe the mechanism as a new ticket: what to add, where, and how to see it catch the mistake. Do not build it inside the current ticket unless the human says so. Write the ticket out in your report, in the ticket format. Save it as a local ticket file (`jtek.py ticket <file> --save`, as Backlog) only when the human asks. A repair the mechanism needs before it can pass belongs in the same ticket. Save a working trial as a patch file, and say where it is and that the folder may be temporary.
 3. A change to lint config or CI is the human's to commit on the base branch. A change to the machine config is the human's to edit on this machine.
 
 ## 5. Keep the rule table small

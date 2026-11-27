@@ -13,7 +13,7 @@ Findings:
 Notes:
 - design: <one line on whether the shape of the change fits the ticket>
 - to weigh: <a behaviour the human may not want, or a coverage gap, which the ticket does not settle>
-- follow-up: <the new card for that gap: its id from `jtek.py ticket --save`, or its board link>
+- follow-up: <the new local ticket file for that gap: its id from `jtek.py ticket --save`>
 - item <n> seen: <what you ran, and what you saw>
 - broke: <sealed broke.json covers items 1–N at this commit; seal intact; did not re-break> | <the line you broke, and which checks failed or still passed>
 - stand-in: <what you used in place of the real thing, and for which case>

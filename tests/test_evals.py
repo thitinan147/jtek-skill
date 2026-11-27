@@ -55,7 +55,7 @@ class EvalTests(unittest.TestCase):
             os.environ["JTEK_HOME"] = self._old_home
 
     def start(self):
-        return run(JTEK, "start", "https://www.notion.so/eval", "--from-file", self.dest / "ticket.md", cwd=self.dest / "app")
+        return run(JTEK, "start", "--from-file", self.dest / "ticket.md", cwd=self.dest / "app")
 
     def test_every_scenario_builds_and_an_untouched_one_fails_the_grade(self):
         for scenario in sorted(p.name for p in (ROOT / "evals" / "scenarios").iterdir()):
@@ -98,7 +98,7 @@ class EvalTests(unittest.TestCase):
                              "--notes-file", notes, cwd=tree)[0], 0)
         code, out = run(JTEK, "finish", "B-1", "--no-pr", "--evidence-file", evidence, cwd=tree)
         self.assertIn("outcome: review", out)
-        self.assertIn("board: Status=Review", out)
+        self.assertIn("status: Review", (self.dest / "ticket.md").read_text())
         code, out = run(RUN, "grade", "bug-wordcount", self.dest)
         self.assertEqual(code, 0, out)
         self.assertNotIn("FAIL", out)

@@ -10,9 +10,9 @@ Run these whenever you change the text of a skill or a playbook. A change that r
    python3 evals/run.py build bug-wordcount ~/work/wordcount
    ```
 
-   It prints the prompt to give the agent. An eval uses no board: the page is handed over as a ticket file, so reading the page and writing the `board:` line are not covered.
+   It prints the prompt to give the agent, with the ticket handed over as a local file.
 
-   The run is blind. Pick a folder name a person would use, not `eval-1`. The skills are copied into the folder beside the repository, so the agent never reads the folder that holds the hidden tests, and the prompt, the git author, and the page link say nothing about a test. An agent that knows it is measured does not work as it would on a real ticket.
+   The run is blind. Pick a folder name a person would use, not `eval-1`. The skills are copied into the folder beside the repository, so the agent never reads the folder that holds the hidden tests, and the prompt and the git author say nothing about a test. An agent that knows it is measured does not work as it would on a real ticket.
 2. **Run** a fresh agent session with that prompt, and nothing else. Use the agent you want to test (Claude Code, Cursor, ...). It must not see this repository's history or an earlier run.
 3. When the result says `needs-review`, start a second fresh session and tell it only to follow `skills/jt-review/SKILL.md` for the same ticket. Then let the first agent, or a third session, run `/jt-work <id>` again.
 4. **Grade** what is left:

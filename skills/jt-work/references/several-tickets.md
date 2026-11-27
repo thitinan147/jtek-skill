@@ -17,7 +17,7 @@ Go on in this session only if every line holds. Otherwise end the session.
 
 ## For each ticket, start over
 
-- Read its page and run `jtek.py start` for it, pick its playbook, and write a new todo list. Do not reuse the last one.
+- Run `jtek.py start` for it, pick its playbook, and write a new todo list. Do not reuse the last one.
 - Its worktree is cut from the base branch. **The last ticket's changes are not in it.** Do not assume a helper, a fix, or a rename from the last ticket exists here.
 - Read its ticket file in full, and name the proof for each of its `Done when` items again. You may skip re-reading code you read this session, but re-check anything the ticket depends on.
 - It gets its own evidence, its own pull request, and its own result. Never put two tickets in one branch or one pull request.
@@ -34,7 +34,7 @@ Grouping is decided before a session starts, by the human or the launcher. The f
 - **Put together:** up to three small tickets with the same `area:` that do not depend on each other.
 - **Give its own session:** a ticket in another area, a large ticket, a `refactor`, a bug you expect to be hard, and any ticket with `after:`.
 - **Run in parallel sessions instead:** tickets you want done sooner, but only when they share no database, port, e2e stack, or shared files. Tickets that share one run one at a time. One session works one ticket at a time.
-- The board shows each Todo ticket's Area, Kind, and After.
+- The ticket files show each Todo ticket's `area:`, `kind:`, and `after:`.
 
 ## How the session ends
 

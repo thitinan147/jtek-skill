@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`jtek.py doctor`: say what is set up in a repository and what is missing, in the order to fix it.
 
-Read-only. It runs no check and cannot see the board. Run it as `jtek.py doctor`.
+Read-only. It runs no check. Run it as `jtek.py doctor`.
 """
 from __future__ import annotations
 
@@ -165,9 +165,7 @@ def assess(j) -> dict:
             rows.append(("repo", "missing", "config", str(err), f"fix {cfg}"))
     if config is not None:
         source = j.find_config()
-        board = str(config.get("board") or "").strip()
-        rows.append(("repo", "ok", "`board`: the Notion database or FLO product link" if board
-                     else f"no board: the tickets are files in {j.tickets_dir()}", "", ""))
+        rows.append(("repo", "ok", f"tickets: {j.tickets_dir()}", "", ""))
         if source is None:
             if legacy:
                 rows.append(("repo", "missing", "checks",
@@ -175,8 +173,7 @@ def assess(j) -> dict:
                              "jtek.py migrate"))
             else:
                 rows.append(("repo", "missing", "checks",
-                             "run `jtek.py init` or `/jt-init` and give at least one check a command. "
-                             "With no config file the board is empty and tickets are files on this machine",
+                             "run `jtek.py init` or `/jt-init` and give at least one check a command",
                              "/jt-init or jtek.py init"))
         else:
             rows.append(("repo", "ok", f"config {source}", "", ""))
@@ -271,7 +268,6 @@ def assess(j) -> dict:
         rows.append(("machine", "ok" if shutil.which("gh") else "optional", "`gh` is installed",
                      "install the GitHub CLI (or `glab` for GitLab), or for another forge set `pr_state` in the machine config; "
                      "it is needed to read a pull request's state", ""))
-    has_board = bool(config and str(config.get("board") or "").strip())
     missing = [row for row in rows if row[1] == "missing"]
     return {
         "rows": rows,
@@ -281,7 +277,6 @@ def assess(j) -> dict:
         "legacy": legacy,
         "own_forge": own_forge,
         "forge": forge,
-        "has_board": has_board,
         "git_missing": git_missing,
     }
 
@@ -316,15 +311,11 @@ def run(j, args=None) -> None:
     rows = report["rows"]
     legacy = report["legacy"]
     own_forge = report["own_forge"]
-    has_board = report["has_board"]
     for _scope, state, what, todo, _fix in rows:
         print(f"{state:<9}{what}" + (f"\n         -> {todo}" if state != "ok" and todo else ""))
     forge = report.get("forge", "gh")
     if shutil.which(forge) and not own_forge:
         print(f"not checked: whether `{forge}` is signed in. Run `{forge} auth status` to see.")
-    if has_board:
-        print("not checked: the board. This script cannot see it. Ask your agent to read the board with its tool\n"
-              "         and compare it with references/notion.md, or references/flo.md, of the jt-work skill.")
     if legacy:
         trigger = "migrate"
     elif j.find_config() is None:
@@ -334,9 +325,5 @@ def run(j, args=None) -> None:
     print(f"init: {trigger}")
     if not report["ready"]:
         raise j.Refuse("something required is missing; fix the first `missing` line and run doctor again")
-    if has_board:
-        print("ready: write a ticket on the board, set it to Todo, and give its id to the jt-work skill")
-    else:
-        print("ready: this repository needs no board. Save a ticket with `jtek.py ticket <file> --save`, write\n"
-              "       `status: Todo` in its file, and give its id to the jt-work skill; or start work that has\n"
-              "       no ticket with `jtek.py start --local --from-file <file>`")
+    print("ready: pass a ticket file or chat goal to /jt or /jt-work; save a ticket with `jtek.py ticket <file> --save` "
+          "and set `status: Todo`, or start from chat with `jtek.py start --local --from-file <file>`")

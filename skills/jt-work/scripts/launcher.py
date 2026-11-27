@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 
-TEMPLATE = {"board": "", "setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
+TEMPLATE = {"setup": "", "checks": {"secrets": "", "lint": "", "types": "", "test": "", "audit": "", "verify": ""}}
 
 
 def init(j, args) -> None:
@@ -26,9 +26,7 @@ def init(j, args) -> None:
     j.write_json(path, TEMPLATE)
     print(f"wrote {path}")
     print("This file is on this machine. It is not in the repository, and it is not committed.")
-    print("`board` is the link of the Notion database or FLO product that holds the tickets. The agent reads it to find a ticket.")
-    print(f"Leave it empty to keep the tickets as files in {j.tickets_dir()}; no board is needed then.")
-    print("With no config file at all, that empty board is already the default.")
+    print(f"Ticket files live in {j.tickets_dir()}, or you can start from a chat goal with `--local`.")
     print("`setup` installs dependencies in a new worktree, for example `npm ci`. Leave it empty when nothing is needed.")
     print("Fill in one command per check (no shell operators; put a pipeline in a script).")
     print("`secrets` is a secret scanner and `audit` a dependency audit, when the project has them.")
@@ -191,10 +189,9 @@ def claim_rows(j, known: set[str]) -> list[dict]:
 
 
 def file_rows(j, *, include_claims: bool = False, announce_empty: bool = True) -> list[dict]:
-    """The rows of a repository with no board: one for each ticket file, read from its header.
+    """One row for each ticket file on this machine, read from its header.
 
-    With `include_claims`, a claim that has no ticket file is a row too. `sync` leaves that out:
-    it only tidies tickets the page already names.
+    With `include_claims`, a claim that has no ticket file (such as a LOCAL-<n> ticket) is a row too.
     """
     rows = []
     for path in j.iter_ticket_files():
@@ -213,22 +210,10 @@ def file_rows(j, *, include_claims: bool = False, announce_empty: bool = True) -
     return rows
 
 
-def load_board(j, path: str | None, *, include_claims: bool = False, announce_empty: bool = True) -> list[dict]:
-    """Rows that the launcher read from the board with its own tool, or the ticket files when there is no board.
+def load_tickets(j, *, include_claims: bool = False, announce_empty: bool = True) -> list[dict]:
+    """All ticket files on this machine (plus local claims when requested).
     Every row is checked before any is used."""
-    if not path:
-        if j.has_board(j.base_branch()):
-            raise j.Refuse("pass --board-file: the open tickets, read from the board and saved as JSON; "
-                           "see references/starting-sessions.md")
-        rows = file_rows(j, include_claims=include_claims, announce_empty=announce_empty)
-    else:
-        try:
-            rows = json.loads(Path(path).read_text())
-        except (OSError, ValueError) as err:
-            raise j.Refuse(f"cannot read the board file {path}: {err}") from None
-    if not isinstance(rows, list) or not all(isinstance(row, dict) and row.get("id") for row in rows):
-        raise j.Refuse("the board file must be a JSON list of objects, each with `id` and `status`; "
-                       "see references/starting-sessions.md")
+    rows = file_rows(j, include_claims=include_claims, announce_empty=announce_empty)
     for row in rows:
         row["id"] = j.check_id(str(row["id"]))
         after = row.get("after") or []
@@ -296,10 +281,11 @@ def promote_verify_overrides(j, ticket_id: str) -> str:
 
 
 def sync(j, args) -> None:
-    """Done is read back from the forge, never assumed. Print what to write on the board, and tidy worktrees.
+    """Done is read back from the forge, never assumed. Update merged ticket files to Done, and tidy worktrees.
     Every ticket of this repository in Review, Done, or Cancelled gets a line, so silence never means success."""
+    del args
     repo = this_repo(j)
-    for row in load_board(j, args.board_file):
+    for row in load_tickets(j, include_claims=True):
         if row["repo"] not in ("", repo):
             continue
         ticket_id, status = row["id"], row["status"]
@@ -308,9 +294,9 @@ def sync(j, args) -> None:
         elif status != "Review":
             continue
         elif not row["pr"]:
-            print(f"{ticket_id}\t-\tno pull request on the page; the human sets Done after merging")
+            print(f"{ticket_id}\t-\tno pull request in the ticket file; the human sets Done after merging")
         elif not j.re.match(r"^https?://[^\s;]+$", row["pr"]):
-            print(f"{ticket_id}\t-\tthe PR on the page is not a link; the human sets Done after merging")
+            print(f"{ticket_id}\t-\tthe PR in the ticket file is not a link; the human sets Done after merging")
         else:
             try:
                 state, head, ci, _problem = j.pr_info(row["pr"], j.base_branch())
@@ -318,10 +304,11 @@ def sync(j, args) -> None:
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}: {err}")
                 continue
             if state == "MERGED":
+                j.mark_ticket_done(ticket_id)
                 tidy = tidy_done(j, ticket_id, head=head) or "nothing to tidy"
                 promo = promote_verify_overrides(j, ticket_id)
                 detail = f"the pull request is merged; {tidy}" + (f"; {promo}" if promo else "")
-                print(f"{ticket_id}\tboard: Status=Done\t{detail}")
+                print(f"{ticket_id}\tDone\t{detail}")
             elif state == "unknown":
                 forge = j.select_forge(j.base_branch())
                 print(f"{ticket_id}\t-\tcould not read {row['pr']}; is `{forge}` installed and signed in?")
@@ -339,18 +326,18 @@ def repo_names(value: str) -> list[str]:
 
 
 def next_step(j, row: dict, repo: str) -> tuple[str, str]:
-    """What one ticket needs now. The first word is the action: `work`, `review`, and `board` are for a
+    """What one ticket needs now. The first word is the action: `work` and `review` are for a
     session to do. Every other word means do not start one."""
     ticket_id, status = row["id"], row["status"]
     repos = repo_names(row["repo"])
     if len(repos) > 1:
         if status in ("Done", "Cancelled"):
             return ("hold", "finished") if repo in repos else ("other", f"belongs to the repositories `{', '.join(repos)}`")
-        return "board", f"several repositories ({', '.join(repos)}); split it into one ticket per repo"
+        return "human", f"several repositories ({', '.join(repos)}); split it into one ticket per repo"
     if repos and repos[0] != repo:
         return "other", f"belongs to the repository `{repos[0]}`"
     if status == "Backlog":
-        return "hold", "not released; the human sets Todo"
+        return "hold", "not released; the human sets status: Todo"
     if status in ("Done", "Cancelled"):
         return "hold", "finished"
     if status == "Review":
@@ -374,15 +361,15 @@ def next_step(j, row: dict, repo: str) -> tuple[str, str]:
             return "hold", "comes after " + ", ".join(row["after"])
         return "work", "the human answered, or asked for rework" if claimed else "new"
     if row["waiting"]:
-        return "human", f"waiting for {row['waiting']}; answer on the page and set Status to Todo"
+        return "human", f"waiting for {row['waiting']}; answer in the ticket file and set status: Todo"
     if not claimed:
         return "elsewhere", "In Progress, and not claimed on this machine"
     result = (work / "result.md").read_text()
     outcome = next((line[9:].strip() for line in result.splitlines() if line.startswith("outcome: ")), "")
     if outcome == "review":
-        return "board", f"the page does not show the result; write the `board:` line of `jtek.py result {ticket_id}`"
+        return "human", f"the ticket file does not show the result; check `jtek.py result {ticket_id}`"
     if outcome == "needs-human":
-        return "board", f"the page does not show the question; write the `board:` line of `jtek.py result {ticket_id}`"
+        return "human", f"the ticket file does not show the question; check `jtek.py result {ticket_id}`"
     verdict = j.current_verdict(ticket_id, meta)
     if not verdict:
         return "review", "needs a verdict from a session that did not write the change"
@@ -392,8 +379,9 @@ def next_step(j, row: dict, repo: str) -> tuple[str, str]:
 
 
 def next_(j, args) -> None:
+    del args
     repo = this_repo(j)
-    for row in load_board(j, args.board_file, include_claims=True):
+    for row in load_tickets(j, include_claims=True):
         action, reason = next_step(j, row, repo)
         if action != "other":
             print(f"{row['id']}\t{action}\t{reason}")
@@ -483,7 +471,7 @@ def release(j, args) -> None:
     kept = exists and not fresh
     print(f"released {args.id}; " + (f"branch {branch} is kept, and the next start goes on from it" if kept
                                      else "the interrupted start is cleaned up")
-          + (". A local ticket has no board" if j.LOCAL_RE.match(args.id) else ". The board is not changed: set Status on the page yourself"))
+          + ("" if j.LOCAL_RE.match(args.id) else ". The ticket file is not changed: set status in the file yourself"))
 
 
 def guess(j, args) -> None:
@@ -533,8 +521,9 @@ def status(j, args) -> None:
 
     First line reports machine and repository readiness derived from `doctor.assess(j)`.
     Every row that `next` prints appears either in a group or under `ถัดไป`.
-    Nothing is written: no claim, no release, no board change.
+    Nothing is written: no claim, no release, no ticket file change.
     """
+    del args
     import doctor as doctor_mod
 
     report = doctor_mod.assess(j)
@@ -546,18 +535,16 @@ def status(j, args) -> None:
             repo = j.main_root().name
         except j.Refuse:
             repo = ""
-    if args.board_file:
-        board_rows = load_board(j, args.board_file, include_claims=True, announce_empty=False)
-    elif report["config"] is not None:
-        board_rows = load_board(j, None, include_claims=True, announce_empty=False)
+    if report["config"] is not None:
+        ticket_rows = load_tickets(j, include_claims=True, announce_empty=False)
     else:
-        board_rows = []
+        ticket_rows = []
     doing: list[str] = []
     review: list[str] = []
     merge: list[str] = []
     choices: list[str] = []
     ranked: list[tuple[int, str, str, str, bool]] = []
-    for row in board_rows:
+    for row in ticket_rows:
         action, reason = next_step(j, row, repo)
         if action == "other":
             continue
@@ -581,8 +568,6 @@ def status(j, args) -> None:
             ranked.append((3, ticket_id, action, detail, True))
         elif action == "work":
             ranked.append((0, ticket_id, action, detail, False))
-        elif action == "board":
-            ranked.append((1, ticket_id, action, detail, False))
         elif action == "human":
             ranked.append((4, ticket_id, action, detail, False))
         elif action == "stuck":

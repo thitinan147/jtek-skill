@@ -1,5 +1,29 @@
 # Changelog
 
+## 29.0.0 - breaking: remove the board, file-only and chat-goal intake
+
+Breaking release. Everything related to an external board (Notion, FLO, `board` config key, `--board-file`, `board:` output lines, `board-comment.md`) is removed. Work starts from an existing local ticket file or directly from a goal typed in chat.
+
+### Breaking removals
+
+- **Deleted files and skills:**
+  - `skills/jt-work/references/notion.md` and `skills/jt-work/references/flo.md`
+  - `skills/jt-ticket/` (`SKILL.md`) and `skills/jt-status/` (`SKILL.md`) — 15 skills now ship (11 steps + 4 modes: `/jt`, `/jt-init`, `/jt-me`, `/jt-agents`)
+  - `tests/board.py` and board-only tests
+- **Removed from `jtek.py`, `launcher.py`, `doctor.py`, `guess.py`, and `evals/run.py`:**
+  - `board_line()`, `has_board()`, `board:` output lines, `comment file:` / `board-comment.md`, the `board` config key, `--board-file` on `status`/`next`/`sync`, the `board` action in `next`/`status`, board-specific refusals and help text, and the board question in `jtek.py guess` / `/jt-init`.
+
+### New intake and file-only bookkeeping
+
+- **Chat goal or local ticket file intake:** work starts either from an existing ticket file (`jtek.py start <id>`, `jtek.py start --from-file <file>`, or `jtek.py start <path>`) or from a goal typed in chat. From a chat goal, the agent restates the goal and the smallest change in 2–4 lines, drafts `Goal` and `Done when` itself into a local ticket file (`jtek.py start --local --from-file <file>` with a `LOCAL-<n>` id), and proceeds unless the change reaches outside the pull request (P16). The second-session reviewer reads that local ticket file and the diff.
+- **Direct local ticket file updates:** `jtek.py start`, `stop`, `finish`, and `sync` now update a regular ticket file's `status:`, `waiting:`, and `pr:` header lines atomically on disk instead of printing `board:` instructions. `sync` also handles `LOCAL-<n>` claims in `Review` once their pull request is merged.
+- **Known-red follow-ups are always local ticket files:** a failing check on the base during `start` always saves one local Backlog follow-up ticket file via `save_ticket`.
+- **Multi-repo ticket files and file/result mismatches:** `next` and `status` surface them under action `human` (instead of `board`) so they remain visible without starting a session.
+
+### Unchanged core guarantees
+
+- Worktrees under `.claude/worktrees/<id>`, checks from machine config on base (with known-red handling), `jt-work` step order, sealed `broke` proofs, second-session review tied to the commit, PR body with evidence per `Done when`, `jt-babysit`, and human-only merge (still no merge command).
+
 ## 28.0.0 - lean end-to-end flow: multi-repo visibility, `status` choices, and `verdict --by` check
 
 Official v28.0.0 release. Finishes the six-part v28 flow overhaul with the remaining small launcher and `verdict` fixes.

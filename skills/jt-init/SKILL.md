@@ -1,6 +1,6 @@
 ---
 name: jt-init
-description: Sets up this repository on the machine in one confirmation. Guesses the checks, asks the board once, records the machine config, then the harness, then doctor. Use when the user types /jt-init, and only then.
+description: Sets up this repository on the machine in one confirmation. Guesses the checks, confirms them once, records the machine config, then the harness, then doctor. Use when the user types /jt-init, and only then.
 disable-model-invocation: true
 ---
 
@@ -22,13 +22,13 @@ Run `jtek.py guess`. It only reads. It does not open a dotenv file and it does n
 
 ## 3. Ask once
 
-Show the guessed commands and this one question, then wait:
+Show the guessed commands and ask once to confirm or edit them:
 
-`board? none (tickets as files) / Notion database link / FLO product link`
+`checks? confirm or edit these commands`
 
-The human may edit any guessed command in that same answer. `none` records `"board": ""`, so tickets are files. A Notion database link or a FLO product link is recorded as `board`. Do not ask a second time.
+The human may accept or edit any guessed command in that same answer. Do not ask a second time.
 
-Record the accepted `setup`, `checks`, and `board` in `$HOME/.jtek/repos/<repo id>/jtek.json` (the file `init` named). Delete a check the human removed. Do not put that file in the repository.
+Record the accepted `setup` and `checks` in `$HOME/.jtek/repos/<repo id>/jtek.json` (the file `init` named). Delete a check the human removed. Do not put that file in the repository.
 
 ## 4. Harness, then doctor
 
